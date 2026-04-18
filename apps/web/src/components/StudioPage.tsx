@@ -286,6 +286,10 @@ function collectReportFieldIds(report: ReportDefinition) {
   ));
 }
 
+function getFieldLabel(table: TableDefinition | null | undefined, fieldId: string) {
+  return table?.fields.find((field) => field.id === fieldId)?.label || fieldId;
+}
+
 function looksLikeQuickbaseTableId(value: string) {
   return /^[a-z0-9]{8,}$/i.test(String(value || "").trim());
 }
@@ -451,6 +455,7 @@ function ReportPreview({ report, table, result }: { report: ReportDefinition; ta
 function DashboardPreview({
   dashboard,
   result,
+  tables,
   runtimeValues,
   setRuntimeValues,
   widgetSearch,
@@ -458,6 +463,7 @@ function DashboardPreview({
 }: {
   dashboard: DashboardDefinition;
   result: DashboardRunResult;
+  tables: TableDefinition[];
   runtimeValues: Record<string, string>;
   setRuntimeValues: Dispatch<SetStateAction<Record<string, string>>>;
   widgetSearch: string;
@@ -500,7 +506,9 @@ function DashboardPreview({
               <span className="micro">{widgets.length} cards</span>
             </div>
             <div className="widget-grid">
-              {widgets.map((widget) => (
+              {widgets.map((widget) => {
+                const widgetTable = tables.find((table) => table.id === widget.report.sourceTableId) || null;
+                return (
                 <article className="widget-card" key={widget.widgetId}>
                   <div className="widget-head">
                     <strong>{widget.report.name}</strong>
@@ -532,7 +540,7 @@ function DashboardPreview({
                       <table>
                         <thead>
                           <tr>
-                            {widget.report.selectedFieldIds.slice(0, 6).map((fieldId) => <th key={fieldId}>{fieldId}</th>)}
+                            {widget.report.selectedFieldIds.slice(0, 6).map((fieldId) => <th key={fieldId}>{getFieldLabel(widgetTable, fieldId)}</th>)}
                           </tr>
                         </thead>
                         <tbody>
@@ -546,7 +554,8 @@ function DashboardPreview({
                     </div>
                   ) : null}
                 </article>
-              ))}
+                );
+              })}
             </div>
           </section>
         );
@@ -1427,6 +1436,7 @@ export function StudioPage() {
             <DashboardPreview
               dashboard={{ ...activeDashboard, tabs: activeDashboard.tabs.filter((tab) => !activeTabId || tab.id === activeTabId) }}
               result={{ ...dashboardResult, tabs: dashboardResult.tabs.filter((tab) => !activeTabId || tab.id === activeTabId) }}
+              tables={bundle.tables}
               runtimeValues={runtimeValues}
               setRuntimeValues={setRuntimeValues}
               widgetSearch={widgetSearch}

@@ -96,7 +96,7 @@ function ObjectPage({ tables }: { tables: TableDefinition[] }) {
     return <ReportView report={object as ReportDefinition} table={table} result={result} loading={loading} currentPage={page} onPageChange={setPage} />;
   }
 
-  return <DashboardView dashboard={object} />;
+  return <DashboardView dashboard={object} tables={tables} />;
 }
 
 function ViewerPage({ objects }: { objects: CatalogSummaryItem[] }) {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import type { DashboardDefinition, DashboardRunResult } from "@studio/shared";
+import type { DashboardDefinition, DashboardRunResult, TableDefinition } from "@studio/shared";
 import { fetchAllReportRows, renderDashboard } from "../lib/api";
 import { LinkToolbar } from "./LinkToolbar";
 import { ChartPreview } from "./ChartPreview";
@@ -8,6 +8,7 @@ import { exportDashboardWorkbook } from "../lib/workbookExport";
 
 interface DashboardViewProps {
   dashboard: DashboardDefinition;
+  tables?: TableDefinition[];
 }
 
 function resolveWidgetDisplayMode(widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], reportMode: string) {
@@ -17,7 +18,11 @@ function resolveWidgetDisplayMode(widget: DashboardRunResult["tabs"][number]["wi
   return "table";
 }
 
-export function DashboardView({ dashboard }: DashboardViewProps) {
+function getFieldLabel(tables: TableDefinition[] | undefined, tableId: string, fieldId: string) {
+  return tables?.find((table) => table.id === tableId)?.fields.find((field) => field.id === fieldId)?.label || fieldId;
+}
+
+export function DashboardView({ dashboard, tables }: DashboardViewProps) {
   const defaults = useMemo(
     () =>
       Object.fromEntries(
@@ -186,7 +191,7 @@ export function DashboardView({ dashboard }: DashboardViewProps) {
                       <thead>
                         <tr>
                           {widget.report.selectedFieldIds.slice(0, 6).map((fieldId) => (
-                            <th key={fieldId}>{fieldId}</th>
+                            <th key={fieldId}>{getFieldLabel(tables, widget.report.sourceTableId, fieldId)}</th>
                           ))}
                         </tr>
                       </thead>
