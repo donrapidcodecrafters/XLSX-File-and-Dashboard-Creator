@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { buildDashboardFilters, type DashboardDefinition, type DashboardRunResult, type ReportRunResult, type TableDefinition } from "@studio/shared";
-import { fetchAllReportRows, fetchReportExportBundle, renderDashboard } from "../lib/api";
+import type { DashboardDefinition, DashboardRunResult, TableDefinition } from "@studio/shared";
+import { downloadDashboardWorkbook, renderDashboard } from "../lib/api";
 import { LinkToolbar } from "./LinkToolbar";
 import { ChartPreview } from "./ChartPreview";
-import { exportDashboardWorkbook } from "../lib/workbookExport";
 
 interface DashboardViewProps {
   dashboard: DashboardDefinition;
@@ -33,8 +32,6 @@ export function DashboardView({ dashboard, tables }: DashboardViewProps) {
   const [runtimeFilters, setRuntimeFilters] = useState<Record<string, string>>(defaults);
   const [result, setResult] = useState<DashboardRunResult | null>(null);
   const [loading, setLoading] = useState(true);
-  const [exporting, setExporting] = useState(false);
-  const [exportError, setExportError] = useState<string>("");
   const [activeTabId, setActiveTabId] = useState(dashboard.tabs[0]?.id || "");
 
   useEffect(() => {
@@ -63,46 +60,6 @@ export function DashboardView({ dashboard, tables }: DashboardViewProps) {
   const tabs = result?.tabs || dashboard.tabs.map((tab) => ({ id: tab.id, name: tab.name, widgets: [] }));
   const activeTab = tabs.find((tab) => tab.id === activeTabId) || tabs[0];
 
-  async function exportWorkbook() {
-    if (!result) return;
-    setExporting(true);
-    setExportError("");
-    try {
-      const exportResultsByReportId = Object.fromEntries(
-        await Promise.all(
-          Array.from(new Set(result.tabs.flatMap((tab) => tab.widgets.map((widget) => widget.report.id)))).map(async (reportId) => {
-            const fallback = result.tabs.flatMap((tab) => tab.widgets).find((widget) => widget.report.id === reportId)?.result;
-            const filters = buildDashboardFilters(dashboard, reportId, runtimeFilters).map((filter) => ({
-              fieldId: filter.fieldId,
-              operator: filter.operator,
-              value: filter.value
-            }));
-            const exportResult = await fetchReportExportBundle(reportId, filters)
-              .then((response) => response.result)
-              .catch(async () => fallback
-                ? {
-                    ...fallback,
-                    rows: await fetchAllReportRows(reportId, filters).catch(() => fallback.rows)
-                  }
-                : null);
-            return [reportId, exportResult] as const;
-          })
-        )
-      );
-      await exportDashboardWorkbook(
-        dashboard,
-        result,
-        Object.fromEntries(Object.entries(exportResultsByReportId).filter((entry): entry is [string, ReportRunResult] => Boolean(entry[1])))
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Dashboard export failed.";
-      setExportError(message);
-      console.error(error);
-    } finally {
-      setExporting(false);
-    }
-  }
-
   return (
     <section className="surface stack">
       <div className="hero">
@@ -116,7 +73,7 @@ export function DashboardView({ dashboard, tables }: DashboardViewProps) {
             <button className="ghost-button" onClick={() => window.history.back()}>Back</button>
             <Link className="ghost-button" to="/viewer">Home</Link>
             <Link className="ghost-button" to={`/studio/${dashboard.id}`}>Open in building area</Link>
-            <button className="ghost-button" onClick={() => { void exportWorkbook(); }} disabled={!result || exporting}>{exporting ? "Exporting…" : "Export xlsx"}</button>
+            <button className="ghost-button" onClick={() => downloadDashboardWorkbook({ dashboardId: dashboard.id, runtimeFilters })} disabled={!result}>Download xlsx</button>
           </div>
           <LinkToolbar type="dashboard" id={dashboard.id} />
         </div>
@@ -144,13 +101,6 @@ export function DashboardView({ dashboard, tables }: DashboardViewProps) {
               </label>
             ))}
           </div>
-        </div>
-      ) : null}
-
-      {exportError ? (
-        <div className="sync-status sync-status-warn">
-          <strong>Export failed</strong>
-          <span>{exportError}</span>
         </div>
       ) : null}
 

@@ -8,6 +8,36 @@ import type {
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "http://localhost:3001").replace(/\/$/, "");
 
+function ensureDownloadFrame() {
+  const existing = document.getElementById("studio-download-frame") as HTMLIFrameElement | null;
+  if (existing) return existing;
+  const frame = document.createElement("iframe");
+  frame.id = "studio-download-frame";
+  frame.name = "studio-download-frame";
+  frame.style.display = "none";
+  document.body.appendChild(frame);
+  return frame;
+}
+
+function submitDownload(path: string, payload: unknown) {
+  ensureDownloadFrame();
+  const form = document.createElement("form");
+  form.method = "POST";
+  form.action = API_BASE + path;
+  form.target = "studio-download-frame";
+  form.style.display = "none";
+
+  const input = document.createElement("input");
+  input.type = "hidden";
+  input.name = "payload";
+  input.value = JSON.stringify(payload ?? {});
+  form.appendChild(input);
+
+  document.body.appendChild(form);
+  form.submit();
+  form.remove();
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(API_BASE + path, {
     headers: {
@@ -94,4 +124,20 @@ export function renderDashboard(id: string, runtimeFilters: Record<string, strin
     method: "POST",
     body: JSON.stringify({ runtimeFilters })
   });
+}
+
+export function downloadReportWorkbook(payload: {
+  reportId?: string;
+  report?: unknown;
+  table?: unknown;
+  filters?: Array<{ fieldId: string; value: string; operator?: string }>;
+}) {
+  submitDownload("/api/exports/report.xlsx", payload);
+}
+
+export function downloadDashboardWorkbook(payload: {
+  dashboardId?: string;
+  runtimeFilters?: Record<string, string>;
+}) {
+  submitDownload("/api/exports/dashboard.xlsx", payload);
 }

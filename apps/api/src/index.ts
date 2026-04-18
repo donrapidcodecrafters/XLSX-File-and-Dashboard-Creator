@@ -1,5 +1,6 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import formbody from "@fastify/formbody";
 import { registerCatalogRoutes } from "./routes/catalog.js";
 import { registerQuickbaseRoutes } from "./routes/quickbase.js";
 import { registerRenderRoutes } from "./routes/render.js";
@@ -12,6 +13,7 @@ const app = Fastify({
 await app.register(cors, {
   origin: true
 });
+await app.register(formbody);
 
 await registerCatalogRoutes(app);
 await registerQuickbaseRoutes(app);

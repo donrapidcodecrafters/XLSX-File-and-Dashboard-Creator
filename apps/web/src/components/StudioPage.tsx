@@ -38,8 +38,7 @@ import {
   restoreStudioVersion,
   saveStudioDocument
 } from "../lib/studioApi";
-import { fetchAllReportRows, fetchReportExportBundle } from "../lib/api";
-import { exportDashboardWorkbook, exportReportWorkbook } from "../lib/workbookExport";
+import { downloadDashboardWorkbook, downloadReportWorkbook } from "../lib/api";
 import { ChartPreview } from "./ChartPreview";
 
 const STORAGE_KEY = "hosted-reporting-studio-v2";
@@ -1221,34 +1220,16 @@ export function StudioPage() {
 
   async function exportWorkbook() {
     if (activeReport && activeTable && reportResult) {
-      const exportResult = await fetchReportExportBundle(activeReport.id)
-        .then((response) => response.result)
-        .catch(async () => ({
-          ...reportResult,
-          rows: await fetchAllReportRows(activeReport.id).catch(() => reportResult.rows)
-        }));
-      await exportReportWorkbook(activeReport, activeTable, exportResult);
+      downloadReportWorkbook({
+        reportId: activeReport.id,
+        report: activeReport,
+        table: activeTable
+      });
     } else if (activeDashboard && dashboardResult) {
-      const exportResultsByReportId: Record<string, ReportRunResult> = {};
-      await Promise.all(
-        dashboardResult.tabs.flatMap((tab) =>
-          tab.widgets.map(async (widget) => {
-            if (exportResultsByReportId[widget.report.id]) return;
-            const filters = buildDashboardFilters(activeDashboard, widget.report.id, runtimeValues).map((filter) => ({
-              fieldId: filter.fieldId,
-              operator: filter.operator,
-              value: filter.value
-            }));
-            exportResultsByReportId[widget.report.id] = await fetchReportExportBundle(widget.report.id, filters)
-              .then((response) => response.result)
-              .catch(async () => ({
-                ...widget.result,
-                rows: await fetchAllReportRows(widget.report.id, filters).catch(() => widget.result.rows)
-              }));
-          })
-        )
-      );
-      await exportDashboardWorkbook(activeDashboard, dashboardResult, exportResultsByReportId);
+      downloadDashboardWorkbook({
+        dashboardId: activeDashboard.id,
+        runtimeFilters: runtimeValues
+      });
     } else {
       pushToast("Open a report or dashboard before exporting.", "warn");
       return;
@@ -1262,7 +1243,7 @@ export function StudioPage() {
         createdAt: new Date().toISOString()
       });
     }, { skipHistory: true });
-    pushToast("Workbook exported with chart images.");
+    pushToast("Workbook export started.");
   }
 
   if (!activeObject) {

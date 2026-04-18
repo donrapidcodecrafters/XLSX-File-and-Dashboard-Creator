@@ -1,10 +1,8 @@
 import { Link } from "react-router-dom";
-import { useState } from "react";
 import type { ReportDefinition, ReportRunResult, TableDefinition } from "@studio/shared";
 import { LinkToolbar } from "./LinkToolbar";
 import { ChartPreview } from "./ChartPreview";
-import { fetchAllReportRows, fetchReportExportBundle } from "../lib/api";
-import { exportReportWorkbook } from "../lib/workbookExport";
+import { downloadReportWorkbook } from "../lib/api";
 
 interface ReportViewProps {
   report: ReportDefinition;
@@ -17,29 +15,6 @@ interface ReportViewProps {
 
 export function ReportView({ report, table, result, loading, currentPage, onPageChange }: ReportViewProps) {
   const totalPages = result?.totalPages || 1;
-  const [exporting, setExporting] = useState(false);
-  const [exportError, setExportError] = useState("");
-
-  async function exportWorkbook() {
-    if (!table || !result) return;
-    setExporting(true);
-    setExportError("");
-    try {
-      const exportResult = await fetchReportExportBundle(report.id)
-        .then((response) => response.result)
-        .catch(async () => ({
-          ...result,
-          rows: await fetchAllReportRows(report.id).catch(() => result.rows)
-        }));
-      await exportReportWorkbook(report, table, exportResult);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Report export failed.";
-      setExportError(message);
-      console.error(error);
-    } finally {
-      setExporting(false);
-    }
-  }
 
   return (
     <section className="surface stack">
@@ -54,18 +29,11 @@ export function ReportView({ report, table, result, loading, currentPage, onPage
             <button className="ghost-button" onClick={() => window.history.back()}>Back</button>
             <Link className="ghost-button" to="/viewer">Home</Link>
             <Link className="ghost-button" to={`/studio/${report.id}`}>Open in building area</Link>
-            <button className="ghost-button" onClick={() => { void exportWorkbook(); }} disabled={!result || exporting}>{exporting ? "Exporting…" : "Export xlsx"}</button>
+            <button className="ghost-button" onClick={() => downloadReportWorkbook({ reportId: report.id })} disabled={!result}>Download xlsx</button>
           </div>
           <LinkToolbar type="report" id={report.id} />
         </div>
       </div>
-
-      {exportError ? (
-        <div className="sync-status sync-status-warn">
-          <strong>Export failed</strong>
-          <span>{exportError}</span>
-        </div>
-      ) : null}
 
       <div className="summary-grid">
         {(result?.summary || []).map((item) => (
