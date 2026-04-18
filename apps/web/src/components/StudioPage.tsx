@@ -28,6 +28,7 @@ import {
 import {
   createStudioSnapshot,
   fetchQuickbaseSchema,
+  fetchQuickbaseTablePreview,
   fetchStudioDocument,
   type QuickbaseAppSchema,
   type QuickbaseSyncResult,
@@ -521,6 +522,7 @@ export function StudioPage() {
   const navigate = useNavigate();
   const params = useParams();
   const importInputRef = useRef<HTMLInputElement | null>(null);
+  const loadedPreviewKeysRef = useRef<Set<string>>(new Set());
   const [documentState, setDocumentState] = useState<StudioDocument>(() => loadLocalDocument());
   const [loadingRemote, setLoadingRemote] = useState(true);
   const [savingRemote, setSavingRemote] = useState(false);
@@ -666,6 +668,31 @@ export function StudioPage() {
       setRuntimeValues(Object.fromEntries(activeDashboard.runtimeFilters.map((filter) => [filter.id, filter.defaultValue || ""])));
     }
   }, [activeDashboard?.id]);
+
+  useEffect(() => {
+    if (!documentState.quickbase.realmHostname || !documentState.quickbase.userToken || !documentState.quickbase.appId) return;
+    const tablesToLoad = [activeTable, createDraftTable].filter(Boolean) as TableDefinition[];
+    tablesToLoad.forEach((table) => {
+      const previewKey = `${documentState.quickbase.realmHostname}::${documentState.quickbase.appId}::${table.id}`;
+      if (loadedPreviewKeysRef.current.has(previewKey)) return;
+      loadedPreviewKeysRef.current.add(previewKey);
+      fetchQuickbaseTablePreview(documentState.quickbase, table.id, table.fields.map((field) => field.id), 250)
+        .then((response) => {
+          applyDocumentUpdate((draft) => {
+            draft.bundle.data[table.id] = response.rows as DataRow[];
+          }, { skipHistory: true });
+        })
+        .catch(() => {
+          loadedPreviewKeysRef.current.delete(previewKey);
+        });
+    });
+  }, [
+    activeTable?.id,
+    createDraftTable?.id,
+    documentState.quickbase.appId,
+    documentState.quickbase.realmHostname,
+    documentState.quickbase.userToken
+  ]);
 
   const filteredObjects = useMemo(() => {
     const query = libraryQuery.trim().toLowerCase();

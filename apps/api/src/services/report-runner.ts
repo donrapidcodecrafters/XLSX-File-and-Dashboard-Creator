@@ -1,10 +1,14 @@
 import { Worker } from "node:worker_threads";
-import { buildDashboardFilters, buildDashboardResult, type DashboardRunResult, type FilterDefinition, type ReportDefinition, type ReportRunResult } from "@studio/shared";
+import { buildDashboardFilters, buildDashboardResult, runReport, type DashboardRunResult, type DataRow, type FilterDefinition, type ReportDefinition, type ReportRunResult, type TableDefinition } from "@studio/shared";
 import { ExecutionCache } from "./execution-cache.js";
 import { objectStore } from "./object-store.js";
+import { studioStore } from "./studio-store.js";
+import { fetchQuickbaseTableRows } from "./quickbase-storage.js";
 
 interface WorkerRequest {
   report: ReportDefinition;
+  table: TableDefinition;
+  rows: DataRow[];
   extraFilters: FilterDefinition[];
 }
 
@@ -35,7 +39,22 @@ function cacheKey(report: ReportDefinition, extraFilters: FilterDefinition[]): s
 
 export async function executeReport(report: ReportDefinition, extraFilters: FilterDefinition[] = []): Promise<ReportRunResult> {
   const key = cacheKey(report, extraFilters);
-  return cache.getOrCreate(key, () => runReportWorker({ report, extraFilters }));
+  return cache.getOrCreate(key, async () => {
+    const table = objectStore.getTable(report.sourceTableId);
+    if (!table) {
+      throw new Error("Table not found for report " + report.id + ".");
+    }
+    const quickbase = studioStore.getDocument().quickbase;
+    const rows = quickbase.realmHostname && quickbase.userToken && quickbase.appId
+      ? await fetchQuickbaseTableRows(quickbase, table.id, table.fields.map((field) => field.id), { top: 250 }).catch(() => objectStore.getRows(table.id))
+      : objectStore.getRows(table.id);
+
+    if (rows.length <= 1500) {
+      return runReport(report, table, rows, extraFilters);
+    }
+
+    return runReportWorker({ report, table, rows, extraFilters });
+  });
 }
 
 export async function executeDashboard(dashboardId: string, runtimeValues: Record<string, string>): Promise<DashboardRunResult> {

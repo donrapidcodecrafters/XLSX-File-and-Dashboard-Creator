@@ -1,23 +1,18 @@
 import { parentPort, workerData } from "node:worker_threads";
-import { runReport, type FilterDefinition, type ReportDefinition } from "@studio/shared";
-import { objectStore } from "../services/object-store.js";
+import { runReport, type DataRow, type FilterDefinition, type ReportDefinition, type TableDefinition } from "@studio/shared";
 
 interface WorkerInput {
   report: ReportDefinition;
+  table: TableDefinition;
+  rows: DataRow[];
   extraFilters: FilterDefinition[];
 }
 
 const input = workerData as WorkerInput;
-const table = objectStore.getTable(input.report.sourceTableId);
 
 if (!parentPort) {
   throw new Error("Worker port unavailable.");
 }
 
-if (!table) {
-  throw new Error("Table not found for report " + input.report.id + ".");
-}
-
-const rows = objectStore.getRows(table.id);
-const result = runReport(input.report, table, rows, input.extraFilters);
+const result = runReport(input.report, input.table, input.rows, input.extraFilters);
 parentPort.postMessage(result);

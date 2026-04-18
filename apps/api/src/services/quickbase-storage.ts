@@ -1,5 +1,5 @@
 import { XMLParser } from "fast-xml-parser";
-import type { StudioDocument } from "@studio/shared";
+import type { DataRow, StudioDocument } from "@studio/shared";
 
 interface QuickbaseUser {
   id: string;
@@ -228,6 +228,25 @@ async function quickbaseFetchAllRecords(
     skip += top;
   }
   return rows;
+}
+
+export async function fetchQuickbaseTableRows(
+  config: StudioDocument["quickbase"],
+  tableId: string,
+  fieldIds: string[],
+  options: { top?: number } = {}
+): Promise<DataRow[]> {
+  if (!hasQuickbaseConnection(config) || !tableId) return [];
+  const select = Array.from(new Set((fieldIds || []).filter(Boolean)));
+  if (!select.length) return [];
+  const rows = await quickbaseFetchAllRecords(config, tableId, select, "", { top: options.top || 250 });
+  return rows.map((row) => {
+    const data: DataRow = {};
+    select.forEach((fieldId) => {
+      data[fieldId] = qbFieldValue(row, fieldId);
+    });
+    return data;
+  });
 }
 
 async function quickbaseWriteRecordsXml(

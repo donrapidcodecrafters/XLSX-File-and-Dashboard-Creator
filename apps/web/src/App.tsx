@@ -73,34 +73,80 @@ function ObjectPage({ tables }: { tables: TableDefinition[] }) {
   return <DashboardView dashboard={object} />;
 }
 
+function ViewerPage({ objects }: { objects: CatalogSummaryItem[] }) {
+  const [query, setQuery] = useState("");
+  const filtered = useMemo(() => {
+    const text = query.trim().toLowerCase();
+    if (!text) return objects;
+    return objects.filter((object) =>
+      [object.name, object.description, object.folder, object.category, object.tags.join(" ")].join(" ").toLowerCase().includes(text)
+    );
+  }, [objects, query]);
+
+  return (
+    <section className="surface stack viewer-page">
+      <div className="hero">
+        <div>
+          <span className="badge brand">Viewing</span>
+          <h1>Open Reports and Dashboards</h1>
+          <p>Choose any saved report or dashboard to open it full screen with its live filters and navigation controls.</p>
+        </div>
+        <div className="link-toolbar">
+          <Link className="ghost-button" to="/studio">Open building area</Link>
+        </div>
+      </div>
+
+      <label className="field">
+        <span>Search</span>
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search reports and dashboards" />
+      </label>
+
+      <div className="viewer-grid">
+        {filtered.map((object) => (
+          <Link key={object.id} className="viewer-card" to={`/${object.type}/${object.id}`}>
+            <span className="badge">{typeLabel(object.type)}</span>
+            <strong>{object.name}</strong>
+            <span>{object.description || "No description yet."}</span>
+            <span className="micro">{object.folder} · {object.category}</span>
+          </Link>
+        ))}
+        {!filtered.length ? <div className="empty-page">No reports or dashboards match this search.</div> : null}
+      </div>
+    </section>
+  );
+}
+
 export function App() {
   const { objects, tables, studioDocument } = useCatalog();
   const location = useLocation();
   const hosted = useMemo(() => getHostedContext(), [location.key]);
   const studioRoute = location.pathname.startsWith("/studio");
+  const viewerRoute = location.pathname === "/viewer";
   const readerRoute = /^\/(report|dashboard)\//.test(location.pathname);
   const platformName = studioDocument?.branding.platformName || "Reporting Portal";
   const navLabel = studioDocument?.branding.navigationLabel || "Reports and Dashboards";
   const readerFullScreen = readerRoute || hosted.mode === "viewer" || hosted.embed;
+  const hideSidebar = hosted.embed || studioRoute || readerRoute || viewerRoute;
 
   return (
     <div className={`app-shell ${hosted.embed ? "embed-shell" : ""} ${readerFullScreen ? "reader-shell" : ""}`}>
       {hosted.embed || readerRoute ? null : (
         <header className="topbar">
           <div>
-            <div className="eyebrow">{studioRoute ? "Workspace" : "Viewer"}</div>
+            <div className="eyebrow">{studioRoute ? "Building" : viewerRoute ? "Viewing" : "Viewer"}</div>
             <h1>{platformName}</h1>
           </div>
           <div className="topbar-meta">
-            <Link className="badge brand" to="/studio">Workspace</Link>
+            <Link className="badge brand" to="/studio">Building</Link>
+            <Link className="badge brand" to="/viewer">Viewing</Link>
             <span className="badge">{hosted.mode === "viewer" ? "Full-screen view" : navLabel}</span>
             <span className="badge brand">{objects.length} saved views</span>
           </div>
         </header>
       )}
 
-      <div className={`main-layout ${hosted.embed || studioRoute || readerRoute ? "embed-layout" : ""} ${readerRoute ? "reader-layout" : ""}`}>
-        {hosted.embed || studioRoute || readerRoute ? null : (
+      <div className={`main-layout ${hosted.embed || studioRoute || readerRoute || viewerRoute ? "embed-layout" : ""} ${readerRoute ? "reader-layout" : ""}`}>
+        {hideSidebar ? null : (
           <aside className="sidebar">
             <div className="sidebar-head">
               <strong>{navLabel}</strong>
@@ -120,11 +166,12 @@ export function App() {
 
         <main className={`content ${readerRoute ? "reader-content" : ""}`}>
           <Routes>
-            <Route path="/" element={<Navigate to="/studio" replace />} />
+            <Route path="/" element={<Navigate to="/viewer" replace />} />
+            <Route path="/viewer" element={<ViewerPage objects={objects} />} />
             <Route path="/studio" element={<StudioPage />} />
             <Route path="/studio/:objectId" element={<StudioPage />} />
             <Route path="/:type/:objectId" element={<ObjectPage tables={tables} />} />
-            <Route path="*" element={<Navigate to="/studio" replace />} />
+            <Route path="*" element={<Navigate to="/viewer" replace />} />
           </Routes>
         </main>
       </div>

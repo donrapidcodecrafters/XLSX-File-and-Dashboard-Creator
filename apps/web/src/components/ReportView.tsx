@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import type { ReportDefinition, ReportRunResult, TableDefinition } from "@studio/shared";
 import { LinkToolbar } from "./LinkToolbar";
 
@@ -17,7 +18,14 @@ export function ReportView({ report, table, result, loading }: ReportViewProps) 
           <h1>{report.name}</h1>
           <p>{report.description || "Full-screen report view with live data, summaries, charts, and detail rows."}</p>
         </div>
-        <LinkToolbar type="report" id={report.id} />
+        <div className="stack-compact reader-actions">
+          <div className="link-toolbar">
+            <button className="ghost-button" onClick={() => window.history.back()}>Back</button>
+            <Link className="ghost-button" to="/viewer">Home</Link>
+            <Link className="ghost-button" to={`/studio/${report.id}`}>Open in building area</Link>
+          </div>
+          <LinkToolbar type="report" id={report.id} />
+        </div>
       </div>
 
       <div className="summary-grid">

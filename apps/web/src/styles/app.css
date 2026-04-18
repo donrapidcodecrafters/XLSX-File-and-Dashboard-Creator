@@ -218,6 +218,10 @@ input {
   padding: 28px;
 }
 
+.viewer-page {
+  min-height: calc(100vh - 32px);
+}
+
 .content > .studio-page {
   min-height: calc(100vh - 112px);
 }
@@ -255,6 +259,10 @@ input {
   margin: 0;
   color: var(--text-soft);
   overflow-wrap: anywhere;
+}
+
+.reader-actions {
+  align-items: flex-end;
 }
 
 .link-toolbar {
@@ -385,6 +393,27 @@ th {
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
 }
 
+.viewer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+.viewer-card {
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+  border-radius: 18px;
+  background: rgba(247, 248, 243, 0.95);
+  border: 1px solid var(--line);
+}
+
+.viewer-card strong,
+.viewer-card span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .widget-card {
   display: grid;
   gap: 14px;
@@ -400,6 +429,18 @@ th {
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.dashboard-tabs {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.dashboard-tab-button.active {
+  background: rgba(13, 124, 102, 0.12);
+  border-color: rgba(13, 124, 102, 0.28);
+  color: var(--brand-deep);
 }
 
 .widget-link {

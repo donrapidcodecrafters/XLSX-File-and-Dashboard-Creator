@@ -88,3 +88,23 @@ export function fetchQuickbaseSchema(config: StudioDocument["quickbase"]) {
     })
   });
 }
+
+export function fetchQuickbaseTablePreview(
+  config: StudioDocument["quickbase"],
+  tableId: string,
+  fieldIds: string[],
+  top = 250
+) {
+  return request<{ rows: Record<string, unknown>[] }>("/api/quickbase/table-preview", {
+    method: "POST",
+    body: JSON.stringify({
+      realmHostname: config.realmHostname,
+      userToken: config.userToken,
+      appToken: config.appToken,
+      appId: config.appId,
+      tableId,
+      fieldIds,
+      top
+    })
+  });
+}
