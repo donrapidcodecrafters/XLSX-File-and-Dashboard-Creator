@@ -366,16 +366,31 @@ export async function fetchQuickbaseTableRows(
   config: StudioDocument["quickbase"],
   tableId: string,
   fieldIds: string[],
-  options: { top?: number } = {}
+  options: {
+    top?: number;
+    skip?: number;
+    where?: string;
+    sortBy?: Array<{ fieldId: string; order?: "ASC" | "DESC" }>;
+  } = {}
 ): Promise<DataRow[]> {
   if (!hasQuickbaseConnection(config) || !tableId) return [];
   const select = Array.from(new Set((fieldIds || []).filter(Boolean).map(String))).slice(0, 30);
   if (!select.length) return [];
-  const rows = await quickbaseFetchAllRecords(config, tableId, select, "", { top: options.top || 250 }).catch((error) => {
+  const rows = await quickbaseQueryRecords(
+    config,
+    tableId,
+    select,
+    options.where || "",
+    {
+      top: Math.max(1, Math.min(Number(options.top) || 250, 1000)),
+      skip: Math.max(0, Number(options.skip) || 0),
+      sortBy: options.sortBy || []
+    }
+  ).catch((error) => {
     const message = error instanceof Error ? error.message : "Quickbase table preview failed.";
     throw new Error(`Quickbase table preview failed for table ${tableId}. ${message}`);
   });
-  return rows.map((row) => {
+  return rows.data.map((row) => {
     const data: DataRow = {
       __recordId: String(qbFieldValue(row, "3") || "")
     };

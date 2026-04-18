@@ -65,7 +65,7 @@ export async function executeReport(report: ReportDefinition, extraFilters: Filt
     const quickbase = studioStore.getDocument().quickbase;
     const requestedFieldIds = collectReportFieldIds(report);
     const rows = quickbase.realmHostname && quickbase.userToken && quickbase.appId
-      ? await fetchQuickbaseTableRows(quickbase, table.id, requestedFieldIds, { top: 250 }).catch(() => objectStore.getRows(table.id))
+      ? await fetchQuickbaseTableRows(quickbase, table.id, requestedFieldIds, { top: 1000 }).catch(() => objectStore.getRows(table.id))
       : objectStore.getRows(table.id);
 
     if (rows.length <= 1500) {

@@ -70,6 +70,13 @@ export async function registerQuickbaseRoutes(app: FastifyInstance) {
       }, body.tableId || "", body.fieldIds || [], { top: body.top || 250 });
       return { rows };
     } catch (error) {
+      request.log.warn({
+        tableId: body.tableId || "",
+        fieldCount: Array.isArray(body.fieldIds) ? body.fieldIds.length : 0,
+        fieldIds: Array.isArray(body.fieldIds) ? body.fieldIds.slice(0, 12) : [],
+        top: body.top || 250,
+        error: error instanceof Error ? error.message : error
+      }, "quickbase table preview failed");
       reply.code(400);
       return {
         message: error instanceof Error
@@ -141,10 +148,17 @@ export async function registerQuickbaseRoutes(app: FastifyInstance) {
         versionChangedAtFieldId: "",
         versionChangedByFieldId: "",
         versionUpdatedByFieldId: ""
-      }, table.id, fieldIds, { top: 250 });
+      }, table.id, fieldIds, { top: 500 });
 
       return { result: runReport(report, table, rows) };
     } catch (error) {
+      request.log.warn({
+        tableId: body.table?.id || "",
+        reportId: body.report?.id || "",
+        fieldCount: Array.isArray(body.report?.selectedFieldIds) ? body.report?.selectedFieldIds.length : 0,
+        selectedFieldIds: Array.isArray(body.report?.selectedFieldIds) ? body.report?.selectedFieldIds.slice(0, 12) : [],
+        error: error instanceof Error ? error.message : error
+      }, "quickbase report preview failed");
       reply.code(400);
       return {
         message: error instanceof Error ? error.message : "Quickbase report preview failed."

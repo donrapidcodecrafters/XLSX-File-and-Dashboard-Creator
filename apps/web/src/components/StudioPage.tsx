@@ -287,6 +287,13 @@ function shouldAutoLoadQuickbaseSchema(document: StudioDocument) {
   );
 }
 
+function canUseLiveQuickbasePreview(report: ReportDefinition | null, table: TableDefinition | null) {
+  if (!report || !table) return false;
+  if (!looksLikeQuickbaseTableId(table.id)) return false;
+  const fieldIds = collectReportFieldIds(report);
+  return fieldIds.every((fieldId) => looksLikeQuickbaseFieldId(fieldId));
+}
+
 function downloadFile(filename: string, contents: string, type = "application/json") {
   const blob = new Blob([contents], { type });
   const url = URL.createObjectURL(blob);
@@ -702,6 +709,11 @@ export function StudioPage() {
       return;
     }
     if (!documentState.quickbase.realmHostname || !documentState.quickbase.userToken || !documentState.quickbase.appId) {
+      setLiveReportResult(null);
+      setLiveReportLoading(false);
+      return;
+    }
+    if (!canUseLiveQuickbasePreview(activeReport, activeTable)) {
       setLiveReportResult(null);
       setLiveReportLoading(false);
       return;
