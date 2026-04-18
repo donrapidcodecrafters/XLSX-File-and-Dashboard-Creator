@@ -481,13 +481,18 @@ async function syncObjectRecords(document: StudioDocument, user: QuickbaseUser) 
       rows.push(record);
     });
 
-    const saved = await quickbaseWriteRecords(config, config.objectTableId, rows);
+    await quickbaseWriteRecords(config, config.objectTableId, rows);
+    const verified = await quickbaseFetchRecordIdMap(config, config.objectTableId, [config.objectKeyFieldId]);
     const objectRecordIds: Record<string, string> = {};
     objects.forEach((object, index) => {
-      const rid = qbFieldValue(saved.data[index], "3") || existing.get(makeCompositeKey([object.id]));
+      const rid = verified.get(makeCompositeKey([object.id])) || existing.get(makeCompositeKey([object.id]));
       if (rid) objectRecordIds[object.id] = String(rid);
     });
-    return { count: objects.length, objectRecordIds };
+    const verifiedCount = Object.keys(objectRecordIds).length;
+    if (objects.length && !verifiedCount) {
+      throw new Error(`Quickbase accepted the save request but no records could be verified afterward in table ${config.objectTableId}.`);
+    }
+    return { count: verifiedCount, objectRecordIds };
   } catch (error) {
     throw new Error(
       `Saving reports and dashboards to table ${config.objectTableId} failed. ${error instanceof Error ? error.message : "Unknown Quickbase error."}`
@@ -560,7 +565,14 @@ async function syncSettingsRecords(document: StudioDocument, user: QuickbaseUser
     rows.push(userSettingsRecord);
 
     await quickbaseWriteRecords(config, config.settingsTableId, rows);
-    return { count: 2, storageConfigCount: 1 };
+    const verified = await quickbaseFetchRecordIdMap(config, config.settingsTableId, [config.settingsUserFieldId, config.settingsObjectKeyFieldId], { where });
+    const verifiedStorage = verified.get(makeCompositeKey([userValue, STORAGE_CONFIG_KEY])) ? 1 : 0;
+    const verifiedUserSettings = verified.get(makeCompositeKey([userValue, USER_SETTINGS_KEY])) ? 1 : 0;
+    const verifiedCount = verifiedStorage + verifiedUserSettings;
+    if (!verifiedCount) {
+      throw new Error(`Quickbase accepted the save request but no user settings rows could be verified afterward in table ${config.settingsTableId}.`);
+    }
+    return { count: verifiedCount, storageConfigCount: verifiedStorage };
   } catch (error) {
     throw new Error(
       `Saving user settings to table ${config.settingsTableId} failed. ${error instanceof Error ? error.message : "Unknown Quickbase error."}`
@@ -600,7 +612,17 @@ async function syncVersionRecords(document: StudioDocument, user: QuickbaseUser,
 
     if (!rows.length) return { count: 0 };
     await quickbaseWriteRecords(config, config.versionTableId, rows);
-    return { count: rows.length };
+    const verified = await quickbaseFetchRecordIdMap(config, config.versionTableId, [config.versionObjectKeyFieldId, config.versionChangedAtFieldId]);
+    let verifiedCount = 0;
+    Object.entries(document.versions || {}).forEach(([objectId, versions]) => {
+      (versions || []).forEach((entry) => {
+        const changedAt = entry.savedAt || "";
+        if (changedAt && verified.get(makeCompositeKey([objectId, changedAt]))) {
+          verifiedCount += 1;
+        }
+      });
+    });
+    return { count: verifiedCount };
   } catch (error) {
     throw new Error(
       `Saving version history to table ${config.versionTableId} failed. ${error instanceof Error ? error.message : "Unknown Quickbase error."}`
@@ -643,10 +665,12 @@ export async function syncStudioDocumentToQuickbase(document: StudioDocument): P
   const { count: savedSettings, storageConfigCount: savedStorageConfig } = await syncSettingsRecords(document, user);
   const { count: savedVersions } = await syncVersionRecords(document, user, objectRecordIds);
 
+  const allVerified = savedObjects > 0 || savedSettings > 0 || savedVersions > 0;
+
   return {
     enabled: true,
-    ok: true,
-    message: "Saved to Quickbase tables.",
+    ok: allVerified,
+    message: allVerified ? "Saved to Quickbase tables." : "Quickbase save requests completed, but no rows could be verified afterward.",
     savedObjects,
     savedSettings,
     savedVersions,
