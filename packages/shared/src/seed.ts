@@ -263,6 +263,20 @@ export function buildStudioDocument(): StudioDocument {
     bundle,
     favorites: ["dashboard-executive-pulse"],
     recent: ["dashboard-executive-pulse"],
+    branding: {
+      platformName: "Cadence Reporting Portal",
+      navigationLabel: "Reports and Dashboards",
+      homeLabel: "Workspace"
+    },
+    quickbase: {
+      realmHostname: "",
+      userToken: "",
+      appId: "",
+      apiBaseUrl: "https://api.quickbase.com/v1",
+      objectTableId: "",
+      settingsTableId: "",
+      versionTableId: ""
+    },
     templates: {
       layouts: dashboard ? [{
         id: "template-layout-executive",
@@ -296,6 +310,48 @@ export function buildStudioDocument(): StudioDocument {
       providerMode: "api",
       lastSavedAt: "",
       lastLoadedAt: ""
+    }
+  };
+}
+
+export function normalizeStudioDocument(input: Partial<StudioDocument> | null | undefined): StudioDocument {
+  const defaults = buildStudioDocument();
+  const source = input || {};
+  return {
+    ...defaults,
+    ...source,
+    bundle: {
+      ...defaults.bundle,
+      ...(source.bundle || {}),
+      app: {
+        ...defaults.bundle.app,
+        ...(source.bundle?.app || {})
+      },
+      tables: source.bundle?.tables || defaults.bundle.tables,
+      data: source.bundle?.data || defaults.bundle.data,
+      objects: source.bundle?.objects || defaults.bundle.objects,
+      order: source.bundle?.order || defaults.bundle.order
+    },
+    branding: {
+      ...defaults.branding,
+      ...(source.branding || {})
+    },
+    quickbase: {
+      ...defaults.quickbase,
+      ...(source.quickbase || {})
+    },
+    templates: {
+      layouts: source.templates?.layouts || defaults.templates.layouts,
+      yaml: source.templates?.yaml || defaults.templates.yaml,
+      upload: source.templates?.upload || defaults.templates.upload
+    },
+    versions: source.versions || defaults.versions,
+    exportJobs: source.exportJobs || defaults.exportJobs,
+    favorites: source.favorites || defaults.favorites,
+    recent: source.recent || defaults.recent,
+    sync: {
+      ...defaults.sync,
+      ...(source.sync || {})
     }
   };
 }

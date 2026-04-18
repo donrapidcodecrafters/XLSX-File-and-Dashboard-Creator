@@ -44,7 +44,7 @@ export function DashboardView({ dashboard }: DashboardViewProps) {
         <div>
           <span className="badge brand">Dashboard</span>
           <h1>{dashboard.name}</h1>
-          <p>{dashboard.description || "Worker-backed dashboard render with direct links for every hosted object."}</p>
+          <p>{dashboard.description || "Full-screen dashboard view with live filters, summaries, and linked reports."}</p>
         </div>
         <LinkToolbar type="dashboard" id={dashboard.id} />
       </div>
@@ -52,7 +52,7 @@ export function DashboardView({ dashboard }: DashboardViewProps) {
       {dashboard.runtimeFilters.length ? (
         <div className="card">
           <div className="card-head">
-            <strong>Runtime filters</strong>
+            <strong>Filters</strong>
             <span className="micro">Live dashboard controls</span>
           </div>
           <div className="filter-grid">
@@ -78,10 +78,10 @@ export function DashboardView({ dashboard }: DashboardViewProps) {
         const renderedTab = result?.tabs.find((item) => item.id === tab.id);
         return (
           <div className="card" key={tab.id}>
-            <div className="card-head">
-              <strong>{tab.name}</strong>
-              <span className="micro">{renderedTab?.widgets.length || 0} widgets</span>
-            </div>
+          <div className="card-head">
+            <strong>{tab.name}</strong>
+            <span className="micro">{renderedTab?.widgets.length || 0} cards</span>
+          </div>
             <div className="widget-grid">
               {(renderedTab?.widgets || []).map((widget) => (
                 <article className="widget-card" key={widget.widgetId}>

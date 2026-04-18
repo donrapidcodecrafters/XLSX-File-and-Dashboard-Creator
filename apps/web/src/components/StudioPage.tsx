@@ -4,6 +4,7 @@ import {
   buildDashboardFilters,
   buildDashboardResult,
   buildStudioDocument,
+  normalizeStudioDocument,
   runReport,
   type ChartType,
   type DashboardDefinition,
@@ -29,12 +30,13 @@ import {
   restoreStudioVersion,
   saveStudioDocument
 } from "../lib/studioApi";
+import { exportDashboardWorkbook, exportReportWorkbook } from "../lib/workbookExport";
 
 const STORAGE_KEY = "hosted-reporting-studio-v2";
 const REPORT_VIEW_OPTIONS: ReportViewMode[] = ["table", "summary", "chart", "timeline", "calendar", "kanban"];
 const CHART_OPTIONS: ChartType[] = ["bar", "column", "line", "area", "donut", "pie", "stacked-bar", "stacked-column", "funnel", "heatmap"];
 
-type DrawerKind = null | "sync" | "share" | "templates" | "export" | "versions";
+type DrawerKind = null | "settings" | "share" | "templates" | "export" | "versions";
 type LibraryFilter = "all" | "report" | "dashboard";
 type ToastTone = "ok" | "warn" | "danger";
 
@@ -52,10 +54,14 @@ function uid(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function typeLabel(type: StudioObject["type"]) {
+  return type === "report" ? "Report" : "Dashboard";
+}
+
 function loadLocalDocument() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as StudioDocument) : buildStudioDocument();
+    return raw ? normalizeStudioDocument(JSON.parse(raw) as StudioDocument) : buildStudioDocument();
   } catch {
     return buildStudioDocument();
   }
@@ -91,7 +97,7 @@ function validationMessages(object: StudioObject, table?: TableDefinition | null
     if (table && table.id !== object.sourceTableId) messages.push("Report source table is invalid.");
   } else {
     if (!object.tabs.length) messages.push("Add at least one dashboard tab.");
-    if (!object.tabs.some((tab) => tab.widgets.length)) messages.push("Add at least one widget.");
+    if (!object.tabs.some((tab) => tab.widgets.length)) messages.push("Add at least one card.");
   }
   return messages;
 }
@@ -231,8 +237,8 @@ function DashboardPreview({
       {dashboard.runtimeFilters.length ? (
         <section className="card">
           <div className="card-head">
-            <strong>Runtime Filters</strong>
-            <span className="micro">Viewer-safe dashboard controls</span>
+            <strong>Filters</strong>
+            <span className="micro">Live dashboard controls</span>
           </div>
           <div className="filter-grid">
             {dashboard.runtimeFilters.map((filter) => (
@@ -253,7 +259,7 @@ function DashboardPreview({
           <section className="card" key={tab.id}>
             <div className="card-head">
               <strong>{tab.name}</strong>
-              <span className="micro">{widgets.length} widgets</span>
+              <span className="micro">{widgets.length} cards</span>
             </div>
             <div className="widget-grid">
               {widgets.map((widget) => (
@@ -351,7 +357,7 @@ export function StudioPage() {
     fetchStudioDocument()
       .then((response) => {
         if (!active) return;
-        const next = response.document;
+        const next = normalizeStudioDocument(response.document);
         next.sync.lastLoadedAt = new Date().toISOString();
         setDocumentState(next);
       })
@@ -541,7 +547,7 @@ export function StudioPage() {
     setSavingRemote(true);
     try {
       const response = await saveStudioDocument(documentState);
-      setDocumentState(response.document);
+      setDocumentState(normalizeStudioDocument(response.document));
       pushToast("Hosted studio saved.");
     } catch (error) {
       pushToast(error instanceof Error ? error.message : "Save failed.", "danger");
@@ -553,7 +559,7 @@ export function StudioPage() {
   async function reloadRemote() {
     try {
       const response = await fetchStudioDocument();
-      setDocumentState(response.document);
+      setDocumentState(normalizeStudioDocument(response.document));
       setHistory([]);
       setFuture([]);
       pushToast("Reloaded hosted studio.");
@@ -636,7 +642,7 @@ export function StudioPage() {
     file.text().then((text) => {
       const parsed = JSON.parse(text);
       if (parsed?.bundle && parsed?.templates) {
-        setDocumentState(parsed as StudioDocument);
+        setDocumentState(normalizeStudioDocument(parsed as StudioDocument));
         pushToast("Studio document imported.");
       } else if (parsed?.type === "report" || parsed?.type === "dashboard") {
         const object = parsed as StudioObject;
@@ -672,22 +678,14 @@ export function StudioPage() {
   }
 
   async function exportWorkbook() {
-    const XLSX = await import("xlsx");
-    const workbook = XLSX.utils.book_new();
     if (activeReport && activeTable && reportResult) {
-      const rows = reportResult.rows.map((row) => Object.fromEntries(activeReport.selectedFieldIds.map((fieldId) => [activeTable.fields.find((field) => field.id === fieldId)?.label || fieldId, formatCell(row[fieldId])])));
-      XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(rows), activeReport.name.slice(0, 31));
+      await exportReportWorkbook(activeReport, activeTable, reportResult);
     } else if (activeDashboard && dashboardResult) {
-      dashboardResult.tabs.forEach((tab) => {
-        tab.widgets.forEach((widget) => {
-          const rows = widget.result.rows.map((row) => Object.fromEntries(widget.report.selectedFieldIds.map((fieldId) => [fieldId, formatCell(row[fieldId])])));
-          XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(rows), `${tab.name}-${widget.report.name}`.slice(0, 31));
-        });
-      });
+      await exportDashboardWorkbook(activeDashboard, dashboardResult);
     } else {
-      XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(bundle.order.map((id) => ({ id, name: bundle.objects[id]?.name || "", type: bundle.objects[id]?.type || "" }))), "Catalog");
+      pushToast("Open a report or dashboard before exporting.", "warn");
+      return;
     }
-    XLSX.writeFile(workbook, `${activeObject?.id || "studio"}.xlsx`);
     applyDocumentUpdate((draft) => {
       draft.exportJobs.unshift({
         id: uid("job"),
@@ -697,11 +695,11 @@ export function StudioPage() {
         createdAt: new Date().toISOString()
       });
     }, { skipHistory: true });
-    pushToast("Workbook exported.");
+    pushToast("Workbook exported with chart images.");
   }
 
   if (!activeObject) {
-    return <div className="empty-page">No studio objects available.</div>;
+    return <div className="empty-page">No saved reports or dashboards are available yet.</div>;
   }
 
   const defaultUrl = `${window.location.origin}${import.meta.env.BASE_URL}#/${activeObject.type}/${activeObject.id}`;
@@ -714,8 +712,8 @@ export function StudioPage() {
         <div className="surface stack">
           <div className="studio-section-head">
             <div>
-              <div className="eyebrow">Library</div>
-              <h2>Objects</h2>
+              <div className="eyebrow">{documentState.branding.homeLabel}</div>
+              <h2>{documentState.branding.navigationLabel}</h2>
             </div>
             <div className="studio-actions">
               <button onClick={createReport}>New report</button>
@@ -724,7 +722,7 @@ export function StudioPage() {
           </div>
           <label className="field">
             <span>Search</span>
-            <input value={libraryQuery} onChange={(event) => setLibraryQuery(event.target.value)} placeholder="Reports, dashboards, fields, tags" />
+            <input value={libraryQuery} onChange={(event) => setLibraryQuery(event.target.value)} placeholder="Search reports, dashboards, fields, tags" />
           </label>
           <div className="filter-grid compact-grid">
             <label className="field">
@@ -741,12 +739,33 @@ export function StudioPage() {
           <div className="nav-list">
             {filteredObjects.map((object) => (
               <Link key={object.id} className={`nav-card ${object.id === activeObject.id ? "active-card" : ""}`} to={`/studio/${object.id}`}>
-                <span className="badge">{object.type}</span>
+                <span className="badge">{typeLabel(object.type)}</span>
                 <strong>{object.name}</strong>
                 <span className="micro">{object.folder} · {object.category}</span>
               </Link>
             ))}
           </div>
+        </div>
+
+        <div className="surface stack">
+          <div className="card-head">
+            <strong>Platform Settings</strong>
+            <button onClick={() => setDrawer("settings")}>Open</button>
+          </div>
+          <div className="micro">
+            Set your platform name, Quickbase realm, token, app ID, and table IDs here.
+          </div>
+          <div className="summary-grid">
+            <div className="summary-card">
+              <strong>{documentState.quickbase.realmHostname || "Not set"}</strong>
+              <span>Realm</span>
+            </div>
+            <div className="summary-card">
+              <strong>{documentState.quickbase.appId || "Not set"}</strong>
+              <span>App ID</span>
+            </div>
+          </div>
+          <button onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save to server"}</button>
         </div>
 
         <div className="surface stack">
@@ -770,11 +789,11 @@ export function StudioPage() {
       <div className="studio-canvas">
         <div className="hero studio-hero">
           <div>
-            <span className="badge brand">{activeObject.type}</span>
+            <span className="badge brand">{typeLabel(activeObject.type)}</span>
             <h1>{activeObject.name}</h1>
-            <p>{activeObject.description || "Hosted studio definition with local persistence, sync, templates, versions, and export."}</p>
+            <p>{activeObject.description || "Build, save, share, and export reports and dashboards from one workspace."}</p>
             <div className="micro-row">
-              <span>{loadingRemote ? "Loading remote studio…" : "Remote studio loaded"}</span>
+              <span>{loadingRemote ? "Loading saved workspace…" : "Saved workspace loaded"}</span>
               <span>{documentState.sync.lastSavedAt ? `Last saved ${new Date(documentState.sync.lastSavedAt).toLocaleString()}` : "Not saved yet"}</span>
             </div>
           </div>
@@ -784,9 +803,9 @@ export function StudioPage() {
             <button onClick={undo} disabled={!history.length}>Undo</button>
             <button onClick={redo} disabled={!future.length}>Redo</button>
             <button onClick={() => setDrawer("share")}>Share</button>
-            <button onClick={() => setDrawer("sync")}>Sync</button>
+            <button onClick={() => setDrawer("settings")}>Settings</button>
             <button onClick={() => setDrawer("export")}>Export</button>
-            <button onClick={openVersions}>Versions</button>
+            <button onClick={openVersions}>History</button>
           </div>
         </div>
 
@@ -822,16 +841,16 @@ export function StudioPage() {
 
         {activeDashboard && dashboardResult ? (
           <section className="surface stack">
-            <div className="card-head">
-              <strong>Dashboard Preview</strong>
-              <span className="micro">{activeDashboard.tabs.length} tabs</span>
-            </div>
-            <div className="filter-grid compact-grid">
-              <label className="field">
-                <span>Widget search</span>
-                <input value={widgetSearch} onChange={(event) => setWidgetSearch(event.target.value)} placeholder="Find widgets or reports" />
-              </label>
-            </div>
+                <div className="card-head">
+                  <strong>Dashboard Preview</strong>
+                  <span className="micro">{activeDashboard.tabs.length} tabs</span>
+                </div>
+                <div className="filter-grid compact-grid">
+                  <label className="field">
+                    <span>Card search</span>
+                    <input value={widgetSearch} onChange={(event) => setWidgetSearch(event.target.value)} placeholder="Find cards or reports" />
+                  </label>
+                </div>
             <div className="studio-tab-strip">
               {activeDashboard.tabs.map((tab) => (
                 <button key={tab.id} className={tab.id === activeTabId ? "active-tab" : ""} onClick={() => setActiveTabId(tab.id)}>{tab.name}</button>
@@ -855,7 +874,7 @@ export function StudioPage() {
             <div className="studio-section-head">
               <div>
                 <div className="eyebrow">Inspector</div>
-                <h2>Report Builder</h2>
+                <h2>Report Setup</h2>
               </div>
               <button onClick={() => deleteObject(activeReport.id)}>Delete</button>
             </div>
@@ -968,7 +987,7 @@ export function StudioPage() {
             <div className="studio-section-head">
               <div>
                 <div className="eyebrow">Inspector</div>
-                <h2>Dashboard Builder</h2>
+                <h2>Dashboard Setup</h2>
               </div>
               <button onClick={() => deleteObject(activeDashboard.id)}>Delete</button>
             </div>
@@ -1005,24 +1024,30 @@ export function StudioPage() {
                         {tab.widgets.filter((widget) => !widgetSearch || `${widget.title} ${widget.reportId}`.toLowerCase().includes(widgetSearch.toLowerCase())).map((widget) => (
                           <div className="widget-edit-card" key={widget.id}>
                             <label className="field"><span>Title</span><input value={widget.title} onChange={(event) => updateObject({ ...activeDashboard, tabs: activeDashboard.tabs.map((item) => item.id === tab.id ? { ...item, widgets: item.widgets.map((candidate) => candidate.id === widget.id ? { ...candidate, title: event.target.value } : candidate) } : item) })} /></label>
-                            <div className="inline-edit-row widget-layout-row">
-                              <select value={widget.reportId} onChange={(event) => updateObject({ ...activeDashboard, tabs: activeDashboard.tabs.map((item) => item.id === tab.id ? { ...item, widgets: item.widgets.map((candidate) => candidate.id === widget.id ? { ...candidate, reportId: event.target.value, snapshot: undefined, mode: "linked" } : candidate) } : item) })}>{objects.filter((object): object is ReportDefinition => object.type === "report").map((report) => <option key={report.id} value={report.id}>{report.name}</option>)}</select>
-                              <select value={widget.mode} onChange={(event) => {
-                                const report = bundle.objects[widget.reportId] as ReportDefinition | undefined;
-                                updateObject({
-                                  ...activeDashboard,
-                                  tabs: activeDashboard.tabs.map((item) => item.id === tab.id ? {
-                                    ...item,
-                                    widgets: item.widgets.map((candidate) => candidate.id === widget.id ? { ...candidate, mode: event.target.value as "linked" | "copied", snapshot: event.target.value === "copied" && report ? clone(report) : undefined } : candidate)
-                                  } : item)
-                                });
-                              }}>
-                                <option value="linked">linked</option>
-                                <option value="copied">copied</option>
-                              </select>
-                              <label className="field-inline"><span>W</span><input type="number" value={widget.layout.w} onChange={(event) => updateObject({ ...activeDashboard, tabs: activeDashboard.tabs.map((item) => item.id === tab.id ? { ...item, widgets: item.widgets.map((candidate) => candidate.id === widget.id ? { ...candidate, layout: { ...candidate.layout, w: Number(event.target.value) || 1 } } : candidate) } : item) })} /></label>
-                              <label className="field-inline"><span>H</span><input type="number" value={widget.layout.h} onChange={(event) => updateObject({ ...activeDashboard, tabs: activeDashboard.tabs.map((item) => item.id === tab.id ? { ...item, widgets: item.widgets.map((candidate) => candidate.id === widget.id ? { ...candidate, layout: { ...candidate.layout, h: Number(event.target.value) || 1 } } : candidate) } : item) })} /></label>
-                              <button onClick={() => updateObject({ ...activeDashboard, tabs: activeDashboard.tabs.map((item) => item.id === tab.id ? { ...item, widgets: item.widgets.filter((candidate) => candidate.id !== widget.id) } : item) })}>Remove</button>
+                            <div className="widget-editor-grid">
+                              <label className="field">
+                                <span>Report</span>
+                                <select value={widget.reportId} onChange={(event) => updateObject({ ...activeDashboard, tabs: activeDashboard.tabs.map((item) => item.id === tab.id ? { ...item, widgets: item.widgets.map((candidate) => candidate.id === widget.id ? { ...candidate, reportId: event.target.value, snapshot: undefined, mode: "linked" } : candidate) } : item) })}>{objects.filter((object): object is ReportDefinition => object.type === "report").map((report) => <option key={report.id} value={report.id}>{report.name}</option>)}</select>
+                              </label>
+                              <label className="field">
+                                <span>Connection</span>
+                                <select value={widget.mode} onChange={(event) => {
+                                  const report = bundle.objects[widget.reportId] as ReportDefinition | undefined;
+                                  updateObject({
+                                    ...activeDashboard,
+                                    tabs: activeDashboard.tabs.map((item) => item.id === tab.id ? {
+                                      ...item,
+                                      widgets: item.widgets.map((candidate) => candidate.id === widget.id ? { ...candidate, mode: event.target.value as "linked" | "copied", snapshot: event.target.value === "copied" && report ? clone(report) : undefined } : candidate)
+                                    } : item)
+                                  });
+                                }}>
+                                  <option value="linked">Live report</option>
+                                  <option value="copied">Saved copy</option>
+                                </select>
+                              </label>
+                              <label className="field-inline"><span>Width</span><input type="number" value={widget.layout.w} onChange={(event) => updateObject({ ...activeDashboard, tabs: activeDashboard.tabs.map((item) => item.id === tab.id ? { ...item, widgets: item.widgets.map((candidate) => candidate.id === widget.id ? { ...candidate, layout: { ...candidate.layout, w: Number(event.target.value) || 1 } } : candidate) } : item) })} /></label>
+                              <label className="field-inline"><span>Height</span><input type="number" value={widget.layout.h} onChange={(event) => updateObject({ ...activeDashboard, tabs: activeDashboard.tabs.map((item) => item.id === tab.id ? { ...item, widgets: item.widgets.map((candidate) => candidate.id === widget.id ? { ...candidate, layout: { ...candidate.layout, h: Number(event.target.value) || 1 } } : candidate) } : item) })} /></label>
+                              <button onClick={() => updateObject({ ...activeDashboard, tabs: activeDashboard.tabs.map((item) => item.id === tab.id ? { ...item, widgets: item.widgets.filter((candidate) => candidate.id !== widget.id) } : item) })}>Remove card</button>
                             </div>
                           </div>
                         ))}
@@ -1065,20 +1090,20 @@ export function StudioPage() {
 
         <div className="surface stack">
           <div className="card-head">
-            <strong>Quick Actions</strong>
-            <span className="micro">Reader links and backend controls</span>
+            <strong>Shortcuts</strong>
+            <span className="micro">Open, share, save, and export this workspace.</span>
           </div>
           <div className="nav-list">
             <Link className="nav-card" to={`/${activeObject.type}/${activeObject.id}`}>
-              <span className="badge">reader</span>
-              <strong>Open hosted reader</strong>
+              <span className="badge">Full screen</span>
+              <strong>Open full-screen view</strong>
               <span className="micro">{defaultUrl}</span>
             </Link>
           </div>
           <div className="studio-actions">
             <button onClick={() => addTemplate(activeObject.type === "dashboard" ? "layout" : "yaml")}>Save as template</button>
-            <button onClick={snapshotCurrentObject}>Snapshot</button>
-            <button onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save remote"}</button>
+            <button onClick={snapshotCurrentObject}>Save version</button>
+            <button onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save to server"}</button>
           </div>
         </div>
       </aside>
@@ -1087,20 +1112,66 @@ export function StudioPage() {
         <div className="studio-drawer-backdrop" onClick={() => setDrawer(null)}>
           <section className="studio-drawer" onClick={(event) => event.stopPropagation()}>
             <div className="card-head">
-              <strong>{drawer === "sync" ? "Sync" : drawer === "share" ? "Share" : drawer === "templates" ? "Templates" : drawer === "export" ? "Export" : "Versions"}</strong>
+              <strong>{drawer === "settings" ? "Settings" : drawer === "share" ? "Share" : drawer === "templates" ? "Templates" : drawer === "export" ? "Export" : "History"}</strong>
               <button onClick={() => setDrawer(null)}>Close</button>
             </div>
 
-            {drawer === "sync" ? (
+            {drawer === "settings" ? (
               <div className="stack">
                 <div className="summary-grid">
-                  <div className="summary-card"><strong>{documentState.sync.providerMode}</strong><span>Provider</span></div>
+                  <div className="summary-card"><strong>{documentState.sync.providerMode === "api" ? "Connected" : "Local draft"}</strong><span>Connection</span></div>
                   <div className="summary-card"><strong>{documentState.sync.lastLoadedAt ? new Date(documentState.sync.lastLoadedAt).toLocaleTimeString() : "n/a"}</strong><span>Last load</span></div>
                   <div className="summary-card"><strong>{documentState.sync.lastSavedAt ? new Date(documentState.sync.lastSavedAt).toLocaleTimeString() : "n/a"}</strong><span>Last save</span></div>
                 </div>
+                <label className="field">
+                  <span>Platform name</span>
+                  <input value={documentState.branding.platformName} onChange={(event) => applyDocumentUpdate((draft) => { draft.branding.platformName = event.target.value; })} />
+                </label>
+                <label className="field">
+                  <span>Navigation label</span>
+                  <input value={documentState.branding.navigationLabel} onChange={(event) => applyDocumentUpdate((draft) => { draft.branding.navigationLabel = event.target.value; })} />
+                </label>
+                <label className="field">
+                  <span>Home label</span>
+                  <input value={documentState.branding.homeLabel} onChange={(event) => applyDocumentUpdate((draft) => { draft.branding.homeLabel = event.target.value; })} />
+                </label>
+                <div className="card">
+                  <div className="card-head">
+                    <strong>Quickbase Connection</strong>
+                    <span className="micro">Enter the values needed for your live setup.</span>
+                  </div>
+                  <label className="field">
+                    <span>Realm hostname</span>
+                    <input value={documentState.quickbase.realmHostname} onChange={(event) => applyDocumentUpdate((draft) => { draft.quickbase.realmHostname = event.target.value; })} placeholder="yourrealm.quickbase.com" />
+                  </label>
+                  <label className="field">
+                    <span>User token</span>
+                    <input value={documentState.quickbase.userToken} onChange={(event) => applyDocumentUpdate((draft) => { draft.quickbase.userToken = event.target.value; })} placeholder="QB-USER-TOKEN ..." />
+                  </label>
+                  <label className="field">
+                    <span>App ID</span>
+                    <input value={documentState.quickbase.appId} onChange={(event) => applyDocumentUpdate((draft) => { draft.quickbase.appId = event.target.value; })} placeholder="App DBID" />
+                  </label>
+                  <label className="field">
+                    <span>API base URL</span>
+                    <input value={documentState.quickbase.apiBaseUrl} onChange={(event) => applyDocumentUpdate((draft) => { draft.quickbase.apiBaseUrl = event.target.value; })} placeholder="https://api.quickbase.com/v1" />
+                  </label>
+                  <label className="field">
+                    <span>Saved reports and dashboards table</span>
+                    <input value={documentState.quickbase.objectTableId} onChange={(event) => applyDocumentUpdate((draft) => { draft.quickbase.objectTableId = event.target.value; })} placeholder="Table DBID" />
+                  </label>
+                  <label className="field">
+                    <span>User settings table</span>
+                    <input value={documentState.quickbase.settingsTableId} onChange={(event) => applyDocumentUpdate((draft) => { draft.quickbase.settingsTableId = event.target.value; })} placeholder="Table DBID" />
+                  </label>
+                  <label className="field">
+                    <span>Version history table</span>
+                    <input value={documentState.quickbase.versionTableId} onChange={(event) => applyDocumentUpdate((draft) => { draft.quickbase.versionTableId = event.target.value; })} placeholder="Table DBID" />
+                  </label>
+                </div>
                 <div className="studio-actions">
-                  <button onClick={reloadRemote}>Load remote</button>
-                  <button onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save remote"}</button>
+                  <button onClick={reloadRemote}>Load from server</button>
+                  <button onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save to server"}</button>
                 </div>
               </div>
             ) : null}
@@ -1136,14 +1207,14 @@ export function StudioPage() {
             {drawer === "export" ? (
               <div className="stack">
                 <div className="studio-actions">
-                  <button onClick={exportWorkbook}>Export workbook</button>
-                  <button onClick={exportJson}>Export JSON</button>
+                  <button onClick={exportWorkbook}>Download Excel file</button>
+                  <button onClick={exportJson}>Download JSON file</button>
                 </div>
                 <div className="stack-compact">
                   {documentState.exportJobs.map((job) => (
                     <div className="card" key={job.id}>
                       <div className="card-head">
-                        <strong>{job.objectId}</strong>
+                        <strong>{bundle.objects[job.objectId]?.name || job.objectId}</strong>
                         <span className="micro">{job.format}</span>
                       </div>
                       <div className="micro">{new Date(job.createdAt).toLocaleString()}</div>
@@ -1156,7 +1227,7 @@ export function StudioPage() {
             {drawer === "versions" ? (
               <div className="stack">
                 <div className="studio-actions">
-                  <button onClick={snapshotCurrentObject}>Create snapshot</button>
+                  <button onClick={snapshotCurrentObject}>Save current version</button>
                 </div>
                 {versionList.length ? versionList.map((version) => (
                   <div className="card" key={version.id}>
@@ -1164,9 +1235,9 @@ export function StudioPage() {
                       <strong>{version.label}</strong>
                       <span className="micro">{new Date(version.savedAt).toLocaleString()}</span>
                     </div>
-                    <button onClick={() => restoreVersion(version.id)}>Restore</button>
+                    <button onClick={() => restoreVersion(version.id)}>Restore this version</button>
                   </div>
-                )) : <div className="empty">No versions yet.</div>}
+                )) : <div className="empty">No saved versions yet.</div>}
               </div>
             ) : null}
           </section>

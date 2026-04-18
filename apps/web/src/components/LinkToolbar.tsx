@@ -17,8 +17,8 @@ export function LinkToolbar({ type, id }: LinkToolbarProps) {
   return (
     <div className="link-toolbar">
       <button className="ghost-button" onClick={() => copyText(hosted)}>Copy link</button>
-      <button className="ghost-button" onClick={() => window.open(viewer, "_blank", "noopener,noreferrer")}>Viewer</button>
-      <button className="ghost-button" onClick={() => copyText(embed)}>Copy embed URL</button>
+      <button className="ghost-button" onClick={() => window.open(viewer, "_blank", "noopener,noreferrer")}>Open full-screen</button>
+      <button className="ghost-button" onClick={() => copyText(embed)}>Copy embed link</button>
     </div>
   );
 }

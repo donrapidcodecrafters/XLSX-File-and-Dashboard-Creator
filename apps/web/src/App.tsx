@@ -1,22 +1,29 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
-import type { CatalogSummaryItem, ReportDefinition, StudioObject, TableDefinition } from "@studio/shared";
+import { normalizeStudioDocument, type CatalogSummaryItem, type ReportDefinition, type StudioDocument, type StudioObject, type TableDefinition } from "@studio/shared";
 import { DashboardView } from "./components/DashboardView";
 import { ReportView } from "./components/ReportView";
 import { StudioPage } from "./components/StudioPage";
 import { fetchCatalog, fetchObject, fetchTables, runReport } from "./lib/api";
 import { getHostedContext } from "./lib/embed";
+import { fetchStudioDocument } from "./lib/studioApi";
+
+function typeLabel(type: "report" | "dashboard") {
+  return type === "report" ? "Report" : "Dashboard";
+}
 
 function useCatalog() {
   const [objects, setObjects] = useState<CatalogSummaryItem[]>([]);
   const [tables, setTables] = useState<TableDefinition[]>([]);
+  const [studioDocument, setStudioDocument] = useState<StudioDocument | null>(null);
 
   useEffect(() => {
     fetchCatalog().then((response) => setObjects(response.objects));
     fetchTables().then((response) => setTables(response.tables));
+    fetchStudioDocument().then((response) => setStudioDocument(normalizeStudioDocument(response.document))).catch(() => undefined);
   }, []);
 
-  return { objects, tables };
+  return { objects, tables, studioDocument };
 }
 
 function ObjectPage({ tables }: { tables: TableDefinition[] }) {
@@ -50,13 +57,13 @@ function ObjectPage({ tables }: { tables: TableDefinition[] }) {
 
   useEffect(() => {
     if (object) {
-      document.title = object.name + " · Hosted Reporting Platform";
+      document.title = object.name + " · Reporting Portal";
     }
   }, [object]);
 
   if (!params.objectId) return null;
-  if (!object && loading) return <div className="empty-page">Loading object…</div>;
-  if (!object) return <div className="empty-page">Object not found.</div>;
+  if (!object && loading) return <div className="empty-page">Loading report or dashboard…</div>;
+  if (!object) return <div className="empty-page">That report or dashboard could not be found.</div>;
 
   if (object.type === "report") {
     const table = tables.find((item) => item.id === object.sourceTableId);
@@ -67,39 +74,42 @@ function ObjectPage({ tables }: { tables: TableDefinition[] }) {
 }
 
 export function App() {
-  const { objects, tables } = useCatalog();
+  const { objects, tables, studioDocument } = useCatalog();
   const location = useLocation();
   const hosted = useMemo(() => getHostedContext(), [location.key]);
-  const initial = objects[0];
   const studioRoute = location.pathname.startsWith("/studio");
+  const readerRoute = /^\/(report|dashboard)\//.test(location.pathname);
+  const platformName = studioDocument?.branding.platformName || "Reporting Portal";
+  const navLabel = studioDocument?.branding.navigationLabel || "Reports and Dashboards";
+  const readerFullScreen = readerRoute || hosted.mode === "viewer" || hosted.embed;
 
   return (
-    <div className={`app-shell ${hosted.embed ? "embed-shell" : ""}`}>
-      {hosted.embed ? null : (
+    <div className={`app-shell ${hosted.embed ? "embed-shell" : ""} ${readerFullScreen ? "reader-shell" : ""}`}>
+      {hosted.embed || readerRoute ? null : (
         <header className="topbar">
           <div>
-            <div className="eyebrow">Hosted Reporting Platform</div>
-            <h1>Studio Builder + Hosted Views</h1>
+            <div className="eyebrow">{studioRoute ? "Workspace" : "Viewer"}</div>
+            <h1>{platformName}</h1>
           </div>
           <div className="topbar-meta">
-            <Link className="badge brand" to="/studio">Studio</Link>
-            <span className="badge">{hosted.mode === "viewer" ? "Viewer" : "Builder shell"}</span>
-            <span className="badge brand">{objects.length} objects</span>
+            <Link className="badge brand" to="/studio">Workspace</Link>
+            <span className="badge">{hosted.mode === "viewer" ? "Full-screen view" : navLabel}</span>
+            <span className="badge brand">{objects.length} saved views</span>
           </div>
         </header>
       )}
 
-      <div className={`main-layout ${hosted.embed || studioRoute ? "embed-layout" : ""}`}>
-        {hosted.embed || studioRoute ? null : (
+      <div className={`main-layout ${hosted.embed || studioRoute || readerRoute ? "embed-layout" : ""} ${readerRoute ? "reader-layout" : ""}`}>
+        {hosted.embed || studioRoute || readerRoute ? null : (
           <aside className="sidebar">
             <div className="sidebar-head">
-              <strong>Objects</strong>
-              <span className="micro">Every report and dashboard has its own link.</span>
+              <strong>{navLabel}</strong>
+              <span className="micro">Open a report or dashboard directly.</span>
             </div>
             <nav className="nav-list">
               {objects.map((object) => (
                 <Link key={object.id} className="nav-card" to={`/${object.type}/${object.id}`}>
-                  <span className="badge">{object.type}</span>
+                  <span className="badge">{typeLabel(object.type)}</span>
                   <strong>{object.name}</strong>
                   <span className="micro">{object.folder} · {object.category}</span>
                 </Link>
@@ -108,7 +118,7 @@ export function App() {
           </aside>
         )}
 
-        <main className="content">
+        <main className={`content ${readerRoute ? "reader-content" : ""}`}>
           <Routes>
             <Route path="/" element={<Navigate to="/studio" replace />} />
             <Route path="/studio" element={<StudioPage />} />

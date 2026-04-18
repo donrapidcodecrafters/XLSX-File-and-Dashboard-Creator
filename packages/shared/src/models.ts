@@ -205,6 +205,20 @@ export interface StudioDocument {
   bundle: SeedBundle;
   favorites: string[];
   recent: string[];
+  branding: {
+    platformName: string;
+    navigationLabel: string;
+    homeLabel: string;
+  };
+  quickbase: {
+    realmHostname: string;
+    userToken: string;
+    appId: string;
+    apiBaseUrl: string;
+    objectTableId: string;
+    settingsTableId: string;
+    versionTableId: string;
+  };
   templates: {
     layouts: StudioTemplateRecord[];
     yaml: StudioTemplateRecord[];

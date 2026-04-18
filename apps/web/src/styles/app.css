@@ -21,6 +21,7 @@ html, body, #root {
   min-height: 100%;
   font-family: var(--sans);
   color: var(--text);
+  overflow-x: hidden;
   background:
     radial-gradient(circle at top left, rgba(216, 141, 61, 0.12), transparent 36%),
     radial-gradient(circle at top right, rgba(13, 124, 102, 0.18), transparent 28%),
@@ -65,9 +66,16 @@ input {
   gap: 16px;
   min-height: 100vh;
   padding: 16px;
+  width: 100%;
+  overflow-x: hidden;
 }
 
 .embed-shell {
+  padding: 0;
+  gap: 0;
+}
+
+.reader-shell {
   padding: 0;
   gap: 0;
 }
@@ -166,6 +174,18 @@ input {
 
 .content {
   min-width: 0;
+  overflow-x: hidden;
+}
+
+.reader-content {
+  padding: 0;
+}
+
+.reader-content .surface {
+  min-height: 100vh;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 28px;
 }
 
 .content > .studio-page {
@@ -381,8 +401,13 @@ th {
 
 .studio-page {
   display: grid;
-  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr) minmax(300px, 360px);
+  grid-template-columns: minmax(0, 260px) minmax(0, 1fr) minmax(0, 320px);
   gap: 16px;
+  min-width: 0;
+}
+
+.studio-page > * {
+  min-width: 0;
 }
 
 .studio-library,
@@ -482,15 +507,6 @@ th {
   font-size: 12px;
 }
 
-.inline-edit-row {
-  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
-}
-
-.inline-edit-row input,
-.inline-edit-row select {
-  width: 100%;
-}
-
 .compact-grid {
   align-items: end;
 }
@@ -557,6 +573,13 @@ th {
 
 .widget-layout-row {
   grid-template-columns: minmax(0, 1.4fr) 120px 84px 84px auto;
+}
+
+.widget-editor-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) 110px 110px auto;
+  gap: 10px;
+  align-items: end;
 }
 
 .field-inline {
@@ -644,6 +667,7 @@ select {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .widget-editor-grid,
   .inline-edit-row {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -654,5 +678,31 @@ select {
 
   .studio-drawer {
     width: 100%;
+  }
+}
+
+@media (max-width: 1600px) {
+  .studio-page {
+    grid-template-columns: minmax(0, 240px) minmax(0, 1fr);
+  }
+
+  .studio-inspector {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 1320px) {
+  .studio-page {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 920px) {
+  .reader-content .surface {
+    padding: 18px 14px;
+  }
+
+  table {
+    min-width: 560px;
   }
 }

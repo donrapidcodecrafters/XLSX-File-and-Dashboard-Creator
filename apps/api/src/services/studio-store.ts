@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { buildStudioDocument, type StudioDocument, type StudioObject, type StudioVersionRecord } from "@studio/shared";
+import { buildStudioDocument, normalizeStudioDocument, type StudioDocument, type StudioObject, type StudioVersionRecord } from "@studio/shared";
 
 const STORAGE_PATH = resolve(process.cwd(), ".data/studio-document.json");
 
@@ -18,7 +18,7 @@ export class StudioStore {
   private load(): StudioDocument {
     try {
       const raw = readFileSync(STORAGE_PATH, "utf8");
-      return JSON.parse(raw) as StudioDocument;
+      return normalizeStudioDocument(JSON.parse(raw) as StudioDocument);
     } catch {
       const seed = buildStudioDocument();
       this.persist(seed);
@@ -40,7 +40,7 @@ export class StudioStore {
   }
 
   saveDocument(document: StudioDocument) {
-    this.document = clone(document);
+    this.document = normalizeStudioDocument(clone(document));
     this.document.sync.lastSavedAt = new Date().toISOString();
     this.persist(this.document);
     return this.getDocument();

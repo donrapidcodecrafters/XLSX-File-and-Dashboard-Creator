@@ -15,7 +15,7 @@ export function ReportView({ report, table, result, loading }: ReportViewProps) 
         <div>
           <span className="badge brand">Report</span>
           <h1>{report.name}</h1>
-          <p>{report.description || "Hosted report view powered by the Node API and worker execution."}</p>
+          <p>{report.description || "Full-screen report view with live data, summaries, charts, and detail rows."}</p>
         </div>
         <LinkToolbar type="report" id={report.id} />
       </div>
@@ -53,7 +53,7 @@ export function ReportView({ report, table, result, loading }: ReportViewProps) 
 
       <div className="card">
         <div className="card-head">
-          <strong>Rows</strong>
+          <strong>Details</strong>
           <span className="micro">{result?.totalRows || 0} rows</span>
         </div>
         {loading ? (
