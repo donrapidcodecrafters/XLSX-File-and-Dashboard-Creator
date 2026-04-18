@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
+import { Link, NavLink, Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { normalizeStudioDocument, type CatalogSummaryItem, type ReportDefinition, type StudioDocument, type StudioObject, type TableDefinition } from "@studio/shared";
 import { DashboardView } from "./components/DashboardView";
 import { ReportView } from "./components/ReportView";
@@ -163,8 +163,10 @@ export function App() {
             <h1>{platformName}</h1>
           </div>
           <div className="topbar-meta">
-            <Link className="badge brand" to="/studio">Building</Link>
-            <Link className="badge brand" to="/viewer">Viewing</Link>
+            <div className="topbar-nav">
+              <NavLink className={({ isActive }) => `topbar-tab${isActive ? " active" : ""}`} to="/studio">Building</NavLink>
+              <NavLink className={({ isActive }) => `topbar-tab${isActive ? " active" : ""}`} to="/viewer">Viewing</NavLink>
+            </div>
             <span className="badge">{hosted.mode === "viewer" ? "Full-screen view" : navLabel}</span>
             <span className="badge brand">{objects.length} saved views</span>
           </div>
