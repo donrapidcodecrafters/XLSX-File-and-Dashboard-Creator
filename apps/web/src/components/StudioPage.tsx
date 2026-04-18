@@ -29,7 +29,6 @@ import {
   createStudioSnapshot,
   fetchQuickbaseReportPreview,
   fetchQuickbaseSchema,
-  fetchQuickbaseTablePreview,
   fetchStudioDocument,
   type QuickbaseAppSchema,
   type QuickbaseSyncResult,
@@ -267,46 +266,6 @@ function collectReportFieldIds(report: ReportDefinition) {
       report.view.titleFieldId
     ].filter(Boolean).map(String)
   ));
-}
-
-function collectDraftFieldIds(draft: CreateObjectDraft) {
-  return Array.from(new Set(
-    [
-      ...(draft.selectedFieldIds || []),
-      ...(draft.filters || []).map((item) => item.fieldId),
-      ...(draft.sorts || []).map((item) => item.fieldId),
-      ...((draft.summaryMetrics || []).map((item) => item.fieldId)),
-      draft.view.chartFieldId,
-      draft.view.timelineDateField,
-      draft.view.timelineEndField,
-      draft.view.calendarDateField,
-      draft.view.kanbanField,
-      draft.view.titleFieldId
-    ].filter(Boolean).map(String)
-  ));
-}
-
-function mergePreviewRows(existingRows: DataRow[] | undefined, incomingRows: DataRow[]) {
-  const existing = Array.isArray(existingRows) ? existingRows : [];
-  const incoming = Array.isArray(incomingRows) ? incomingRows : [];
-  if (!existing.length) return incoming;
-  if (!incoming.length) return existing;
-  const existingById = new Map(
-    existing
-      .filter((row) => row && row.__recordId)
-      .map((row) => [String(row.__recordId), row])
-  );
-  const incomingById = new Map(
-    incoming
-      .filter((row) => row && row.__recordId)
-      .map((row) => [String(row.__recordId), row])
-  );
-  if (!existingById.size || !incomingById.size) return incoming;
-  return incoming.map((row) => {
-    const recordId = String(row.__recordId || "");
-    const prior = existingById.get(recordId);
-    return prior ? { ...prior, ...row } : row;
-  });
 }
 
 function looksLikeQuickbaseTableId(value: string) {
@@ -612,9 +571,6 @@ export function StudioPage() {
   const params = useParams();
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const schemaAutoloadedRef = useRef(false);
-  const loadedPreviewFieldIdsRef = useRef<Record<string, string[]>>({});
-  const previewLoadsRef = useRef<Set<string>>(new Set());
-  const failedPreviewKeysRef = useRef<Set<string>>(new Set());
   const [documentState, setDocumentState] = useState<StudioDocument>(() => loadLocalDocument());
   const [loadingRemote, setLoadingRemote] = useState(true);
   const [savingRemote, setSavingRemote] = useState(false);
@@ -737,63 +693,6 @@ export function StudioPage() {
       setRuntimeValues(Object.fromEntries(activeDashboard.runtimeFilters.map((filter) => [filter.id, filter.defaultValue || ""])));
     }
   }, [activeDashboard?.id]);
-
-  useEffect(() => {
-    if (!documentState.quickbase.realmHostname || !documentState.quickbase.userToken || !documentState.quickbase.appId) return;
-    const previewTargets: Array<{ table: TableDefinition; fieldIds: string[] }> = [];
-    if (createModalOpen && createDraft.type === "report" && createDraftTable) {
-      previewTargets.push({ table: createDraftTable, fieldIds: collectDraftFieldIds(createDraft) });
-    }
-
-    previewTargets.forEach(({ table, fieldIds }) => {
-      const requestedFieldIds = Array.from(new Set((fieldIds || []).filter(Boolean).map(String))).slice(0, 30);
-      if (!requestedFieldIds.length) return;
-      const previewKey = `${documentState.quickbase.realmHostname}::${documentState.quickbase.appId}::${table.id}`;
-      const loadedFieldIds = new Set((loadedPreviewFieldIdsRef.current[table.id] || []).map(String));
-      const missingFieldIds = requestedFieldIds.filter((fieldId) => !loadedFieldIds.has(fieldId));
-      const hasCachedRows = Array.isArray(bundle.data[table.id]) && bundle.data[table.id].length > 0;
-      if (!missingFieldIds.length && hasCachedRows) return;
-      if (previewLoadsRef.current.has(table.id)) return;
-      previewLoadsRef.current.add(table.id);
-
-      fetchQuickbaseTablePreview(documentState.quickbase, table.id, missingFieldIds.length ? missingFieldIds : requestedFieldIds, 250)
-        .then((response) => {
-          failedPreviewKeysRef.current.delete(previewKey);
-          applyDocumentUpdate((draft) => {
-            draft.bundle.data[table.id] = mergePreviewRows(draft.bundle.data[table.id], response.rows as DataRow[]);
-          }, { skipHistory: true });
-          loadedPreviewFieldIdsRef.current[table.id] = Array.from(new Set([
-            ...(loadedPreviewFieldIdsRef.current[table.id] || []),
-            ...(missingFieldIds.length ? missingFieldIds : requestedFieldIds)
-          ].map(String)));
-        })
-        .catch((error) => {
-          if (!failedPreviewKeysRef.current.has(previewKey)) {
-            failedPreviewKeysRef.current.add(previewKey);
-            pushToast(
-              error instanceof Error ? error.message : `Quickbase table preview failed for table ${table.name}.`,
-              "warn"
-            );
-          }
-        })
-        .finally(() => {
-          previewLoadsRef.current.delete(table.id);
-        });
-    });
-  }, [
-    createModalOpen,
-    createDraft.type,
-    createDraftTable?.id,
-    createDraft.selectedFieldIds.join("|"),
-    JSON.stringify(createDraft.filters),
-    JSON.stringify(createDraft.sorts),
-    JSON.stringify(createDraft.summaryMetrics),
-    JSON.stringify(createDraft.view),
-    bundle.data,
-    documentState.quickbase.appId,
-    documentState.quickbase.realmHostname,
-    documentState.quickbase.userToken
-  ]);
 
   useEffect(() => {
     let active = true;
