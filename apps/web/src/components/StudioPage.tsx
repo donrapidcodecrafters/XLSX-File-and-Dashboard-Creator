@@ -250,6 +250,64 @@ function buildCreateDraft(table?: TableDefinition | null, type: CreateModalType 
   };
 }
 
+function collectReportFieldIds(report: ReportDefinition) {
+  return Array.from(new Set(
+    [
+      ...(report.selectedFieldIds || []),
+      ...(report.filters || []).map((item) => item.fieldId),
+      ...(report.groups || []).map((item) => item.fieldId),
+      ...(report.sorts || []).map((item) => item.fieldId),
+      ...((report.summaryMetrics || []).map((item) => item.fieldId)),
+      report.view.chartFieldId,
+      report.view.timelineDateField,
+      report.view.timelineEndField,
+      report.view.calendarDateField,
+      report.view.kanbanField,
+      report.view.titleFieldId
+    ].filter(Boolean).map(String)
+  ));
+}
+
+function collectDraftFieldIds(draft: CreateObjectDraft) {
+  return Array.from(new Set(
+    [
+      ...(draft.selectedFieldIds || []),
+      ...(draft.filters || []).map((item) => item.fieldId),
+      ...(draft.sorts || []).map((item) => item.fieldId),
+      ...((draft.summaryMetrics || []).map((item) => item.fieldId)),
+      draft.view.chartFieldId,
+      draft.view.timelineDateField,
+      draft.view.timelineEndField,
+      draft.view.calendarDateField,
+      draft.view.kanbanField,
+      draft.view.titleFieldId
+    ].filter(Boolean).map(String)
+  ));
+}
+
+function mergePreviewRows(existingRows: DataRow[] | undefined, incomingRows: DataRow[]) {
+  const existing = Array.isArray(existingRows) ? existingRows : [];
+  const incoming = Array.isArray(incomingRows) ? incomingRows : [];
+  if (!existing.length) return incoming;
+  if (!incoming.length) return existing;
+  const existingById = new Map(
+    existing
+      .filter((row) => row && row.__recordId)
+      .map((row) => [String(row.__recordId), row])
+  );
+  const incomingById = new Map(
+    incoming
+      .filter((row) => row && row.__recordId)
+      .map((row) => [String(row.__recordId), row])
+  );
+  if (!existingById.size || !incomingById.size) return incoming;
+  return incoming.map((row) => {
+    const recordId = String(row.__recordId || "");
+    const prior = existingById.get(recordId);
+    return prior ? { ...prior, ...row } : row;
+  });
+}
+
 function downloadFile(filename: string, contents: string, type = "application/json") {
   const blob = new Blob([contents], { type });
   const url = URL.createObjectURL(blob);
@@ -533,7 +591,8 @@ export function StudioPage() {
   const navigate = useNavigate();
   const params = useParams();
   const importInputRef = useRef<HTMLInputElement | null>(null);
-  const loadedPreviewKeysRef = useRef<Set<string>>(new Set());
+  const loadedPreviewFieldIdsRef = useRef<Record<string, string[]>>({});
+  const previewLoadsRef = useRef<Set<string>>(new Set());
   const failedPreviewKeysRef = useRef<Set<string>>(new Set());
   const [documentState, setDocumentState] = useState<StudioDocument>(() => loadLocalDocument());
   const [loadingRemote, setLoadingRemote] = useState(true);
@@ -644,20 +703,37 @@ export function StudioPage() {
 
   useEffect(() => {
     if (!documentState.quickbase.realmHostname || !documentState.quickbase.userToken || !documentState.quickbase.appId) return;
-    const tablesToLoad = [activeTable, createDraftTable].filter(Boolean) as TableDefinition[];
-    tablesToLoad.forEach((table) => {
+    const previewTargets: Array<{ table: TableDefinition; fieldIds: string[] }> = [];
+    if (activeReport && activeTable) {
+      previewTargets.push({ table: activeTable, fieldIds: collectReportFieldIds(activeReport) });
+    }
+    if (createModalOpen && createDraft.type === "report" && createDraftTable) {
+      previewTargets.push({ table: createDraftTable, fieldIds: collectDraftFieldIds(createDraft) });
+    }
+
+    previewTargets.forEach(({ table, fieldIds }) => {
+      const requestedFieldIds = Array.from(new Set((fieldIds || []).filter(Boolean).map(String))).slice(0, 30);
+      if (!requestedFieldIds.length) return;
       const previewKey = `${documentState.quickbase.realmHostname}::${documentState.quickbase.appId}::${table.id}`;
-      if (loadedPreviewKeysRef.current.has(previewKey)) return;
-      loadedPreviewKeysRef.current.add(previewKey);
-      fetchQuickbaseTablePreview(documentState.quickbase, table.id, table.fields.map((field) => field.id), 250)
+      const loadedFieldIds = new Set((loadedPreviewFieldIdsRef.current[table.id] || []).map(String));
+      const missingFieldIds = requestedFieldIds.filter((fieldId) => !loadedFieldIds.has(fieldId));
+      const hasCachedRows = Array.isArray(bundle.data[table.id]) && bundle.data[table.id].length > 0;
+      if (!missingFieldIds.length && hasCachedRows) return;
+      if (previewLoadsRef.current.has(table.id)) return;
+      previewLoadsRef.current.add(table.id);
+
+      fetchQuickbaseTablePreview(documentState.quickbase, table.id, missingFieldIds.length ? missingFieldIds : requestedFieldIds, 250)
         .then((response) => {
           failedPreviewKeysRef.current.delete(previewKey);
           applyDocumentUpdate((draft) => {
-            draft.bundle.data[table.id] = response.rows as DataRow[];
+            draft.bundle.data[table.id] = mergePreviewRows(draft.bundle.data[table.id], response.rows as DataRow[]);
           }, { skipHistory: true });
+          loadedPreviewFieldIdsRef.current[table.id] = Array.from(new Set([
+            ...(loadedPreviewFieldIdsRef.current[table.id] || []),
+            ...(missingFieldIds.length ? missingFieldIds : requestedFieldIds)
+          ].map(String)));
         })
         .catch((error) => {
-          loadedPreviewKeysRef.current.delete(previewKey);
           if (!failedPreviewKeysRef.current.has(previewKey)) {
             failedPreviewKeysRef.current.add(previewKey);
             pushToast(
@@ -665,11 +741,24 @@ export function StudioPage() {
               "warn"
             );
           }
+        })
+        .finally(() => {
+          previewLoadsRef.current.delete(table.id);
         });
     });
   }, [
+    activeReport?.id,
+    activeReport?.updatedAt,
     activeTable?.id,
+    createModalOpen,
+    createDraft.type,
     createDraftTable?.id,
+    createDraft.selectedFieldIds.join("|"),
+    JSON.stringify(createDraft.filters),
+    JSON.stringify(createDraft.sorts),
+    JSON.stringify(createDraft.summaryMetrics),
+    JSON.stringify(createDraft.view),
+    bundle.data,
     documentState.quickbase.appId,
     documentState.quickbase.realmHostname,
     documentState.quickbase.userToken

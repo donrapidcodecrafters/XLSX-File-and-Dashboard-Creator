@@ -12,6 +12,24 @@ interface WorkerRequest {
   extraFilters: FilterDefinition[];
 }
 
+function collectReportFieldIds(report: ReportDefinition) {
+  return Array.from(new Set(
+    [
+      ...(report.selectedFieldIds || []),
+      ...(report.filters || []).map((item) => item.fieldId),
+      ...(report.groups || []).map((item) => item.fieldId),
+      ...(report.sorts || []).map((item) => item.fieldId),
+      ...((report.summaryMetrics || []).map((item) => item.fieldId)),
+      report.view.chartFieldId,
+      report.view.timelineDateField,
+      report.view.timelineEndField,
+      report.view.calendarDateField,
+      report.view.kanbanField,
+      report.view.titleFieldId
+    ].filter(Boolean).map(String)
+  ));
+}
+
 const cache = new ExecutionCache<ReportRunResult>(20_000);
 
 function runReportWorker(payload: WorkerRequest): Promise<ReportRunResult> {
@@ -45,8 +63,9 @@ export async function executeReport(report: ReportDefinition, extraFilters: Filt
       throw new Error("Table not found for report " + report.id + ".");
     }
     const quickbase = studioStore.getDocument().quickbase;
+    const requestedFieldIds = collectReportFieldIds(report);
     const rows = quickbase.realmHostname && quickbase.userToken && quickbase.appId
-      ? await fetchQuickbaseTableRows(quickbase, table.id, table.fields.map((field) => field.id), { top: 250 }).catch(() => objectStore.getRows(table.id))
+      ? await fetchQuickbaseTableRows(quickbase, table.id, requestedFieldIds, { top: 250 }).catch(() => objectStore.getRows(table.id))
       : objectStore.getRows(table.id);
 
     if (rows.length <= 1500) {

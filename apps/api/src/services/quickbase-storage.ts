@@ -260,14 +260,16 @@ export async function fetchQuickbaseTableRows(
   options: { top?: number } = {}
 ): Promise<DataRow[]> {
   if (!hasQuickbaseConnection(config) || !tableId) return [];
-  const select = Array.from(new Set((fieldIds || []).filter(Boolean)));
+  const select = Array.from(new Set((fieldIds || []).filter(Boolean).map(String))).slice(0, 30);
   if (!select.length) return [];
   const rows = await quickbaseFetchAllRecords(config, tableId, select, "", { top: options.top || 250 }).catch((error) => {
     const message = error instanceof Error ? error.message : "Quickbase table preview failed.";
     throw new Error(`Quickbase table preview failed for table ${tableId}. ${message}`);
   });
   return rows.map((row) => {
-    const data: DataRow = {};
+    const data: DataRow = {
+      __recordId: String(qbFieldValue(row, "3") || "")
+    };
     select.forEach((fieldId) => {
       data[fieldId] = qbFieldValue(row, fieldId);
     });
