@@ -113,6 +113,7 @@ export async function registerQuickbaseRoutes(app: FastifyInstance) {
           ...(report.sorts || []).map((item) => item.fieldId),
           ...((report.summaryMetrics || []).map((item) => item.fieldId)),
           report.view.chartFieldId,
+          report.view.chartValueFieldId,
           report.view.timelineDateField,
           report.view.timelineEndField,
           report.view.calendarDateField,

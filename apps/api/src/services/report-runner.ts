@@ -1,5 +1,5 @@
 import { Worker } from "node:worker_threads";
-import { buildDashboardFilters, buildDashboardResult, runReport, type DashboardRunResult, type DataRow, type FilterDefinition, type ReportDefinition, type ReportRunResult, type SummaryDatum, type SummaryMetric, type TableDefinition } from "@studio/shared";
+import { buildDashboardFilters, buildDashboardResult, runReport, type ChartAggregation, type DashboardRunResult, type DataRow, type FilterDefinition, type ReportDefinition, type ReportRunResult, type SummaryDatum, type SummaryMetric, type TableDefinition } from "@studio/shared";
 import { ExecutionCache } from "./execution-cache.js";
 import { objectStore } from "./object-store.js";
 import { fetchQuickbaseTablePage } from "./quickbase-storage.js";
@@ -82,6 +82,7 @@ function collectReportFieldIds(report: ReportDefinition) {
       ...(report.sorts || []).map((item) => item.fieldId),
       ...((report.summaryMetrics || []).map((item) => item.fieldId)),
       report.view.chartFieldId,
+      report.view.chartValueFieldId,
       report.view.timelineDateField,
       report.view.timelineEndField,
       report.view.calendarDateField,
@@ -255,10 +256,39 @@ function projectRows(report: ReportDefinition, rows: DataRow[]) {
   });
 }
 
-function sortChartData(chartCounts: Map<string, number>) {
-  return Array.from(chartCounts.entries())
-    .map(([label, value]) => ({ label, value }))
-    .sort((left, right) => right.value - left.value);
+function aggregateChartValues(values: number[], aggregation: ChartAggregation) {
+  if (aggregation === "count") return values.length;
+  if (!values.length) return 0;
+  if (aggregation === "sum") return values.reduce((sum, value) => sum + value, 0);
+  if (aggregation === "avg") return values.reduce((sum, value) => sum + value, 0) / values.length;
+  if (aggregation === "min") return Math.min(...values);
+  return Math.max(...values);
+}
+
+function buildChartResult(chartGroups: Map<string, number[]>, report: ReportDefinition) {
+  const aggregation = report.view.chartAggregation || "count";
+  const rows = Array.from(chartGroups.entries()).map(([label, values]) => ({
+    label,
+    value: aggregateChartValues(values, aggregation)
+  }));
+  const sort = report.view.chartSort || "value-desc";
+  if (sort === "value-asc") rows.sort((left, right) => left.value - right.value);
+  else if (sort === "label-asc") rows.sort((left, right) => left.label.localeCompare(right.label, undefined, { numeric: true }));
+  else if (sort === "label-desc") rows.sort((left, right) => right.label.localeCompare(left.label, undefined, { numeric: true }));
+  else rows.sort((left, right) => right.value - left.value);
+  const topN = Math.max(0, Number(report.view.chartTopN) || 0);
+  return topN ? rows.slice(0, topN) : rows;
+}
+
+function addChartRow(chartGroups: Map<string, number[]>, report: ReportDefinition, row: DataRow) {
+  const chartField = report.view.chartFieldId || report.groups[0]?.fieldId || report.selectedFieldIds[0] || "";
+  if (!chartField) return;
+  const key = String(row[chartField] ?? "Unassigned");
+  const aggregation = report.view.chartAggregation || "count";
+  const valueFieldId = report.view.chartValueFieldId || "";
+  const next = chartGroups.get(key) || [];
+  next.push(aggregation === "count" ? 1 : asNumber(row[valueFieldId]));
+  chartGroups.set(key, next);
 }
 
 async function fetchQuickbaseReportPageOnly(
@@ -319,7 +349,6 @@ async function executeQuickbaseReportPage(
   const metricSet = report.summaryMetrics.length
     ? report.summaryMetrics
     : [{ id: "default-count", fieldId: report.selectedFieldIds[0] || "recordId", op: "count" as const, label: "Rows" }];
-  const chartField = report.view.chartFieldId || report.groups[0]?.fieldId || report.selectedFieldIds[0] || "";
   const warnings = report.selectedFieldIds.length ? [] : ["This report has no selected fields."];
   const { where, unsupportedFilters } = buildQuickbaseWhere(filters);
   const sortBy = buildQuickbaseSort(report);
@@ -336,7 +365,7 @@ async function executeQuickbaseReportPage(
     const batchSize = 500;
     let scanSkip = 0;
     let scannedRows = 0;
-    const chartCounts = new Map<string, number>();
+    const chartGroups = new Map<string, number[]>();
     while (true) {
       const batch = await fetchQuickbaseTablePage(quickbase, table.id, requestedFieldIds, {
         top: batchSize,
@@ -348,8 +377,7 @@ async function executeQuickbaseReportPage(
       batch.rows.forEach((row) => {
         scannedRows += 1;
         addMetricRow(summaryAccumulator, row);
-        const key = String(row[chartField] ?? "Unassigned");
-        chartCounts.set(key, (chartCounts.get(key) || 0) + 1);
+        addChartRow(chartGroups, report, row);
       });
       if (batch.rows.length < batchSize) break;
       scanSkip += batchSize;
@@ -362,7 +390,7 @@ async function executeQuickbaseReportPage(
       totalRows,
       rows: projectRows(report, pageResult.rows),
       summary: finalizeMetricAccumulator(summaryAccumulator),
-      chartData: sortChartData(chartCounts),
+      chartData: buildChartResult(chartGroups, report),
       warnings,
       page,
       pageSize,
@@ -375,7 +403,7 @@ async function executeQuickbaseReportPage(
   let skip = 0;
   let totalRows = 0;
   const pageRows: DataRow[] = [];
-  const chartCounts = new Map<string, number>();
+  const chartGroups = new Map<string, number[]>();
   const summaryAccumulator = createMetricAccumulator(metricSet);
   while (true) {
     const batch = await fetchQuickbaseTablePage(quickbase, table.id, requestedFieldIds, {
@@ -390,8 +418,7 @@ async function executeQuickbaseReportPage(
         return;
       }
       addMetricRow(summaryAccumulator, row);
-      const key = String(row[chartField] ?? "Unassigned");
-      chartCounts.set(key, (chartCounts.get(key) || 0) + 1);
+      addChartRow(chartGroups, report, row);
       if (totalRows >= startIndex && totalRows < endIndexExclusive) {
         pageRows.push(row);
       }
@@ -407,7 +434,7 @@ async function executeQuickbaseReportPage(
     totalRows,
     rows: projectRows(report, pageRows),
     summary: finalizeMetricAccumulator(summaryAccumulator),
-    chartData: sortChartData(chartCounts),
+    chartData: buildChartResult(chartGroups, report),
     warnings,
     page,
     pageSize,

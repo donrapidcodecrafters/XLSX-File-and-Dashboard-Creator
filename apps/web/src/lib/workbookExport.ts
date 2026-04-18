@@ -229,6 +229,104 @@ function drawPieChart(ctx: CanvasRenderingContext2D, data: ChartDatum[], innerRa
   });
 }
 
+function drawRadarChart(ctx: CanvasRenderingContext2D, data: ChartDatum[]) {
+  const cx = 390;
+  const cy = 430;
+  const radius = 170;
+  const maxValue = Math.max(...data.map((item) => item.value), 1);
+  ctx.strokeStyle = "rgba(23,49,38,0.12)";
+  ctx.lineWidth = 2;
+  [0.25, 0.5, 0.75, 1].forEach((ratio) => {
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius * ratio, 0, Math.PI * 2);
+    ctx.stroke();
+  });
+  const points = data.map((item, index) => {
+    const angle = (-Math.PI / 2) + (index / data.length) * Math.PI * 2;
+    const scaled = (item.value / maxValue) * radius;
+    return {
+      item,
+      x: cx + Math.cos(angle) * scaled,
+      y: cy + Math.sin(angle) * scaled,
+      lx: cx + Math.cos(angle) * (radius + 24),
+      ly: cy + Math.sin(angle) * (radius + 24)
+    };
+  });
+  ctx.fillStyle = "rgba(13,124,102,0.16)";
+  ctx.beginPath();
+  points.forEach((point, index) => {
+    if (index === 0) ctx.moveTo(point.x, point.y);
+    else ctx.lineTo(point.x, point.y);
+  });
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = CHART_COLORS[0];
+  ctx.lineWidth = 4;
+  ctx.stroke();
+  points.forEach((point, index) => {
+    ctx.fillStyle = CHART_COLORS[index % CHART_COLORS.length];
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#173126";
+    ctx.font = "600 14px Manrope, sans-serif";
+    ctx.fillText(point.item.label.slice(0, 12), point.lx - 22, point.ly);
+  });
+}
+
+function drawGaugeChart(ctx: CanvasRenderingContext2D, data: ChartDatum[]) {
+  const current = data[0]?.value || 0;
+  const maxValue = Math.max(...data.map((item) => item.value), 1);
+  const percent = Math.max(0, Math.min(1, current / maxValue));
+  const cx = 390;
+  const cy = 500;
+  const radius = 180;
+  ctx.strokeStyle = "rgba(23,49,38,0.12)";
+  ctx.lineWidth = 40;
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, Math.PI, 0);
+  ctx.stroke();
+  ctx.strokeStyle = CHART_COLORS[0];
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, Math.PI, Math.PI + Math.PI * percent);
+  ctx.stroke();
+  ctx.fillStyle = "#173126";
+  ctx.font = "700 42px Manrope, sans-serif";
+  ctx.fillText(String(current), cx - 20, cy - 10);
+  ctx.fillStyle = "#5c6d63";
+  ctx.font = "600 18px Manrope, sans-serif";
+  ctx.fillText((data[0]?.label || "Current").slice(0, 18), cx - 50, cy + 28);
+}
+
+function drawWaterfallChart(ctx: CanvasRenderingContext2D, data: ChartDatum[]) {
+  const left = 70;
+  const top = 280;
+  const width = 1040;
+  const height = 360;
+  let running = 0;
+  const points = data.map((item) => {
+    const start = running;
+    running += item.value;
+    return { ...item, start, end: running };
+  });
+  const maxTotal = Math.max(...points.map((item) => item.end), 1);
+  drawAxes(ctx, left, top, width, height, maxTotal);
+  const gap = 20;
+  const barWidth = Math.max(32, (width - gap * (points.length - 1)) / Math.max(points.length, 1));
+  points.forEach((item, index) => {
+    const x = left + index * (barWidth + gap);
+    const y = top + height - (item.end / maxTotal) * (height - 24);
+    const startY = top + height - (item.start / maxTotal) * (height - 24);
+    const valueHeight = Math.max(18, startY - y);
+    ctx.fillStyle = CHART_COLORS[index % CHART_COLORS.length];
+    roundedRect(ctx, x, y, barWidth, valueHeight, 12);
+    ctx.fill();
+    ctx.fillStyle = "#173126";
+    ctx.font = "600 13px Manrope, sans-serif";
+    ctx.fillText(item.label.slice(0, 14), x, top + height + 18);
+  });
+}
+
 function renderChartImage(title: string, subtitle: string, chartType: ReportDefinition["view"]["chartType"], data: ChartDatum[], summary: SummaryDatum[]) {
   const canvas = createCanvas();
   const ctx = canvas.getContext("2d");
@@ -257,6 +355,18 @@ function renderChartImage(title: string, subtitle: string, chartType: ReportDefi
   }
   if (chartType === "line") {
     drawColumnChart(ctx, limited, { line: true });
+    return canvas.toDataURL("image/png");
+  }
+  if (chartType === "radar") {
+    drawRadarChart(ctx, limited);
+    return canvas.toDataURL("image/png");
+  }
+  if (chartType === "gauge") {
+    drawGaugeChart(ctx, limited);
+    return canvas.toDataURL("image/png");
+  }
+  if (chartType === "waterfall") {
+    drawWaterfallChart(ctx, limited);
     return canvas.toDataURL("image/png");
   }
   if (chartType === "area") {

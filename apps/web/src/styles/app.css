@@ -329,7 +329,10 @@ input {
 .area-chart,
 .stacked-columns,
 .funnel-chart,
-.heat-grid {
+.heat-grid,
+.radar-chart,
+.gauge-chart,
+.waterfall-chart {
   min-width: 0;
 }
 
@@ -478,14 +481,16 @@ input {
 }
 
 .line-chart svg,
-.area-chart svg {
+.area-chart svg,
+.radar-chart svg {
   width: 100%;
   height: 220px;
   overflow: visible;
 }
 
 .line-chart polyline,
-.area-chart polyline {
+.area-chart polyline,
+.radar-chart polyline {
   fill: none;
   stroke: var(--brand);
   stroke-width: 3;
@@ -493,8 +498,14 @@ input {
   stroke-linejoin: round;
 }
 
-.area-chart polygon {
+.area-chart polygon,
+.radar-chart polygon {
   fill: rgba(13, 124, 102, 0.16);
+}
+
+.radar-chart text {
+  fill: var(--text-soft);
+  font: 600 11px var(--sans);
 }
 
 .stacked-track {
@@ -560,6 +571,72 @@ input {
 .heat-cell span {
   color: inherit;
   overflow-wrap: anywhere;
+}
+
+.gauge-chart {
+  display: grid;
+  place-items: center;
+  padding: 12px 0;
+}
+
+.gauge-track {
+  width: min(320px, 100%);
+  aspect-ratio: 2 / 1;
+  border-top-left-radius: 320px;
+  border-top-right-radius: 320px;
+  border: 18px solid rgba(13, 124, 102, 0.12);
+  border-bottom: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.gauge-fill {
+  position: absolute;
+  inset: 0;
+  border-top-left-radius: inherit;
+  border-top-right-radius: inherit;
+  border: 18px solid transparent;
+  border-top-color: var(--brand);
+  border-left-color: var(--brand);
+  border-right-color: var(--brand);
+  border-bottom: 0;
+  transform-origin: 50% 100%;
+}
+
+.gauge-center {
+  position: absolute;
+  inset: auto 0 18px;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+}
+
+.gauge-center strong {
+  font-size: 28px;
+}
+
+.waterfall-chart {
+  display: grid;
+  gap: 10px;
+}
+
+.waterfall-row {
+  display: grid;
+  grid-template-columns: minmax(0, 160px) minmax(0, 1fr) minmax(44px, auto);
+  gap: 12px;
+  align-items: center;
+}
+
+.waterfall-track {
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(13, 124, 102, 0.08);
+  overflow: hidden;
+}
+
+.waterfall-bar {
+  height: 100%;
+  border-radius: inherit;
 }
 
 .table-shell {

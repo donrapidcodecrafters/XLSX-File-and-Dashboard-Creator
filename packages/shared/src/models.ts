@@ -4,7 +4,9 @@ export type FilterOperator = "equals" | "contains" | "gt" | "gte" | "lt" | "lte"
 export type SortDirection = "asc" | "desc";
 export type WidgetMode = "linked" | "copied";
 export type ReportViewMode = "table" | "summary" | "chart" | "timeline" | "calendar" | "kanban";
-export type ChartType = "bar" | "column" | "line" | "area" | "donut" | "pie" | "stacked-bar" | "stacked-column" | "funnel" | "heatmap";
+export type ChartType = "bar" | "column" | "line" | "area" | "donut" | "pie" | "stacked-bar" | "stacked-column" | "funnel" | "heatmap" | "radar" | "gauge" | "waterfall";
+export type ChartAggregation = "count" | "sum" | "avg" | "min" | "max";
+export type ChartSortMode = "value-desc" | "value-asc" | "label-asc" | "label-desc";
 export type RuntimeFilterMode = "global" | "selected";
 
 export type DataValue = string | number | boolean | null | string[];
@@ -53,6 +55,12 @@ export interface ReportViewDefinition {
   mode: ReportViewMode;
   chartType: ChartType;
   chartFieldId: string;
+  chartValueFieldId: string;
+  chartAggregation: ChartAggregation;
+  chartTopN: number;
+  chartSort: ChartSortMode;
+  chartShowLegend: boolean;
+  chartShowValues: boolean;
   timelineDateField: string;
   timelineEndField: string;
   calendarDateField: string;

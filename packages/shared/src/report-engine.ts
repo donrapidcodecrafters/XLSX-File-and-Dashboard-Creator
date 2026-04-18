@@ -1,8 +1,10 @@
 import type {
   ChartDatum,
+  ChartSortMode,
   DashboardDefinition,
   DashboardRunResult,
   DashboardWidgetResult,
+  ChartAggregation,
   DataRow,
   FieldDefinition,
   FilterDefinition,
@@ -113,16 +115,45 @@ function summarize(rows: DataRow[], metrics: SummaryMetric[]): SummaryDatum[] {
   });
 }
 
-function chartRows(rows: DataRow[], fieldId: string): ChartDatum[] {
+function aggregateValues(values: number[], aggregation: ChartAggregation): number {
+  if (aggregation === "count") return values.length;
+  if (!values.length) return 0;
+  if (aggregation === "sum") return values.reduce((sum, value) => sum + value, 0);
+  if (aggregation === "avg") return values.reduce((sum, value) => sum + value, 0) / values.length;
+  if (aggregation === "min") return Math.min(...values);
+  return Math.max(...values);
+}
+
+function sortChartData(data: ChartDatum[], sort: ChartSortMode) {
+  const next = [...data];
+  if (sort === "value-asc") return next.sort((left, right) => left.value - right.value);
+  if (sort === "label-asc") return next.sort((left, right) => left.label.localeCompare(right.label, undefined, { numeric: true }));
+  if (sort === "label-desc") return next.sort((left, right) => right.label.localeCompare(left.label, undefined, { numeric: true }));
+  return next.sort((left, right) => right.value - left.value);
+}
+
+function chartRows(rows: DataRow[], report: ReportDefinition): ChartDatum[] {
+  const fieldId = report.view.chartFieldId || report.groups[0]?.fieldId || report.selectedFieldIds[0] || "";
   if (!fieldId) return [];
-  const groups = new Map<string, number>();
+  const valueFieldId = report.view.chartValueFieldId || "";
+  const aggregation = report.view.chartAggregation || "count";
+  const groups = new Map<string, number[]>();
   for (const row of rows) {
     const key = String(row[fieldId] ?? "Unassigned");
-    groups.set(key, (groups.get(key) || 0) + 1);
+    const numericValue = aggregation === "count" ? 1 : asNumber(row[valueFieldId]);
+    const existing = groups.get(key) || [];
+    existing.push(numericValue);
+    groups.set(key, existing);
   }
-  return Array.from(groups.entries())
-    .map(([label, value]) => ({ label, value }))
-    .sort((left, right) => right.value - left.value);
+  const sorted = sortChartData(
+    Array.from(groups.entries()).map(([label, values]) => ({
+      label,
+      value: aggregateValues(values, aggregation)
+    })),
+    report.view.chartSort || "value-desc"
+  );
+  const topN = Math.max(0, Number(report.view.chartTopN) || 0);
+  return topN ? sorted.slice(0, topN) : sorted;
 }
 
 export function runReport(
@@ -144,7 +175,6 @@ export function runReport(
   const metricSet = report.summaryMetrics.length
     ? report.summaryMetrics
     : [{ id: "default-count", fieldId: report.selectedFieldIds[0] || "recordId", op: "count" as const, label: "Rows" }];
-  const chartField = report.view.chartFieldId || report.groups[0]?.fieldId || report.selectedFieldIds[0] || "";
   const warnings = report.selectedFieldIds.length ? [] : ["This report has no selected fields."];
   const titleField = report.view.titleFieldId || report.selectedFieldIds[0] || "";
   const normalizedRows = projected.map((row) => ({
@@ -158,7 +188,7 @@ export function runReport(
     totalRows: normalizedRows.length,
     rows: normalizedRows,
     summary: summarize(sorted, metricSet),
-    chartData: chartRows(sorted, chartField),
+    chartData: chartRows(sorted, report),
     warnings
   };
 }

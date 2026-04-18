@@ -1,7 +1,10 @@
 import { Link } from "react-router-dom";
+import { useState } from "react";
 import type { ReportDefinition, ReportRunResult, TableDefinition } from "@studio/shared";
 import { LinkToolbar } from "./LinkToolbar";
 import { ChartPreview } from "./ChartPreview";
+import { fetchAllReportRows } from "../lib/api";
+import { exportReportWorkbook } from "../lib/workbookExport";
 
 interface ReportViewProps {
   report: ReportDefinition;
@@ -14,6 +17,19 @@ interface ReportViewProps {
 
 export function ReportView({ report, table, result, loading, currentPage, onPageChange }: ReportViewProps) {
   const totalPages = result?.totalPages || 1;
+  const [exporting, setExporting] = useState(false);
+
+  async function exportWorkbook() {
+    if (!table || !result) return;
+    setExporting(true);
+    try {
+      const fullRows = await fetchAllReportRows(report.id).catch(() => result.rows);
+      await exportReportWorkbook(report, table, result, fullRows);
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <section className="surface stack">
       <div className="hero">
@@ -27,6 +43,7 @@ export function ReportView({ report, table, result, loading, currentPage, onPage
             <button className="ghost-button" onClick={() => window.history.back()}>Back</button>
             <Link className="ghost-button" to="/viewer">Home</Link>
             <Link className="ghost-button" to={`/studio/${report.id}`}>Open in building area</Link>
+            <button className="ghost-button" onClick={() => { void exportWorkbook(); }} disabled={!result || exporting}>{exporting ? "Exporting…" : "Export xlsx"}</button>
           </div>
           <LinkToolbar type="report" id={report.id} />
         </div>
@@ -49,7 +66,12 @@ export function ReportView({ report, table, result, loading, currentPage, onPage
         {loading ? (
           <div className="empty">Running report…</div>
         ) : (
-          <ChartPreview chartType={report.view.chartType} data={result?.chartData || []} />
+          <ChartPreview
+            chartType={report.view.chartType}
+            data={result?.chartData || []}
+            showLegend={report.view.chartShowLegend}
+            showValues={report.view.chartShowValues}
+          />
         )}
       </div>
 

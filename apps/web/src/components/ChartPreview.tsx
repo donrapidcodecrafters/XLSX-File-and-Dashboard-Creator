@@ -15,6 +15,8 @@ interface ChartPreviewProps {
   chartType: ChartType;
   data: ChartDatum[];
   compact?: boolean;
+  showLegend?: boolean;
+  showValues?: boolean;
 }
 
 function cap(value: string, max = 16) {
@@ -25,7 +27,7 @@ function getColor(index: number) {
   return CHART_COLORS[index % CHART_COLORS.length];
 }
 
-export function ChartPreview({ chartType, data, compact = false }: ChartPreviewProps) {
+export function ChartPreview({ chartType, data, compact = false, showLegend = true, showValues = true }: ChartPreviewProps) {
   if (!data.length) {
     return <div className="chart-empty">No chart data available.</div>;
   }
@@ -59,14 +61,16 @@ export function ChartPreview({ chartType, data, compact = false }: ChartPreviewP
             ) : null}
           </div>
         </div>
-        <div className="badge-row">
-          {items.map((item, index) => (
-            <span className="badge" key={item.label}>
-              <span className="badge-dot" style={{ background: getColor(index) }} />
-              {cap(item.label, compact ? 12 : 18)} · {item.value}
-            </span>
-          ))}
-        </div>
+        {showLegend ? (
+          <div className="badge-row">
+            {items.map((item, index) => (
+              <span className="badge" key={item.label}>
+                <span className="badge-dot" style={{ background: getColor(index) }} />
+                {cap(item.label, compact ? 12 : 18)}{showValues ? ` · ${item.value}` : ""}
+              </span>
+            ))}
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -79,7 +83,7 @@ export function ChartPreview({ chartType, data, compact = false }: ChartPreviewP
             const height = Math.max(18, (item.value / max) * 150);
             return (
               <div className={chartType === "stacked-column" ? "stacked-column" : "vertical-bar"} key={item.label}>
-                <div className="micro">{item.value}</div>
+                {showValues ? <div className="micro">{item.value}</div> : null}
                 {chartType === "stacked-column" ? (
                   <div className="stacked-column-bar" style={{ height }}>
                     <div className="stacked-segment" style={{ height: "100%", background: getColor(index) }} />
@@ -87,7 +91,7 @@ export function ChartPreview({ chartType, data, compact = false }: ChartPreviewP
                 ) : (
                   <div className="vertical-bar-column" style={{ height, background: `linear-gradient(180deg, ${getColor(index)}, ${getColor(index)}cc)` }} />
                 )}
-                <div className="vertical-bar-label">{cap(item.label, compact ? 10 : 14)}</div>
+                {showLegend ? <div className="vertical-bar-label">{cap(item.label, compact ? 10 : 14)}</div> : null}
               </div>
             );
           })}
@@ -115,14 +119,97 @@ export function ChartPreview({ chartType, data, compact = false }: ChartPreviewP
             <circle key={`${point.item.label}-${index}`} cx={point.x} cy={point.y} r="5" fill={getColor(index)} />
           ))}
         </svg>
-        <div className="badge-row">
-          {items.map((item, index) => (
-            <span className="badge" key={item.label}>
-              <span className="badge-dot" style={{ background: getColor(index) }} />
-              {cap(item.label, compact ? 12 : 18)} · {item.value}
-            </span>
+        {showLegend ? (
+          <div className="badge-row">
+            {items.map((item, index) => (
+              <span className="badge" key={item.label}>
+                <span className="badge-dot" style={{ background: getColor(index) }} />
+                {cap(item.label, compact ? 12 : 18)}{showValues ? ` · ${item.value}` : ""}
+              </span>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (chartType === "radar") {
+    const cx = 200;
+    const cy = 110;
+    const radius = 84;
+    const points = items.map((item, index) => {
+      const angle = (-Math.PI / 2) + (index / items.length) * Math.PI * 2;
+      const scaled = (item.value / max) * radius;
+      return {
+        item,
+        x: cx + Math.cos(angle) * scaled,
+        y: cy + Math.sin(angle) * scaled,
+        labelX: cx + Math.cos(angle) * (radius + 22),
+        labelY: cy + Math.sin(angle) * (radius + 22)
+      };
+    });
+    const polyline = points.map((point) => `${point.x},${point.y}`).join(" ");
+    return (
+      <div className="radar-chart">
+        <svg viewBox="0 0 400 240" preserveAspectRatio="none">
+          {[0.25, 0.5, 0.75, 1].map((ratio) => (
+            <circle key={ratio} cx={cx} cy={cy} r={radius * ratio} fill="none" stroke="rgba(23,49,38,0.12)" />
           ))}
+          {points.map((point, index) => (
+            <line key={point.item.label} x1={cx} y1={cy} x2={point.labelX} y2={point.labelY} stroke="rgba(23,49,38,0.12)" />
+          ))}
+          <polygon points={polyline} />
+          <polyline points={polyline} />
+          {points.map((point, index) => (
+            <g key={`${point.item.label}-${index}`}>
+              <circle cx={point.x} cy={point.y} r="5" fill={getColor(index)} />
+              {showLegend ? <text x={point.labelX} y={point.labelY} textAnchor="middle">{cap(point.item.label, compact ? 8 : 12)}</text> : null}
+            </g>
+          ))}
+        </svg>
+      </div>
+    );
+  }
+
+  if (chartType === "gauge") {
+    const current = items[0]?.value || 0;
+    const percent = Math.max(0, Math.min(100, max ? (current / max) * 100 : 0));
+    return (
+      <div className="gauge-chart">
+        <div className="gauge-track">
+          <div className="gauge-fill" style={{ transform: `rotate(${(percent / 100) * 180}deg)` }} />
+          <div className="gauge-center">
+            {showValues ? <strong>{current}</strong> : null}
+            {showLegend ? <span>{cap(items[0]?.label || "Current", 18)}</span> : null}
+          </div>
         </div>
+      </div>
+    );
+  }
+
+  if (chartType === "waterfall") {
+    let runningTotal = 0;
+    const points = items.map((item) => {
+      const start = runningTotal;
+      runningTotal += item.value;
+      return { ...item, start, end: runningTotal };
+    });
+    const maxTotal = Math.max(...points.map((item) => item.end), 1);
+    return (
+      <div className="waterfall-chart">
+        {points.map((item, index) => {
+          const startPercent = (item.start / maxTotal) * 100;
+          const widthPercent = Math.max(8, (item.value / maxTotal) * 100);
+          return (
+            <div className="waterfall-row" key={item.label}>
+              {showLegend ? <div className="chart-label">{cap(item.label, compact ? 12 : 18)}</div> : null}
+              <div className="waterfall-track">
+                <div className="waterfall-bar" style={{ marginLeft: `${startPercent}%`, width: `${widthPercent}%`, background: getColor(index) }} />
+              </div>
+              {showValues ? <div className="chart-value">{item.value}</div> : null}
+            </div>
+          );
+        })}
       </div>
     );
   }
@@ -139,14 +226,16 @@ export function ChartPreview({ chartType, data, compact = false }: ChartPreviewP
             />
           ))}
         </div>
-        <div className="badge-row">
-          {items.map((item, index) => (
-            <span className="badge" key={item.label}>
-              <span className="badge-dot" style={{ background: getColor(index) }} />
-              {cap(item.label, compact ? 12 : 18)} · {item.value}
-            </span>
-          ))}
-        </div>
+        {showLegend ? (
+          <div className="badge-row">
+            {items.map((item, index) => (
+              <span className="badge" key={item.label}>
+                <span className="badge-dot" style={{ background: getColor(index) }} />
+                {cap(item.label, compact ? 12 : 18)}{showValues ? ` · ${item.value}` : ""}
+              </span>
+            ))}
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -160,7 +249,7 @@ export function ChartPreview({ chartType, data, compact = false }: ChartPreviewP
             key={item.label}
             style={{ width: `${Math.max(34, (item.value / max) * 100)}%`, background: getColor(index) }}
           >
-            {cap(item.label, compact ? 12 : 18)} · {item.value}
+            {cap(item.label, compact ? 12 : 18)}{showValues ? ` · ${item.value}` : ""}
           </div>
         ))}
       </div>
@@ -176,8 +265,8 @@ export function ChartPreview({ chartType, data, compact = false }: ChartPreviewP
             key={item.label}
             style={{ background: `rgba(13, 124, 102, ${0.22 + (item.value / max) * 0.68})` }}
           >
-            <strong>{item.value}</strong>
-            <span>{cap(item.label, compact ? 10 : 16)}</span>
+            {showValues ? <strong>{item.value}</strong> : null}
+            {showLegend ? <span>{cap(item.label, compact ? 10 : 16)}</span> : null}
           </div>
         ))}
       </div>
@@ -188,11 +277,11 @@ export function ChartPreview({ chartType, data, compact = false }: ChartPreviewP
     <div className="chart-bars">
       {items.map((item, index) => (
         <div className="chart-row" key={item.label}>
-          <div className="chart-label">{cap(item.label, compact ? 12 : 18)}</div>
+          {showLegend ? <div className="chart-label">{cap(item.label, compact ? 12 : 18)}</div> : null}
           <div className="chart-track">
             <div className="chart-fill" style={{ width: `${Math.max(6, (item.value / max) * 100)}%`, background: `linear-gradient(90deg, ${getColor(index)}, ${getColor(index)}dd)` }} />
           </div>
-          <div className="chart-value">{item.value}</div>
+          {showValues ? <div className="chart-value">{item.value}</div> : null}
         </div>
       ))}
     </div>

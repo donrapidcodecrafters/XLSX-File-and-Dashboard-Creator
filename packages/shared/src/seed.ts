@@ -17,6 +17,12 @@ function buildReportView(overrides: Partial<ReportViewDefinition> = {}): ReportV
     mode: "table",
     chartType: "bar",
     chartFieldId: "",
+    chartValueFieldId: "",
+    chartAggregation: "count",
+    chartTopN: 12,
+    chartSort: "value-desc",
+    chartShowLegend: true,
+    chartShowValues: true,
     timelineDateField: "",
     timelineEndField: "",
     calendarDateField: "",
@@ -384,6 +390,14 @@ function mergeQuickbaseDefaults(defaults: StudioDocument["quickbase"], source?: 
 export function normalizeStudioDocument(input: Partial<StudioDocument> | null | undefined): StudioDocument {
   const defaults = buildStudioDocument();
   const source = input || {};
+  const normalizedObjects = Object.fromEntries(
+    Object.entries(source.bundle?.objects || defaults.bundle.objects).map(([id, object]) => {
+      if (object.type === "report") {
+        return [id, { ...object, view: buildReportView(object.view || {}) }];
+      }
+      return [id, object];
+    })
+  );
   return {
     ...defaults,
     ...source,
@@ -396,7 +410,7 @@ export function normalizeStudioDocument(input: Partial<StudioDocument> | null | 
       },
       tables: source.bundle?.tables || defaults.bundle.tables,
       data: source.bundle?.data || defaults.bundle.data,
-      objects: source.bundle?.objects || defaults.bundle.objects,
+      objects: normalizedObjects,
       order: source.bundle?.order || defaults.bundle.order
     },
     branding: {

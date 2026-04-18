@@ -6,6 +6,8 @@ import {
   buildStudioDocument,
   normalizeStudioDocument,
   runReport,
+  type ChartAggregation,
+  type ChartSortMode,
   type ChartType,
   type DashboardDefinition,
   type DashboardRunResult,
@@ -42,7 +44,14 @@ import { ChartPreview } from "./ChartPreview";
 
 const STORAGE_KEY = "hosted-reporting-studio-v2";
 const REPORT_VIEW_OPTIONS: ReportViewMode[] = ["table", "summary", "chart", "timeline", "calendar", "kanban"];
-const CHART_OPTIONS: ChartType[] = ["bar", "column", "line", "area", "donut", "pie", "stacked-bar", "stacked-column", "funnel", "heatmap"];
+const CHART_OPTIONS: ChartType[] = ["bar", "column", "line", "area", "donut", "pie", "stacked-bar", "stacked-column", "funnel", "heatmap", "radar", "gauge", "waterfall"];
+const CHART_AGGREGATION_OPTIONS: ChartAggregation[] = ["count", "sum", "avg", "min", "max"];
+const CHART_SORT_OPTIONS: Array<{ value: ChartSortMode; label: string }> = [
+  { value: "value-desc", label: "Value high to low" },
+  { value: "value-asc", label: "Value low to high" },
+  { value: "label-asc", label: "Label A to Z" },
+  { value: "label-desc", label: "Label Z to A" }
+];
 const FILTER_OPERATOR_OPTIONS: Array<{ value: FilterOperator; label: string }> = [
   { value: "equals", label: "Equals" },
   { value: "contains", label: "Contains" },
@@ -243,6 +252,12 @@ function buildCreateDraft(table?: TableDefinition | null, type: CreateModalType 
       mode: "table",
       chartType: "bar",
       chartFieldId: firstFieldId,
+      chartValueFieldId: "",
+      chartAggregation: "count",
+      chartTopN: 12,
+      chartSort: "value-desc",
+      chartShowLegend: true,
+      chartShowValues: true,
       timelineDateField: "",
       timelineEndField: "",
       calendarDateField: "",
@@ -261,6 +276,7 @@ function collectReportFieldIds(report: ReportDefinition) {
       ...(report.sorts || []).map((item) => item.fieldId),
       ...((report.summaryMetrics || []).map((item) => item.fieldId)),
       report.view.chartFieldId,
+      report.view.chartValueFieldId,
       report.view.timelineDateField,
       report.view.timelineEndField,
       report.view.calendarDateField,
@@ -311,6 +327,7 @@ function validationMessages(object: StudioObject, table?: TableDefinition | null
   if (object.type === "report") {
     if (!object.selectedFieldIds.length) messages.push("Select at least one field.");
     if (object.view.mode === "chart" && !object.view.chartFieldId) messages.push("Choose a chart grouping field.");
+    if (object.view.mode === "chart" && object.view.chartAggregation !== "count" && !object.view.chartValueFieldId) messages.push("Choose a numeric value field for the chart.");
     if (object.view.mode === "timeline" && !object.view.timelineDateField) messages.push("Choose a timeline start field.");
     if (object.view.mode === "calendar" && !object.view.calendarDateField) messages.push("Choose a calendar date field.");
     if (object.view.mode === "kanban" && !object.view.kanbanField) messages.push("Choose a kanban column field.");
@@ -355,7 +372,14 @@ function ReportPreview({ report, table, result }: { report: ReportDefinition; ta
   }
 
   if (report.view.mode === "chart") {
-    return <ChartPreview chartType={report.view.chartType} data={result.chartData} />;
+    return (
+      <ChartPreview
+        chartType={report.view.chartType}
+        data={result.chartData}
+        showLegend={report.view.chartShowLegend}
+        showValues={report.view.chartShowValues}
+      />
+    );
   }
 
   if (report.view.mode === "timeline" || report.view.mode === "calendar") {
@@ -485,7 +509,13 @@ function DashboardPreview({
                     ))}
                   </div>
                 <div className="mini-chart">
-                  <ChartPreview chartType={widget.report.view.chartType} data={widget.result.chartData} compact />
+                  <ChartPreview
+                    chartType={widget.report.view.chartType}
+                    data={widget.result.chartData}
+                    compact
+                    showLegend={widget.report.view.chartShowLegend}
+                    showValues={widget.report.view.chartShowValues}
+                  />
                 </div>
                 </article>
               ))}
@@ -810,6 +840,12 @@ export function StudioPage() {
       view: {
         ...current.view,
         chartFieldId: table.fields[0]?.id || "",
+        chartValueFieldId: "",
+        chartAggregation: "count",
+        chartTopN: current.view.chartTopN || 12,
+        chartSort: current.view.chartSort || "value-desc",
+        chartShowLegend: current.view.chartShowLegend ?? true,
+        chartShowValues: current.view.chartShowValues ?? true,
         titleFieldId: table.fields[1]?.id || table.fields[0]?.id || "",
         timelineDateField: "",
         timelineEndField: "",
@@ -1591,6 +1627,16 @@ export function StudioPage() {
                       <label className="field"><span>Chart type</span><select value={createDraft.view.chartType} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartType: event.target.value as ChartType } }))}>{CHART_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
                       <label className="field"><span>Chart field</span><select value={createDraft.view.chartFieldId} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartFieldId: event.target.value } }))}>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>
                       <label className="field"><span>Title field</span><select value={createDraft.view.titleFieldId} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, titleFieldId: event.target.value } }))}>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>
+                      {createDraft.view.mode === "chart" ? (
+                        <>
+                          <label className="field"><span>Value field</span><select value={createDraft.view.chartValueFieldId} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartValueFieldId: event.target.value } }))}><option value="">Count rows</option>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>
+                          <label className="field"><span>Aggregation</span><select value={createDraft.view.chartAggregation} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartAggregation: event.target.value as ChartAggregation, chartValueFieldId: event.target.value === "count" ? "" : current.view.chartValueFieldId } }))}>{CHART_AGGREGATION_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
+                          <label className="field"><span>Chart sort</span><select value={createDraft.view.chartSort} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartSort: event.target.value as ChartSortMode } }))}>{CHART_SORT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+                          <label className="field"><span>Top results</span><input type="number" min="0" value={createDraft.view.chartTopN} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartTopN: Math.max(0, Number(event.target.value) || 0) } }))} /></label>
+                          <label className="toggle-row"><input type="checkbox" checked={createDraft.view.chartShowLegend} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartShowLegend: event.target.checked } }))} /> Show legend</label>
+                          <label className="toggle-row"><input type="checkbox" checked={createDraft.view.chartShowValues} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartShowValues: event.target.checked } }))} /> Show values</label>
+                        </>
+                      ) : null}
                       {createDraft.view.mode === "kanban" ? <label className="field"><span>Kanban field</span><select value={createDraft.view.kanbanField} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, kanbanField: event.target.value } }))}><option value="">Select a field</option>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label> : null}
                       {createDraft.view.mode === "timeline" ? (
                         <>

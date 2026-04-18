@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import type { DashboardDefinition, DashboardRunResult } from "@studio/shared";
-import { renderDashboard } from "../lib/api";
+import { fetchAllReportRows, renderDashboard } from "../lib/api";
 import { LinkToolbar } from "./LinkToolbar";
 import { ChartPreview } from "./ChartPreview";
+import { exportDashboardWorkbook } from "../lib/workbookExport";
 
 interface DashboardViewProps {
   dashboard: DashboardDefinition;
@@ -20,6 +21,7 @@ export function DashboardView({ dashboard }: DashboardViewProps) {
   const [runtimeFilters, setRuntimeFilters] = useState<Record<string, string>>(defaults);
   const [result, setResult] = useState<DashboardRunResult | null>(null);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [activeTabId, setActiveTabId] = useState(dashboard.tabs[0]?.id || "");
 
   useEffect(() => {
@@ -48,6 +50,23 @@ export function DashboardView({ dashboard }: DashboardViewProps) {
   const tabs = result?.tabs || dashboard.tabs.map((tab) => ({ id: tab.id, name: tab.name, widgets: [] }));
   const activeTab = tabs.find((tab) => tab.id === activeTabId) || tabs[0];
 
+  async function exportWorkbook() {
+    if (!result) return;
+    setExporting(true);
+    try {
+      const fullRowsByReportId: Record<string, any[]> = {};
+      for (const tab of result.tabs) {
+        for (const widget of tab.widgets) {
+          if (fullRowsByReportId[widget.report.id]) continue;
+          fullRowsByReportId[widget.report.id] = await fetchAllReportRows(widget.report.id).catch(() => widget.result.rows);
+        }
+      }
+      await exportDashboardWorkbook(dashboard, result, fullRowsByReportId);
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <section className="surface stack">
       <div className="hero">
@@ -61,6 +80,7 @@ export function DashboardView({ dashboard }: DashboardViewProps) {
             <button className="ghost-button" onClick={() => window.history.back()}>Back</button>
             <Link className="ghost-button" to="/viewer">Home</Link>
             <Link className="ghost-button" to={`/studio/${dashboard.id}`}>Open in building area</Link>
+            <button className="ghost-button" onClick={() => { void exportWorkbook(); }} disabled={!result || exporting}>{exporting ? "Exporting…" : "Export xlsx"}</button>
           </div>
           <LinkToolbar type="dashboard" id={dashboard.id} />
         </div>
@@ -128,7 +148,13 @@ export function DashboardView({ dashboard }: DashboardViewProps) {
                   ))}
                 </div>
                 <div className="mini-chart">
-                  <ChartPreview chartType={widget.report.view.chartType} data={widget.result.chartData} compact />
+                  <ChartPreview
+                    chartType={widget.report.view.chartType}
+                    data={widget.result.chartData}
+                    compact
+                    showLegend={widget.report.view.chartShowLegend}
+                    showValues={widget.report.view.chartShowValues}
+                  />
                 </div>
                 </article>
               );
