@@ -547,6 +547,75 @@ input {
   min-width: 0;
 }
 
+.horizontal-bar-shell {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.horizontal-bar-grid {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  padding: 12px 8px 8px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(247, 248, 243, 0.88), rgba(255, 255, 255, 0.7));
+  overflow: hidden;
+}
+
+.horizontal-grid-line {
+  top: 8px;
+  bottom: 8px;
+  width: 1px;
+  height: auto;
+}
+
+.horizontal-bar-row {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+}
+
+.horizontal-bar-label,
+.horizontal-bar-value {
+  font-size: 11px;
+  color: var(--text-soft);
+  overflow-wrap: anywhere;
+}
+
+.horizontal-bar-track {
+  height: 16px;
+  border-radius: 999px;
+  background: rgba(13, 124, 102, 0.08);
+  overflow: hidden;
+}
+
+.horizontal-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+}
+
+.horizontal-bar-ticks {
+  display: grid;
+  align-items: start;
+  gap: 12px;
+}
+
+.horizontal-bar-tick-row {
+  position: relative;
+  min-height: 18px;
+}
+
+.horizontal-bar-tick-row .chart-x-tick {
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
 .chart-plot-surface {
   position: relative;
   min-height: 196px;
@@ -1664,6 +1733,21 @@ select {
   .chart-row,
   .mini-bar {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .horizontal-bar-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .horizontal-bar-ticks {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .horizontal-bar-tick-row .chart-x-tick {
+    position: static;
+    transform: none;
+    display: inline-flex;
+    margin-right: 10px;
   }
 
   .axis-chart-layout {

@@ -116,6 +116,13 @@ function renderAxisLegend(
   );
 }
 
+function shouldRenderLegendStrip(chartType: ChartType, compact: boolean) {
+  if (compact) {
+    return chartType === "pie" || chartType === "donut";
+  }
+  return chartType === "pie" || chartType === "donut" || chartType === "heatmap" || chartType === "funnel";
+}
+
 export function ChartPreview({
   chartType,
   data,
@@ -223,6 +230,46 @@ export function ChartPreview({
     );
   }
 
+  if ((normalizedChartType === "bar" || normalizedChartType === "stacked-bar") && orientation === "horizontal") {
+    const { ticks, axisMax } = axisMaxFor(items.map((item) => item.value), compact);
+    return (
+      <div className="axis-chart-shell">
+        {renderTitle(title)}
+        <div className="horizontal-bar-shell">
+          <div className="horizontal-bar-grid">
+            {ticks.map((tick) => (
+              <span className="chart-grid-line horizontal-grid-line" key={`h-grid-${tick}`} style={{ left: `${(tick / axisMax) * 100}%` }} />
+            ))}
+            {items.map((item, index) => {
+              const width = Math.max(6, (item.value / axisMax) * 100);
+              return (
+                <div className="horizontal-bar-row" key={item.label}>
+                  <div className="horizontal-bar-label">{cap(item.label, compact ? 12 : 18)}</div>
+                  <div className="horizontal-bar-track">
+                    <div className="horizontal-bar-fill" style={{ width: `${width}%`, background: `linear-gradient(90deg, ${getColor(index)}, ${getColor(index)}cc)` }} />
+                  </div>
+                  {showValues ? <div className="horizontal-bar-value">{formatAxisValue(item.value, decimalPlaces)}</div> : null}
+                </div>
+              );
+            })}
+          </div>
+          <div className="horizontal-bar-ticks" style={{ gridTemplateColumns: `160px minmax(0, 1fr) ${showValues ? "88px" : ""}` }}>
+            <span />
+            <div className="horizontal-bar-tick-row">
+              {ticks.map((tick) => (
+                <span className="chart-x-tick" key={`tick-${tick}`} style={{ left: `${(tick / axisMax) * 100}%` }}>
+                  {formatAxisValue(tick, decimalPlaces)}
+                </span>
+              ))}
+            </div>
+            {showValues ? <span /> : null}
+          </div>
+          {xAxisLabel ? <div className="chart-axis-title chart-axis-title-bottom">{xAxisLabel}</div> : null}
+        </div>
+      </div>
+    );
+  }
+
   if (normalizedChartType === "line" || normalizedChartType === "area") {
     const { ticks, axisMax } = axisMaxFor(items.map((item) => item.value), compact);
     const reversedTicks = [...ticks].reverse();
@@ -270,7 +317,7 @@ export function ChartPreview({
             {xAxisLabel ? <div className="chart-axis-title chart-axis-title-bottom">{xAxisLabel}</div> : null}
           </div>
         </div>
-        {renderAxisLegend(items, compact, showLegend, showValues)}
+        {shouldRenderLegendStrip(normalizedChartType, compact) ? renderAxisLegend(items, compact, showLegend, showValues) : null}
       </div>
     );
   }
@@ -378,7 +425,7 @@ export function ChartPreview({
             />
           ))}
         </div>
-        {renderAxisLegend(items, compact, showLegend, showValues)}
+        {shouldRenderLegendStrip(normalizedChartType, compact) ? renderAxisLegend(items, compact, showLegend, showValues) : null}
       </div>
     );
   }
