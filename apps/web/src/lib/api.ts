@@ -58,6 +58,15 @@ export async function fetchAllReportRows(
   filters: Array<{ fieldId: string; value: string; operator?: string }> = [],
   pageSize = 500
 ) {
+  try {
+    const response = await request<{ rows: ReportRunResult["rows"] }>("/api/reports/" + encodeURIComponent(id) + "/export-rows", {
+      method: "POST",
+      body: JSON.stringify({ filters })
+    });
+    return response.rows;
+  } catch {
+    // Fall back to page-by-page fetch if the export endpoint is not available yet.
+  }
   const rows: ReportRunResult["rows"] = [];
   let page = 1;
   let totalRows = 0;

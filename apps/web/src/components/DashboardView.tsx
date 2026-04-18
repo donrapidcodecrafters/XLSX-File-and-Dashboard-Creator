@@ -68,13 +68,14 @@ export function DashboardView({ dashboard, tables }: DashboardViewProps) {
     setExporting(true);
     setExportError("");
     try {
-      const fullRowsByReportId: Record<string, any[]> = {};
-      for (const tab of result.tabs) {
-        for (const widget of tab.widgets) {
-          if (fullRowsByReportId[widget.report.id]) continue;
-          fullRowsByReportId[widget.report.id] = await fetchAllReportRows(widget.report.id).catch(() => widget.result.rows);
-        }
-      }
+      const reportIds = Array.from(new Set(result.tabs.flatMap((tab) => tab.widgets.map((widget) => widget.report.id))));
+      const fallbackRowsByReportId = Object.fromEntries(
+        result.tabs.flatMap((tab) => tab.widgets.map((widget) => [widget.report.id, widget.result.rows]))
+      );
+      const rowEntries = await Promise.all(
+        reportIds.map(async (reportId) => [reportId, await fetchAllReportRows(reportId).catch(() => fallbackRowsByReportId[reportId] || [])] as const)
+      );
+      const fullRowsByReportId = Object.fromEntries(rowEntries);
       await exportDashboardWorkbook(dashboard, result, fullRowsByReportId);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Dashboard export failed.";

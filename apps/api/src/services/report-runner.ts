@@ -92,6 +92,17 @@ function collectReportFieldIds(report: ReportDefinition) {
   ));
 }
 
+function collectExportFieldIds(report: ReportDefinition) {
+  return Array.from(new Set(
+    [
+      ...(report.selectedFieldIds || []),
+      ...(report.filters || []).map((item) => item.fieldId),
+      ...(report.sorts || []).map((item) => item.fieldId),
+      report.view.titleFieldId
+    ].filter(Boolean).map(String)
+  ));
+}
+
 function cacheKey(report: ReportDefinition, extraFilters: FilterDefinition[], options: ExecuteReportOptions): string {
   return JSON.stringify({
     reportId: report.id,
@@ -502,6 +513,70 @@ export async function fetchReportPage(report: ReportDefinition, extraFilters: Fi
     totalPages: Math.max(1, Math.ceil(full.totalRows / pageSize)),
     hasNextPage: page * pageSize < full.totalRows
   };
+}
+
+export async function fetchAllReportRowsForExport(report: ReportDefinition, extraFilters: FilterDefinition[] = []): Promise<DataRow[]> {
+  const table = objectStore.getTable(report.sourceTableId);
+  if (!table) {
+    throw new Error("Table not found for report " + report.id + ".");
+  }
+
+  const quickbase = studioStore.getDocument().quickbase;
+  if (quickbase.realmHostname && quickbase.userToken && quickbase.appId) {
+    const filters = combineFilters(report, extraFilters);
+    const requestedFieldIds = collectExportFieldIds(report);
+    const { where, unsupportedFilters } = buildQuickbaseWhere(filters);
+    const sortBy = buildQuickbaseSort(report);
+
+    if (!unsupportedFilters.length) {
+      const rows = await fetchQuickbaseTablePage(quickbase, table.id, requestedFieldIds, {
+        top: 1000,
+        skip: 0,
+        where,
+        sortBy
+      }).then(async (firstPage) => {
+        const combined = [...firstPage.rows];
+        const total = firstPage.totalRecords ?? firstPage.rows.length;
+        let skip = firstPage.rows.length;
+        while (skip < total) {
+          const page = await fetchQuickbaseTablePage(quickbase, table.id, requestedFieldIds, {
+            top: 1000,
+            skip,
+            where,
+            sortBy
+          });
+          if (!page.rows.length) break;
+          combined.push(...page.rows);
+          skip += page.rows.length;
+        }
+        return combined;
+      });
+      return projectRows(report, rows);
+    }
+
+    const batchSize = 1000;
+    let skip = 0;
+    const rows: DataRow[] = [];
+    while (true) {
+      const batch = await fetchQuickbaseTablePage(quickbase, table.id, requestedFieldIds, {
+        top: batchSize,
+        skip,
+        where,
+        sortBy
+      });
+      if (!batch.rows.length) break;
+      batch.rows.forEach((row) => {
+        if (filters.every((filter) => matchesFilter(row, filter))) {
+          rows.push(row);
+        }
+      });
+      if (batch.rows.length < batchSize) break;
+      skip += batch.rows.length;
+    }
+    return projectRows(report, rows);
+  }
+
+  return runReport(report, table, objectStore.getRows(table.id), extraFilters).rows;
 }
 
 export async function executeReport(report: ReportDefinition, extraFilters: FilterDefinition[] = [], options: ExecuteReportOptions = {}): Promise<ReportRunResult> {

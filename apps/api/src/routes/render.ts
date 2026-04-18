@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { executeDashboard, executeReport, fetchReportPage } from "../services/report-runner.js";
+import { executeDashboard, executeReport, fetchAllReportRowsForExport, fetchReportPage } from "../services/report-runner.js";
 import { objectStore } from "../services/object-store.js";
 import { studioStore } from "../services/studio-store.js";
 
@@ -52,6 +52,27 @@ export async function registerRenderRoutes(app: FastifyInstance) {
       page: body.page || 1,
       pageSize: body.pageSize || 100
     });
+  });
+
+  app.post("/api/reports/:id/export-rows", async (request, reply) => {
+    await studioStore.hydrateFromQuickbase();
+    const { id } = request.params as { id: string };
+    const report = objectStore.getReport(id);
+    if (!report) {
+      reply.code(404);
+      return { message: "Report not found." };
+    }
+    const body = (request.body as {
+      filters?: Array<{ fieldId: string; operator?: string; value: string }>;
+    } | undefined) || {};
+    const extraFilters = (body.filters || []).map((filter, index) => ({
+      id: "client-" + index,
+      fieldId: filter.fieldId,
+      operator: (filter.operator || "equals") as "equals",
+      value: filter.value
+    }));
+    const rows = await fetchAllReportRowsForExport(report, extraFilters);
+    return { rows };
   });
 
   app.post("/api/dashboards/:id/render", async (request, reply) => {
