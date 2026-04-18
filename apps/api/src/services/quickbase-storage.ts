@@ -133,7 +133,6 @@ async function quickbaseXmlRequest(
   innerXml = ""
 ) {
   const hostname = normalizeHostname(config.realmHostname);
-  const endpoint = `https://${hostname}/db/${encodeURIComponent(dbid)}`;
   const body = [
     "<qdbapi>",
     `<usertoken>${escapeXml(config.userToken)}</usertoken>`,
@@ -141,29 +140,53 @@ async function quickbaseXmlRequest(
     innerXml,
     "</qdbapi>"
   ].join("");
-
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      Accept: "application/xml, text/xml;q=0.9, */*;q=0.8",
-      "Content-Type": "application/xml; charset=UTF-8",
-      "QUICKBASE-ACTION": action
+  const endpoints = [
+    {
+      url: `https://${hostname}/db/${encodeURIComponent(dbid)}`,
+      headers: {
+        Accept: "application/xml, text/xml;q=0.9, */*;q=0.8",
+        "Content-Type": "application/xml; charset=UTF-8",
+        "QUICKBASE-ACTION": action
+      } as Record<string, string>
     },
-    body
-  });
+    {
+      url: `https://${hostname}/db/${encodeURIComponent(dbid)}?a=${encodeURIComponent(action)}`,
+      headers: {
+        Accept: "application/xml, text/xml;q=0.9, */*;q=0.8",
+        "Content-Type": "application/xml; charset=UTF-8"
+      } as Record<string, string>
+    }
+  ];
 
-  const xml = await response.text();
-  if (!response.ok) {
-    throw new Error(`Quickbase ${action} failed with status ${response.status}.`);
+  const failures: string[] = [];
+  for (const candidate of endpoints) {
+    const response = await fetch(candidate.url, {
+      method: "POST",
+      headers: candidate.headers,
+      body
+    });
+
+    const xml = await response.text();
+    if (!response.ok) {
+      failures.push(`${response.status} from ${candidate.url}`);
+      if (![404, 405].includes(response.status)) {
+        throw new Error(`Quickbase ${action} failed for table ${dbid}. ${response.status} from ${candidate.url}.`);
+      }
+      continue;
+    }
+
+    const parsed = parser.parse(xml) as any;
+    const api = parsed?.qdbapi;
+    const errcode = Number(api?.errcode ?? 0);
+    if (Number.isFinite(errcode) && errcode !== 0) {
+      throw new Error(api?.errtext || `Quickbase ${action} failed for table ${dbid}.`);
+    }
+    return api;
   }
 
-  const parsed = parser.parse(xml) as any;
-  const api = parsed?.qdbapi;
-  const errcode = Number(api?.errcode ?? 0);
-  if (Number.isFinite(errcode) && errcode !== 0) {
-    throw new Error(api?.errtext || `Quickbase ${action} failed.`);
-  }
-  return api;
+  throw new Error(
+    `Quickbase ${action} failed for table ${dbid}. Tried ${failures.join(" then ")}. Confirm the DBID belongs to a real Quickbase table in realm ${hostname}.`
+  );
 }
 
 async function quickbaseQueryRecordsXml(
@@ -239,7 +262,10 @@ export async function fetchQuickbaseTableRows(
   if (!hasQuickbaseConnection(config) || !tableId) return [];
   const select = Array.from(new Set((fieldIds || []).filter(Boolean)));
   if (!select.length) return [];
-  const rows = await quickbaseFetchAllRecords(config, tableId, select, "", { top: options.top || 250 });
+  const rows = await quickbaseFetchAllRecords(config, tableId, select, "", { top: options.top || 250 }).catch((error) => {
+    const message = error instanceof Error ? error.message : "Quickbase table preview failed.";
+    throw new Error(`Quickbase table preview failed for table ${tableId}. ${message}`);
+  });
   return rows.map((row) => {
     const data: DataRow = {};
     select.forEach((fieldId) => {
@@ -333,134 +359,149 @@ function quickbaseUserName(user: QuickbaseUser) {
 async function syncObjectRecords(document: StudioDocument, user: QuickbaseUser) {
   const config = document.quickbase;
   if (!hasObjectStorage(config)) return { count: 0, objectRecordIds: {} as Record<string, string> };
+  try {
+    const existing = await quickbaseFetchRecordIdMap(config, config.objectTableId, [config.objectKeyFieldId]);
+    const rows: QuickbaseRecord[] = [];
+    const objects = Object.values(document.bundle.objects || {});
+    objects.forEach((object) => {
+      const record: QuickbaseRecord = {};
+      const existingRecordId = existing.get(makeCompositeKey([object.id]));
+      if (existingRecordId) qbSetField(record, "3", existingRecordId);
+      qbSetField(record, config.objectKeyFieldId, object.id);
+      qbSetField(record, config.objectTypeFieldId, object.type);
+      qbSetField(record, config.objectNameFieldId, object.name);
+      qbSetField(record, config.objectConfigFieldId, JSON.stringify(object));
+      qbSetField(record, config.objectOwnerFieldId, quickbaseUserValue(user));
+      qbSetField(record, config.objectUpdatedAtFieldId, object.updatedAt || new Date().toISOString());
+      qbSetField(record, config.objectUpdatedByFieldId, quickbaseUserValue(user));
+      rows.push(record);
+    });
 
-  const existing = await quickbaseFetchRecordIdMap(config, config.objectTableId, [config.objectKeyFieldId]);
-  const rows: QuickbaseRecord[] = [];
-  const objects = Object.values(document.bundle.objects || {});
-  objects.forEach((object) => {
-    const record: QuickbaseRecord = {};
-    const existingRecordId = existing.get(makeCompositeKey([object.id]));
-    if (existingRecordId) qbSetField(record, "3", existingRecordId);
-    qbSetField(record, config.objectKeyFieldId, object.id);
-    qbSetField(record, config.objectTypeFieldId, object.type);
-    qbSetField(record, config.objectNameFieldId, object.name);
-    qbSetField(record, config.objectConfigFieldId, JSON.stringify(object));
-    qbSetField(record, config.objectOwnerFieldId, quickbaseUserValue(user));
-    qbSetField(record, config.objectUpdatedAtFieldId, object.updatedAt || new Date().toISOString());
-    qbSetField(record, config.objectUpdatedByFieldId, quickbaseUserValue(user));
-    rows.push(record);
-  });
-
-  const saved = await quickbaseWriteRecordsXml(config, config.objectTableId, rows);
-  const objectRecordIds: Record<string, string> = {};
-  objects.forEach((object, index) => {
-    const rid = qbFieldValue(saved.data[index], "3") || existing.get(makeCompositeKey([object.id]));
-    if (rid) objectRecordIds[object.id] = String(rid);
-  });
-  return { count: objects.length, objectRecordIds };
+    const saved = await quickbaseWriteRecordsXml(config, config.objectTableId, rows);
+    const objectRecordIds: Record<string, string> = {};
+    objects.forEach((object, index) => {
+      const rid = qbFieldValue(saved.data[index], "3") || existing.get(makeCompositeKey([object.id]));
+      if (rid) objectRecordIds[object.id] = String(rid);
+    });
+    return { count: objects.length, objectRecordIds };
+  } catch (error) {
+    throw new Error(
+      `Saving reports and dashboards to table ${config.objectTableId} failed. ${error instanceof Error ? error.message : "Unknown Quickbase error."}`
+    );
+  }
 }
 
 async function syncSettingsRecords(document: StudioDocument, user: QuickbaseUser) {
   const config = document.quickbase;
   if (!hasSettingsStorage(config)) return { count: 0, storageConfigCount: 0 };
+  try {
+    const userValue = quickbaseUserValue(user);
+    const where = buildWhere([{ fid: config.settingsUserFieldId, value: userValue }]);
+    const existing = await quickbaseFetchRecordIdMap(config, config.settingsTableId, [config.settingsUserFieldId, config.settingsObjectKeyFieldId], { where });
+    const rows: QuickbaseRecord[] = [];
 
-  const userValue = quickbaseUserValue(user);
-  const where = buildWhere([{ fid: config.settingsUserFieldId, value: userValue }]);
-  const existing = await quickbaseFetchRecordIdMap(config, config.settingsTableId, [config.settingsUserFieldId, config.settingsObjectKeyFieldId], { where });
-  const rows: QuickbaseRecord[] = [];
+    const storageConfigRecord: QuickbaseRecord = {};
+    const storageRecordId = existing.get(makeCompositeKey([userValue, STORAGE_CONFIG_KEY]));
+    if (storageRecordId) qbSetField(storageConfigRecord, "3", storageRecordId);
+    qbSetField(storageConfigRecord, config.settingsUserFieldId, userValue);
+    qbSetField(storageConfigRecord, config.settingsObjectFieldId, "");
+    qbSetField(storageConfigRecord, config.settingsObjectKeyFieldId, STORAGE_CONFIG_KEY);
+    qbSetField(storageConfigRecord, config.settingsJsonFieldId, JSON.stringify({
+      type: "storageConfig",
+      scope: `${normalizeHostname(config.realmHostname)}::${config.appId}`,
+      storage: {
+        objectTableId: config.objectTableId,
+        objectKeyFieldId: config.objectKeyFieldId,
+        objectTypeFieldId: config.objectTypeFieldId,
+        objectNameFieldId: config.objectNameFieldId,
+        objectConfigFieldId: config.objectConfigFieldId,
+        objectOwnerFieldId: config.objectOwnerFieldId,
+        objectUpdatedAtFieldId: config.objectUpdatedAtFieldId,
+        objectUpdatedByFieldId: config.objectUpdatedByFieldId,
+        settingsTableId: config.settingsTableId,
+        settingsUserFieldId: config.settingsUserFieldId,
+        settingsObjectFieldId: config.settingsObjectFieldId,
+        settingsObjectKeyFieldId: config.settingsObjectKeyFieldId,
+        settingsJsonFieldId: config.settingsJsonFieldId,
+        settingsUpdatedByFieldId: config.settingsUpdatedByFieldId,
+        versionTableId: config.versionTableId,
+        versionObjectFieldId: config.versionObjectFieldId,
+        versionObjectKeyFieldId: config.versionObjectKeyFieldId,
+        versionSnapshotFieldId: config.versionSnapshotFieldId,
+        versionChangedAtFieldId: config.versionChangedAtFieldId,
+        versionChangedByFieldId: config.versionChangedByFieldId,
+        versionUpdatedByFieldId: config.versionUpdatedByFieldId
+      },
+      updatedAt: new Date().toISOString(),
+      updatedBy: userValue
+    }));
+    qbSetField(storageConfigRecord, config.settingsUpdatedByFieldId, userValue);
+    rows.push(storageConfigRecord);
 
-  const storageConfigRecord: QuickbaseRecord = {};
-  const storageRecordId = existing.get(makeCompositeKey([userValue, STORAGE_CONFIG_KEY]));
-  if (storageRecordId) qbSetField(storageConfigRecord, "3", storageRecordId);
-  qbSetField(storageConfigRecord, config.settingsUserFieldId, userValue);
-  qbSetField(storageConfigRecord, config.settingsObjectFieldId, "");
-  qbSetField(storageConfigRecord, config.settingsObjectKeyFieldId, STORAGE_CONFIG_KEY);
-  qbSetField(storageConfigRecord, config.settingsJsonFieldId, JSON.stringify({
-    type: "storageConfig",
-    scope: `${normalizeHostname(config.realmHostname)}::${config.appId}`,
-    storage: {
-      objectTableId: config.objectTableId,
-      objectKeyFieldId: config.objectKeyFieldId,
-      objectTypeFieldId: config.objectTypeFieldId,
-      objectNameFieldId: config.objectNameFieldId,
-      objectConfigFieldId: config.objectConfigFieldId,
-      objectOwnerFieldId: config.objectOwnerFieldId,
-      objectUpdatedAtFieldId: config.objectUpdatedAtFieldId,
-      objectUpdatedByFieldId: config.objectUpdatedByFieldId,
-      settingsTableId: config.settingsTableId,
-      settingsUserFieldId: config.settingsUserFieldId,
-      settingsObjectFieldId: config.settingsObjectFieldId,
-      settingsObjectKeyFieldId: config.settingsObjectKeyFieldId,
-      settingsJsonFieldId: config.settingsJsonFieldId,
-      settingsUpdatedByFieldId: config.settingsUpdatedByFieldId,
-      versionTableId: config.versionTableId,
-      versionObjectFieldId: config.versionObjectFieldId,
-      versionObjectKeyFieldId: config.versionObjectKeyFieldId,
-      versionSnapshotFieldId: config.versionSnapshotFieldId,
-      versionChangedAtFieldId: config.versionChangedAtFieldId,
-      versionChangedByFieldId: config.versionChangedByFieldId,
-      versionUpdatedByFieldId: config.versionUpdatedByFieldId
-    },
-    updatedAt: new Date().toISOString(),
-    updatedBy: userValue
-  }));
-  qbSetField(storageConfigRecord, config.settingsUpdatedByFieldId, userValue);
-  rows.push(storageConfigRecord);
+    const userSettingsRecord: QuickbaseRecord = {};
+    const userSettingsRecordId = existing.get(makeCompositeKey([userValue, USER_SETTINGS_KEY]));
+    if (userSettingsRecordId) qbSetField(userSettingsRecord, "3", userSettingsRecordId);
+    qbSetField(userSettingsRecord, config.settingsUserFieldId, userValue);
+    qbSetField(userSettingsRecord, config.settingsObjectFieldId, "");
+    qbSetField(userSettingsRecord, config.settingsObjectKeyFieldId, USER_SETTINGS_KEY);
+    qbSetField(userSettingsRecord, config.settingsJsonFieldId, JSON.stringify({
+      type: "userSettings",
+      branding: document.branding,
+      favorites: document.favorites,
+      recent: document.recent,
+      updatedAt: new Date().toISOString(),
+      updatedBy: userValue
+    }));
+    qbSetField(userSettingsRecord, config.settingsUpdatedByFieldId, userValue);
+    rows.push(userSettingsRecord);
 
-  const userSettingsRecord: QuickbaseRecord = {};
-  const userSettingsRecordId = existing.get(makeCompositeKey([userValue, USER_SETTINGS_KEY]));
-  if (userSettingsRecordId) qbSetField(userSettingsRecord, "3", userSettingsRecordId);
-  qbSetField(userSettingsRecord, config.settingsUserFieldId, userValue);
-  qbSetField(userSettingsRecord, config.settingsObjectFieldId, "");
-  qbSetField(userSettingsRecord, config.settingsObjectKeyFieldId, USER_SETTINGS_KEY);
-  qbSetField(userSettingsRecord, config.settingsJsonFieldId, JSON.stringify({
-    type: "userSettings",
-    branding: document.branding,
-    favorites: document.favorites,
-    recent: document.recent,
-    updatedAt: new Date().toISOString(),
-    updatedBy: userValue
-  }));
-  qbSetField(userSettingsRecord, config.settingsUpdatedByFieldId, userValue);
-  rows.push(userSettingsRecord);
-
-  await quickbaseWriteRecordsXml(config, config.settingsTableId, rows);
-  return { count: 2, storageConfigCount: 1 };
+    await quickbaseWriteRecordsXml(config, config.settingsTableId, rows);
+    return { count: 2, storageConfigCount: 1 };
+  } catch (error) {
+    throw new Error(
+      `Saving user settings to table ${config.settingsTableId} failed. ${error instanceof Error ? error.message : "Unknown Quickbase error."}`
+    );
+  }
 }
 
 async function syncVersionRecords(document: StudioDocument, user: QuickbaseUser, objectRecordIds: Record<string, string>) {
   const config = document.quickbase;
   if (!hasVersionStorage(config)) return { count: 0 };
+  try {
+    const existing = await quickbaseFetchRecordIdMap(config, config.versionTableId, [config.versionObjectKeyFieldId, config.versionChangedAtFieldId]);
+    const rows: QuickbaseRecord[] = [];
 
-  const existing = await quickbaseFetchRecordIdMap(config, config.versionTableId, [config.versionObjectKeyFieldId, config.versionChangedAtFieldId]);
-  const rows: QuickbaseRecord[] = [];
-
-  Object.entries(document.versions || {}).forEach(([objectId, versions]) => {
-    (versions || []).forEach((entry) => {
-      const changedAt = entry.savedAt || new Date().toISOString();
-      const payload = {
-        id: entry.id,
-        label: entry.label,
-        changedAt,
-        changedBy: quickbaseUserName(user),
-        snapshot: entry.object
-      };
-      const record: QuickbaseRecord = {};
-      const existingRecordId = existing.get(makeCompositeKey([objectId, changedAt]));
-      if (existingRecordId) qbSetField(record, "3", existingRecordId);
-      qbSetField(record, config.versionObjectFieldId, objectRecordIds[objectId] || "");
-      qbSetField(record, config.versionObjectKeyFieldId, objectId);
-      qbSetField(record, config.versionSnapshotFieldId, JSON.stringify(payload));
-      qbSetField(record, config.versionChangedAtFieldId, changedAt);
-      qbSetField(record, config.versionChangedByFieldId, quickbaseUserName(user));
-      qbSetField(record, config.versionUpdatedByFieldId, quickbaseUserValue(user));
-      rows.push(record);
+    Object.entries(document.versions || {}).forEach(([objectId, versions]) => {
+      (versions || []).forEach((entry) => {
+        const changedAt = entry.savedAt || new Date().toISOString();
+        const payload = {
+          id: entry.id,
+          label: entry.label,
+          changedAt,
+          changedBy: quickbaseUserName(user),
+          snapshot: entry.object
+        };
+        const record: QuickbaseRecord = {};
+        const existingRecordId = existing.get(makeCompositeKey([objectId, changedAt]));
+        if (existingRecordId) qbSetField(record, "3", existingRecordId);
+        qbSetField(record, config.versionObjectFieldId, objectRecordIds[objectId] || "");
+        qbSetField(record, config.versionObjectKeyFieldId, objectId);
+        qbSetField(record, config.versionSnapshotFieldId, JSON.stringify(payload));
+        qbSetField(record, config.versionChangedAtFieldId, changedAt);
+        qbSetField(record, config.versionChangedByFieldId, quickbaseUserName(user));
+        qbSetField(record, config.versionUpdatedByFieldId, quickbaseUserValue(user));
+        rows.push(record);
+      });
     });
-  });
 
-  if (!rows.length) return { count: 0 };
-  await quickbaseWriteRecordsXml(config, config.versionTableId, rows);
-  return { count: rows.length };
+    if (!rows.length) return { count: 0 };
+    await quickbaseWriteRecordsXml(config, config.versionTableId, rows);
+    return { count: rows.length };
+  } catch (error) {
+    throw new Error(
+      `Saving version history to table ${config.versionTableId} failed. ${error instanceof Error ? error.message : "Unknown Quickbase error."}`
+    );
+  }
 }
 
 export async function syncStudioDocumentToQuickbase(document: StudioDocument): Promise<QuickbaseSyncSummary> {

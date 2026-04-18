@@ -534,6 +534,7 @@ export function StudioPage() {
   const params = useParams();
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const loadedPreviewKeysRef = useRef<Set<string>>(new Set());
+  const failedPreviewKeysRef = useRef<Set<string>>(new Set());
   const [documentState, setDocumentState] = useState<StudioDocument>(() => loadLocalDocument());
   const [loadingRemote, setLoadingRemote] = useState(true);
   const [savingRemote, setSavingRemote] = useState(false);
@@ -650,12 +651,20 @@ export function StudioPage() {
       loadedPreviewKeysRef.current.add(previewKey);
       fetchQuickbaseTablePreview(documentState.quickbase, table.id, table.fields.map((field) => field.id), 250)
         .then((response) => {
+          failedPreviewKeysRef.current.delete(previewKey);
           applyDocumentUpdate((draft) => {
             draft.bundle.data[table.id] = response.rows as DataRow[];
           }, { skipHistory: true });
         })
-        .catch(() => {
+        .catch((error) => {
           loadedPreviewKeysRef.current.delete(previewKey);
+          if (!failedPreviewKeysRef.current.has(previewKey)) {
+            failedPreviewKeysRef.current.add(previewKey);
+            pushToast(
+              error instanceof Error ? error.message : `Quickbase table preview failed for table ${table.name}.`,
+              "warn"
+            );
+          }
         });
     });
   }, [

@@ -71,7 +71,9 @@ export async function registerQuickbaseRoutes(app: FastifyInstance) {
     } catch (error) {
       reply.code(400);
       return {
-        message: error instanceof Error ? error.message : "Quickbase table preview failed."
+        message: error instanceof Error
+          ? error.message
+          : `Quickbase table preview failed for table ${body.tableId || "(missing table id)"}.`
       };
     }
   });
