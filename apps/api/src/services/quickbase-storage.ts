@@ -29,6 +29,24 @@ const parser = new XMLParser({
 
 const STORAGE_CONFIG_KEY = "__studioStorageConfig__";
 const USER_SETTINGS_KEY = "__studioUserSettings__";
+const QUICKBASE_RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function parseRetryAfterMs(value: string | null) {
+  if (!value) return 0;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds > 0) {
+    return seconds * 1000;
+  }
+  const date = Date.parse(value);
+  if (Number.isFinite(date)) {
+    return Math.max(0, date - Date.now());
+  }
+  return 0;
+}
 
 function normalizeHostname(value: string) {
   return String(value || "").trim().replace(/^https?:\/\//i, "").replace(/\/$/, "");
@@ -126,6 +144,10 @@ function hasVersionStorage(config: StudioDocument["quickbase"]) {
   );
 }
 
+function isRecordIdField(fid: string) {
+  return String(fid || "").trim() === "3";
+}
+
 function usingDirectQuickbaseApi(config: StudioDocument["quickbase"]) {
   return String(config.apiBaseUrl || "").trim().replace(/\/$/, "") === "https://api.quickbase.com/v1";
 }
@@ -145,25 +167,36 @@ async function quickbaseRestRequest(
   if (config.userToken) headers.Authorization = `QB-USER-TOKEN ${config.userToken}`;
   if (config.appId) headers["X-Quickbase-App-Id"] = config.appId;
 
-  const response = await fetch(url, {
-    method: options.method || "GET",
-    headers,
-    body: options.body !== undefined ? JSON.stringify(options.body) : undefined
-  });
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const response = await fetch(url, {
+      method: options.method || "GET",
+      headers,
+      body: options.body !== undefined ? JSON.stringify(options.body) : undefined
+    });
 
-  const text = await response.text();
-  let body: any = {};
-  try {
-    body = text ? JSON.parse(text) : {};
-  } catch {
-    body = { message: text };
-  }
+    const text = await response.text();
+    let body: any = {};
+    try {
+      body = text ? JSON.parse(text) : {};
+    } catch {
+      body = { message: text };
+    }
 
-  if (!response.ok) {
+    if (response.ok) {
+      return body;
+    }
+
+    if (QUICKBASE_RETRYABLE_STATUSES.has(response.status) && attempt < 2) {
+      const retryAfterMs = parseRetryAfterMs(response.headers.get("retry-after"));
+      const delayMs = retryAfterMs || 500 * Math.pow(2, attempt);
+      await sleep(delayMs);
+      continue;
+    }
+
     throw new Error(body?.message || body?.description || `Quickbase REST request failed with status ${response.status}.`);
   }
 
-  return body;
+  throw new Error("Quickbase REST request failed after retries.");
 }
 
 async function quickbaseXmlRequest(
@@ -653,6 +686,28 @@ export async function syncStudioDocumentToQuickbase(document: StudioDocument): P
       enabled: true,
       ok: false,
       message: `Quickbase sync is configured but missing ${missing.join(", ")}.`,
+      savedObjects: 0,
+      savedSettings: 0,
+      savedVersions: 0,
+      savedStorageConfig: 0
+    };
+  }
+
+  const invalidMappings: string[] = [];
+  if (isRecordIdField(config.objectKeyFieldId)) {
+    invalidMappings.push("saved reports and dashboards key field FID cannot be 3 (Record ID#)");
+  }
+  if (isRecordIdField(config.settingsObjectKeyFieldId)) {
+    invalidMappings.push("user settings object key field FID cannot be 3 (Record ID#)");
+  }
+  if (isRecordIdField(config.versionObjectKeyFieldId)) {
+    invalidMappings.push("version history object key field FID cannot be 3 (Record ID#)");
+  }
+  if (invalidMappings.length) {
+    return {
+      enabled: true,
+      ok: false,
+      message: invalidMappings.join(". ") + ". Use separate text fields to store report/dashboard object IDs.",
       savedObjects: 0,
       savedSettings: 0,
       savedVersions: 0,

@@ -741,9 +741,6 @@ export function StudioPage() {
   useEffect(() => {
     if (!documentState.quickbase.realmHostname || !documentState.quickbase.userToken || !documentState.quickbase.appId) return;
     const previewTargets: Array<{ table: TableDefinition; fieldIds: string[] }> = [];
-    if (activeReport && activeTable) {
-      previewTargets.push({ table: activeTable, fieldIds: collectReportFieldIds(activeReport) });
-    }
     if (createModalOpen && createDraft.type === "report" && createDraftTable) {
       previewTargets.push({ table: createDraftTable, fieldIds: collectDraftFieldIds(createDraft) });
     }
@@ -784,9 +781,6 @@ export function StudioPage() {
         });
     });
   }, [
-    activeReport?.id,
-    activeReport?.updatedAt,
-    activeTable?.id,
     createModalOpen,
     createDraft.type,
     createDraftTable?.id,
