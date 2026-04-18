@@ -643,6 +643,10 @@ input {
   overflow: auto;
 }
 
+.compact-table-shell {
+  max-height: 320px;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;

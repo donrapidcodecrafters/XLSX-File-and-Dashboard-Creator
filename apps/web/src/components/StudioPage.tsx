@@ -464,6 +464,12 @@ function DashboardPreview({
   onOpenReport: (reportId: string) => void;
 }) {
   const normalizedQuery = widgetSearch.trim().toLowerCase();
+  const resolveWidgetDisplayMode = (widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], reportMode: string) => {
+    if (widget.displayMode !== "inherit") return widget.displayMode;
+    if (reportMode === "summary") return "summary";
+    if (reportMode === "chart") return "chart";
+    return "table";
+  };
   return (
     <div className="studio-preview-stack">
       {dashboard.runtimeFilters.length ? (
@@ -500,23 +506,45 @@ function DashboardPreview({
                     <strong>{widget.report.name}</strong>
                     <button className="link-like" onClick={() => onOpenReport(widget.report.id)}>Edit report</button>
                   </div>
-                  <div className="widget-metrics">
-                    {widget.result.summary.map((item) => (
-                      <div className="mini-stat" key={item.label}>
-                        <strong>{item.value}</strong>
-                        <span>{item.label}</span>
-                      </div>
-                    ))}
-                  </div>
-                <div className="mini-chart">
-                  <ChartPreview
-                    chartType={widget.report.view.chartType}
-                    data={widget.result.chartData}
-                    compact
-                    showLegend={widget.report.view.chartShowLegend}
-                    showValues={widget.report.view.chartShowValues}
-                  />
-                </div>
+                  {widget.widget.showSummary ? (
+                    <div className="widget-metrics">
+                      {widget.result.summary.map((item) => (
+                        <div className="mini-stat" key={item.label}>
+                          <strong>{item.value}</strong>
+                          <span>{item.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                  {resolveWidgetDisplayMode(widget.widget, widget.report.view.mode) === "chart" ? (
+                    <div className="mini-chart">
+                      <ChartPreview
+                        chartType={widget.report.view.chartType}
+                        data={widget.result.chartData}
+                        compact
+                        showLegend={widget.report.view.chartShowLegend}
+                        showValues={widget.report.view.chartShowValues}
+                      />
+                    </div>
+                  ) : null}
+                  {resolveWidgetDisplayMode(widget.widget, widget.report.view.mode) === "table" || widget.widget.showDetails ? (
+                    <div className="table-shell compact-table-shell">
+                      <table>
+                        <thead>
+                          <tr>
+                            {widget.report.selectedFieldIds.slice(0, 6).map((fieldId) => <th key={fieldId}>{fieldId}</th>)}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {widget.result.rows.slice(0, 8).map((row, index) => (
+                            <tr key={index}>
+                              {widget.report.selectedFieldIds.slice(0, 6).map((fieldId) => <td key={fieldId}>{formatCell(row[fieldId])}</td>)}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : null}
                 </article>
               ))}
             </div>
@@ -788,10 +816,11 @@ export function StudioPage() {
         if (!table) return null;
         return {
           widgetId: widget.id,
+          widget,
           report,
           result: runReport(report, table, bundle.data[report.sourceTableId] || [], buildDashboardFilters(activeDashboard, report.id, runtimeValues))
         };
-      }).filter((item): item is { widgetId: string; report: ReportDefinition; result: ReportRunResult } => Boolean(item))
+      }).filter((item): item is { widgetId: string; widget: typeof tab.widgets[number]; report: ReportDefinition; result: ReportRunResult } => Boolean(item))
     );
     return buildDashboardResult(activeDashboard, widgets);
   }, [activeDashboard, bundle, runtimeValues]);
@@ -1471,6 +1500,17 @@ export function StudioPage() {
                                   <option value="copied">Saved copy</option>
                                 </select>
                               </label>
+                              <label className="field">
+                                <span>Display</span>
+                                <select value={widget.displayMode} onChange={(event) => updateObject({ ...activeDashboard, tabs: activeDashboard.tabs.map((item) => item.id === tab.id ? { ...item, widgets: item.widgets.map((candidate) => candidate.id === widget.id ? { ...candidate, displayMode: event.target.value as "inherit" | "table" | "summary" | "chart" } : candidate) } : item) })}>
+                                  <option value="inherit">Inherit report view</option>
+                                  <option value="table">Table only</option>
+                                  <option value="summary">Summary only</option>
+                                  <option value="chart">Chart/graph</option>
+                                </select>
+                              </label>
+                              <label className="toggle-row"><input type="checkbox" checked={widget.showSummary} onChange={(event) => updateObject({ ...activeDashboard, tabs: activeDashboard.tabs.map((item) => item.id === tab.id ? { ...item, widgets: item.widgets.map((candidate) => candidate.id === widget.id ? { ...candidate, showSummary: event.target.checked } : candidate) } : item) })} /> Show summary</label>
+                              <label className="toggle-row"><input type="checkbox" checked={widget.showDetails} onChange={(event) => updateObject({ ...activeDashboard, tabs: activeDashboard.tabs.map((item) => item.id === tab.id ? { ...item, widgets: item.widgets.map((candidate) => candidate.id === widget.id ? { ...candidate, showDetails: event.target.checked } : candidate) } : item) })} /> Show details</label>
                               <label className="field-inline"><span>Width</span><input type="number" value={widget.layout.w} onChange={(event) => updateObject({ ...activeDashboard, tabs: activeDashboard.tabs.map((item) => item.id === tab.id ? { ...item, widgets: item.widgets.map((candidate) => candidate.id === widget.id ? { ...candidate, layout: { ...candidate.layout, w: Number(event.target.value) || 1 } } : candidate) } : item) })} /></label>
                               <label className="field-inline"><span>Height</span><input type="number" value={widget.layout.h} onChange={(event) => updateObject({ ...activeDashboard, tabs: activeDashboard.tabs.map((item) => item.id === tab.id ? { ...item, widgets: item.widgets.map((candidate) => candidate.id === widget.id ? { ...candidate, layout: { ...candidate.layout, h: Number(event.target.value) || 1 } } : candidate) } : item) })} /></label>
                               <button onClick={() => updateObject({ ...activeDashboard, tabs: activeDashboard.tabs.map((item) => item.id === tab.id ? { ...item, widgets: item.widgets.filter((candidate) => candidate.id !== widget.id) } : item) })}>Remove card</button>
@@ -1483,7 +1523,7 @@ export function StudioPage() {
                         if (!report) return;
                         updateObject({
                           ...activeDashboard,
-                          tabs: activeDashboard.tabs.map((item) => item.id === tab.id ? { ...item, widgets: [...item.widgets, { id: uid("widget"), title: report.name, mode: "linked", reportId: report.id, layout: { w: 6, h: 4 } }] } : item)
+                          tabs: activeDashboard.tabs.map((item) => item.id === tab.id ? { ...item, widgets: [...item.widgets, { id: uid("widget"), title: report.name, mode: "linked", displayMode: "inherit", showDetails: false, showSummary: true, reportId: report.id, layout: { w: 6, h: 4 } }] } : item)
                         });
                       }}>Add card</button>
                     </div>

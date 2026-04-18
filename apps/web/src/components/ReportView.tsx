@@ -18,13 +18,19 @@ interface ReportViewProps {
 export function ReportView({ report, table, result, loading, currentPage, onPageChange }: ReportViewProps) {
   const totalPages = result?.totalPages || 1;
   const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState("");
 
   async function exportWorkbook() {
     if (!table || !result) return;
     setExporting(true);
+    setExportError("");
     try {
       const fullRows = await fetchAllReportRows(report.id).catch(() => result.rows);
       await exportReportWorkbook(report, table, result, fullRows);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Report export failed.";
+      setExportError(message);
+      console.error(error);
     } finally {
       setExporting(false);
     }
@@ -48,6 +54,13 @@ export function ReportView({ report, table, result, loading, currentPage, onPage
           <LinkToolbar type="report" id={report.id} />
         </div>
       </div>
+
+      {exportError ? (
+        <div className="sync-status sync-status-warn">
+          <strong>Export failed</strong>
+          <span>{exportError}</span>
+        </div>
+      ) : null}
 
       <div className="summary-grid">
         {(result?.summary || []).map((item) => (

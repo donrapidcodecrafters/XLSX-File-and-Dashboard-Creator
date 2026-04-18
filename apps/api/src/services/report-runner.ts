@@ -560,6 +560,7 @@ export async function executeDashboard(dashboardId: string, runtimeValues: Recor
         const result = await executeReport(report, extraFilters, { page: 1, pageSize: 100 });
         return {
           widgetId: widget.id,
+          widget,
           report,
           result
         };

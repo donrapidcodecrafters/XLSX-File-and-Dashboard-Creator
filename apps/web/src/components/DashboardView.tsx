@@ -10,6 +10,13 @@ interface DashboardViewProps {
   dashboard: DashboardDefinition;
 }
 
+function resolveWidgetDisplayMode(widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], reportMode: string) {
+  if (widget.displayMode !== "inherit") return widget.displayMode;
+  if (reportMode === "summary") return "summary";
+  if (reportMode === "chart") return "chart";
+  return "table";
+}
+
 export function DashboardView({ dashboard }: DashboardViewProps) {
   const defaults = useMemo(
     () =>
@@ -22,6 +29,7 @@ export function DashboardView({ dashboard }: DashboardViewProps) {
   const [result, setResult] = useState<DashboardRunResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string>("");
   const [activeTabId, setActiveTabId] = useState(dashboard.tabs[0]?.id || "");
 
   useEffect(() => {
@@ -53,6 +61,7 @@ export function DashboardView({ dashboard }: DashboardViewProps) {
   async function exportWorkbook() {
     if (!result) return;
     setExporting(true);
+    setExportError("");
     try {
       const fullRowsByReportId: Record<string, any[]> = {};
       for (const tab of result.tabs) {
@@ -62,6 +71,10 @@ export function DashboardView({ dashboard }: DashboardViewProps) {
         }
       }
       await exportDashboardWorkbook(dashboard, result, fullRowsByReportId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Dashboard export failed.";
+      setExportError(message);
+      console.error(error);
     } finally {
       setExporting(false);
     }
@@ -111,6 +124,13 @@ export function DashboardView({ dashboard }: DashboardViewProps) {
         </div>
       ) : null}
 
+      {exportError ? (
+        <div className="sync-status sync-status-warn">
+          <strong>Export failed</strong>
+          <span>{exportError}</span>
+        </div>
+      ) : null}
+
       {tabs.length ? (
         <div className="dashboard-tabs">
           {tabs.map((tab) => (
@@ -139,23 +159,49 @@ export function DashboardView({ dashboard }: DashboardViewProps) {
                   <strong>{widget.report.name}</strong>
                   <Link to={`/report/${widget.report.id}`} className="widget-link">Open report</Link>
                 </div>
-                <div className="widget-metrics">
-                  {widget.result.summary.map((item) => (
-                    <div key={item.label} className="mini-stat">
-                      <strong>{item.value}</strong>
-                      <span>{item.label}</span>
-                    </div>
-                  ))}
-                </div>
-                <div className="mini-chart">
-                  <ChartPreview
-                    chartType={widget.report.view.chartType}
-                    data={widget.result.chartData}
-                    compact
-                    showLegend={widget.report.view.chartShowLegend}
-                    showValues={widget.report.view.chartShowValues}
-                  />
-                </div>
+                {widget.widget.showSummary ? (
+                  <div className="widget-metrics">
+                    {widget.result.summary.map((item) => (
+                      <div key={item.label} className="mini-stat">
+                        <strong>{item.value}</strong>
+                        <span>{item.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                {resolveWidgetDisplayMode(widget.widget, widget.report.view.mode) === "chart" ? (
+                  <div className="mini-chart">
+                    <ChartPreview
+                      chartType={widget.report.view.chartType}
+                      data={widget.result.chartData}
+                      compact
+                      showLegend={widget.report.view.chartShowLegend}
+                      showValues={widget.report.view.chartShowValues}
+                    />
+                  </div>
+                ) : null}
+                {resolveWidgetDisplayMode(widget.widget, widget.report.view.mode) === "table" || widget.widget.showDetails ? (
+                  <div className="table-shell compact-table-shell">
+                    <table>
+                      <thead>
+                        <tr>
+                          {widget.report.selectedFieldIds.slice(0, 6).map((fieldId) => (
+                            <th key={fieldId}>{fieldId}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {widget.result.rows.slice(0, 8).map((row, index) => (
+                          <tr key={index}>
+                            {widget.report.selectedFieldIds.slice(0, 6).map((fieldId) => (
+                              <td key={fieldId}>{String(row[fieldId] ?? "")}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
                 </article>
               );
             })}

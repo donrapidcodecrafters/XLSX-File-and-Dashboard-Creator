@@ -98,6 +98,9 @@ export interface WidgetDefinition {
     h: number;
   };
   mode: WidgetMode;
+  displayMode: "inherit" | "table" | "summary" | "chart";
+  showDetails: boolean;
+  showSummary: boolean;
   reportId: string;
   snapshot?: ReportDefinition;
 }
@@ -152,6 +155,7 @@ export interface ReportRunResult {
 
 export interface DashboardWidgetResult {
   widgetId: string;
+  widget: WidgetDefinition;
   report: ReportDefinition;
   result: ReportRunResult;
 }
