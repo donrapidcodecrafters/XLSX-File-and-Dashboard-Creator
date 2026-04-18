@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type Dispatch, type SetStateAction } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import * as XLSX from "xlsx";
 import {
   buildDashboardFilters,
   buildDashboardResult,
@@ -672,7 +671,8 @@ export function StudioPage() {
     pushToast("Studio JSON exported.");
   }
 
-  function exportWorkbook() {
+  async function exportWorkbook() {
+    const XLSX = await import("xlsx");
     const workbook = XLSX.utils.book_new();
     if (activeReport && activeTable && reportResult) {
       const rows = reportResult.rows.map((row) => Object.fromEntries(activeReport.selectedFieldIds.map((fieldId) => [activeTable.fields.find((field) => field.id === fieldId)?.label || fieldId, formatCell(row[fieldId])])));
