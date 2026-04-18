@@ -181,50 +181,69 @@ export function ChartPreview({
 
   if (normalizedChartType === "column" || normalizedChartType === "stacked-column" || ((normalizedChartType === "bar" || normalizedChartType === "stacked-bar") && orientation === "vertical")) {
     const { ticks, axisMax } = axisMaxFor(items.map((item) => item.value), compact);
-    const reversedTicks = [...ticks].reverse();
+    const chartWidth = 760;
+    const chartHeight = 320;
+    const leftPad = 72;
+    const rightPad = 24;
+    const topPad = 24;
+    const bottomPad = xAxisLabel ? 88 : 72;
+    const plotWidth = chartWidth - leftPad - rightPad;
+    const plotHeight = chartHeight - topPad - bottomPad;
+    const step = plotWidth / Math.max(items.length, 1);
+    const barWidth = Math.max(18, Math.min(56, step * 0.58));
     return (
       <div className="axis-chart-shell">
         {renderTitle(title)}
-        <div className="axis-chart-layout">
-          {yAxisLabel ? <div className="chart-axis-title chart-axis-title-vertical">{yAxisLabel}</div> : null}
-          <div className="chart-y-axis">
-            {reversedTicks.map((tick) => (
-              <span className="chart-y-tick" key={tick}>{formatAxisValue(tick, decimalPlaces)}</span>
-            ))}
-          </div>
-          <div className="chart-plot-column">
-            <div className="chart-plot-surface">
-              {reversedTicks.map((tick) => {
-                const offset = axisMax === 0 ? 100 : ((axisMax - tick) / axisMax) * 100;
-                return <span className="chart-grid-line" key={`grid-${tick}`} style={{ top: `${offset}%` }} />;
-              })}
-              <div className="vertical-chart-bars axis-aware-bars">
-                {items.map((item, index) => {
-                  const height = Math.max(18, (item.value / axisMax) * 160);
-                  return (
-                    <div className={normalizedChartType === "stacked-column" || normalizedChartType === "stacked-bar" ? "stacked-column" : "vertical-bar"} key={item.label}>
-                      {showValues ? <div className="micro">{formatAxisValue(item.value, decimalPlaces)}</div> : null}
-                      {normalizedChartType === "stacked-column" || normalizedChartType === "stacked-bar" ? (
-                        <div className="stacked-column-bar" style={{ height }}>
-                          <div className="stacked-segment" style={{ height: "100%", background: getColor(index) }} />
-                        </div>
-                      ) : (
-                        <div className="vertical-bar-column" style={{ height, background: `linear-gradient(180deg, ${getColor(index)}, ${getColor(index)}cc)` }} />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="chart-x-axis-labels" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
-              {items.map((item, index) => (
-                <span className="chart-x-tick" key={`${item.label}-${index}`}>
-                  {xTickLabel(item.label, index, items.length, compact)}
-                </span>
-              ))}
-            </div>
-            {xAxisLabel ? <div className="chart-axis-title chart-axis-title-bottom">{xAxisLabel}</div> : null}
-          </div>
+        <div className="axis-svg-shell">
+          <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} preserveAspectRatio="none" className="bar-chart-svg">
+            {ticks.map((tick) => {
+              const y = topPad + plotHeight - (tick / axisMax) * plotHeight;
+              return (
+                <g key={`v-tick-${tick}`}>
+                  <line x1={leftPad} y1={y} x2={chartWidth - rightPad} y2={y} className="chart-grid-svg-line" />
+                  <text x={leftPad - 10} y={y + 4} textAnchor="end" className="chart-svg-tick">{formatAxisValue(tick, decimalPlaces)}</text>
+                </g>
+              );
+            })}
+            <line x1={leftPad} y1={topPad} x2={leftPad} y2={topPad + plotHeight} className="chart-axis-svg-line" />
+            <line x1={leftPad} y1={topPad + plotHeight} x2={chartWidth - rightPad} y2={topPad + plotHeight} className="chart-axis-svg-line" />
+            {yAxisLabel ? (
+              <text
+                x={18}
+                y={topPad + plotHeight / 2}
+                transform={`rotate(-90 18 ${topPad + plotHeight / 2})`}
+                textAnchor="middle"
+                className="chart-svg-axis-title"
+              >
+                {yAxisLabel}
+              </text>
+            ) : null}
+            {items.map((item, index) => {
+              const x = leftPad + step * index + (step - barWidth) / 2;
+              const height = Math.max(14, (item.value / axisMax) * plotHeight);
+              const y = topPad + plotHeight - height;
+              return (
+                <g key={`${item.label}-${index}`}>
+                  <rect x={x} y={y} width={barWidth} height={height} rx="10" fill={getColor(index)} fillOpacity="0.9" />
+                  {showValues ? <text x={x + barWidth / 2} y={y - 8} textAnchor="middle" className="chart-svg-value">{formatAxisValue(item.value, decimalPlaces)}</text> : null}
+                  <text
+                    x={x + barWidth / 2}
+                    y={topPad + plotHeight + 18}
+                    textAnchor="end"
+                    transform={`rotate(-32 ${x + barWidth / 2} ${topPad + plotHeight + 18})`}
+                    className="chart-svg-label"
+                  >
+                    {xTickLabel(item.label, index, items.length, compact)}
+                  </text>
+                </g>
+              );
+            })}
+            {xAxisLabel ? (
+              <text x={leftPad + plotWidth / 2} y={chartHeight - 12} textAnchor="middle" className="chart-svg-axis-title">
+                {xAxisLabel}
+              </text>
+            ) : null}
+          </svg>
         </div>
       </div>
     );
@@ -232,39 +251,49 @@ export function ChartPreview({
 
   if ((normalizedChartType === "bar" || normalizedChartType === "stacked-bar") && orientation === "horizontal") {
     const { ticks, axisMax } = axisMaxFor(items.map((item) => item.value), compact);
+    const chartWidth = 760;
+    const chartHeight = Math.max(220, 84 + items.length * 44);
+    const leftPad = 180;
+    const rightPad = showValues ? 92 : 28;
+    const topPad = 20;
+    const bottomPad = xAxisLabel ? 54 : 36;
+    const plotWidth = chartWidth - leftPad - rightPad;
+    const plotHeight = chartHeight - topPad - bottomPad;
+    const rowHeight = plotHeight / Math.max(items.length, 1);
+    const barHeight = Math.max(14, Math.min(28, rowHeight * 0.56));
     return (
       <div className="axis-chart-shell">
         {renderTitle(title)}
-        <div className="horizontal-bar-shell">
-          <div className="horizontal-bar-grid">
-            {ticks.map((tick) => (
-              <span className="chart-grid-line horizontal-grid-line" key={`h-grid-${tick}`} style={{ left: `${(tick / axisMax) * 100}%` }} />
-            ))}
-            {items.map((item, index) => {
-              const width = Math.max(6, (item.value / axisMax) * 100);
+        <div className="axis-svg-shell">
+          <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} preserveAspectRatio="none" className="bar-chart-svg">
+            {ticks.map((tick) => {
+              const x = leftPad + (tick / axisMax) * plotWidth;
               return (
-                <div className="horizontal-bar-row" key={item.label}>
-                  <div className="horizontal-bar-label">{cap(item.label, compact ? 12 : 18)}</div>
-                  <div className="horizontal-bar-track">
-                    <div className="horizontal-bar-fill" style={{ width: `${width}%`, background: `linear-gradient(90deg, ${getColor(index)}, ${getColor(index)}cc)` }} />
-                  </div>
-                  {showValues ? <div className="horizontal-bar-value">{formatAxisValue(item.value, decimalPlaces)}</div> : null}
-                </div>
+                <g key={`h-tick-${tick}`}>
+                  <line x1={x} y1={topPad} x2={x} y2={topPad + plotHeight} className="chart-grid-svg-line" />
+                  <text x={x} y={topPad + plotHeight + 18} textAnchor="middle" className="chart-svg-tick">{formatAxisValue(tick, decimalPlaces)}</text>
+                </g>
               );
             })}
-          </div>
-          <div className="horizontal-bar-ticks" style={{ gridTemplateColumns: `160px minmax(0, 1fr) ${showValues ? "88px" : ""}` }}>
-            <span />
-            <div className="horizontal-bar-tick-row">
-              {ticks.map((tick) => (
-                <span className="chart-x-tick" key={`tick-${tick}`} style={{ left: `${(tick / axisMax) * 100}%` }}>
-                  {formatAxisValue(tick, decimalPlaces)}
-                </span>
-              ))}
-            </div>
-            {showValues ? <span /> : null}
-          </div>
-          {xAxisLabel ? <div className="chart-axis-title chart-axis-title-bottom">{xAxisLabel}</div> : null}
+            <line x1={leftPad} y1={topPad} x2={leftPad} y2={topPad + plotHeight} className="chart-axis-svg-line" />
+            <line x1={leftPad} y1={topPad + plotHeight} x2={chartWidth - rightPad} y2={topPad + plotHeight} className="chart-axis-svg-line" />
+            {items.map((item, index) => {
+              const y = topPad + rowHeight * index + (rowHeight - barHeight) / 2;
+              const width = Math.max(12, (item.value / axisMax) * plotWidth);
+              return (
+                <g key={`${item.label}-${index}`}>
+                  <text x={leftPad - 12} y={y + barHeight / 2 + 4} textAnchor="end" className="chart-svg-label">{cap(item.label, compact ? 12 : 18)}</text>
+                  <rect x={leftPad} y={y} width={width} height={barHeight} rx="10" fill={getColor(index)} fillOpacity="0.9" />
+                  {showValues ? <text x={leftPad + width + 10} y={y + barHeight / 2 + 4} textAnchor="start" className="chart-svg-value">{formatAxisValue(item.value, decimalPlaces)}</text> : null}
+                </g>
+              );
+            })}
+            {xAxisLabel ? (
+              <text x={leftPad + plotWidth / 2} y={chartHeight - 10} textAnchor="middle" className="chart-svg-axis-title">
+                {xAxisLabel}
+              </text>
+            ) : null}
+          </svg>
         </div>
       </div>
     );
