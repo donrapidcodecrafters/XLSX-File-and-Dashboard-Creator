@@ -814,6 +814,15 @@ th {
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
 }
 
+.dashboard-layout-grid {
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  align-items: start;
+}
+
+.dashboard-layout-item {
+  min-width: 0;
+}
+
 .viewer-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -845,6 +854,16 @@ th {
   border-radius: 18px;
   background: rgba(247, 248, 243, 0.95);
   border: 1px solid var(--line);
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+  height: 100%;
+}
+
+.widget-card.is-dragging {
+  opacity: 0.72;
+  border-color: rgba(13, 124, 102, 0.32);
+  box-shadow: 0 14px 32px rgba(13, 124, 102, 0.12);
 }
 
 .widget-head {
@@ -853,6 +872,14 @@ th {
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.widget-preview-controls {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
 }
 
 .dashboard-tabs {
@@ -894,6 +921,30 @@ th {
   font-weight: 700;
   text-decoration: underline;
   text-underline-offset: 3px;
+}
+
+.widget-resize-handle {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  padding: 0;
+  border-radius: 999px;
+  cursor: nwse-resize;
+  border: 1px solid rgba(13, 124, 102, 0.28);
+  background: linear-gradient(135deg, rgba(13, 124, 102, 0.18), rgba(216, 141, 61, 0.16));
+  box-shadow: 0 8px 16px rgba(22, 39, 31, 0.12);
+}
+
+.widget-resize-handle::before {
+  content: "";
+  display: block;
+  width: 100%;
+  height: 100%;
+  background:
+    linear-gradient(135deg, transparent 0 42%, rgba(22, 39, 31, 0.55) 42% 48%, transparent 48% 62%, rgba(22, 39, 31, 0.55) 62% 68%, transparent 68%);
 }
 
 .widget-metrics {
@@ -1115,6 +1166,12 @@ th {
   border-radius: 14px;
   border: 1px solid var(--line);
   background: rgba(247, 248, 243, 0.95);
+}
+
+.widget-edit-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .widget-layout-row {
@@ -1343,6 +1400,10 @@ select {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .dashboard-layout-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
   .studio-drawer {
     width: 100%;
   }
@@ -1377,6 +1438,14 @@ select {
 }
 
 @media (max-width: 920px) {
+  .dashboard-layout-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dashboard-layout-item {
+    grid-column: 1 / -1 !important;
+  }
+
   .reader-content .surface {
     padding: 18px 14px;
   }

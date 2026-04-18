@@ -4,6 +4,7 @@ import type { DashboardDefinition, DashboardRunResult, ExportJobStatus, TableDef
 import { downloadExportJob, fetchExportJobStatus, renderDashboard, startDashboardExportJob } from "../lib/api";
 import { LinkToolbar } from "./LinkToolbar";
 import { ChartPreview } from "./ChartPreview";
+import { buildObjectUrl, getHostedContext } from "../lib/embed";
 
 interface DashboardViewProps {
   dashboard: DashboardDefinition;
@@ -21,7 +22,18 @@ function getFieldLabel(tables: TableDefinition[] | undefined, tableId: string, f
   return tables?.find((table) => table.id === tableId)?.fields.find((field) => field.id === fieldId)?.label || fieldId;
 }
 
+function getWidgetLayoutStyle(layout: { w: number; h: number }) {
+  const width = Math.max(1, Math.min(12, Math.round(layout.w || 6)));
+  const height = Math.max(2, Math.min(10, Math.round(layout.h || 4)));
+  return {
+    gridColumn: `span ${width}`,
+    minHeight: `${height * 96}px`
+  };
+}
+
 export function DashboardView({ dashboard, tables }: DashboardViewProps) {
+  const hosted = getHostedContext();
+  const fullScreenUrl = buildObjectUrl("dashboard", dashboard.id, { viewer: true });
   const defaults = useMemo(
     () =>
       Object.fromEntries(
@@ -94,16 +106,22 @@ export function DashboardView({ dashboard, tables }: DashboardViewProps) {
         </div>
         <div className="stack-compact reader-actions">
           <div className="link-toolbar">
-            <button className="ghost-button" onClick={() => window.history.back()}>Back</button>
-            <Link className="ghost-button" to="/viewer">Home</Link>
-            <Link className="ghost-button" to={`/studio/${dashboard.id}`}>Open in building area</Link>
+            {hosted.embed ? (
+              <button className="ghost-button" onClick={() => window.open(fullScreenUrl, "_blank", "noopener,noreferrer")}>Open full-screen</button>
+            ) : (
+              <>
+                <button className="ghost-button" onClick={() => window.history.back()}>Back</button>
+                <Link className="ghost-button" to="/viewer">Home</Link>
+                <Link className="ghost-button" to={`/studio/${dashboard.id}`}>Open in building area</Link>
+              </>
+            )}
             <button className="ghost-button" onClick={() => { void beginExport(); }} disabled={!result || exportJob?.status === "queued" || exportJob?.status === "running"}>
               {exportJob?.status === "queued" || exportJob?.status === "running"
                 ? `Exporting ${exportJob.progress}%`
                 : "Download xlsx"}
             </button>
           </div>
-          <LinkToolbar type="dashboard" id={dashboard.id} />
+          {hosted.embed ? null : <LinkToolbar type="dashboard" id={dashboard.id} />}
         </div>
       </div>
 
@@ -168,12 +186,12 @@ export function DashboardView({ dashboard, tables }: DashboardViewProps) {
             <strong>{activeTab.name}</strong>
             <span className="micro">{activeTab.widgets.length || 0} cards</span>
           </div>
-          <div className="widget-grid">
+          <div className="widget-grid dashboard-layout-grid">
             {activeTab.widgets.map((widget) => {
               return (
-                <article className="widget-card" key={widget.widgetId}>
+                <article className="widget-card dashboard-layout-item" key={widget.widgetId} style={getWidgetLayoutStyle(widget.widget.layout)}>
                 <div className="widget-head">
-                  <strong>{widget.report.name}</strong>
+                  <strong>{widget.widget.title || widget.report.name}</strong>
                   <Link to={`/report/${widget.report.id}`} className="widget-link">Open report</Link>
                 </div>
                 {widget.widget.showSummary ? (

@@ -1,4 +1,4 @@
-import { buildObjectUrl } from "../lib/embed";
+import { buildObjectUrl, getHostedContext } from "../lib/embed";
 
 interface LinkToolbarProps {
   type: "report" | "dashboard";
@@ -10,9 +10,14 @@ async function copyText(value: string) {
 }
 
 export function LinkToolbar({ type, id }: LinkToolbarProps) {
+  const hostedContext = getHostedContext();
   const hosted = buildObjectUrl(type, id);
   const viewer = buildObjectUrl(type, id, { viewer: true });
   const embed = buildObjectUrl(type, id, { viewer: true, embed: true });
+
+  if (hostedContext.embed) {
+    return null;
+  }
 
   return (
     <div className="link-toolbar">

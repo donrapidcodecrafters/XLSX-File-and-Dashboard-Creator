@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type Dispatch, type PointerEvent as ReactPointerEvent, type SetStateAction } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   buildDashboardFilters,
@@ -290,6 +290,21 @@ function getFieldLabel(table: TableDefinition | null | undefined, fieldId: strin
   return table?.fields.find((field) => field.id === fieldId)?.label || fieldId;
 }
 
+function clampWidgetWidth(value: number) {
+  return Math.max(1, Math.min(12, Math.round(value || 1)));
+}
+
+function clampWidgetHeight(value: number) {
+  return Math.max(2, Math.min(10, Math.round(value || 2)));
+}
+
+function getWidgetLayoutStyle(layout: { w: number; h: number }) {
+  return {
+    gridColumn: `span ${clampWidgetWidth(layout.w)}`,
+    minHeight: `${clampWidgetHeight(layout.h) * 96}px`
+  };
+}
+
 function looksLikeQuickbaseTableId(value: string) {
   return /^[a-z0-9]{8,}$/i.test(String(value || "").trim());
 }
@@ -459,7 +474,14 @@ function DashboardPreview({
   runtimeValues,
   setRuntimeValues,
   widgetSearch,
-  onOpenReport
+  draggingWidget,
+  onOpenReport,
+  onStartWidgetDrag,
+  onEndWidgetDrag,
+  onDropWidget,
+  onToggleFullWidth,
+  onBeginResizeWidget,
+  onMoveWidget
 }: {
   dashboard: DashboardDefinition;
   result: DashboardRunResult;
@@ -467,7 +489,14 @@ function DashboardPreview({
   runtimeValues: Record<string, string>;
   setRuntimeValues: Dispatch<SetStateAction<Record<string, string>>>;
   widgetSearch: string;
+  draggingWidget: { tabId: string; widgetId: string } | null;
   onOpenReport: (reportId: string) => void;
+  onStartWidgetDrag: (tabId: string, widgetId: string) => void;
+  onEndWidgetDrag: () => void;
+  onDropWidget: (tabId: string, widgetId: string) => void;
+  onToggleFullWidth: (tabId: string, widgetId: string) => void;
+  onBeginResizeWidget: (event: ReactPointerEvent<HTMLButtonElement>, tabId: string, widgetId: string, layout: { w: number; h: number }) => void;
+  onMoveWidget: (tabId: string, widgetId: string, direction: -1 | 1) => void;
 }) {
   const normalizedQuery = widgetSearch.trim().toLowerCase();
   const resolveWidgetDisplayMode = (widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], reportMode: string) => {
@@ -505,14 +534,31 @@ function DashboardPreview({
               <strong>{tab.name}</strong>
               <span className="micro">{widgets.length} cards</span>
             </div>
-            <div className="widget-grid">
+            <div className="widget-grid dashboard-layout-grid">
               {widgets.map((widget) => {
                 const widgetTable = tables.find((table) => table.id === widget.report.sourceTableId) || null;
+                const isDragging = draggingWidget?.tabId === tab.id && draggingWidget?.widgetId === widget.widgetId;
                 return (
-                <article className="widget-card" key={widget.widgetId}>
+                <article
+                  className={`widget-card dashboard-layout-item${isDragging ? " is-dragging" : ""}`}
+                  key={widget.widgetId}
+                  style={getWidgetLayoutStyle(widget.widget.layout)}
+                  draggable
+                  onDragStart={() => onStartWidgetDrag(tab.id, widget.widgetId)}
+                  onDragEnd={onEndWidgetDrag}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={() => onDropWidget(tab.id, widget.widgetId)}
+                >
                   <div className="widget-head">
-                    <strong>{widget.report.name}</strong>
-                    <button className="link-like" onClick={() => onOpenReport(widget.report.id)}>Edit report</button>
+                    <strong>{widget.widget.title || widget.report.name}</strong>
+                    <div className="widget-preview-controls">
+                      <button className="link-like" onClick={() => onMoveWidget(tab.id, widget.widgetId, -1)}>Move up</button>
+                      <button className="link-like" onClick={() => onMoveWidget(tab.id, widget.widgetId, 1)}>Move down</button>
+                      <button className="link-like" onClick={() => onToggleFullWidth(tab.id, widget.widgetId)}>
+                        {clampWidgetWidth(widget.widget.layout.w) >= 12 ? "Restore width" : "Full width"}
+                      </button>
+                      <button className="link-like" onClick={() => onOpenReport(widget.report.id)}>Edit report</button>
+                    </div>
                   </div>
                   {widget.widget.showSummary ? (
                     <div className="widget-metrics">
@@ -553,6 +599,13 @@ function DashboardPreview({
                       </table>
                     </div>
                   ) : null}
+                  <button
+                    type="button"
+                    className="widget-resize-handle"
+                    aria-label="Resize card"
+                    title="Drag to resize"
+                    onPointerDown={(event) => onBeginResizeWidget(event, tab.id, widget.widgetId, widget.widget.layout)}
+                  />
                 </article>
                 );
               })}
@@ -657,6 +710,18 @@ export function StudioPage() {
   const [editingReportId, setEditingReportId] = useState<string | null>(null);
   const [createDraft, setCreateDraft] = useState<CreateObjectDraft>(() => buildCreateDraft(loadLocalDocument().bundle.tables[0], "report"));
   const [createFieldQuery, setCreateFieldQuery] = useState("");
+  const [draggingWidget, setDraggingWidget] = useState<{ tabId: string; widgetId: string } | null>(null);
+  const [resizeSession, setResizeSession] = useState<{
+    tabId: string;
+    widgetId: string;
+    startX: number;
+    startY: number;
+    startW: number;
+    startH: number;
+    nextW: number;
+    nextH: number;
+  } | null>(null);
+  const resizeStartSnapshotRef = useRef<StudioDocument | null>(null);
 
   const bundle = documentState.bundle;
   const objects = useMemo(() => bundle.order.map((id) => bundle.objects[id]).filter(Boolean), [bundle]);
@@ -817,6 +882,48 @@ export function StudioPage() {
     pushToast("Download is ready.");
   }, [downloadedJobId, exportJob]);
 
+  useEffect(() => {
+    if (!resizeSession) return;
+    const session = resizeSession;
+
+    function handlePointerMove(event: PointerEvent) {
+      const nextW = clampWidgetWidth(session.startW + Math.round((event.clientX - session.startX) / 96));
+      const nextH = clampWidgetHeight(session.startH + Math.round((event.clientY - session.startY) / 88));
+      if (nextW === session.nextW && nextH === session.nextH) return;
+      setResizeSession((current) => (current ? { ...current, nextW, nextH } : current));
+      updateActiveDashboardWidget(
+        session.tabId,
+        session.widgetId,
+        (widget) => ({
+          ...widget,
+          layout: {
+            ...widget.layout,
+            w: nextW,
+            h: nextH
+          }
+        }),
+        { skipHistory: true }
+      );
+    }
+
+    function handlePointerUp() {
+      const changed = session.startW !== session.nextW || session.startH !== session.nextH;
+      if (changed && resizeStartSnapshotRef.current) {
+        setHistory((current) => [resizeStartSnapshotRef.current as StudioDocument, ...current].slice(0, 60));
+        setFuture([]);
+      }
+      resizeStartSnapshotRef.current = null;
+      setResizeSession(null);
+    }
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+  }, [resizeSession, activeDashboard?.id]);
+
   const filteredObjects = useMemo(() => {
     const query = libraryQuery.trim().toLowerCase();
     return objects.filter((object) => {
@@ -853,12 +960,91 @@ export function StudioPage() {
     return buildDashboardResult(activeDashboard, widgets);
   }, [activeDashboard, bundle, runtimeValues]);
 
-  function updateObject(nextObject: StudioObject) {
+  function writeObject(nextObject: StudioObject, options?: { skipHistory?: boolean }) {
     applyDocumentUpdate((draft) => {
       draft.bundle.objects[nextObject.id] = { ...nextObject, updatedAt: new Date().toISOString() };
       if (!draft.bundle.order.includes(nextObject.id)) {
         draft.bundle.order.unshift(nextObject.id);
       }
+    }, options);
+  }
+
+  function updateObject(nextObject: StudioObject) {
+    writeObject(nextObject);
+  }
+
+  function updateActiveDashboardWidget(
+    tabId: string,
+    widgetId: string,
+    updater: (
+      widget: DashboardDefinition["tabs"][number]["widgets"][number],
+      index: number,
+      widgets: DashboardDefinition["tabs"][number]["widgets"]
+    ) => DashboardDefinition["tabs"][number]["widgets"][number],
+    options?: { skipHistory?: boolean }
+  ) {
+    if (!activeDashboard) return;
+    const nextDashboard = clone(activeDashboard);
+    nextDashboard.tabs = nextDashboard.tabs.map((tab) =>
+      tab.id === tabId
+        ? {
+            ...tab,
+            widgets: tab.widgets.map((widget, index, widgets) => (widget.id === widgetId ? updater(widget, index, widgets) : widget))
+          }
+        : tab
+    );
+    writeObject(nextDashboard, options);
+  }
+
+  function moveDashboardWidget(tabId: string, widgetId: string, direction: -1 | 1) {
+    if (!activeDashboard) return;
+    const nextDashboard = clone(activeDashboard);
+    const tab = nextDashboard.tabs.find((item) => item.id === tabId);
+    if (!tab) return;
+    const currentIndex = tab.widgets.findIndex((item) => item.id === widgetId);
+    const nextIndex = currentIndex + direction;
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= tab.widgets.length) return;
+    const [widget] = tab.widgets.splice(currentIndex, 1);
+    tab.widgets.splice(nextIndex, 0, widget);
+    writeObject(nextDashboard);
+  }
+
+  function reorderDashboardWidget(tabId: string, sourceWidgetId: string, targetWidgetId: string) {
+    if (!activeDashboard || sourceWidgetId === targetWidgetId) return;
+    const nextDashboard = clone(activeDashboard);
+    const tab = nextDashboard.tabs.find((item) => item.id === tabId);
+    if (!tab) return;
+    const fromIndex = tab.widgets.findIndex((item) => item.id === sourceWidgetId);
+    const toIndex = tab.widgets.findIndex((item) => item.id === targetWidgetId);
+    if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return;
+    const [widget] = tab.widgets.splice(fromIndex, 1);
+    tab.widgets.splice(toIndex, 0, widget);
+    writeObject(nextDashboard);
+  }
+
+  function toggleDashboardWidgetFullWidth(tabId: string, widgetId: string) {
+    updateActiveDashboardWidget(tabId, widgetId, (widget) => ({
+      ...widget,
+      layout: {
+        ...widget.layout,
+        w: clampWidgetWidth(widget.layout.w) >= 12 ? 6 : 12
+      }
+    }));
+  }
+
+  function beginWidgetResize(event: ReactPointerEvent<HTMLButtonElement>, tabId: string, widgetId: string, layout: { w: number; h: number }) {
+    event.preventDefault();
+    event.stopPropagation();
+    resizeStartSnapshotRef.current = clone(documentState);
+    setResizeSession({
+      tabId,
+      widgetId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startW: clampWidgetWidth(layout.w),
+      startH: clampWidgetHeight(layout.h),
+      nextW: clampWidgetWidth(layout.w),
+      nextH: clampWidgetHeight(layout.h)
     });
   }
 
@@ -1476,7 +1662,19 @@ export function StudioPage() {
               runtimeValues={runtimeValues}
               setRuntimeValues={setRuntimeValues}
               widgetSearch={widgetSearch}
+              draggingWidget={draggingWidget}
               onOpenReport={(reportId) => navigate(`/studio/${reportId}`)}
+              onStartWidgetDrag={(tabId, widgetId) => setDraggingWidget({ tabId, widgetId })}
+              onEndWidgetDrag={() => setDraggingWidget(null)}
+              onDropWidget={(tabId, widgetId) => {
+                if (draggingWidget?.tabId === tabId) {
+                  reorderDashboardWidget(tabId, draggingWidget.widgetId, widgetId);
+                }
+                setDraggingWidget(null);
+              }}
+              onToggleFullWidth={toggleDashboardWidgetFullWidth}
+              onBeginResizeWidget={beginWidgetResize}
+              onMoveWidget={moveDashboardWidget}
             />
           </section>
         ) : null}
@@ -1524,23 +1722,21 @@ export function StudioPage() {
                       <div className="stack-compact">
                         {tab.widgets.filter((widget) => !widgetSearch || `${widget.title} ${widget.reportId}`.toLowerCase().includes(widgetSearch.toLowerCase())).map((widget) => (
                           <div className="widget-edit-card" key={widget.id}>
-                            <label className="field"><span>Title</span><input value={widget.title} onChange={(event) => updateObject({ ...activeDashboard, tabs: activeDashboard.tabs.map((item) => item.id === tab.id ? { ...item, widgets: item.widgets.map((candidate) => candidate.id === widget.id ? { ...candidate, title: event.target.value } : candidate) } : item) })} /></label>
+                            <label className="field"><span>Title</span><input value={widget.title} onChange={(event) => updateActiveDashboardWidget(tab.id, widget.id, (candidate) => ({ ...candidate, title: event.target.value }))} /></label>
                             <div className="widget-editor-grid">
                               <label className="field">
                                 <span>Report</span>
-                                <select value={widget.reportId} onChange={(event) => updateObject({ ...activeDashboard, tabs: activeDashboard.tabs.map((item) => item.id === tab.id ? { ...item, widgets: item.widgets.map((candidate) => candidate.id === widget.id ? { ...candidate, reportId: event.target.value, snapshot: undefined, mode: "linked" } : candidate) } : item) })}>{objects.filter((object): object is ReportDefinition => object.type === "report").map((report) => <option key={report.id} value={report.id}>{report.name}</option>)}</select>
+                                <select value={widget.reportId} onChange={(event) => updateActiveDashboardWidget(tab.id, widget.id, (candidate) => ({ ...candidate, reportId: event.target.value, snapshot: undefined, mode: "linked" }))}>{objects.filter((object): object is ReportDefinition => object.type === "report").map((report) => <option key={report.id} value={report.id}>{report.name}</option>)}</select>
                               </label>
                               <label className="field">
                                 <span>Connection</span>
                                 <select value={widget.mode} onChange={(event) => {
                                   const report = bundle.objects[widget.reportId] as ReportDefinition | undefined;
-                                  updateObject({
-                                    ...activeDashboard,
-                                    tabs: activeDashboard.tabs.map((item) => item.id === tab.id ? {
-                                      ...item,
-                                      widgets: item.widgets.map((candidate) => candidate.id === widget.id ? { ...candidate, mode: event.target.value as "linked" | "copied", snapshot: event.target.value === "copied" && report ? clone(report) : undefined } : candidate)
-                                    } : item)
-                                  });
+                                  updateActiveDashboardWidget(tab.id, widget.id, (candidate) => ({
+                                    ...candidate,
+                                    mode: event.target.value as "linked" | "copied",
+                                    snapshot: event.target.value === "copied" && report ? clone(report) : undefined
+                                  }));
                                 }}>
                                   <option value="linked">Live report</option>
                                   <option value="copied">Saved copy</option>
@@ -1548,17 +1744,25 @@ export function StudioPage() {
                               </label>
                               <label className="field">
                                 <span>Display</span>
-                                <select value={widget.displayMode} onChange={(event) => updateObject({ ...activeDashboard, tabs: activeDashboard.tabs.map((item) => item.id === tab.id ? { ...item, widgets: item.widgets.map((candidate) => candidate.id === widget.id ? { ...candidate, displayMode: event.target.value as "inherit" | "table" | "summary" | "chart" } : candidate) } : item) })}>
+                                <select value={widget.displayMode} onChange={(event) => updateActiveDashboardWidget(tab.id, widget.id, (candidate) => ({ ...candidate, displayMode: event.target.value as "inherit" | "table" | "summary" | "chart" }))}>
                                   <option value="inherit">Inherit report view</option>
                                   <option value="table">Table only</option>
                                   <option value="summary">Summary only</option>
                                   <option value="chart">Chart/graph</option>
                                 </select>
                               </label>
-                              <label className="toggle-row"><input type="checkbox" checked={widget.showSummary} onChange={(event) => updateObject({ ...activeDashboard, tabs: activeDashboard.tabs.map((item) => item.id === tab.id ? { ...item, widgets: item.widgets.map((candidate) => candidate.id === widget.id ? { ...candidate, showSummary: event.target.checked } : candidate) } : item) })} /> Show summary</label>
-                              <label className="toggle-row"><input type="checkbox" checked={widget.showDetails} onChange={(event) => updateObject({ ...activeDashboard, tabs: activeDashboard.tabs.map((item) => item.id === tab.id ? { ...item, widgets: item.widgets.map((candidate) => candidate.id === widget.id ? { ...candidate, showDetails: event.target.checked } : candidate) } : item) })} /> Show details</label>
-                              <label className="field-inline"><span>Width</span><input type="number" value={widget.layout.w} onChange={(event) => updateObject({ ...activeDashboard, tabs: activeDashboard.tabs.map((item) => item.id === tab.id ? { ...item, widgets: item.widgets.map((candidate) => candidate.id === widget.id ? { ...candidate, layout: { ...candidate.layout, w: Number(event.target.value) || 1 } } : candidate) } : item) })} /></label>
-                              <label className="field-inline"><span>Height</span><input type="number" value={widget.layout.h} onChange={(event) => updateObject({ ...activeDashboard, tabs: activeDashboard.tabs.map((item) => item.id === tab.id ? { ...item, widgets: item.widgets.map((candidate) => candidate.id === widget.id ? { ...candidate, layout: { ...candidate.layout, h: Number(event.target.value) || 1 } } : candidate) } : item) })} /></label>
+                              <label className="toggle-row"><input type="checkbox" checked={widget.showSummary} onChange={(event) => updateActiveDashboardWidget(tab.id, widget.id, (candidate) => ({ ...candidate, showSummary: event.target.checked }))} /> Show summary</label>
+                              <label className="toggle-row"><input type="checkbox" checked={widget.showDetails} onChange={(event) => updateActiveDashboardWidget(tab.id, widget.id, (candidate) => ({ ...candidate, showDetails: event.target.checked }))} /> Show details</label>
+                              <label className="toggle-row"><input type="checkbox" checked={clampWidgetWidth(widget.layout.w) >= 12} onChange={() => toggleDashboardWidgetFullWidth(tab.id, widget.id)} /> Full width</label>
+                              <label className="field-inline"><span>Width</span><input type="number" min="1" max="12" value={widget.layout.w} onChange={(event) => updateActiveDashboardWidget(tab.id, widget.id, (candidate) => ({ ...candidate, layout: { ...candidate.layout, w: clampWidgetWidth(Number(event.target.value)) } }))} /></label>
+                              <label className="field-inline"><span>Height</span><input type="number" min="2" max="10" value={widget.layout.h} onChange={(event) => updateActiveDashboardWidget(tab.id, widget.id, (candidate) => ({ ...candidate, layout: { ...candidate.layout, h: clampWidgetHeight(Number(event.target.value)) } }))} /></label>
+                            </div>
+                            <div className="widget-edit-actions">
+                              <button onClick={() => moveDashboardWidget(tab.id, widget.id, -1)}>Move up</button>
+                              <button onClick={() => moveDashboardWidget(tab.id, widget.id, 1)}>Move down</button>
+                              <button onClick={() => toggleDashboardWidgetFullWidth(tab.id, widget.id)}>
+                                {clampWidgetWidth(widget.layout.w) >= 12 ? "Restore width" : "Make full width"}
+                              </button>
                               <button onClick={() => updateObject({ ...activeDashboard, tabs: activeDashboard.tabs.map((item) => item.id === tab.id ? { ...item, widgets: item.widgets.filter((candidate) => candidate.id !== widget.id) } : item) })}>Remove card</button>
                             </div>
                           </div>

@@ -4,6 +4,7 @@ import type { ExportJobStatus, ReportDefinition, ReportRunResult, TableDefinitio
 import { LinkToolbar } from "./LinkToolbar";
 import { ChartPreview } from "./ChartPreview";
 import { downloadExportJob, fetchExportJobStatus, startReportExportJob } from "../lib/api";
+import { buildObjectUrl, getHostedContext } from "../lib/embed";
 
 interface ReportViewProps {
   report: ReportDefinition;
@@ -15,6 +16,8 @@ interface ReportViewProps {
 }
 
 export function ReportView({ report, table, result, loading, currentPage, onPageChange }: ReportViewProps) {
+  const hosted = getHostedContext();
+  const fullScreenUrl = buildObjectUrl("report", report.id, { viewer: true });
   const totalPages = result?.totalPages || 1;
   const [exportJob, setExportJob] = useState<ExportJobStatus | null>(null);
   const [downloadedJobId, setDownloadedJobId] = useState("");
@@ -51,16 +54,22 @@ export function ReportView({ report, table, result, loading, currentPage, onPage
         </div>
         <div className="stack-compact reader-actions">
           <div className="link-toolbar">
-            <button className="ghost-button" onClick={() => window.history.back()}>Back</button>
-            <Link className="ghost-button" to="/viewer">Home</Link>
-            <Link className="ghost-button" to={`/studio/${report.id}`}>Open in building area</Link>
+            {hosted.embed ? (
+              <button className="ghost-button" onClick={() => window.open(fullScreenUrl, "_blank", "noopener,noreferrer")}>Open full-screen</button>
+            ) : (
+              <>
+                <button className="ghost-button" onClick={() => window.history.back()}>Back</button>
+                <Link className="ghost-button" to="/viewer">Home</Link>
+                <Link className="ghost-button" to={`/studio/${report.id}`}>Open in building area</Link>
+              </>
+            )}
             <button className="ghost-button" onClick={() => { void beginExport(); }} disabled={!result || exportJob?.status === "queued" || exportJob?.status === "running"}>
               {exportJob?.status === "queued" || exportJob?.status === "running"
                 ? `Exporting ${exportJob.progress}%`
                 : "Download xlsx"}
             </button>
           </div>
-          <LinkToolbar type="report" id={report.id} />
+          {hosted.embed ? null : <LinkToolbar type="report" id={report.id} />}
         </div>
       </div>
 
