@@ -38,6 +38,7 @@ import {
 } from "../lib/studioApi";
 import { fetchAllReportRows } from "../lib/api";
 import { exportDashboardWorkbook, exportReportWorkbook } from "../lib/workbookExport";
+import { ChartPreview } from "./ChartPreview";
 
 const STORAGE_KEY = "hosted-reporting-studio-v2";
 const REPORT_VIEW_OPTIONS: ReportViewMode[] = ["table", "summary", "chart", "timeline", "calendar", "kanban"];
@@ -354,19 +355,7 @@ function ReportPreview({ report, table, result }: { report: ReportDefinition; ta
   }
 
   if (report.view.mode === "chart") {
-    return (
-      <div className="chart-bars">
-        {result.chartData.map((datum) => (
-          <div className="chart-row" key={datum.label}>
-            <div className="chart-label">{datum.label}</div>
-            <div className="chart-track">
-              <div className="chart-fill" style={{ width: `${Math.max(12, datum.value * 24)}px` }} />
-            </div>
-            <div className="chart-value">{datum.value}</div>
-          </div>
-        ))}
-      </div>
-    );
+    return <ChartPreview chartType={report.view.chartType} data={result.chartData} />;
   }
 
   if (report.view.mode === "timeline" || report.view.mode === "calendar") {
@@ -495,14 +484,9 @@ function DashboardPreview({
                       </div>
                     ))}
                   </div>
-                  <div className="mini-chart">
-                    {widget.result.chartData.slice(0, 5).map((datum) => (
-                      <div className="mini-bar" key={datum.label}>
-                        <span>{datum.label}</span>
-                        <div className="mini-bar-fill" style={{ width: `${Math.max(12, datum.value * 22)}px` }} />
-                      </div>
-                    ))}
-                  </div>
+                <div className="mini-chart">
+                  <ChartPreview chartType={widget.report.view.chartType} data={widget.result.chartData} compact />
+                </div>
                 </article>
               ))}
             </div>

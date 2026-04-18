@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import type { DashboardDefinition, DashboardRunResult } from "@studio/shared";
 import { renderDashboard } from "../lib/api";
 import { LinkToolbar } from "./LinkToolbar";
+import { ChartPreview } from "./ChartPreview";
 
 interface DashboardViewProps {
   dashboard: DashboardDefinition;
@@ -111,8 +112,9 @@ export function DashboardView({ dashboard }: DashboardViewProps) {
             <span className="micro">{activeTab.widgets.length || 0} cards</span>
           </div>
           <div className="widget-grid">
-            {activeTab.widgets.map((widget) => (
-              <article className="widget-card" key={widget.widgetId}>
+            {activeTab.widgets.map((widget) => {
+              return (
+                <article className="widget-card" key={widget.widgetId}>
                 <div className="widget-head">
                   <strong>{widget.report.name}</strong>
                   <Link to={`/report/${widget.report.id}`} className="widget-link">Open report</Link>
@@ -126,15 +128,11 @@ export function DashboardView({ dashboard }: DashboardViewProps) {
                   ))}
                 </div>
                 <div className="mini-chart">
-                  {widget.result.chartData.slice(0, 5).map((datum) => (
-                    <div className="mini-bar" key={datum.label}>
-                      <span>{datum.label}</span>
-                      <div className="mini-bar-fill" style={{ width: `${Math.max(12, datum.value * 18)}px` }} />
-                    </div>
-                  ))}
+                  <ChartPreview chartType={widget.report.view.chartType} data={widget.result.chartData} compact />
                 </div>
-              </article>
-            ))}
+                </article>
+              );
+            })}
             {loading ? <div className="empty">Rendering dashboard…</div> : null}
           </div>
         </div>

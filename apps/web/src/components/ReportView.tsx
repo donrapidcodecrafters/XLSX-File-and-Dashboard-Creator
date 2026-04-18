@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import type { ReportDefinition, ReportRunResult, TableDefinition } from "@studio/shared";
 import { LinkToolbar } from "./LinkToolbar";
+import { ChartPreview } from "./ChartPreview";
 
 interface ReportViewProps {
   report: ReportDefinition;
@@ -48,17 +49,7 @@ export function ReportView({ report, table, result, loading, currentPage, onPage
         {loading ? (
           <div className="empty">Running report…</div>
         ) : (
-          <div className="chart-bars">
-            {(result?.chartData || []).map((datum) => (
-              <div className="chart-row" key={datum.label}>
-                <div className="chart-label">{datum.label}</div>
-                <div className="chart-track">
-                  <div className="chart-fill" style={{ width: `${Math.max(8, datum.value * 12)}px` }} />
-                </div>
-                <div className="chart-value">{datum.value}</div>
-              </div>
-            ))}
-          </div>
+          <ChartPreview chartType={report.view.chartType} data={result?.chartData || []} />
         )}
       </div>
 

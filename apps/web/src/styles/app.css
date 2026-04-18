@@ -320,18 +320,51 @@ input {
 .mini-chart {
   display: grid;
   gap: 10px;
+  min-width: 0;
+}
+
+.chart-shell,
+.vertical-chart,
+.line-chart,
+.area-chart,
+.stacked-columns,
+.funnel-chart,
+.heat-grid {
+  min-width: 0;
+}
+
+.chart-empty {
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px dashed var(--line);
+  background: rgba(247, 248, 243, 0.72);
+  color: var(--text-soft);
+}
+
+.badge-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.badge-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex: 0 0 auto;
 }
 
 .chart-row,
 .mini-bar {
   display: grid;
-  grid-template-columns: minmax(120px, 180px) minmax(0, 1fr) 40px;
+  grid-template-columns: minmax(0, 180px) minmax(0, 1fr) minmax(44px, auto);
   gap: 12px;
   align-items: center;
+  min-width: 0;
 }
 
 .mini-bar {
-  grid-template-columns: minmax(90px, 140px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 140px) minmax(0, 1fr);
 }
 
 .chart-track,
@@ -339,6 +372,9 @@ input {
   height: 12px;
   border-radius: 999px;
   background: rgba(13, 124, 102, 0.12);
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .chart-fill,
@@ -346,6 +382,184 @@ input {
   background: linear-gradient(90deg, var(--brand), var(--accent));
   height: 100%;
   border-radius: inherit;
+  max-width: 100%;
+}
+
+.chart-label,
+.chart-value,
+.mini-bar span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.widget-card,
+.card {
+  overflow: hidden;
+}
+
+.donut-shell {
+  display: grid;
+  place-items: center;
+  padding: 16px 0;
+}
+
+.donut {
+  width: 170px;
+  height: 170px;
+  border-radius: 50%;
+  position: relative;
+  max-width: 100%;
+}
+
+.donut::after {
+  content: "";
+  position: absolute;
+  inset: 24px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.pie-chart::after {
+  display: none;
+}
+
+.donut-center {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  z-index: 1;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+.donut-center strong {
+  display: block;
+  font-size: 24px;
+  color: var(--text);
+}
+
+.vertical-chart {
+  display: grid;
+  gap: 12px;
+}
+
+.vertical-chart-bars {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+  gap: 12px;
+  align-items: end;
+  min-height: 180px;
+}
+
+.vertical-bar,
+.stacked-column {
+  display: grid;
+  gap: 8px;
+  align-items: end;
+  justify-items: center;
+  min-width: 0;
+}
+
+.vertical-bar-column {
+  width: 100%;
+  min-height: 10px;
+  border-radius: 16px 16px 8px 8px;
+  background: linear-gradient(180deg, rgba(13, 124, 102, 0.92), rgba(53, 166, 136, 0.72));
+}
+
+.vertical-bar-label {
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-soft);
+  overflow-wrap: anywhere;
+}
+
+.line-chart svg,
+.area-chart svg {
+  width: 100%;
+  height: 220px;
+  overflow: visible;
+}
+
+.line-chart polyline,
+.area-chart polyline {
+  fill: none;
+  stroke: var(--brand);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.area-chart polygon {
+  fill: rgba(13, 124, 102, 0.16);
+}
+
+.stacked-track {
+  display: flex;
+  overflow: hidden;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(13, 124, 102, 0.08);
+}
+
+.stacked-segment {
+  height: 100%;
+}
+
+.stacked-columns {
+  display: grid;
+  gap: 12px;
+}
+
+.stacked-column-bar {
+  width: 100%;
+  min-height: 18px;
+  border-radius: 16px 16px 8px 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column-reverse;
+  background: rgba(13, 124, 102, 0.08);
+}
+
+.funnel-chart {
+  display: grid;
+  gap: 10px;
+}
+
+.funnel-step {
+  padding: 10px 12px;
+  border-radius: 14px;
+  color: white;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  justify-self: center;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.heat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 10px;
+}
+
+.heat-cell {
+  display: grid;
+  gap: 6px;
+  min-height: 84px;
+  padding: 12px;
+  border-radius: 16px;
+  color: white;
+}
+
+.heat-cell strong,
+.heat-cell span {
+  color: inherit;
+  overflow-wrap: anywhere;
 }
 
 .table-shell {
@@ -900,6 +1114,11 @@ select {
 @media (max-width: 920px) {
   .reader-content .surface {
     padding: 18px 14px;
+  }
+
+  .chart-row,
+  .mini-bar {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   table {
