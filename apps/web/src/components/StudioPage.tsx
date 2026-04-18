@@ -55,7 +55,11 @@ const CHART_SORT_OPTIONS: Array<{ value: ChartSortMode; label: string }> = [
 ];
 const FILTER_OPERATOR_OPTIONS: Array<{ value: FilterOperator; label: string }> = [
   { value: "equals", label: "Equals" },
+  { value: "not-equals", label: "Not equals" },
   { value: "contains", label: "Contains" },
+  { value: "not-contains", label: "Does not contain" },
+  { value: "blank", label: "Is blank" },
+  { value: "not-blank", label: "Is not blank" },
   { value: "gt", label: "Greater than" },
   { value: "gte", label: "Greater than or equal" },
   { value: "lt", label: "Less than" },
@@ -653,7 +657,12 @@ function ReportFiltersAndSortsEditor({
               <select value={filter.operator} onChange={(event) => onChangeFilters(filters.map((item) => item.id === filter.id ? { ...item, operator: event.target.value as FilterOperator } : item))}>
                 {FILTER_OPERATOR_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
-              <input value={filter.value} onChange={(event) => onChangeFilters(filters.map((item) => item.id === filter.id ? { ...item, value: event.target.value } : item))} placeholder="Filter value" />
+              <input
+                value={filter.value}
+                disabled={filter.operator === "blank" || filter.operator === "not-blank"}
+                onChange={(event) => onChangeFilters(filters.map((item) => item.id === filter.id ? { ...item, value: event.target.value } : item))}
+                placeholder={filter.operator === "blank" || filter.operator === "not-blank" ? "No value needed" : "Filter value"}
+              />
               <button onClick={() => onChangeFilters(filters.filter((item) => item.id !== filter.id))}>Remove</button>
             </div>
           )) : <div className="empty-hint">No filters yet. Add rules before you create the report so large tables stay manageable.</div>}

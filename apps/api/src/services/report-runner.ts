@@ -62,18 +62,25 @@ function matchesDateToken(value: unknown, token: string): boolean {
 function matchesFilter(row: DataRow, filter: FilterDefinition): boolean {
   const raw = row[filter.fieldId];
   const expected = String(filter.value ?? "");
+  const candidates = asArray(raw).map((value) => String(value ?? ""));
+  const isBlank = candidates.length === 0 || candidates.every((value) => !String(value).trim());
+  if (filter.operator === "blank") return isBlank;
+  if (filter.operator === "not-blank") return !isBlank;
   if (!expected) return true;
   if (DATE_TOKENS.has(expected)) {
     return matchesDateToken(raw, expected);
   }
-  const candidates = asArray(raw).map((value) => String(value ?? ""));
   if (filter.operator === "contains") {
     return candidates.some((value) => value.toLowerCase().includes(expected.toLowerCase()));
+  }
+  if (filter.operator === "not-contains") {
+    return candidates.every((value) => !value.toLowerCase().includes(expected.toLowerCase()));
   }
   if (filter.operator === "gt") return asNumber(raw) > asNumber(expected);
   if (filter.operator === "gte") return asNumber(raw) >= asNumber(expected);
   if (filter.operator === "lt") return asNumber(raw) < asNumber(expected);
   if (filter.operator === "lte") return asNumber(raw) <= asNumber(expected);
+  if (filter.operator === "not-equals") return candidates.every((value) => value !== expected);
   return candidates.some((value) => value === expected);
 }
 

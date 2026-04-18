@@ -1,6 +1,6 @@
 import { createReadStream } from "node:fs";
 import type { FastifyInstance } from "fastify";
-import { buildDashboardFilters, type DashboardDefinition, type FilterDefinition, type ReportDefinition, type ReportRunResult, type TableDefinition } from "@studio/shared";
+import { buildDashboardFilters, type DashboardDefinition, type FilterDefinition, type FilterOperator, type ReportDefinition, type ReportRunResult, type TableDefinition } from "@studio/shared";
 import { executeDashboard, executeReport, fetchAllReportRowsForExport, fetchReportExportBundle, fetchReportPage } from "../services/report-runner.js";
 import { objectStore } from "../services/object-store.js";
 import { studioStore } from "../services/studio-store.js";
@@ -11,7 +11,7 @@ function normalizeClientFilters(filters: Array<{ fieldId: string; operator?: str
   return filters.map((filter, index) => ({
     id: "client-" + index,
     fieldId: filter.fieldId,
-    operator: (filter.operator || "equals") as "equals",
+    operator: (filter.operator || "equals") as FilterOperator,
     value: filter.value
   }));
 }
@@ -156,8 +156,14 @@ export async function registerRenderRoutes(app: FastifyInstance) {
         const report = objectStore.getReport(reportId) as ReportDefinition | undefined;
         if (!report) continue;
         const filters = buildDashboardFilters(dashboard, report.id, runtimeFilters);
-        update(10 + Math.round((index / Math.max(widgetReportIds.length, 1)) * 55), `Loading ${report.name}`);
-        exportResultsByReportId[reportId] = await fetchReportExportBundle(report, filters);
+        const rangeStart = 10 + Math.round((index / Math.max(widgetReportIds.length, 1)) * 55);
+        const rangeEnd = 10 + Math.round(((index + 1) / Math.max(widgetReportIds.length, 1)) * 55);
+        update(rangeStart, `Loading ${report.name}`);
+        exportResultsByReportId[reportId] = await fetchReportExportBundle(report, filters, (progress, message) => {
+          const ratio = Math.max(0, Math.min(1, progress / 100));
+          const mapped = rangeStart + Math.round((rangeEnd - rangeStart) * ratio);
+          update(mapped, `${report.name}: ${message}`);
+        });
       }
       const tablesById = Object.fromEntries(objectStore.listTables().map((table) => [table.id, table]));
       update(72, "Building workbook");

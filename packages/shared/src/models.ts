@@ -1,6 +1,6 @@
 export type StudioObjectType = "report" | "dashboard";
 export type FieldType = "text" | "number" | "currency" | "date" | "datetime" | "user" | "multiselect";
-export type FilterOperator = "equals" | "contains" | "gt" | "gte" | "lt" | "lte";
+export type FilterOperator = "equals" | "not-equals" | "contains" | "not-contains" | "blank" | "not-blank" | "gt" | "gte" | "lt" | "lte";
 export type SortDirection = "asc" | "desc";
 export type WidgetMode = "linked" | "copied";
 export type ReportViewMode = "table" | "summary" | "chart" | "timeline" | "calendar" | "kanban";
