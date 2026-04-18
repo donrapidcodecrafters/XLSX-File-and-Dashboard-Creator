@@ -12,6 +12,7 @@ import {
   type DashboardDefinition,
   type DashboardRunResult,
   type DataRow,
+  type ExportJobStatus,
   type FieldType,
   type FilterDefinition,
   type FilterOperator,
@@ -38,7 +39,7 @@ import {
   restoreStudioVersion,
   saveStudioDocument
 } from "../lib/studioApi";
-import { downloadDashboardWorkbook, downloadReportWorkbook } from "../lib/api";
+import { downloadExportJob, fetchExportJobStatus, startDashboardExportJob, startReportExportJob } from "../lib/api";
 import { ChartPreview } from "./ChartPreview";
 
 const STORAGE_KEY = "hosted-reporting-studio-v2";
@@ -650,6 +651,8 @@ export function StudioPage() {
   const [lastQuickbaseSync, setLastQuickbaseSync] = useState<QuickbaseSyncResult | null>(null);
   const [liveReportResult, setLiveReportResult] = useState<ReportRunResult | null>(null);
   const [liveReportLoading, setLiveReportLoading] = useState(false);
+  const [exportJob, setExportJob] = useState<ExportJobStatus | null>(null);
+  const [downloadedJobId, setDownloadedJobId] = useState("");
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editingReportId, setEditingReportId] = useState<string | null>(null);
   const [createDraft, setCreateDraft] = useState<CreateObjectDraft>(() => buildCreateDraft(loadLocalDocument().bundle.tables[0], "report"));
@@ -796,6 +799,23 @@ export function StudioPage() {
     documentState.quickbase.realmHostname,
     documentState.quickbase.userToken
   ]);
+
+  useEffect(() => {
+    if (!exportJob || exportJob.status === "complete" || exportJob.status === "failed") return;
+    const handle = window.setInterval(() => {
+      fetchExportJobStatus(exportJob.id)
+        .then((response) => setExportJob(response.job))
+        .catch(() => undefined);
+    }, 1000);
+    return () => window.clearInterval(handle);
+  }, [exportJob?.id, exportJob?.status]);
+
+  useEffect(() => {
+    if (!exportJob || exportJob.status !== "complete" || downloadedJobId === exportJob.id) return;
+    downloadExportJob(exportJob.id);
+    setDownloadedJobId(exportJob.id);
+    pushToast("Download is ready.");
+  }, [downloadedJobId, exportJob]);
 
   const filteredObjects = useMemo(() => {
     const query = libraryQuery.trim().toLowerCase();
@@ -1220,16 +1240,20 @@ export function StudioPage() {
 
   async function exportWorkbook() {
     if (activeReport && activeTable && reportResult) {
-      downloadReportWorkbook({
+      const response = await startReportExportJob({
         reportId: activeReport.id,
         report: activeReport,
         table: activeTable
       });
+      setExportJob(response.job);
+      setDownloadedJobId("");
     } else if (activeDashboard && dashboardResult) {
-      downloadDashboardWorkbook({
+      const response = await startDashboardExportJob({
         dashboardId: activeDashboard.id,
         runtimeFilters: runtimeValues
       });
+      setExportJob(response.job);
+      setDownloadedJobId("");
     } else {
       pushToast("Open a report or dashboard before exporting.", "warn");
       return;
@@ -1373,6 +1397,22 @@ export function StudioPage() {
             <button onClick={openVersions}>History</button>
           </div>
         </div>
+
+        {exportJob ? (
+          <section className={`sync-status ${exportJob.status === "failed" ? "sync-status-warn" : exportJob.status === "complete" ? "sync-status-ok" : ""}`}>
+            <strong>
+              {exportJob.status === "complete"
+                ? "Export ready"
+                : exportJob.status === "failed"
+                  ? "Export failed"
+                  : `Exporting ${exportJob.progress}%`}
+            </strong>
+            <span>{exportJob.error || exportJob.message}</span>
+            <div className="progress-meter" aria-hidden="true">
+              <div className="progress-meter-fill" style={{ width: `${exportJob.progress}%` }} />
+            </div>
+          </section>
+        ) : null}
 
         {validation.length ? (
           <section className="card validation-card">

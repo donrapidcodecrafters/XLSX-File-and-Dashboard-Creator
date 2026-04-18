@@ -1,8 +1,9 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import type { ReportDefinition, ReportRunResult, TableDefinition } from "@studio/shared";
+import type { ExportJobStatus, ReportDefinition, ReportRunResult, TableDefinition } from "@studio/shared";
 import { LinkToolbar } from "./LinkToolbar";
 import { ChartPreview } from "./ChartPreview";
-import { downloadReportWorkbook } from "../lib/api";
+import { downloadExportJob, fetchExportJobStatus, startReportExportJob } from "../lib/api";
 
 interface ReportViewProps {
   report: ReportDefinition;
@@ -15,6 +16,30 @@ interface ReportViewProps {
 
 export function ReportView({ report, table, result, loading, currentPage, onPageChange }: ReportViewProps) {
   const totalPages = result?.totalPages || 1;
+  const [exportJob, setExportJob] = useState<ExportJobStatus | null>(null);
+  const [downloadedJobId, setDownloadedJobId] = useState("");
+
+  useEffect(() => {
+    if (!exportJob || exportJob.status === "complete" || exportJob.status === "failed") return;
+    const handle = window.setInterval(() => {
+      fetchExportJobStatus(exportJob.id)
+        .then((response) => setExportJob(response.job))
+        .catch(() => undefined);
+    }, 1000);
+    return () => window.clearInterval(handle);
+  }, [exportJob?.id, exportJob?.status]);
+
+  useEffect(() => {
+    if (!exportJob || exportJob.status !== "complete" || downloadedJobId === exportJob.id) return;
+    downloadExportJob(exportJob.id);
+    setDownloadedJobId(exportJob.id);
+  }, [downloadedJobId, exportJob]);
+
+  async function beginExport() {
+    const response = await startReportExportJob({ reportId: report.id });
+    setExportJob(response.job);
+    setDownloadedJobId("");
+  }
 
   return (
     <section className="surface stack">
@@ -29,11 +54,31 @@ export function ReportView({ report, table, result, loading, currentPage, onPage
             <button className="ghost-button" onClick={() => window.history.back()}>Back</button>
             <Link className="ghost-button" to="/viewer">Home</Link>
             <Link className="ghost-button" to={`/studio/${report.id}`}>Open in building area</Link>
-            <button className="ghost-button" onClick={() => downloadReportWorkbook({ reportId: report.id })} disabled={!result}>Download xlsx</button>
+            <button className="ghost-button" onClick={() => { void beginExport(); }} disabled={!result || exportJob?.status === "queued" || exportJob?.status === "running"}>
+              {exportJob?.status === "queued" || exportJob?.status === "running"
+                ? `Exporting ${exportJob.progress}%`
+                : "Download xlsx"}
+            </button>
           </div>
           <LinkToolbar type="report" id={report.id} />
         </div>
       </div>
+
+      {exportJob ? (
+        <div className={`sync-status ${exportJob.status === "failed" ? "sync-status-warn" : exportJob.status === "complete" ? "sync-status-ok" : ""}`}>
+          <strong>
+            {exportJob.status === "complete"
+              ? "Export ready"
+              : exportJob.status === "failed"
+                ? "Export failed"
+                : `Exporting ${exportJob.progress}%`}
+          </strong>
+          <span>{exportJob.error || exportJob.message}</span>
+          <div className="progress-meter" aria-hidden="true">
+            <div className="progress-meter-fill" style={{ width: `${exportJob.progress}%` }} />
+          </div>
+        </div>
+      ) : null}
 
       <div className="summary-grid">
         {(result?.summary || []).map((item) => (

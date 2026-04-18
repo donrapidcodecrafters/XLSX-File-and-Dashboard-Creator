@@ -1201,6 +1201,20 @@ th {
   overflow-wrap: anywhere;
 }
 
+.progress-meter {
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(13, 124, 102, 0.12);
+  overflow: hidden;
+}
+
+.progress-meter-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--brand), var(--accent));
+  transition: width 220ms ease;
+}
+
 .studio-modal-backdrop {
   position: fixed;
   inset: 0;

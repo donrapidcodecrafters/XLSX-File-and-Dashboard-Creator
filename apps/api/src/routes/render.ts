@@ -1,9 +1,10 @@
-import { PassThrough } from "node:stream";
+import { createReadStream } from "node:fs";
 import type { FastifyInstance } from "fastify";
 import { buildDashboardFilters, type DashboardDefinition, type FilterDefinition, type ReportDefinition, type ReportRunResult, type TableDefinition } from "@studio/shared";
 import { executeDashboard, executeReport, fetchAllReportRowsForExport, fetchReportExportBundle, fetchReportPage } from "../services/report-runner.js";
 import { objectStore } from "../services/object-store.js";
 import { studioStore } from "../services/studio-store.js";
+import { exportJobStore } from "../services/export-jobs.js";
 import { buildDashboardFileName, buildReportFileName, streamDashboardWorkbook, streamReportWorkbook } from "../services/xlsx-export.js";
 
 function normalizeClientFilters(filters: Array<{ fieldId: string; operator?: string; value: string }> = []): FilterDefinition[] {
@@ -97,7 +98,7 @@ export async function registerRenderRoutes(app: FastifyInstance) {
     return { result };
   });
 
-  app.post("/api/exports/report.xlsx", async (request, reply) => {
+  app.post("/api/exports/report/start", async (request, reply) => {
     await studioStore.hydrateFromQuickbase();
     const body = (request.body as { payload?: string } | undefined) || {};
     const payload = parsePayload(body.payload) as {
@@ -117,19 +118,21 @@ export async function registerRenderRoutes(app: FastifyInstance) {
       return { message: "Table not found for report." };
     }
     const extraFilters = normalizeClientFilters(payload.filters || []);
-    const result = await fetchReportExportBundle(report, extraFilters);
-    const stream = new PassThrough();
-    reply.header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    reply.header("Content-Disposition", `attachment; filename="${buildReportFileName(report)}"`);
-    reply.send(stream);
-    void streamReportWorkbook(stream, report, table, result).catch((error) => {
-      request.log.error({ error }, "report export stream failed");
-      stream.destroy(error instanceof Error ? error : new Error("Report export failed."));
+    const filename = buildReportFileName(report);
+    const job = exportJobStore.createJob(report.id, "report", filename, async ({ jobId, update }) => {
+      update(6, "Loading full report data");
+      const result = await fetchReportExportBundle(report, extraFilters, update);
+      update(72, "Building workbook");
+      const stream = exportJobStore.createFileStream(jobId);
+      if (!stream) {
+        throw new Error("Unable to create export file stream.");
+      }
+      await streamReportWorkbook(stream, report, table, result, update);
     });
-    return reply;
+    return { job };
   });
 
-  app.post("/api/exports/dashboard.xlsx", async (request, reply) => {
+  app.post("/api/exports/dashboard/start", async (request, reply) => {
     await studioStore.hydrateFromQuickbase();
     const body = (request.body as { payload?: string } | undefined) || {};
     const payload = parsePayload(body.payload) as {
@@ -142,34 +145,55 @@ export async function registerRenderRoutes(app: FastifyInstance) {
       return { message: "Dashboard not found." };
     }
     const runtimeFilters = payload.runtimeFilters || {};
-    const rendered = await executeDashboard(dashboard.id, runtimeFilters);
-    const exportResultsByReportId = Object.fromEntries(
-      await Promise.all(
-        Array.from(new Set(rendered.tabs.flatMap((tab) => tab.widgets.map((widget) => widget.report.id)))).map(async (reportId) => {
-          const report = objectStore.getReport(reportId) as ReportDefinition | undefined;
-          if (!report) return [reportId, null] as const;
-          const filters = buildDashboardFilters(dashboard, report.id, runtimeFilters);
-          const result = await fetchReportExportBundle(report, filters);
-          return [reportId, result] as const;
-        })
-      )
-    );
-    const tablesById = Object.fromEntries(objectStore.listTables().map((table) => [table.id, table]));
-    const stream = new PassThrough();
-    reply.header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    reply.header("Content-Disposition", `attachment; filename="${buildDashboardFileName(dashboard)}"`);
-    reply.send(stream);
-    void streamDashboardWorkbook(
-      stream,
-      dashboard,
-      rendered,
-      Object.fromEntries(Object.entries(exportResultsByReportId).filter((entry): entry is [string, ReportRunResult] => Boolean(entry[1]))),
-      tablesById
-    ).catch((error) => {
-      request.log.error({ error }, "dashboard export stream failed");
-      stream.destroy(error instanceof Error ? error : new Error("Dashboard export failed."));
+    const filename = buildDashboardFileName(dashboard);
+    const job = exportJobStore.createJob(dashboard.id, "dashboard", filename, async ({ jobId, update }) => {
+      update(5, "Rendering dashboard");
+      const rendered = await executeDashboard(dashboard.id, runtimeFilters);
+      const widgetReportIds = Array.from(new Set(rendered.tabs.flatMap((tab) => tab.widgets.map((widget) => widget.report.id))));
+      const exportResultsByReportId: Record<string, ReportRunResult> = {};
+      for (let index = 0; index < widgetReportIds.length; index += 1) {
+        const reportId = widgetReportIds[index];
+        const report = objectStore.getReport(reportId) as ReportDefinition | undefined;
+        if (!report) continue;
+        const filters = buildDashboardFilters(dashboard, report.id, runtimeFilters);
+        update(10 + Math.round((index / Math.max(widgetReportIds.length, 1)) * 55), `Loading ${report.name}`);
+        exportResultsByReportId[reportId] = await fetchReportExportBundle(report, filters);
+      }
+      const tablesById = Object.fromEntries(objectStore.listTables().map((table) => [table.id, table]));
+      update(72, "Building workbook");
+      const stream = exportJobStore.createFileStream(jobId);
+      if (!stream) {
+        throw new Error("Unable to create export file stream.");
+      }
+      await streamDashboardWorkbook(stream, dashboard, rendered, exportResultsByReportId, tablesById, update);
     });
-    return reply;
+    return { job };
+  });
+
+  app.get("/api/exports/jobs/:id", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const job = exportJobStore.getJob(id);
+    if (!job) {
+      reply.code(404);
+      return { message: "Export job not found." };
+    }
+    return { job };
+  });
+
+  app.get("/api/exports/jobs/:id/download", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const job = exportJobStore.getJob(id);
+    if (!job) {
+      reply.code(404);
+      return { message: "Export job not found." };
+    }
+    if (job.status !== "complete" || !job.filePath) {
+      reply.code(409);
+      return { message: "Export is not ready yet." };
+    }
+    reply.header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    reply.header("Content-Disposition", `attachment; filename="${job.filename || `${job.objectId}.xlsx`}"`);
+    return reply.send(createReadStream(job.filePath));
   });
 
   app.post("/api/dashboards/:id/render", async (request, reply) => {

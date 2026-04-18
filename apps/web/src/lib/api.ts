@@ -1,6 +1,7 @@
 import type {
   CatalogSummaryItem,
   DashboardRunResult,
+  ExportJobStatus,
   ReportRunResult,
   StudioObject,
   TableDefinition
@@ -140,4 +141,44 @@ export function downloadDashboardWorkbook(payload: {
   runtimeFilters?: Record<string, string>;
 }) {
   submitDownload("/api/exports/dashboard.xlsx", payload);
+}
+
+export function startReportExportJob(payload: {
+  reportId?: string;
+  report?: unknown;
+  table?: unknown;
+  filters?: Array<{ fieldId: string; value: string; operator?: string }>;
+}) {
+  return request<{ job: ExportJobStatus }>("/api/exports/report/start", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"
+    },
+    body: new URLSearchParams({
+      payload: JSON.stringify(payload ?? {})
+    }).toString()
+  });
+}
+
+export function startDashboardExportJob(payload: {
+  dashboardId?: string;
+  runtimeFilters?: Record<string, string>;
+}) {
+  return request<{ job: ExportJobStatus }>("/api/exports/dashboard/start", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"
+    },
+    body: new URLSearchParams({
+      payload: JSON.stringify(payload ?? {})
+    }).toString()
+  });
+}
+
+export function fetchExportJobStatus(id: string) {
+  return request<{ job: ExportJobStatus }>("/api/exports/jobs/" + encodeURIComponent(id));
+}
+
+export function downloadExportJob(id: string) {
+  ensureDownloadFrame().src = API_BASE + "/api/exports/jobs/" + encodeURIComponent(id) + "/download";
 }

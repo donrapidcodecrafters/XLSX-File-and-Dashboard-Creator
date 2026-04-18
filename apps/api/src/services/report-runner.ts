@@ -17,6 +17,10 @@ interface ExecuteReportOptions {
   pageSize?: number;
 }
 
+interface ExportProgressCallback {
+  (progress: number, message: string): void;
+}
+
 const DATE_TOKENS = new Set(["CURRENT_MONTH", "LAST_30_DAYS", "CURRENT_YEAR"]);
 const cache = new ExecutionCache<ReportRunResult>(20_000);
 
@@ -504,7 +508,11 @@ export async function fetchReportPage(report: ReportDefinition, extraFilters: Fi
   };
 }
 
-export async function fetchReportExportBundle(report: ReportDefinition, extraFilters: FilterDefinition[] = []): Promise<ReportRunResult> {
+export async function fetchReportExportBundle(
+  report: ReportDefinition,
+  extraFilters: FilterDefinition[] = [],
+  onProgress?: ExportProgressCallback
+): Promise<ReportRunResult> {
   const table = objectStore.getTable(report.sourceTableId);
   if (!table) {
     throw new Error("Table not found for report " + report.id + ".");
@@ -525,6 +533,8 @@ export async function fetchReportExportBundle(report: ReportDefinition, extraFil
     const rows: DataRow[] = [];
     const summaryAccumulator = createMetricAccumulator(metricSet);
     const chartGroups = new Map<string, number[]>();
+    let processed = 0;
+    let expectedTotal = 0;
 
     while (true) {
       const batch = await fetchQuickbaseTablePage(quickbase, table.id, requestedFieldIds, {
@@ -534,12 +544,18 @@ export async function fetchReportExportBundle(report: ReportDefinition, extraFil
         sortBy
       });
       if (!batch.rows.length) break;
+      expectedTotal = Math.max(expectedTotal, batch.totalRecords ?? 0);
       batch.rows.forEach((row) => {
         if (unsupportedFilters.length && !filters.every((filter) => matchesFilter(row, filter))) return;
         rows.push(row);
         addMetricRow(summaryAccumulator, row);
         addChartRow(chartGroups, report, row);
+        processed += 1;
       });
+      if (onProgress) {
+        const ratio = expectedTotal > 0 ? Math.min(1, processed / expectedTotal) : Math.min(1, processed / Math.max(batchSize, processed));
+        onProgress(10 + Math.round(ratio * 58), `Loading rows (${processed.toLocaleString()})`);
+      }
       if (batch.rows.length < batchSize) break;
       skip += batch.rows.length;
     }
@@ -554,6 +570,7 @@ export async function fetchReportExportBundle(report: ReportDefinition, extraFil
     };
   }
 
+  onProgress?.(68, "Preparing export data");
   return runReport(report, table, objectStore.getRows(table.id), extraFilters);
 }
 

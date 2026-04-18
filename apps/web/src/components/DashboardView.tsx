@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import type { DashboardDefinition, DashboardRunResult, TableDefinition } from "@studio/shared";
-import { downloadDashboardWorkbook, renderDashboard } from "../lib/api";
+import type { DashboardDefinition, DashboardRunResult, ExportJobStatus, TableDefinition } from "@studio/shared";
+import { downloadExportJob, fetchExportJobStatus, renderDashboard, startDashboardExportJob } from "../lib/api";
 import { LinkToolbar } from "./LinkToolbar";
 import { ChartPreview } from "./ChartPreview";
 
@@ -33,6 +33,8 @@ export function DashboardView({ dashboard, tables }: DashboardViewProps) {
   const [result, setResult] = useState<DashboardRunResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTabId, setActiveTabId] = useState(dashboard.tabs[0]?.id || "");
+  const [exportJob, setExportJob] = useState<ExportJobStatus | null>(null);
+  const [downloadedJobId, setDownloadedJobId] = useState("");
 
   useEffect(() => {
     setRuntimeFilters(defaults);
@@ -57,6 +59,28 @@ export function DashboardView({ dashboard, tables }: DashboardViewProps) {
     };
   }, [dashboard.id, runtimeFilters]);
 
+  useEffect(() => {
+    if (!exportJob || exportJob.status === "complete" || exportJob.status === "failed") return;
+    const handle = window.setInterval(() => {
+      fetchExportJobStatus(exportJob.id)
+        .then((response) => setExportJob(response.job))
+        .catch(() => undefined);
+    }, 1000);
+    return () => window.clearInterval(handle);
+  }, [exportJob?.id, exportJob?.status]);
+
+  useEffect(() => {
+    if (!exportJob || exportJob.status !== "complete" || downloadedJobId === exportJob.id) return;
+    downloadExportJob(exportJob.id);
+    setDownloadedJobId(exportJob.id);
+  }, [downloadedJobId, exportJob]);
+
+  async function beginExport() {
+    const response = await startDashboardExportJob({ dashboardId: dashboard.id, runtimeFilters });
+    setExportJob(response.job);
+    setDownloadedJobId("");
+  }
+
   const tabs = result?.tabs || dashboard.tabs.map((tab) => ({ id: tab.id, name: tab.name, widgets: [] }));
   const activeTab = tabs.find((tab) => tab.id === activeTabId) || tabs[0];
 
@@ -73,11 +97,31 @@ export function DashboardView({ dashboard, tables }: DashboardViewProps) {
             <button className="ghost-button" onClick={() => window.history.back()}>Back</button>
             <Link className="ghost-button" to="/viewer">Home</Link>
             <Link className="ghost-button" to={`/studio/${dashboard.id}`}>Open in building area</Link>
-            <button className="ghost-button" onClick={() => downloadDashboardWorkbook({ dashboardId: dashboard.id, runtimeFilters })} disabled={!result}>Download xlsx</button>
+            <button className="ghost-button" onClick={() => { void beginExport(); }} disabled={!result || exportJob?.status === "queued" || exportJob?.status === "running"}>
+              {exportJob?.status === "queued" || exportJob?.status === "running"
+                ? `Exporting ${exportJob.progress}%`
+                : "Download xlsx"}
+            </button>
           </div>
           <LinkToolbar type="dashboard" id={dashboard.id} />
         </div>
       </div>
+
+      {exportJob ? (
+        <div className={`sync-status ${exportJob.status === "failed" ? "sync-status-warn" : exportJob.status === "complete" ? "sync-status-ok" : ""}`}>
+          <strong>
+            {exportJob.status === "complete"
+              ? "Export ready"
+              : exportJob.status === "failed"
+                ? "Export failed"
+                : `Exporting ${exportJob.progress}%`}
+          </strong>
+          <span>{exportJob.error || exportJob.message}</span>
+          <div className="progress-meter" aria-hidden="true">
+            <div className="progress-meter-fill" style={{ width: `${exportJob.progress}%` }} />
+          </div>
+        </div>
+      ) : null}
 
       {dashboard.runtimeFilters.length ? (
         <div className="card">

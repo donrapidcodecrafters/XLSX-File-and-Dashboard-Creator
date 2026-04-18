@@ -2,6 +2,10 @@ import ExcelJS from "exceljs";
 import type { Stream } from "node:stream";
 import type { DashboardDefinition, DashboardRunResult, ReportDefinition, ReportRunResult, TableDefinition } from "@studio/shared";
 
+interface ExportProgressCallback {
+  (progress: number, message: string): void;
+}
+
 function safeSheetName(name: string, usedNames: Set<string>) {
   const base = (name || "Sheet").replace(/[\\/*?:[\]]/g, "").trim() || "Sheet";
   let next = base.slice(0, 31);
@@ -60,7 +64,9 @@ function writeDataSheet(
   sheet: any,
   report: ReportDefinition,
   table: TableDefinition,
-  result: ReportRunResult
+  result: ReportRunResult,
+  onProgress?: ExportProgressCallback,
+  progressRange?: { start: number; end: number; label: string }
 ) {
   const headers = report.selectedFieldIds.map((fieldId) => table.fields.find((field) => field.id === fieldId)?.label || fieldId);
   sheet.columns = headers.map((header) => ({
@@ -68,8 +74,14 @@ function writeDataSheet(
     key: header,
     width: Math.min(32, Math.max(16, header.length + 4))
   }));
-  result.rows.forEach((row) => {
+  const total = Math.max(result.rows.length, 1);
+  result.rows.forEach((row, index) => {
     sheet.addRow(report.selectedFieldIds.map((fieldId) => formatCell(row[fieldId]))).commit();
+    if (onProgress && progressRange && (index === 0 || (index + 1) % 500 === 0 || index + 1 === total)) {
+      const ratio = (index + 1) / total;
+      const progress = progressRange.start + Math.round((progressRange.end - progressRange.start) * ratio);
+      onProgress(progress, `${progressRange.label} (${(index + 1).toLocaleString()} / ${total.toLocaleString()})`);
+    }
   });
 }
 
@@ -77,7 +89,8 @@ export async function streamReportWorkbook(
   output: Stream,
   report: ReportDefinition,
   table: TableDefinition,
-  result: ReportRunResult
+  result: ReportRunResult,
+  onProgress?: ExportProgressCallback
 ) {
   const workbook = new ExcelJS.stream.xlsx.WorkbookWriter({
     stream: output,
@@ -96,12 +109,18 @@ export async function streamReportWorkbook(
   summarySheet.getRow(2).commit();
   writeSummaryRows(summarySheet, result, 4);
   summarySheet.commit();
+  onProgress?.(78, "Writing summary sheet");
 
   const dataSheet = workbook.addWorksheet(safeSheetName(`${report.name} Data`, usedNames));
-  writeDataSheet(dataSheet, report, table, result);
+  writeDataSheet(dataSheet, report, table, result, onProgress, {
+    start: 80,
+    end: 98,
+    label: "Writing data sheet"
+  });
   dataSheet.commit();
 
   await workbook.commit();
+  onProgress?.(100, "Export ready");
 }
 
 export async function streamDashboardWorkbook(
@@ -109,7 +128,8 @@ export async function streamDashboardWorkbook(
   dashboard: DashboardDefinition,
   rendered: DashboardRunResult,
   exportResultsByReportId: Record<string, ReportRunResult>,
-  tablesById: Record<string, TableDefinition>
+  tablesById: Record<string, TableDefinition>,
+  onProgress?: ExportProgressCallback
 ) {
   const workbook = new ExcelJS.stream.xlsx.WorkbookWriter({
     stream: output,
@@ -136,9 +156,10 @@ export async function streamDashboardWorkbook(
     });
   });
   overview.commit();
+  onProgress?.(74, "Writing dashboard overview");
 
-  rendered.tabs.forEach((tab) => {
-    tab.widgets.forEach((widget) => {
+  const widgets = rendered.tabs.flatMap((tab) => tab.widgets.map((widget) => ({ tab, widget })));
+  widgets.forEach(({ tab, widget }, widgetIndex) => {
       const exportResult = exportResultsByReportId[widget.report.id] || widget.result;
       const table = tablesById[widget.report.sourceTableId];
       if (!table) return;
@@ -158,14 +179,19 @@ export async function streamDashboardWorkbook(
       headerRow.values = headers;
       headerRow.font = { bold: true };
       headerRow.commit();
-      exportResult.rows.forEach((row) => {
-        sheet.addRow(widget.report.selectedFieldIds.map((fieldId) => formatCell(row[fieldId]))).commit();
+      const totalWidgets = Math.max(widgets.length, 1);
+      const widgetStart = 76 + Math.round((20 * widgetIndex) / totalWidgets);
+      const widgetEnd = 76 + Math.round((20 * (widgetIndex + 1)) / totalWidgets);
+      writeDataSheet(sheet, widget.report, table, exportResult, onProgress, {
+        start: widgetStart,
+        end: Math.max(widgetStart + 1, widgetEnd),
+        label: `Writing ${widget.report.name}`
       });
       sheet.commit();
-    });
   });
 
   await workbook.commit();
+  onProgress?.(100, "Export ready");
 }
 
 export function buildReportFileName(report: ReportDefinition) {

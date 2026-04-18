@@ -213,8 +213,24 @@ export interface StudioExportJob {
   id: string;
   objectId: string;
   format: "xlsx" | "json";
-  status: "queued" | "complete";
+  status: "queued" | "running" | "complete" | "failed";
+  progress?: number;
+  message?: string;
   createdAt: string;
+}
+
+export interface ExportJobStatus {
+  id: string;
+  objectId: string;
+  objectType: "report" | "dashboard";
+  format: "xlsx";
+  status: "queued" | "running" | "complete" | "failed";
+  progress: number;
+  message: string;
+  filename?: string;
+  error?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface StudioDocument {
