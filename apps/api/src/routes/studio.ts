@@ -5,7 +5,7 @@ import { syncStudioDocumentToQuickbase } from "../services/quickbase-storage.js"
 
 export async function registerStudioRoutes(app: FastifyInstance) {
   app.get("/api/studio/document", async () => ({
-    document: studioStore.getDocument()
+    document: await studioStore.hydrateFromQuickbase()
   }));
 
   app.put("/api/studio/document", async (request, reply) => {

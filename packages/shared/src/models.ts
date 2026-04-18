@@ -136,6 +136,10 @@ export interface ReportRunResult {
   summary: SummaryDatum[];
   chartData: ChartDatum[];
   warnings: string[];
+  page?: number;
+  pageSize?: number;
+  totalPages?: number;
+  hasNextPage?: boolean;
 }
 
 export interface DashboardWidgetResult {

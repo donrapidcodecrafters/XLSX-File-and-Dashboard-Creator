@@ -1,5 +1,6 @@
 import { XMLParser } from "fast-xml-parser";
-import type { DataRow, StudioDocument } from "@studio/shared";
+import { normalizeStudioDocument, type DataRow, type FieldType, type StudioDocument, type StudioObject, type TableDefinition } from "@studio/shared";
+import { loadQuickbaseSchema } from "./quickbase-schema.js";
 
 interface QuickbaseUser {
   id: string;
@@ -18,6 +19,16 @@ interface QuickbaseSyncSummary {
   savedSettings: number;
   savedVersions: number;
   savedStorageConfig: number;
+}
+
+interface QuickbaseQueryResult {
+  data: Array<Record<string, { value: unknown }>>;
+  metadata?: {
+    totalRecords?: number;
+    numRecords?: number;
+    skip?: number;
+    top?: number;
+  };
 }
 
 const parser = new XMLParser({
@@ -144,6 +155,10 @@ function hasVersionStorage(config: StudioDocument["quickbase"]) {
   );
 }
 
+function uniqueFieldIds(values: Array<string | undefined>) {
+  return Array.from(new Set(values.filter(Boolean).map((value) => String(value).trim()).filter(Boolean)));
+}
+
 function isRecordIdField(fid: string) {
   return String(fid || "").trim() === "3";
 }
@@ -197,6 +212,18 @@ async function quickbaseRestRequest(
   }
 
   throw new Error("Quickbase REST request failed after retries.");
+}
+
+async function quickbaseListFieldIds(config: StudioDocument["quickbase"], tableId: string) {
+  if (!tableId) return [] as string[];
+  if (usingDirectQuickbaseApi(config)) {
+    const fields = await quickbaseRestRequest(
+      config,
+      `/fields?tableId=${encodeURIComponent(tableId)}`
+    ) as Array<{ id: number | string }>;
+    return fields.map((field) => String(field.id));
+  }
+  return [] as string[];
 }
 
 async function quickbaseXmlRequest(
@@ -268,7 +295,7 @@ async function quickbaseQueryRecordsXml(
   select: string[],
   where = "",
   options: { top?: number; skip?: number; sortBy?: Array<{ fieldId: string; order?: "ASC" | "DESC" }> } = {}
-) {
+): Promise<QuickbaseQueryResult> {
   const fields = Array.from(new Set((select || []).filter(Boolean).map(qbFieldId)));
   const sortBy = Array.isArray(options.sortBy) ? options.sortBy.filter(Boolean) : [];
   const sortFieldIds = Array.from(new Set(sortBy.map((item) => qbFieldId(item.fieldId))));
@@ -300,7 +327,7 @@ async function quickbaseQueryRecordsXml(
     return row;
   });
 
-  return { data: records };
+  return { data: records } satisfies QuickbaseQueryResult;
 }
 
 async function quickbaseQueryRecordsRest(
@@ -309,7 +336,7 @@ async function quickbaseQueryRecordsRest(
   select: string[],
   where = "",
   options: { top?: number; skip?: number; sortBy?: Array<{ fieldId: string; order?: "ASC" | "DESC" }> } = {}
-) {
+): Promise<QuickbaseQueryResult> {
   const payload: Record<string, unknown> = {
     from: tableId,
     select: Array.from(new Set((select || []).filter(Boolean).map(qbFieldId))),
@@ -323,7 +350,7 @@ async function quickbaseQueryRecordsRest(
   return quickbaseRestRequest(config, "/records/query", {
     method: "POST",
     body: payload
-  }) as Promise<{ data: Array<Record<string, { value: unknown }>> }>;
+  }) as Promise<QuickbaseQueryResult>;
 }
 
 async function quickbaseQueryRecords(
@@ -332,7 +359,7 @@ async function quickbaseQueryRecords(
   select: string[],
   where = "",
   options: { top?: number; skip?: number; sortBy?: Array<{ fieldId: string; order?: "ASC" | "DESC" }> } = {}
-) {
+): Promise<QuickbaseQueryResult> {
   if (usingDirectQuickbaseApi(config)) {
     return quickbaseQueryRecordsRest(config, tableId, select, where, options);
   }
@@ -362,7 +389,7 @@ async function quickbaseFetchAllRecords(
   return rows;
 }
 
-export async function fetchQuickbaseTableRows(
+export async function fetchQuickbaseTablePage(
   config: StudioDocument["quickbase"],
   tableId: string,
   fieldIds: string[],
@@ -372,11 +399,15 @@ export async function fetchQuickbaseTableRows(
     where?: string;
     sortBy?: Array<{ fieldId: string; order?: "ASC" | "DESC" }>;
   } = {}
-): Promise<DataRow[]> {
-  if (!hasQuickbaseConnection(config) || !tableId) return [];
+): Promise<{ rows: DataRow[]; totalRecords: number | null }> {
+  if (!hasQuickbaseConnection(config) || !tableId) {
+    return { rows: [], totalRecords: 0 };
+  }
   const select = Array.from(new Set((fieldIds || []).filter(Boolean).map(String))).slice(0, 30);
-  if (!select.length) return [];
-  const rows = await quickbaseQueryRecords(
+  if (!select.length) {
+    return { rows: [], totalRecords: 0 };
+  }
+  const response = await quickbaseQueryRecords(
     config,
     tableId,
     select,
@@ -390,15 +421,36 @@ export async function fetchQuickbaseTableRows(
     const message = error instanceof Error ? error.message : "Quickbase table preview failed.";
     throw new Error(`Quickbase table preview failed for table ${tableId}. ${message}`);
   });
-  return rows.data.map((row) => {
-    const data: DataRow = {
-      __recordId: String(qbFieldValue(row, "3") || "")
-    };
-    select.forEach((fieldId) => {
-      data[fieldId] = qbFieldValue(row, fieldId);
-    });
-    return data;
-  });
+
+  return {
+    rows: response.data.map((row) => {
+      const data: DataRow = {
+        __recordId: String(qbFieldValue(row, "3") || "")
+      };
+      select.forEach((fieldId) => {
+        data[fieldId] = qbFieldValue(row, fieldId);
+      });
+      return data;
+    }),
+    totalRecords: Number.isFinite(Number(response.metadata?.totalRecords))
+      ? Number(response.metadata?.totalRecords)
+      : null
+  };
+}
+
+export async function fetchQuickbaseTableRows(
+  config: StudioDocument["quickbase"],
+  tableId: string,
+  fieldIds: string[],
+  options: {
+    top?: number;
+    skip?: number;
+    where?: string;
+    sortBy?: Array<{ fieldId: string; order?: "ASC" | "DESC" }>;
+  } = {}
+): Promise<DataRow[]> {
+  const response = await fetchQuickbaseTablePage(config, tableId, fieldIds, options);
+  return response.rows;
 }
 
 async function quickbaseWriteRecordsXml(
@@ -506,6 +558,204 @@ function quickbaseUserValue(user: QuickbaseUser) {
 
 function quickbaseUserName(user: QuickbaseUser) {
   return user.name || user.email || user.login || user.id || "Hosted Platform";
+}
+
+function parseJsonValue(value: unknown) {
+  const text = String(value || "").trim();
+  if (!text || !(text.startsWith("{") || text.startsWith("["))) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function mergeQuickbaseConfig(
+  current: StudioDocument["quickbase"],
+  loaded?: Partial<StudioDocument["quickbase"]> | null
+) {
+  if (!loaded) return current;
+  const next = { ...current };
+  Object.entries(loaded).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === "") return;
+    next[key as keyof StudioDocument["quickbase"]] = String(value) as never;
+  });
+  return next;
+}
+
+async function loadQuickbaseBootstrapRows(config: StudioDocument["quickbase"]) {
+  if (!hasQuickbaseConnection(config) || !config.settingsTableId) return [];
+  const availableFieldIds: string[] = await quickbaseListFieldIds(config, config.settingsTableId).catch(() => []);
+  const candidateFieldIds = uniqueFieldIds([
+    "3",
+    config.settingsUserFieldId,
+    config.settingsObjectFieldId,
+    config.settingsObjectKeyFieldId,
+    config.settingsJsonFieldId,
+    config.settingsUpdatedByFieldId,
+    "6",
+    "7",
+    "8",
+    "9",
+    "10"
+  ]).filter((fieldId) => !availableFieldIds.length || availableFieldIds.includes(fieldId));
+  if (!candidateFieldIds.length) return [];
+  const response = await quickbaseQueryRecords(config, config.settingsTableId, candidateFieldIds, "", { top: 100 });
+  return response.data;
+}
+
+async function resolveStoredQuickbaseConfig(
+  config: StudioDocument["quickbase"]
+): Promise<{
+  config: StudioDocument["quickbase"];
+  bootstrapRows: Array<Record<string, { value: unknown }>>;
+}> {
+  const bootstrapRows = await loadQuickbaseBootstrapRows(config).catch(() => []);
+  const scope = `${normalizeHostname(config.realmHostname)}::${config.appId}`;
+  const storagePayload = bootstrapRows
+    .map((row) => uniqueFieldIds(["8", config.settingsJsonFieldId, "7"]).map((fid) => parseJsonValue(qbFieldValue(row, fid))).find(Boolean))
+    .find((payload: any) => payload?.type === "storageConfig" && (!payload.scope || payload.scope === scope)) as
+      | { storage?: Partial<StudioDocument["quickbase"]> }
+      | undefined;
+
+  return {
+    config: mergeQuickbaseConfig(config, storagePayload?.storage || null),
+    bootstrapRows
+  };
+}
+
+async function loadStoredObjects(config: StudioDocument["quickbase"]) {
+  if (!hasObjectStorage(config)) return [] as StudioObject[];
+  const select = uniqueFieldIds([
+    "3",
+    config.objectKeyFieldId,
+    config.objectTypeFieldId,
+    config.objectNameFieldId,
+    config.objectConfigFieldId
+  ]);
+  const rows = await quickbaseFetchAllRecords(config, config.objectTableId, select, "", { top: 200 });
+  const objects: StudioObject[] = [];
+  rows.forEach((row) => {
+    const payload = parseJsonValue(qbFieldValue(row, config.objectConfigFieldId));
+    if (!payload || (payload.type !== "report" && payload.type !== "dashboard")) return;
+    const object = payload as StudioObject;
+    if (!object.id) {
+      object.id = String(qbFieldValue(row, config.objectKeyFieldId) || qbFieldValue(row, "3") || "");
+    }
+    if (!object.name) {
+      object.name = String(qbFieldValue(row, config.objectNameFieldId) || object.id || "Saved Object");
+    }
+    if (!object.updatedAt) {
+      object.updatedAt = new Date().toISOString();
+    }
+    objects.push(object);
+  });
+  return objects;
+}
+
+function loadUserSettingsFromRows(
+  rows: Array<Record<string, { value: unknown }>>,
+  config: StudioDocument["quickbase"],
+  user: QuickbaseUser
+) {
+  const userValue = quickbaseUserValue(user);
+  const parsedRows = rows.map((row) => {
+    const payload = uniqueFieldIds(["8", config.settingsJsonFieldId, "7"]).map((fid) => parseJsonValue(qbFieldValue(row, fid))).find(Boolean);
+    return {
+      row,
+      payload
+    };
+  }).filter((entry) => entry.payload && typeof entry.payload === "object") as Array<{
+    row: Record<string, { value: unknown }>;
+    payload: any;
+  }>;
+
+  const exact = parsedRows.find((entry) => entry.payload?.type === "userSettings" && String(qbFieldValue(entry.row, config.settingsUserFieldId || "6")) === userValue);
+  const fallback = parsedRows.find((entry) => entry.payload?.type === "userSettings");
+  return exact?.payload || fallback?.payload || null;
+}
+
+function mapQuickbaseFieldType(fieldType: string, baseType: string): FieldType {
+  const normalized = `${fieldType || ""} ${baseType || ""}`.toLowerCase();
+  if (normalized.includes("currency")) return "currency";
+  if (normalized.includes("date") && normalized.includes("time")) return "datetime";
+  if (normalized.includes("datetime") || normalized.includes("timestamp")) return "datetime";
+  if (normalized.includes("date")) return "date";
+  if (normalized.includes("user")) return "user";
+  if (normalized.includes("multi")) return "multiselect";
+  if (
+    normalized.includes("numeric") ||
+    normalized.includes("number") ||
+    normalized.includes("percent") ||
+    normalized.includes("rating") ||
+    normalized.includes("duration") ||
+    normalized.includes("record id")
+  ) {
+    return "number";
+  }
+  return "text";
+}
+
+function convertQuickbaseSchemaToTables(schema: Awaited<ReturnType<typeof loadQuickbaseSchema>>): TableDefinition[] {
+  return schema.tables.map((table) => ({
+    id: table.id,
+    name: table.name,
+    description: table.description || "Quickbase table",
+    fields: table.fields.map((field) => ({
+      id: field.fid,
+      label: field.label,
+      type: mapQuickbaseFieldType(field.fieldType, field.baseType)
+    }))
+  }));
+}
+
+export async function hydrateStudioDocumentFromQuickbase(document: StudioDocument): Promise<StudioDocument> {
+  const base = normalizeStudioDocument(document);
+  if (!hasQuickbaseConnection(base.quickbase)) {
+    return base;
+  }
+
+  const { config: resolvedConfig, bootstrapRows } = await resolveStoredQuickbaseConfig(base.quickbase);
+  const user = await quickbaseFetchCurrentUser(resolvedConfig);
+  const storedObjects = await loadStoredObjects(resolvedConfig).catch(() => []);
+  const storedUserSettings = loadUserSettingsFromRows(bootstrapRows, resolvedConfig, user);
+  const loadedSchema = await loadQuickbaseSchema({
+    realmHostname: resolvedConfig.realmHostname,
+    userToken: resolvedConfig.userToken,
+    appToken: resolvedConfig.appToken,
+    appId: resolvedConfig.appId
+  }).catch(() => null);
+  const loadedTables = loadedSchema ? convertQuickbaseSchemaToTables(loadedSchema) : base.bundle.tables;
+
+  const next = normalizeStudioDocument({
+    ...base,
+    quickbase: resolvedConfig,
+    bundle: {
+      ...base.bundle,
+      tables: loadedTables,
+      data: Object.fromEntries(loadedTables.map((table) => [table.id, base.bundle.data[table.id] || []])),
+      ...(storedObjects.length ? {
+        objects: Object.fromEntries(storedObjects.map((object) => [object.id, object])),
+        order: storedObjects
+          .slice()
+          .sort((left, right) => String(right.updatedAt || "").localeCompare(String(left.updatedAt || "")))
+          .map((object) => object.id)
+      } : {})
+    },
+    branding: storedUserSettings?.branding ? {
+      platformName: String(storedUserSettings.branding.platformName || base.branding.platformName),
+      navigationLabel: String(storedUserSettings.branding.navigationLabel || base.branding.navigationLabel),
+      homeLabel: String(storedUserSettings.branding.homeLabel || base.branding.homeLabel)
+    } : base.branding,
+    favorites: Array.isArray(storedUserSettings?.favorites) ? storedUserSettings.favorites.map(String) : base.favorites,
+    recent: Array.isArray(storedUserSettings?.recent) ? storedUserSettings.recent.map(String) : base.recent,
+    sync: {
+      ...base.sync,
+      lastLoadedAt: new Date().toISOString()
+    }
+  });
+
+  return next;
 }
 
 async function syncObjectRecords(document: StudioDocument, user: QuickbaseUser) {

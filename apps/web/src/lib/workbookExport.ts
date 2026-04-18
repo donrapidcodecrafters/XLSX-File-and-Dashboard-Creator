@@ -308,7 +308,7 @@ async function writeWorkbookFile(workbook: any, filename: string) {
   downloadBlob(filename, new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
 }
 
-export async function exportReportWorkbook(report: ReportDefinition, table: TableDefinition, result: ReportRunResult) {
+export async function exportReportWorkbook(report: ReportDefinition, table: TableDefinition, result: ReportRunResult, fullRows?: DataRow[]) {
   const ExcelJS = await import("exceljs");
   const workbook = new ExcelJS.Workbook();
   const usedNames = new Set<string>();
@@ -328,7 +328,7 @@ export async function exportReportWorkbook(report: ReportDefinition, table: Tabl
   }
 
   const dataSheet = workbook.addWorksheet(safeSheetName(`${report.name} Data`, usedNames));
-  const rows = rowsAsObjects(report.selectedFieldIds, result.rows, table);
+  const rows = rowsAsObjects(report.selectedFieldIds, fullRows || result.rows, table);
   const columns = Object.keys(rows[0] || Object.fromEntries(report.selectedFieldIds.map((fieldId) => [table.fields.find((field) => field.id === fieldId)?.label || fieldId, ""])));
   dataSheet.columns = columns.map((header) => ({ header, key: header, width: 22 }));
   rows.forEach((row) => dataSheet.addRow(row));
@@ -336,7 +336,11 @@ export async function exportReportWorkbook(report: ReportDefinition, table: Tabl
   await writeWorkbookFile(workbook, `${report.id}.xlsx`);
 }
 
-export async function exportDashboardWorkbook(dashboard: DashboardRunResult["dashboard"], result: DashboardRunResult) {
+export async function exportDashboardWorkbook(
+  dashboard: DashboardRunResult["dashboard"],
+  result: DashboardRunResult,
+  fullRowsByReportId?: Record<string, DataRow[]>
+) {
   const ExcelJS = await import("exceljs");
   const workbook = new ExcelJS.Workbook();
   const usedNames = new Set<string>();
@@ -374,7 +378,10 @@ export async function exportDashboardWorkbook(dashboard: DashboardRunResult["das
 
     tab.widgets.forEach((widget) => {
       const tableSheet = workbook.addWorksheet(safeSheetName(`${tab.name} ${widget.report.name}`, usedNames));
-      const rows = rowsAsObjects(widget.report.selectedFieldIds, widget.result.rows);
+      const rows = rowsAsObjects(
+        widget.report.selectedFieldIds,
+        fullRowsByReportId?.[widget.report.id] || widget.result.rows
+      );
       const columns = Object.keys(rows[0] || Object.fromEntries(widget.report.selectedFieldIds.map((fieldId) => [fieldId, ""])));
       tableSheet.columns = columns.map((header) => ({ header, key: header, width: 22 }));
       rows.forEach((row) => tableSheet.addRow(row));

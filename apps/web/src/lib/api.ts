@@ -37,8 +37,40 @@ export function fetchObject(id: string) {
 export function runReport(id: string, filters: Array<{ fieldId: string; value: string; operator?: string }> = []) {
   return request<ReportRunResult>("/api/reports/" + encodeURIComponent(id) + "/run", {
     method: "POST",
-    body: JSON.stringify({ filters })
+    body: JSON.stringify({ filters, page: 1, pageSize: 100 })
   });
+}
+
+export function runReportPage(
+  id: string,
+  page: number,
+  pageSize: number,
+  filters: Array<{ fieldId: string; value: string; operator?: string }> = []
+) {
+  return request<ReportRunResult>("/api/reports/" + encodeURIComponent(id) + "/page", {
+    method: "POST",
+    body: JSON.stringify({ filters, page, pageSize })
+  });
+}
+
+export async function fetchAllReportRows(
+  id: string,
+  filters: Array<{ fieldId: string; value: string; operator?: string }> = [],
+  pageSize = 500
+) {
+  const rows: ReportRunResult["rows"] = [];
+  let page = 1;
+  let totalRows = 0;
+  while (true) {
+    const response = await runReportPage(id, page, pageSize, filters);
+    rows.push(...response.rows);
+    totalRows = response.totalRows;
+    if (!response.hasNextPage || rows.length >= totalRows) {
+      break;
+    }
+    page += 1;
+  }
+  return rows;
 }
 
 export function renderDashboard(id: string, runtimeFilters: Record<string, string>) {

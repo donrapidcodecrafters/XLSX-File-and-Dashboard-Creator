@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { buildStudioDocument, normalizeStudioDocument, type StudioDocument, type StudioObject, type StudioVersionRecord } from "@studio/shared";
+import { hydrateStudioDocumentFromQuickbase } from "./quickbase-storage.js";
 
 const STORAGE_PATH = resolve(process.cwd(), ".data/studio-document.json");
 
@@ -10,6 +11,7 @@ function clone<T>(value: T): T {
 
 export class StudioStore {
   private document: StudioDocument;
+  private hydratePromise: Promise<StudioDocument> | null = null;
 
   constructor() {
     this.document = this.load();
@@ -33,6 +35,23 @@ export class StudioStore {
 
   getDocument(): StudioDocument {
     return clone(this.document);
+  }
+
+  async hydrateFromQuickbase() {
+    if (this.hydratePromise) {
+      return this.hydratePromise;
+    }
+    this.hydratePromise = hydrateStudioDocumentFromQuickbase(this.document)
+      .then((document) => {
+        this.document = normalizeStudioDocument(clone(document));
+        this.persist(this.document);
+        return this.getDocument();
+      })
+      .catch(() => this.getDocument())
+      .finally(() => {
+        this.hydratePromise = null;
+      });
+    return this.hydratePromise;
   }
 
   getBundle() {

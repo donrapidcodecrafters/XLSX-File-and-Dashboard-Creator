@@ -36,6 +36,7 @@ import {
   restoreStudioVersion,
   saveStudioDocument
 } from "../lib/studioApi";
+import { fetchAllReportRows } from "../lib/api";
 import { exportDashboardWorkbook, exportReportWorkbook } from "../lib/workbookExport";
 
 const STORAGE_KEY = "hosted-reporting-studio-v2";
@@ -1154,9 +1155,19 @@ export function StudioPage() {
 
   async function exportWorkbook() {
     if (activeReport && activeTable && reportResult) {
-      await exportReportWorkbook(activeReport, activeTable, reportResult);
+      const fullRows = await fetchAllReportRows(activeReport.id).catch(() => reportResult.rows);
+      await exportReportWorkbook(activeReport, activeTable, reportResult, fullRows);
     } else if (activeDashboard && dashboardResult) {
-      await exportDashboardWorkbook(activeDashboard, dashboardResult);
+      const fullRowsByReportId: Record<string, DataRow[]> = {};
+      await Promise.all(
+        dashboardResult.tabs.flatMap((tab) =>
+          tab.widgets.map(async (widget) => {
+            if (fullRowsByReportId[widget.report.id]) return;
+            fullRowsByReportId[widget.report.id] = await fetchAllReportRows(widget.report.id).catch(() => widget.result.rows);
+          })
+        )
+      );
+      await exportDashboardWorkbook(activeDashboard, dashboardResult, fullRowsByReportId);
     } else {
       pushToast("Open a report or dashboard before exporting.", "warn");
       return;

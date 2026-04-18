@@ -1,15 +1,76 @@
 import { Worker } from "node:worker_threads";
-import { buildDashboardFilters, buildDashboardResult, runReport, type DashboardRunResult, type DataRow, type FilterDefinition, type ReportDefinition, type ReportRunResult, type TableDefinition } from "@studio/shared";
+import { buildDashboardFilters, buildDashboardResult, runReport, type DashboardRunResult, type DataRow, type FilterDefinition, type ReportDefinition, type ReportRunResult, type SummaryDatum, type SummaryMetric, type TableDefinition } from "@studio/shared";
 import { ExecutionCache } from "./execution-cache.js";
 import { objectStore } from "./object-store.js";
+import { fetchQuickbaseTablePage } from "./quickbase-storage.js";
 import { studioStore } from "./studio-store.js";
-import { fetchQuickbaseTableRows } from "./quickbase-storage.js";
 
 interface WorkerRequest {
   report: ReportDefinition;
   table: TableDefinition;
   rows: DataRow[];
   extraFilters: FilterDefinition[];
+}
+
+interface ExecuteReportOptions {
+  page?: number;
+  pageSize?: number;
+}
+
+const DATE_TOKENS = new Set(["CURRENT_MONTH", "LAST_30_DAYS", "CURRENT_YEAR"]);
+const cache = new ExecutionCache<ReportRunResult>(20_000);
+
+function asArray<T>(value: T | T[] | null | undefined): T[] {
+  if (Array.isArray(value)) return value;
+  if (value === null || value === undefined || value === "") return [];
+  return [value];
+}
+
+function asNumber(value: unknown): number {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function parseDateValue(value: unknown): Date | null {
+  if (!value) return null;
+  const date = new Date(String(value));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function matchesDateToken(value: unknown, token: string): boolean {
+  const date = parseDateValue(value);
+  if (!date) return false;
+  const now = new Date("2026-01-15T12:00:00.000Z");
+  if (token === "CURRENT_MONTH") {
+    return date.getUTCFullYear() === now.getUTCFullYear() && date.getUTCMonth() === now.getUTCMonth();
+  }
+  if (token === "LAST_30_DAYS") {
+    const floor = new Date(now);
+    floor.setUTCDate(now.getUTCDate() - 30);
+    return date >= floor && date <= now;
+  }
+  if (token === "CURRENT_YEAR") {
+    return date.getUTCFullYear() === now.getUTCFullYear();
+  }
+  return false;
+}
+
+function matchesFilter(row: DataRow, filter: FilterDefinition): boolean {
+  const raw = row[filter.fieldId];
+  const expected = String(filter.value ?? "");
+  if (!expected) return true;
+  if (DATE_TOKENS.has(expected)) {
+    return matchesDateToken(raw, expected);
+  }
+  const candidates = asArray(raw).map((value) => String(value ?? ""));
+  if (filter.operator === "contains") {
+    return candidates.some((value) => value.toLowerCase().includes(expected.toLowerCase()));
+  }
+  if (filter.operator === "gt") return asNumber(raw) > asNumber(expected);
+  if (filter.operator === "gte") return asNumber(raw) >= asNumber(expected);
+  if (filter.operator === "lt") return asNumber(raw) < asNumber(expected);
+  if (filter.operator === "lte") return asNumber(raw) <= asNumber(expected);
+  return candidates.some((value) => value === expected);
 }
 
 function collectReportFieldIds(report: ReportDefinition) {
@@ -30,7 +91,17 @@ function collectReportFieldIds(report: ReportDefinition) {
   ));
 }
 
-const cache = new ExecutionCache<ReportRunResult>(20_000);
+function cacheKey(report: ReportDefinition, extraFilters: FilterDefinition[], options: ExecuteReportOptions): string {
+  return JSON.stringify({
+    reportId: report.id,
+    updatedAt: report.updatedAt,
+    page: options.page || 1,
+    pageSize: options.pageSize || 100,
+    filters: extraFilters
+      .filter((filter) => Boolean(filter.value))
+      .map((filter) => [filter.fieldId, filter.operator, filter.value])
+  });
+}
 
 function runReportWorker(payload: WorkerRequest): Promise<ReportRunResult> {
   return new Promise((resolve, reject) => {
@@ -45,34 +116,403 @@ function runReportWorker(payload: WorkerRequest): Promise<ReportRunResult> {
   });
 }
 
-function cacheKey(report: ReportDefinition, extraFilters: FilterDefinition[]): string {
-  return JSON.stringify({
-    reportId: report.id,
-    updatedAt: report.updatedAt,
-    filters: extraFilters
-      .filter((filter) => Boolean(filter.value))
-      .map((filter) => [filter.fieldId, filter.operator, filter.value])
+function normalizePageOptions(options: ExecuteReportOptions) {
+  const pageSize = Math.max(1, Math.min(Number(options.pageSize) || 100, 1000));
+  const page = Math.max(1, Number(options.page) || 1);
+  return {
+    page,
+    pageSize,
+    startIndex: (page - 1) * pageSize,
+    endIndexExclusive: page * pageSize
+  };
+}
+
+function combineFilters(report: ReportDefinition, extraFilters: FilterDefinition[]) {
+  return [...report.filters, ...extraFilters].filter((filter) => Boolean(filter.value));
+}
+
+function buildQuickbaseWhere(filters: FilterDefinition[]) {
+  const operatorMap: Record<string, string> = {
+    equals: "EX",
+    contains: "CT",
+    gt: "GT",
+    gte: "GTE",
+    lt: "LT",
+    lte: "LTE"
+  };
+  const pushdown: Array<{ fid: string; value: unknown; operator?: string }> = [];
+  const unsupported: FilterDefinition[] = [];
+  filters.forEach((filter) => {
+    if (DATE_TOKENS.has(String(filter.value || ""))) {
+      unsupported.push(filter);
+      return;
+    }
+    const operator = operatorMap[filter.operator];
+    if (!operator) {
+      unsupported.push(filter);
+      return;
+    }
+    pushdown.push({
+      fid: filter.fieldId,
+      value: filter.value,
+      operator
+    });
+  });
+  const where = pushdown
+    .map((clause) => `{'${clause.fid}'.${clause.operator}.'${String(clause.value ?? "").replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'}`)
+    .join("AND");
+  return { where, unsupportedFilters: unsupported };
+}
+
+function buildQuickbaseSort(report: ReportDefinition) {
+  return (report.sorts || []).filter((item) => item.fieldId).map((item) => ({
+    fieldId: item.fieldId,
+    order: item.direction === "desc" ? "DESC" as const : "ASC" as const
+  }));
+}
+
+function summarizeRows(rows: DataRow[], metrics: SummaryMetric[]): SummaryDatum[] {
+  return metrics.map((metric) => {
+    let numericValue = 0;
+    if (metric.op === "count") {
+      numericValue = rows.length;
+    } else {
+      const values = rows.map((row) => asNumber(row[metric.fieldId]));
+      if (metric.op === "sum") numericValue = values.reduce((sum, value) => sum + value, 0);
+      if (metric.op === "avg") numericValue = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+      if (metric.op === "min") numericValue = values.length ? Math.min(...values) : 0;
+      if (metric.op === "max") numericValue = values.length ? Math.max(...values) : 0;
+    }
+    const formattedValue = metric.op === "avg"
+      ? numericValue.toFixed(1)
+      : Number.isInteger(numericValue)
+        ? String(numericValue)
+        : numericValue.toFixed(2);
+    return {
+      label: metric.label,
+      value: formattedValue,
+      numericValue
+    };
   });
 }
 
-export async function executeReport(report: ReportDefinition, extraFilters: FilterDefinition[] = []): Promise<ReportRunResult> {
-  const key = cacheKey(report, extraFilters);
+function createMetricAccumulator(metrics: SummaryMetric[]) {
+  return metrics.map((metric) => ({
+    metric,
+    count: 0,
+    sum: 0,
+    min: Number.POSITIVE_INFINITY,
+    max: Number.NEGATIVE_INFINITY
+  }));
+}
+
+function addMetricRow(accumulator: ReturnType<typeof createMetricAccumulator>, row: DataRow) {
+  accumulator.forEach((entry) => {
+    if (entry.metric.op === "count") {
+      entry.count += 1;
+      return;
+    }
+    const value = asNumber(row[entry.metric.fieldId]);
+    entry.count += 1;
+    entry.sum += value;
+    entry.min = Math.min(entry.min, value);
+    entry.max = Math.max(entry.max, value);
+  });
+}
+
+function finalizeMetricAccumulator(accumulator: ReturnType<typeof createMetricAccumulator>): SummaryDatum[] {
+  return accumulator.map((entry) => {
+    let numericValue = 0;
+    if (entry.metric.op === "count") numericValue = entry.count;
+    if (entry.metric.op === "sum") numericValue = entry.sum;
+    if (entry.metric.op === "avg") numericValue = entry.count ? entry.sum / entry.count : 0;
+    if (entry.metric.op === "min") numericValue = entry.count ? entry.min : 0;
+    if (entry.metric.op === "max") numericValue = entry.count ? entry.max : 0;
+    const formattedValue = entry.metric.op === "avg"
+      ? numericValue.toFixed(1)
+      : Number.isInteger(numericValue)
+        ? String(numericValue)
+        : numericValue.toFixed(2);
+    return {
+      label: entry.metric.label,
+      value: formattedValue,
+      numericValue
+    };
+  });
+}
+
+function projectRows(report: ReportDefinition, rows: DataRow[]) {
+  const titleField = report.view.titleFieldId || report.selectedFieldIds[0] || "";
+  return rows.map((row) => {
+    const next: DataRow = {};
+    for (const fieldId of report.selectedFieldIds) {
+      next[fieldId] = row[fieldId] ?? "";
+    }
+    return {
+      ...(titleField ? { __title: next[titleField] ?? "" } : {}),
+      ...next
+    };
+  });
+}
+
+function sortChartData(chartCounts: Map<string, number>) {
+  return Array.from(chartCounts.entries())
+    .map(([label, value]) => ({ label, value }))
+    .sort((left, right) => right.value - left.value);
+}
+
+async function fetchQuickbaseReportPageOnly(
+  report: ReportDefinition,
+  table: TableDefinition,
+  extraFilters: FilterDefinition[],
+  options: ExecuteReportOptions
+): Promise<ReportRunResult> {
+  const quickbase = studioStore.getDocument().quickbase;
+  const { page, pageSize, startIndex } = normalizePageOptions(options);
+  const filters = combineFilters(report, extraFilters);
+  const requestedFieldIds = collectReportFieldIds(report);
+  const warnings = report.selectedFieldIds.length ? [] : ["This report has no selected fields."];
+  const { where, unsupportedFilters } = buildQuickbaseWhere(filters);
+  const sortBy = buildQuickbaseSort(report);
+
+  if (unsupportedFilters.length) {
+    const full = await executeQuickbaseReportPage(report, table, extraFilters, options);
+    return {
+      ...full,
+      summary: [],
+      chartData: []
+    };
+  }
+
+  const pageResult = await fetchQuickbaseTablePage(quickbase, table.id, requestedFieldIds, {
+    top: pageSize,
+    skip: startIndex,
+    where,
+    sortBy
+  });
+  const totalRows = pageResult.totalRecords ?? pageResult.rows.length;
+  return {
+    reportId: report.id,
+    tableId: table.id,
+    totalRows,
+    rows: projectRows(report, pageResult.rows),
+    summary: [],
+    chartData: [],
+    warnings,
+    page,
+    pageSize,
+    totalPages: Math.max(1, Math.ceil(totalRows / pageSize)),
+    hasNextPage: page * pageSize < totalRows
+  };
+}
+
+async function executeQuickbaseReportPage(
+  report: ReportDefinition,
+  table: TableDefinition,
+  extraFilters: FilterDefinition[],
+  options: ExecuteReportOptions
+): Promise<ReportRunResult> {
+  const quickbase = studioStore.getDocument().quickbase;
+  const { page, pageSize, startIndex, endIndexExclusive } = normalizePageOptions(options);
+  const filters = combineFilters(report, extraFilters);
+  const requestedFieldIds = collectReportFieldIds(report);
+  const metricSet = report.summaryMetrics.length
+    ? report.summaryMetrics
+    : [{ id: "default-count", fieldId: report.selectedFieldIds[0] || "recordId", op: "count" as const, label: "Rows" }];
+  const chartField = report.view.chartFieldId || report.groups[0]?.fieldId || report.selectedFieldIds[0] || "";
+  const warnings = report.selectedFieldIds.length ? [] : ["This report has no selected fields."];
+  const { where, unsupportedFilters } = buildQuickbaseWhere(filters);
+  const sortBy = buildQuickbaseSort(report);
+
+  if (!unsupportedFilters.length) {
+    const pageResult = await fetchQuickbaseTablePage(quickbase, table.id, requestedFieldIds, {
+      top: pageSize,
+      skip: startIndex,
+      where,
+      sortBy
+    });
+
+    const summaryAccumulator = createMetricAccumulator(metricSet);
+    const batchSize = 500;
+    let scanSkip = 0;
+    let scannedRows = 0;
+    const chartCounts = new Map<string, number>();
+    while (true) {
+      const batch = await fetchQuickbaseTablePage(quickbase, table.id, requestedFieldIds, {
+        top: batchSize,
+        skip: scanSkip,
+        where,
+        sortBy
+      });
+      if (!batch.rows.length) break;
+      batch.rows.forEach((row) => {
+        scannedRows += 1;
+        addMetricRow(summaryAccumulator, row);
+        const key = String(row[chartField] ?? "Unassigned");
+        chartCounts.set(key, (chartCounts.get(key) || 0) + 1);
+      });
+      if (batch.rows.length < batchSize) break;
+      scanSkip += batchSize;
+    }
+
+    const totalRows = pageResult.totalRecords ?? scannedRows;
+    return {
+      reportId: report.id,
+      tableId: table.id,
+      totalRows,
+      rows: projectRows(report, pageResult.rows),
+      summary: finalizeMetricAccumulator(summaryAccumulator),
+      chartData: sortChartData(chartCounts),
+      warnings,
+      page,
+      pageSize,
+      totalPages: Math.max(1, Math.ceil(totalRows / pageSize)),
+      hasNextPage: page * pageSize < totalRows
+    };
+  }
+
+  const batchSize = 500;
+  let skip = 0;
+  let totalRows = 0;
+  const pageRows: DataRow[] = [];
+  const chartCounts = new Map<string, number>();
+  const summaryAccumulator = createMetricAccumulator(metricSet);
+  while (true) {
+    const batch = await fetchQuickbaseTablePage(quickbase, table.id, requestedFieldIds, {
+      top: batchSize,
+      skip,
+      where,
+      sortBy
+    });
+    if (!batch.rows.length) break;
+    batch.rows.forEach((row) => {
+      if (!filters.every((filter) => matchesFilter(row, filter))) {
+        return;
+      }
+      addMetricRow(summaryAccumulator, row);
+      const key = String(row[chartField] ?? "Unassigned");
+      chartCounts.set(key, (chartCounts.get(key) || 0) + 1);
+      if (totalRows >= startIndex && totalRows < endIndexExclusive) {
+        pageRows.push(row);
+      }
+      totalRows += 1;
+    });
+    if (batch.rows.length < batchSize) break;
+    skip += batchSize;
+  }
+
+  return {
+    reportId: report.id,
+    tableId: table.id,
+    totalRows,
+    rows: projectRows(report, pageRows),
+    summary: finalizeMetricAccumulator(summaryAccumulator),
+    chartData: sortChartData(chartCounts),
+    warnings,
+    page,
+    pageSize,
+    totalPages: Math.max(1, Math.ceil(totalRows / pageSize)),
+    hasNextPage: page * pageSize < totalRows
+  };
+}
+
+export async function executeReportPage(report: ReportDefinition, extraFilters: FilterDefinition[] = [], options: ExecuteReportOptions = {}): Promise<ReportRunResult> {
+  const table = objectStore.getTable(report.sourceTableId);
+  if (!table) {
+    throw new Error("Table not found for report " + report.id + ".");
+  }
+
+  const quickbase = studioStore.getDocument().quickbase;
+  if (quickbase.realmHostname && quickbase.userToken && quickbase.appId) {
+    return executeQuickbaseReportPage(report, table, extraFilters, options).catch(async () => {
+      const rows = objectStore.getRows(table.id);
+      const full = runReport(report, table, rows, extraFilters);
+      const { page, pageSize, startIndex, endIndexExclusive } = normalizePageOptions(options);
+      return {
+        ...full,
+        rows: full.rows.slice(startIndex, endIndexExclusive),
+        page,
+        pageSize,
+        totalPages: Math.max(1, Math.ceil(full.totalRows / pageSize)),
+        hasNextPage: page * pageSize < full.totalRows
+      };
+    });
+  }
+
+  const rows = objectStore.getRows(table.id);
+  const full = runReport(report, table, rows, extraFilters);
+  const { page, pageSize, startIndex, endIndexExclusive } = normalizePageOptions(options);
+  return {
+    ...full,
+    rows: full.rows.slice(startIndex, endIndexExclusive),
+    page,
+    pageSize,
+    totalPages: Math.max(1, Math.ceil(full.totalRows / pageSize)),
+    hasNextPage: page * pageSize < full.totalRows
+  };
+}
+
+export async function fetchReportPage(report: ReportDefinition, extraFilters: FilterDefinition[] = [], options: ExecuteReportOptions = {}): Promise<ReportRunResult> {
+  const table = objectStore.getTable(report.sourceTableId);
+  if (!table) {
+    throw new Error("Table not found for report " + report.id + ".");
+  }
+
+  const quickbase = studioStore.getDocument().quickbase;
+  if (quickbase.realmHostname && quickbase.userToken && quickbase.appId) {
+    return fetchQuickbaseReportPageOnly(report, table, extraFilters, options);
+  }
+
+  const full = runReport(report, table, objectStore.getRows(table.id), extraFilters);
+  const { page, pageSize, startIndex, endIndexExclusive } = normalizePageOptions(options);
+  return {
+    ...full,
+    rows: full.rows.slice(startIndex, endIndexExclusive),
+    summary: [],
+    chartData: [],
+    page,
+    pageSize,
+    totalPages: Math.max(1, Math.ceil(full.totalRows / pageSize)),
+    hasNextPage: page * pageSize < full.totalRows
+  };
+}
+
+export async function executeReport(report: ReportDefinition, extraFilters: FilterDefinition[] = [], options: ExecuteReportOptions = {}): Promise<ReportRunResult> {
+  const key = cacheKey(report, extraFilters, options);
   return cache.getOrCreate(key, async () => {
     const table = objectStore.getTable(report.sourceTableId);
     if (!table) {
       throw new Error("Table not found for report " + report.id + ".");
     }
     const quickbase = studioStore.getDocument().quickbase;
-    const requestedFieldIds = collectReportFieldIds(report);
-    const rows = quickbase.realmHostname && quickbase.userToken && quickbase.appId
-      ? await fetchQuickbaseTableRows(quickbase, table.id, requestedFieldIds, { top: 1000 }).catch(() => objectStore.getRows(table.id))
-      : objectStore.getRows(table.id);
-
-    if (rows.length <= 1500) {
-      return runReport(report, table, rows, extraFilters);
+    if (quickbase.realmHostname && quickbase.userToken && quickbase.appId) {
+      return executeQuickbaseReportPage(report, table, extraFilters, options);
     }
 
-    return runReportWorker({ report, table, rows, extraFilters });
+    const rows = objectStore.getRows(table.id);
+    if (rows.length <= 1500) {
+      const full = runReport(report, table, rows, extraFilters);
+      const { page, pageSize, startIndex, endIndexExclusive } = normalizePageOptions(options);
+      return {
+        ...full,
+        rows: full.rows.slice(startIndex, endIndexExclusive),
+        page,
+        pageSize,
+        totalPages: Math.max(1, Math.ceil(full.totalRows / pageSize)),
+        hasNextPage: page * pageSize < full.totalRows
+      };
+    }
+
+    const full = await runReportWorker({ report, table, rows, extraFilters });
+    const { page, pageSize, startIndex, endIndexExclusive } = normalizePageOptions(options);
+    return {
+      ...full,
+      rows: full.rows.slice(startIndex, endIndexExclusive),
+      page,
+      pageSize,
+      totalPages: Math.max(1, Math.ceil(full.totalRows / pageSize)),
+      hasNextPage: page * pageSize < full.totalRows
+    };
   });
 }
 
@@ -90,7 +530,7 @@ export async function executeDashboard(dashboardId: string, runtimeValues: Recor
           throw new Error("Widget report not found for " + widget.id + ".");
         }
         const extraFilters = buildDashboardFilters(dashboard, report.id, runtimeValues);
-        const result = await executeReport(report, extraFilters);
+        const result = await executeReport(report, extraFilters, { page: 1, pageSize: 100 });
         return {
           widgetId: widget.id,
           report,

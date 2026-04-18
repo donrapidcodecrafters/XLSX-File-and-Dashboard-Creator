@@ -4,7 +4,7 @@ import { normalizeStudioDocument, type CatalogSummaryItem, type ReportDefinition
 import { DashboardView } from "./components/DashboardView";
 import { ReportView } from "./components/ReportView";
 import { StudioPage } from "./components/StudioPage";
-import { fetchCatalog, fetchObject, fetchTables, runReport } from "./lib/api";
+import { fetchCatalog, fetchObject, fetchTables, runReport, runReportPage } from "./lib/api";
 import { getHostedContext } from "./lib/embed";
 import { fetchStudioDocument } from "./lib/studioApi";
 
@@ -31,20 +31,18 @@ function ObjectPage({ tables }: { tables: TableDefinition[] }) {
   const [object, setObject] = useState<StudioObject | null>(null);
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const pageSize = 100;
 
   useEffect(() => {
     if (!params.objectId) return;
     let active = true;
     setLoading(true);
+    setPage(1);
     fetchObject(params.objectId)
       .then((response) => {
         if (!active) return;
         setObject(response.object);
-        if (response.object.type === "report") {
-          return runReport(response.object.id).then((reportResult) => {
-            if (active) setResult(reportResult);
-          });
-        }
         setResult(null);
       })
       .finally(() => {
@@ -61,13 +59,41 @@ function ObjectPage({ tables }: { tables: TableDefinition[] }) {
     }
   }, [object]);
 
+  useEffect(() => {
+    if (!object || object.type !== "report") return;
+    let active = true;
+    setLoading(true);
+    const fetcher = page === 1 ? runReport(object.id) : runReportPage(object.id, page, pageSize);
+    fetcher
+      .then((reportResult) => {
+        if (!active) return;
+        setResult((current: any) => page === 1 || !current
+          ? reportResult
+          : {
+              ...current,
+              rows: reportResult.rows,
+              totalRows: reportResult.totalRows,
+              page: reportResult.page,
+              pageSize: reportResult.pageSize,
+              totalPages: reportResult.totalPages,
+              hasNextPage: reportResult.hasNextPage
+            });
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [object?.id, object?.type, page]);
+
   if (!params.objectId) return null;
   if (!object && loading) return <div className="empty-page">Loading report or dashboard…</div>;
   if (!object) return <div className="empty-page">That report or dashboard could not be found.</div>;
 
   if (object.type === "report") {
     const table = tables.find((item) => item.id === object.sourceTableId);
-    return <ReportView report={object as ReportDefinition} table={table} result={result} loading={loading} />;
+    return <ReportView report={object as ReportDefinition} table={table} result={result} loading={loading} currentPage={page} onPageChange={setPage} />;
   }
 
   return <DashboardView dashboard={object} />;

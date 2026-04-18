@@ -7,9 +7,12 @@ interface ReportViewProps {
   table?: TableDefinition;
   result?: ReportRunResult;
   loading: boolean;
+  currentPage: number;
+  onPageChange: (page: number) => void;
 }
 
-export function ReportView({ report, table, result, loading }: ReportViewProps) {
+export function ReportView({ report, table, result, loading, currentPage, onPageChange }: ReportViewProps) {
+  const totalPages = result?.totalPages || 1;
   return (
     <section className="surface stack">
       <div className="hero">
@@ -63,6 +66,11 @@ export function ReportView({ report, table, result, loading }: ReportViewProps) 
         <div className="card-head">
           <strong>Details</strong>
           <span className="micro">{result?.totalRows || 0} rows</span>
+        </div>
+        <div className="link-toolbar">
+          <button className="ghost-button" disabled={currentPage <= 1 || loading} onClick={() => onPageChange(Math.max(1, currentPage - 1))}>Previous</button>
+          <span className="micro">Page {result?.page || currentPage} of {totalPages}</span>
+          <button className="ghost-button" disabled={!result?.hasNextPage || loading} onClick={() => onPageChange(currentPage + 1)}>Next</button>
         </div>
         {loading ? (
           <div className="empty">Loading rows…</div>
