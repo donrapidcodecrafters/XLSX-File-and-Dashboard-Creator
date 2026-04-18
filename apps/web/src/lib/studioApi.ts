@@ -1,5 +1,15 @@
 import type { StudioDocument, StudioVersionRecord } from "@studio/shared";
 
+export interface QuickbaseSyncResult {
+  enabled: boolean;
+  ok: boolean;
+  message: string;
+  savedObjects: number;
+  savedSettings: number;
+  savedVersions: number;
+  savedStorageConfig: number;
+}
+
 export interface QuickbaseFieldSchema {
   fid: string;
   label: string;
@@ -44,7 +54,7 @@ export function fetchStudioDocument() {
 }
 
 export function saveStudioDocument(document: StudioDocument) {
-  return request<{ document: StudioDocument }>("/api/studio/document", {
+  return request<{ document: StudioDocument; sync?: QuickbaseSyncResult }>("/api/studio/document", {
     method: "PUT",
     body: JSON.stringify({ document })
   });

@@ -30,6 +30,7 @@ import {
   fetchQuickbaseSchema,
   fetchStudioDocument,
   type QuickbaseAppSchema,
+  type QuickbaseSyncResult,
   fetchStudioVersions,
   restoreStudioVersion,
   saveStudioDocument
@@ -133,6 +134,83 @@ function convertQuickbaseSchemaToTables(schema: QuickbaseAppSchema): TableDefini
       type: mapQuickbaseFieldType(field.fieldType, field.baseType)
     }))
   }));
+}
+
+function normalizeQuickbaseLabel(value: string) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function findQuickbaseTableByNames(tables: QuickbaseAppSchema["tables"], names: string[]) {
+  const wanted = names.map(normalizeQuickbaseLabel);
+  return tables.find((table) => wanted.includes(normalizeQuickbaseLabel(table.name))) || null;
+}
+
+function findQuickbaseFieldIdByLabels(fields: QuickbaseAppSchema["tables"][number]["fields"], labels: string[]) {
+  const wanted = labels.map(normalizeQuickbaseLabel);
+  const match = fields.find((field) => wanted.includes(normalizeQuickbaseLabel(field.label)));
+  return match ? String(match.fid) : "";
+}
+
+function detectQuickbaseStorageConfig(schema: QuickbaseAppSchema) {
+  const detected: Partial<StudioDocument["quickbase"]> = {};
+
+  const objectTable = findQuickbaseTableByNames(schema.tables, [
+    "Saved Reports",
+    "Studio Items",
+    "Reporting Studio Items",
+    "Saved Studio Items",
+    "Saved Reports and Dashboards"
+  ]);
+  if (objectTable) {
+    detected.objectTableId = objectTable.id;
+    detected.objectKeyFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, ["Object ID", "Studio Item Key", "Studio Item ID", "Item Key", "Report ID"]);
+    detected.objectTypeFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, ["Type", "Object Type"]);
+    detected.objectNameFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, ["Name", "Object Name", "Report Name"]);
+    detected.objectConfigFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, ["JSON Config", "Config JSON", "Json", "Configuration"]);
+    detected.objectOwnerFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, ["Owner", "Object Owner"]);
+    detected.objectUpdatedAtFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, ["Updated", "Updated At", "Modified", "Modified At"]);
+    detected.objectUpdatedByFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, ["Updated By", "Modified By"]);
+  }
+
+  const settingsTable = findQuickbaseTableByNames(schema.tables, [
+    "User Report Settings",
+    "User Settings",
+    "Studio User Settings",
+    "Report User Settings"
+  ]);
+  if (settingsTable) {
+    detected.settingsTableId = settingsTable.id;
+    detected.settingsUserFieldId = findQuickbaseFieldIdByLabels(settingsTable.fields, ["User", "User ID", "Email"]);
+    detected.settingsObjectFieldId = findQuickbaseFieldIdByLabels(settingsTable.fields, ["Object Record", "Studio Item Record"]);
+    detected.settingsObjectKeyFieldId = findQuickbaseFieldIdByLabels(settingsTable.fields, ["Object", "Object ID", "Studio Item Key", "Report ID"]);
+    detected.settingsJsonFieldId = findQuickbaseFieldIdByLabels(settingsTable.fields, ["Json", "JSON", "Settings JSON"]);
+    detected.settingsUpdatedByFieldId = findQuickbaseFieldIdByLabels(settingsTable.fields, ["Updated By", "Modified By"]);
+  }
+
+  const versionTable = findQuickbaseTableByNames(schema.tables, [
+    "Report Version History",
+    "Version History",
+    "Studio Version History",
+    "Saved Report Version History"
+  ]);
+  if (versionTable) {
+    detected.versionTableId = versionTable.id;
+    detected.versionObjectFieldId = findQuickbaseFieldIdByLabels(versionTable.fields, ["Object Record", "Studio Item Record"]);
+    detected.versionObjectKeyFieldId = findQuickbaseFieldIdByLabels(versionTable.fields, ["Object", "Object ID", "Studio Item Key", "Report ID", "Version"]);
+    detected.versionSnapshotFieldId = findQuickbaseFieldIdByLabels(versionTable.fields, ["Json", "JSON", "Snapshot JSON"]);
+    detected.versionChangedAtFieldId = findQuickbaseFieldIdByLabels(versionTable.fields, ["Changed At", "Updated At", "Updated", "Modified At"]);
+    detected.versionChangedByFieldId = findQuickbaseFieldIdByLabels(versionTable.fields, ["Changed By", "Updated By", "Modified By"]);
+    detected.versionUpdatedByFieldId = findQuickbaseFieldIdByLabels(versionTable.fields, ["Updated By", "Changed By", "Modified By"]);
+  }
+
+  return detected;
+}
+
+function fieldSuggestionLabel(field: QuickbaseAppSchema["tables"][number]["fields"][number]) {
+  return `${field.fid} · ${field.label}${field.fieldType ? ` · ${field.fieldType}` : ""}`;
 }
 
 function buildCreateDraft(table?: TableDefinition | null, type: CreateModalType = "report"): CreateObjectDraft {
@@ -462,8 +540,12 @@ export function StudioPage() {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [quickbaseSchema, setQuickbaseSchema] = useState<QuickbaseAppSchema | null>(null);
   const [quickbaseSchemaLoading, setQuickbaseSchemaLoading] = useState(false);
+  const [quickbaseSchemaQuery, setQuickbaseSchemaQuery] = useState("");
+  const [lastQuickbaseSync, setLastQuickbaseSync] = useState<QuickbaseSyncResult | null>(null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createDraft, setCreateDraft] = useState<CreateObjectDraft>(() => buildCreateDraft(loadLocalDocument().bundle.tables[0], "report"));
+  const [reportFieldQuery, setReportFieldQuery] = useState("");
+  const [createFieldQuery, setCreateFieldQuery] = useState("");
 
   const bundle = documentState.bundle;
   const objects = useMemo(() => bundle.order.map((id) => bundle.objects[id]).filter(Boolean), [bundle]);
@@ -473,7 +555,50 @@ export function StudioPage() {
   const activeDashboard = activeObject?.type === "dashboard" ? activeObject : null;
   const activeTable = activeReport ? bundle.tables.find((table) => table.id === activeReport.sourceTableId) || null : null;
   const createDraftTable = bundle.tables.find((table) => table.id === createDraft.tableId) || bundle.tables[0] || null;
+  const objectStorageTable = useMemo(
+    () => quickbaseSchema?.tables.find((table) => table.id === documentState.quickbase.objectTableId) || null,
+    [quickbaseSchema, documentState.quickbase.objectTableId]
+  );
+  const settingsStorageTable = useMemo(
+    () => quickbaseSchema?.tables.find((table) => table.id === documentState.quickbase.settingsTableId) || null,
+    [quickbaseSchema, documentState.quickbase.settingsTableId]
+  );
+  const versionStorageTable = useMemo(
+    () => quickbaseSchema?.tables.find((table) => table.id === documentState.quickbase.versionTableId) || null,
+    [quickbaseSchema, documentState.quickbase.versionTableId]
+  );
   const validation = activeObject ? validationMessages(activeObject, activeTable) : [];
+  const visibleReportFields = useMemo(() => {
+    if (!activeTable) return [];
+    const query = reportFieldQuery.trim().toLowerCase();
+    if (!query) return activeTable.fields;
+    return activeTable.fields.filter((field) => `${field.label} ${field.id} ${field.type}`.toLowerCase().includes(query));
+  }, [activeTable, reportFieldQuery]);
+  const visibleCreateFields = useMemo(() => {
+    if (!createDraftTable) return [];
+    const query = createFieldQuery.trim().toLowerCase();
+    if (!query) return createDraftTable.fields;
+    return createDraftTable.fields.filter((field) => `${field.label} ${field.id} ${field.type}`.toLowerCase().includes(query));
+  }, [createDraftTable, createFieldQuery]);
+  const filteredQuickbaseTables = useMemo(() => {
+    if (!quickbaseSchema) return [];
+    const query = quickbaseSchemaQuery.trim().toLowerCase();
+    if (!query) {
+      return quickbaseSchema.tables.map((table) => ({ ...table, visibleFields: table.fields }));
+    }
+    return quickbaseSchema.tables
+      .map((table) => {
+        const tableText = `${table.name} ${table.id} ${table.description}`.toLowerCase();
+        const visibleFields = table.fields.filter((field) =>
+          `${field.label} ${field.fid} ${field.fieldType} ${field.baseType}`.toLowerCase().includes(query)
+        );
+        if (tableText.includes(query) || visibleFields.length) {
+          return { ...table, visibleFields: visibleFields.length ? visibleFields : table.fields };
+        }
+        return null;
+      })
+      .filter(Boolean) as Array<QuickbaseAppSchema["tables"][number] & { visibleFields: QuickbaseAppSchema["tables"][number]["fields"] }>;
+  }, [quickbaseSchema, quickbaseSchemaQuery]);
 
   function pushToast(message: string, tone: ToastTone = "ok") {
     const id = uid("toast");
@@ -588,6 +713,7 @@ export function StudioPage() {
   function openCreateModal(type: CreateModalType) {
     const table = bundle.tables[0] || null;
     setCreateDraft(buildCreateDraft(table, type));
+    setCreateFieldQuery("");
     setCreateModalOpen(true);
   }
 
@@ -727,8 +853,26 @@ export function StudioPage() {
     try {
       const response = await saveStudioDocument(documentState);
       setDocumentState(normalizeStudioDocument(response.document));
-      pushToast("Hosted studio saved.");
+      setLastQuickbaseSync(response.sync || null);
+      if (response.sync?.enabled) {
+        if (response.sync.ok) {
+          pushToast(`${response.sync.message} ${response.sync.savedObjects} objects · ${response.sync.savedSettings} settings · ${response.sync.savedVersions} versions.`, "ok");
+        } else {
+          pushToast(response.sync.message, "warn");
+        }
+      } else {
+        pushToast("Hosted studio saved.");
+      }
     } catch (error) {
+      setLastQuickbaseSync({
+        enabled: true,
+        ok: false,
+        message: error instanceof Error ? error.message : "Save failed.",
+        savedObjects: 0,
+        savedSettings: 0,
+        savedVersions: 0,
+        savedStorageConfig: 0
+      });
       pushToast(error instanceof Error ? error.message : "Save failed.", "danger");
     } finally {
       setSavingRemote(false);
@@ -753,6 +897,7 @@ export function StudioPage() {
       const response = await fetchQuickbaseSchema(documentState.quickbase);
       setQuickbaseSchema(response.schema);
       const nextTables = convertQuickbaseSchemaToTables(response.schema);
+      const detected = detectQuickbaseStorageConfig(response.schema);
       applyDocumentUpdate((draft) => {
         draft.bundle.app.id = response.schema.id || draft.bundle.app.id;
         draft.bundle.app.name = response.schema.name || draft.bundle.app.name;
@@ -761,6 +906,13 @@ export function StudioPage() {
           ...draft.bundle.data,
           ...Object.fromEntries(nextTables.map((table) => [table.id, draft.bundle.data[table.id] || []]))
         };
+        Object.entries(detected).forEach(([key, value]) => {
+          if (!value) return;
+          const typedKey = key as keyof StudioDocument["quickbase"];
+          if (!draft.quickbase[typedKey]) {
+            draft.quickbase[typedKey] = value as never;
+          }
+        });
       });
       pushToast(`Loaded ${response.schema.tables.length} Quickbase tables and updated the report builder.`);
     } catch (error) {
@@ -774,6 +926,30 @@ export function StudioPage() {
     applyDocumentUpdate((draft) => {
       draft.quickbase[field] = tableId;
     });
+  }
+
+  function updateQuickbaseField(field: keyof StudioDocument["quickbase"], value: string) {
+    applyDocumentUpdate((draft) => {
+      draft.quickbase[field] = value as never;
+    });
+  }
+
+  function quickbaseFieldLabel(table: QuickbaseAppSchema["tables"][number] | null, fid: string) {
+    if (!table || !fid) return "";
+    const field = table.fields.find((item) => item.fid === fid);
+    return field ? fieldSuggestionLabel(field) : "";
+  }
+
+  function autoDetectQuickbaseMappings() {
+    if (!quickbaseSchema) return;
+    const detected = detectQuickbaseStorageConfig(quickbaseSchema);
+    applyDocumentUpdate((draft) => {
+      Object.entries(detected).forEach(([key, value]) => {
+        const typedKey = key as keyof StudioDocument["quickbase"];
+        draft.quickbase[typedKey] = String(value || "");
+      });
+    });
+    pushToast("Quickbase storage tables and fields were auto-detected from this app.");
   }
 
   async function openVersions() {
@@ -1128,8 +1304,12 @@ export function StudioPage() {
                     {bundle.tables.map((table) => <option key={table.id} value={table.id}>{table.name}</option>)}
                   </select>
                 </label>
+                <label className="field">
+                  <span>Find fields</span>
+                  <input value={reportFieldQuery} onChange={(event) => setReportFieldQuery(event.target.value)} placeholder="Search field name, FID, or type" />
+                </label>
                 <div className="picker-list">
-                  {activeTable.fields.map((field) => (
+                  {visibleReportFields.map((field) => (
                     <label className="picker-row" key={field.id}>
                       <input
                         type="checkbox"
@@ -1142,9 +1322,10 @@ export function StudioPage() {
                         })}
                       />
                       <span>{field.label}</span>
-                      <em>{field.type}</em>
+                      <em>FID {field.id} · {field.type}</em>
                     </label>
                   ))}
+                  {!visibleReportFields.length ? <div className="empty-hint">No matching fields.</div> : null}
                 </div>
               </>
             ) : null}
@@ -1370,8 +1551,12 @@ export function StudioPage() {
                       <strong>Fields</strong>
                       <span className="micro">{createDraft.selectedFieldIds.length} selected</span>
                     </div>
+                    <label className="field">
+                      <span>Find fields</span>
+                      <input value={createFieldQuery} onChange={(event) => setCreateFieldQuery(event.target.value)} placeholder="Search field name, FID, or type" />
+                    </label>
                     <div className="picker-list">
-                      {createDraftTable.fields.map((field) => (
+                      {visibleCreateFields.map((field) => (
                         <label className="picker-row" key={field.id}>
                           <input
                             type="checkbox"
@@ -1384,9 +1569,10 @@ export function StudioPage() {
                             }))}
                           />
                           <span>{field.label}</span>
-                          <em>{field.type}</em>
+                          <em>FID {field.id} · {field.type}</em>
                         </label>
                       ))}
+                      {!visibleCreateFields.length ? <div className="empty-hint">No matching fields.</div> : null}
                     </div>
                   </div>
 
@@ -1463,43 +1649,141 @@ export function StudioPage() {
                   </div>
                   <label className="field">
                     <span>Realm hostname</span>
-                    <input value={documentState.quickbase.realmHostname} onChange={(event) => applyDocumentUpdate((draft) => { draft.quickbase.realmHostname = event.target.value; })} placeholder="yourrealm.quickbase.com" />
+                    <input value={documentState.quickbase.realmHostname} onChange={(event) => updateQuickbaseField("realmHostname", event.target.value)} placeholder="yourrealm.quickbase.com" />
                   </label>
                   <label className="field">
                     <span>User token</span>
-                    <input value={documentState.quickbase.userToken} onChange={(event) => applyDocumentUpdate((draft) => { draft.quickbase.userToken = event.target.value; })} placeholder="QB-USER-TOKEN ..." />
+                    <input value={documentState.quickbase.userToken} onChange={(event) => updateQuickbaseField("userToken", event.target.value)} placeholder="QB-USER-TOKEN ..." />
                   </label>
                   <label className="field">
                     <span>App token</span>
-                    <input value={documentState.quickbase.appToken} onChange={(event) => applyDocumentUpdate((draft) => { draft.quickbase.appToken = event.target.value; })} placeholder="Optional app token" />
+                    <input value={documentState.quickbase.appToken} onChange={(event) => updateQuickbaseField("appToken", event.target.value)} placeholder="Optional app token" />
                   </label>
                   <label className="field">
                     <span>App ID</span>
-                    <input value={documentState.quickbase.appId} onChange={(event) => applyDocumentUpdate((draft) => { draft.quickbase.appId = event.target.value; })} placeholder="App DBID" />
+                    <input value={documentState.quickbase.appId} onChange={(event) => updateQuickbaseField("appId", event.target.value)} placeholder="App DBID" />
                   </label>
                   <label className="field">
                     <span>API base URL</span>
-                    <input value={documentState.quickbase.apiBaseUrl} onChange={(event) => applyDocumentUpdate((draft) => { draft.quickbase.apiBaseUrl = event.target.value; })} placeholder="https://api.quickbase.com/v1" />
-                  </label>
-                  <label className="field">
-                    <span>Saved reports and dashboards table</span>
-                    <input value={documentState.quickbase.objectTableId} onChange={(event) => applyDocumentUpdate((draft) => { draft.quickbase.objectTableId = event.target.value; })} placeholder="Table DBID" />
-                  </label>
-                  <label className="field">
-                    <span>User settings table</span>
-                    <input value={documentState.quickbase.settingsTableId} onChange={(event) => applyDocumentUpdate((draft) => { draft.quickbase.settingsTableId = event.target.value; })} placeholder="Table DBID" />
-                  </label>
-                  <label className="field">
-                    <span>Version history table</span>
-                    <input value={documentState.quickbase.versionTableId} onChange={(event) => applyDocumentUpdate((draft) => { draft.quickbase.versionTableId = event.target.value; })} placeholder="Table DBID" />
+                    <input value={documentState.quickbase.apiBaseUrl} onChange={(event) => updateQuickbaseField("apiBaseUrl", event.target.value)} placeholder="https://api.quickbase.com/v1" />
                   </label>
                 </div>
                 <div className="studio-actions">
                   <button onClick={loadQuickbaseMetadata} disabled={quickbaseSchemaLoading}>
                     {quickbaseSchemaLoading ? "Loading Quickbase schema…" : "Load table and field IDs"}
                   </button>
+                  {quickbaseSchema ? <button onClick={autoDetectQuickbaseMappings}>Auto-detect storage fields</button> : null}
                   <button onClick={reloadRemote}>Load from server</button>
-                  <button onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save to server"}</button>
+                  <button onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save to Quickbase and server"}</button>
+                </div>
+                {lastQuickbaseSync ? (
+                  <div className={`sync-status ${lastQuickbaseSync.ok ? "sync-status-ok" : "sync-status-warn"}`}>
+                    <strong>{lastQuickbaseSync.ok ? "Quickbase save succeeded" : "Quickbase save needs attention"}</strong>
+                    <span>{lastQuickbaseSync.message}</span>
+                    <span>
+                      {lastQuickbaseSync.savedObjects} saved reports or dashboards · {lastQuickbaseSync.savedSettings} user settings rows · {lastQuickbaseSync.savedVersions} version rows
+                    </span>
+                  </div>
+                ) : null}
+                <div className="card">
+                  <div className="card-head">
+                    <strong>Saved reports and dashboards</strong>
+                    <span className="micro">Object definitions are written here as individual Quickbase records.</span>
+                  </div>
+                  <label className="field">
+                    <span>Table DBID</span>
+                    {quickbaseSchema ? (
+                      <select value={documentState.quickbase.objectTableId} onChange={(event) => updateQuickbaseField("objectTableId", event.target.value)}>
+                        <option value="">Choose a Quickbase table</option>
+                        {quickbaseSchema.tables.map((table) => <option key={table.id} value={table.id}>{table.name} · {table.id}</option>)}
+                      </select>
+                    ) : (
+                      <input value={documentState.quickbase.objectTableId} onChange={(event) => updateQuickbaseField("objectTableId", event.target.value)} placeholder="Table DBID for saved reports and dashboards" />
+                    )}
+                  </label>
+                  <datalist id="quickbase-object-field-options">
+                    {(objectStorageTable?.fields || []).map((field) => (
+                      <option key={`object-${field.fid}`} value={field.fid} label={fieldSuggestionLabel(field)} />
+                    ))}
+                  </datalist>
+                  <div className="filter-grid compact-grid">
+                    <label className="field"><span>Item key field FID</span><input list="quickbase-object-field-options" value={documentState.quickbase.objectKeyFieldId} onChange={(event) => updateQuickbaseField("objectKeyFieldId", event.target.value)} placeholder="FID" />{quickbaseFieldLabel(objectStorageTable, documentState.quickbase.objectKeyFieldId) ? <span className="micro">{quickbaseFieldLabel(objectStorageTable, documentState.quickbase.objectKeyFieldId)}</span> : null}</label>
+                    <label className="field"><span>Type field FID</span><input list="quickbase-object-field-options" value={documentState.quickbase.objectTypeFieldId} onChange={(event) => updateQuickbaseField("objectTypeFieldId", event.target.value)} placeholder="FID" />{quickbaseFieldLabel(objectStorageTable, documentState.quickbase.objectTypeFieldId) ? <span className="micro">{quickbaseFieldLabel(objectStorageTable, documentState.quickbase.objectTypeFieldId)}</span> : null}</label>
+                  </div>
+                  <div className="filter-grid compact-grid">
+                    <label className="field"><span>Name field FID</span><input list="quickbase-object-field-options" value={documentState.quickbase.objectNameFieldId} onChange={(event) => updateQuickbaseField("objectNameFieldId", event.target.value)} placeholder="FID" />{quickbaseFieldLabel(objectStorageTable, documentState.quickbase.objectNameFieldId) ? <span className="micro">{quickbaseFieldLabel(objectStorageTable, documentState.quickbase.objectNameFieldId)}</span> : null}</label>
+                    <label className="field"><span>JSON field FID</span><input list="quickbase-object-field-options" value={documentState.quickbase.objectConfigFieldId} onChange={(event) => updateQuickbaseField("objectConfigFieldId", event.target.value)} placeholder="FID" />{quickbaseFieldLabel(objectStorageTable, documentState.quickbase.objectConfigFieldId) ? <span className="micro">{quickbaseFieldLabel(objectStorageTable, documentState.quickbase.objectConfigFieldId)}</span> : null}</label>
+                  </div>
+                  <div className="filter-grid compact-grid">
+                    <label className="field"><span>Owner field FID</span><input list="quickbase-object-field-options" value={documentState.quickbase.objectOwnerFieldId} onChange={(event) => updateQuickbaseField("objectOwnerFieldId", event.target.value)} placeholder="Optional FID" />{quickbaseFieldLabel(objectStorageTable, documentState.quickbase.objectOwnerFieldId) ? <span className="micro">{quickbaseFieldLabel(objectStorageTable, documentState.quickbase.objectOwnerFieldId)}</span> : null}</label>
+                    <label className="field"><span>Updated at field FID</span><input list="quickbase-object-field-options" value={documentState.quickbase.objectUpdatedAtFieldId} onChange={(event) => updateQuickbaseField("objectUpdatedAtFieldId", event.target.value)} placeholder="Optional FID" />{quickbaseFieldLabel(objectStorageTable, documentState.quickbase.objectUpdatedAtFieldId) ? <span className="micro">{quickbaseFieldLabel(objectStorageTable, documentState.quickbase.objectUpdatedAtFieldId)}</span> : null}</label>
+                  </div>
+                  <label className="field"><span>Updated by field FID</span><input list="quickbase-object-field-options" value={documentState.quickbase.objectUpdatedByFieldId} onChange={(event) => updateQuickbaseField("objectUpdatedByFieldId", event.target.value)} placeholder="Optional FID" />{quickbaseFieldLabel(objectStorageTable, documentState.quickbase.objectUpdatedByFieldId) ? <span className="micro">{quickbaseFieldLabel(objectStorageTable, documentState.quickbase.objectUpdatedByFieldId)}</span> : null}</label>
+                </div>
+                <div className="card">
+                  <div className="card-head">
+                    <strong>User settings</strong>
+                    <span className="micro">Favorites, recents, branding, and storage config are written here.</span>
+                  </div>
+                  <label className="field">
+                    <span>Table DBID</span>
+                    {quickbaseSchema ? (
+                      <select value={documentState.quickbase.settingsTableId} onChange={(event) => updateQuickbaseField("settingsTableId", event.target.value)}>
+                        <option value="">Choose a Quickbase table</option>
+                        {quickbaseSchema.tables.map((table) => <option key={table.id} value={table.id}>{table.name} · {table.id}</option>)}
+                      </select>
+                    ) : (
+                      <input value={documentState.quickbase.settingsTableId} onChange={(event) => updateQuickbaseField("settingsTableId", event.target.value)} placeholder="Table DBID for user settings" />
+                    )}
+                  </label>
+                  <datalist id="quickbase-settings-field-options">
+                    {(settingsStorageTable?.fields || []).map((field) => (
+                      <option key={`settings-${field.fid}`} value={field.fid} label={fieldSuggestionLabel(field)} />
+                    ))}
+                  </datalist>
+                  <div className="filter-grid compact-grid">
+                    <label className="field"><span>User field FID</span><input list="quickbase-settings-field-options" value={documentState.quickbase.settingsUserFieldId} onChange={(event) => updateQuickbaseField("settingsUserFieldId", event.target.value)} placeholder="FID" />{quickbaseFieldLabel(settingsStorageTable, documentState.quickbase.settingsUserFieldId) ? <span className="micro">{quickbaseFieldLabel(settingsStorageTable, documentState.quickbase.settingsUserFieldId)}</span> : null}</label>
+                    <label className="field"><span>Object record field FID</span><input list="quickbase-settings-field-options" value={documentState.quickbase.settingsObjectFieldId} onChange={(event) => updateQuickbaseField("settingsObjectFieldId", event.target.value)} placeholder="Optional FID" />{quickbaseFieldLabel(settingsStorageTable, documentState.quickbase.settingsObjectFieldId) ? <span className="micro">{quickbaseFieldLabel(settingsStorageTable, documentState.quickbase.settingsObjectFieldId)}</span> : null}</label>
+                  </div>
+                  <div className="filter-grid compact-grid">
+                    <label className="field"><span>Object key field FID</span><input list="quickbase-settings-field-options" value={documentState.quickbase.settingsObjectKeyFieldId} onChange={(event) => updateQuickbaseField("settingsObjectKeyFieldId", event.target.value)} placeholder="FID" />{quickbaseFieldLabel(settingsStorageTable, documentState.quickbase.settingsObjectKeyFieldId) ? <span className="micro">{quickbaseFieldLabel(settingsStorageTable, documentState.quickbase.settingsObjectKeyFieldId)}</span> : null}</label>
+                    <label className="field"><span>Updated by field FID</span><input list="quickbase-settings-field-options" value={documentState.quickbase.settingsUpdatedByFieldId} onChange={(event) => updateQuickbaseField("settingsUpdatedByFieldId", event.target.value)} placeholder="Optional FID" />{quickbaseFieldLabel(settingsStorageTable, documentState.quickbase.settingsUpdatedByFieldId) ? <span className="micro">{quickbaseFieldLabel(settingsStorageTable, documentState.quickbase.settingsUpdatedByFieldId)}</span> : null}</label>
+                  </div>
+                  <label className="field"><span>Settings JSON field FID</span><input list="quickbase-settings-field-options" value={documentState.quickbase.settingsJsonFieldId} onChange={(event) => updateQuickbaseField("settingsJsonFieldId", event.target.value)} placeholder="FID" />{quickbaseFieldLabel(settingsStorageTable, documentState.quickbase.settingsJsonFieldId) ? <span className="micro">{quickbaseFieldLabel(settingsStorageTable, documentState.quickbase.settingsJsonFieldId)}</span> : null}</label>
+                </div>
+                <div className="card">
+                  <div className="card-head">
+                    <strong>Version history</strong>
+                    <span className="micro">Saved versions and snapshots are written here.</span>
+                  </div>
+                  <label className="field">
+                    <span>Table DBID</span>
+                    {quickbaseSchema ? (
+                      <select value={documentState.quickbase.versionTableId} onChange={(event) => updateQuickbaseField("versionTableId", event.target.value)}>
+                        <option value="">Choose a Quickbase table</option>
+                        {quickbaseSchema.tables.map((table) => <option key={table.id} value={table.id}>{table.name} · {table.id}</option>)}
+                      </select>
+                    ) : (
+                      <input value={documentState.quickbase.versionTableId} onChange={(event) => updateQuickbaseField("versionTableId", event.target.value)} placeholder="Table DBID for version history" />
+                    )}
+                  </label>
+                  <datalist id="quickbase-version-field-options">
+                    {(versionStorageTable?.fields || []).map((field) => (
+                      <option key={`version-${field.fid}`} value={field.fid} label={fieldSuggestionLabel(field)} />
+                    ))}
+                  </datalist>
+                  <div className="filter-grid compact-grid">
+                    <label className="field"><span>Object record field FID</span><input list="quickbase-version-field-options" value={documentState.quickbase.versionObjectFieldId} onChange={(event) => updateQuickbaseField("versionObjectFieldId", event.target.value)} placeholder="Optional FID" />{quickbaseFieldLabel(versionStorageTable, documentState.quickbase.versionObjectFieldId) ? <span className="micro">{quickbaseFieldLabel(versionStorageTable, documentState.quickbase.versionObjectFieldId)}</span> : null}</label>
+                    <label className="field"><span>Object key field FID</span><input list="quickbase-version-field-options" value={documentState.quickbase.versionObjectKeyFieldId} onChange={(event) => updateQuickbaseField("versionObjectKeyFieldId", event.target.value)} placeholder="FID" />{quickbaseFieldLabel(versionStorageTable, documentState.quickbase.versionObjectKeyFieldId) ? <span className="micro">{quickbaseFieldLabel(versionStorageTable, documentState.quickbase.versionObjectKeyFieldId)}</span> : null}</label>
+                  </div>
+                  <div className="filter-grid compact-grid">
+                    <label className="field"><span>Snapshot JSON field FID</span><input list="quickbase-version-field-options" value={documentState.quickbase.versionSnapshotFieldId} onChange={(event) => updateQuickbaseField("versionSnapshotFieldId", event.target.value)} placeholder="FID" />{quickbaseFieldLabel(versionStorageTable, documentState.quickbase.versionSnapshotFieldId) ? <span className="micro">{quickbaseFieldLabel(versionStorageTable, documentState.quickbase.versionSnapshotFieldId)}</span> : null}</label>
+                    <label className="field"><span>Changed at field FID</span><input list="quickbase-version-field-options" value={documentState.quickbase.versionChangedAtFieldId} onChange={(event) => updateQuickbaseField("versionChangedAtFieldId", event.target.value)} placeholder="FID" />{quickbaseFieldLabel(versionStorageTable, documentState.quickbase.versionChangedAtFieldId) ? <span className="micro">{quickbaseFieldLabel(versionStorageTable, documentState.quickbase.versionChangedAtFieldId)}</span> : null}</label>
+                  </div>
+                  <div className="filter-grid compact-grid">
+                    <label className="field"><span>Changed by field FID</span><input list="quickbase-version-field-options" value={documentState.quickbase.versionChangedByFieldId} onChange={(event) => updateQuickbaseField("versionChangedByFieldId", event.target.value)} placeholder="Optional FID" />{quickbaseFieldLabel(versionStorageTable, documentState.quickbase.versionChangedByFieldId) ? <span className="micro">{quickbaseFieldLabel(versionStorageTable, documentState.quickbase.versionChangedByFieldId)}</span> : null}</label>
+                    <label className="field"><span>Updated by field FID</span><input list="quickbase-version-field-options" value={documentState.quickbase.versionUpdatedByFieldId} onChange={(event) => updateQuickbaseField("versionUpdatedByFieldId", event.target.value)} placeholder="Optional FID" />{quickbaseFieldLabel(versionStorageTable, documentState.quickbase.versionUpdatedByFieldId) ? <span className="micro">{quickbaseFieldLabel(versionStorageTable, documentState.quickbase.versionUpdatedByFieldId)}</span> : null}</label>
+                  </div>
                 </div>
                 {quickbaseSchema ? (
                   <div className="stack-compact">
@@ -1510,7 +1794,11 @@ export function StudioPage() {
                       </div>
                       <div className="micro">{quickbaseSchema.description || "Quickbase app schema loaded."}</div>
                     </div>
-                    {quickbaseSchema.tables.map((table) => (
+                    <label className="field">
+                      <span>Search loaded Quickbase fields</span>
+                      <input value={quickbaseSchemaQuery} onChange={(event) => setQuickbaseSchemaQuery(event.target.value)} placeholder="Search table name, field label, FID, or type" />
+                    </label>
+                    {filteredQuickbaseTables.map((table) => (
                       <div className="card" key={table.id}>
                         <div className="card-head">
                           <strong>{table.name}</strong>
@@ -1523,7 +1811,7 @@ export function StudioPage() {
                           <button onClick={() => assignQuickbaseTable("versionTableId", table.id)}>Use for version history</button>
                         </div>
                         <div className="field-id-list">
-                          {table.fields.map((field) => (
+                          {table.visibleFields.map((field) => (
                             <div className="field-id-row" key={`${table.id}-${field.fid}`}>
                               <strong>{field.label}</strong>
                               <span>FID {field.fid}</span>

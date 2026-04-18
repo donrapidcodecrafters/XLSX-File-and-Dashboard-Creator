@@ -674,6 +674,31 @@ th {
   font-size: 13px;
 }
 
+.sync-status {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(247, 248, 243, 0.92);
+}
+
+.sync-status-ok {
+  border-color: rgba(13, 124, 102, 0.24);
+  background: rgba(13, 124, 102, 0.08);
+}
+
+.sync-status-warn {
+  border-color: rgba(178, 108, 12, 0.28);
+  background: rgba(178, 108, 12, 0.08);
+}
+
+.sync-status strong,
+.sync-status span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .studio-modal-backdrop {
   position: fixed;
   inset: 0;

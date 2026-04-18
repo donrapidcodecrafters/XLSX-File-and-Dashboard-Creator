@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { StudioDocument } from "@studio/shared";
 import { studioStore } from "../services/studio-store.js";
+import { syncStudioDocumentToQuickbase } from "../services/quickbase-storage.js";
 
 export async function registerStudioRoutes(app: FastifyInstance) {
   app.get("/api/studio/document", async () => ({
@@ -13,9 +14,17 @@ export async function registerStudioRoutes(app: FastifyInstance) {
       reply.code(400);
       return { message: "Document payload is required." };
     }
-    return {
-      document: studioStore.saveDocument(body.document)
-    };
+    const document = studioStore.saveDocument(body.document);
+    const sync = await syncStudioDocumentToQuickbase(document).catch((error) => ({
+      enabled: true,
+      ok: false,
+      message: error instanceof Error ? error.message : "Quickbase sync failed.",
+      savedObjects: 0,
+      savedSettings: 0,
+      savedVersions: 0,
+      savedStorageConfig: 0
+    }));
+    return { document, sync };
   });
 
   app.get("/api/studio/objects/:id/versions", async (request) => {

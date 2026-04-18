@@ -217,8 +217,26 @@ export interface StudioDocument {
     appId: string;
     apiBaseUrl: string;
     objectTableId: string;
+    objectKeyFieldId: string;
+    objectTypeFieldId: string;
+    objectNameFieldId: string;
+    objectConfigFieldId: string;
+    objectOwnerFieldId: string;
+    objectUpdatedAtFieldId: string;
+    objectUpdatedByFieldId: string;
     settingsTableId: string;
+    settingsUserFieldId: string;
+    settingsObjectFieldId: string;
+    settingsObjectKeyFieldId: string;
+    settingsJsonFieldId: string;
+    settingsUpdatedByFieldId: string;
     versionTableId: string;
+    versionObjectFieldId: string;
+    versionObjectKeyFieldId: string;
+    versionSnapshotFieldId: string;
+    versionChangedAtFieldId: string;
+    versionChangedByFieldId: string;
+    versionUpdatedByFieldId: string;
   };
   templates: {
     layouts: StudioTemplateRecord[];

@@ -275,8 +275,26 @@ export function buildStudioDocument(): StudioDocument {
       appId: "",
       apiBaseUrl: "https://api.quickbase.com/v1",
       objectTableId: "",
+      objectKeyFieldId: "",
+      objectTypeFieldId: "",
+      objectNameFieldId: "",
+      objectConfigFieldId: "",
+      objectOwnerFieldId: "",
+      objectUpdatedAtFieldId: "",
+      objectUpdatedByFieldId: "",
       settingsTableId: "",
-      versionTableId: ""
+      settingsUserFieldId: "",
+      settingsObjectFieldId: "",
+      settingsObjectKeyFieldId: "",
+      settingsJsonFieldId: "",
+      settingsUpdatedByFieldId: "",
+      versionTableId: "",
+      versionObjectFieldId: "",
+      versionObjectKeyFieldId: "",
+      versionSnapshotFieldId: "",
+      versionChangedAtFieldId: "",
+      versionChangedByFieldId: "",
+      versionUpdatedByFieldId: ""
     },
     templates: {
       layouts: dashboard ? [{
