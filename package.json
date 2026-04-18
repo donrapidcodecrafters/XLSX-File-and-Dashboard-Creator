@@ -1,0 +1,17 @@
+{
+  "name": "quickbase-reporting-platform",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n shared,api,web -c cyan,magenta,green \"npm run dev -w @studio/shared\" \"npm run dev -w @studio/api\" \"npm run dev -w @studio/web\"",
+    "build": "npm run build -w @studio/shared && npm run build -w @studio/api && npm run build -w @studio/web",
+    "check": "npm run check -w @studio/shared && npm run check -w @studio/api && npm run check -w @studio/web"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.1"
+  }
+}

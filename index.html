@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quickbase Reporting Studio</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #eef2ea;
+      --panel: rgba(255, 255, 255, 0.9);
+      --text: #173126;
+      --text-soft: #5d6d63;
+      --brand: #0d7c66;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: "Manrope", "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(216, 141, 61, 0.12), transparent 36%),
+        radial-gradient(circle at top right, rgba(13, 124, 102, 0.18), transparent 28%),
+        linear-gradient(180deg, #f7f4eb 0%, var(--bg) 52%, #e5ede5 100%);
+    }
+
+    .panel {
+      width: min(560px, calc(100vw - 32px));
+      padding: 28px;
+      border-radius: 24px;
+      background: var(--panel);
+      box-shadow: 0 20px 60px rgba(22, 39, 31, 0.12);
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+    }
+
+    p {
+      margin: 0 0 18px;
+      color: var(--text-soft);
+      line-height: 1.5;
+    }
+
+    a {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      padding: 0 16px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, var(--brand), #095e4e);
+      color: white;
+      text-decoration: none;
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+  <div class="panel">
+    <h1>Quickbase Reporting Studio</h1>
+    <p>Launching the hosted application. If redirect does not happen automatically, use the button below.</p>
+    <a id="launch-link" href="./xlsxFileAndDashboardGenerator.html">Open hosted app</a>
+  </div>
+  <script>
+    (function () {
+      const target = new URL("./xlsxFileAndDashboardGenerator.html", window.location.href);
+      target.search = window.location.search;
+      target.hash = window.location.hash;
+      document.getElementById("launch-link").href = target.toString();
+      window.location.replace(target.toString());
+    })();
+  </script>
+</body>
+</html>
