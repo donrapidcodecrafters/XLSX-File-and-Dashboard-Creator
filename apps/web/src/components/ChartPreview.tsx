@@ -30,6 +30,25 @@ function getColor(index: number) {
   return CHART_COLORS[index % CHART_COLORS.length];
 }
 
+function normalizeChartType(chartType: ChartType, orientation: ChartOrientation): ChartType {
+  if (chartType === "horizontal-bar") return "bar";
+  if (chartType === "horizontal-stacked-bar") return "stacked-bar";
+  if (chartType === "3d-bar") return "bar";
+  if (chartType === "3d-stacked-bar") return "stacked-bar";
+  if (chartType === "3d-area") return "area";
+  if (chartType === "3d-pie") return "pie";
+  if (chartType === "3d-donut") return "donut";
+  if (chartType === "3d-funnel") return "funnel";
+  if (chartType === "3d-scatter") return "scatter";
+  if (chartType === "line-bar") return "line";
+  if (chartType === "spline") return "line";
+  if (chartType === "area-spline" || chartType === "streamgraph") return "area";
+  if (chartType === "radial-bar") return "gauge";
+  if (chartType === "variwide-bar") return orientation === "horizontal" ? "bar" : "column";
+  if (chartType === "progress-bar" || chartType === "bullet") return "bar";
+  return chartType;
+}
+
 export function ChartPreview({
   chartType,
   data,
@@ -47,8 +66,12 @@ export function ChartPreview({
   const items = compact ? data.slice(0, 6) : data;
   const max = Math.max(...items.map((item) => item.value), 1);
   const total = items.reduce((sum, item) => sum + item.value, 0) || 1;
+  const normalizedChartType = normalizeChartType(chartType, chartOrientation);
+  const orientation = chartType === "horizontal-bar" || chartType === "horizontal-stacked-bar"
+    ? "horizontal"
+    : (normalizedChartType === "column" || normalizedChartType === "stacked-column" ? "vertical" : chartOrientation);
 
-  if (chartType === "donut" || chartType === "pie") {
+  if (normalizedChartType === "donut" || normalizedChartType === "pie") {
     let offset = 0;
     const stops = items
       .map((item, index) => {
@@ -62,8 +85,8 @@ export function ChartPreview({
     return (
       <div className="chart-shell">
         <div className="donut-shell">
-          <div className={`donut ${chartType === "pie" ? "pie-chart" : ""}`} style={{ background: `conic-gradient(${stops})` }}>
-            {chartType === "donut" ? (
+          <div className={`donut ${normalizedChartType === "pie" ? "pie-chart" : ""}`} style={{ background: `conic-gradient(${stops})` }}>
+            {normalizedChartType === "donut" ? (
               <div className="donut-center">
                 <div>
                   <strong>{total}</strong>
@@ -87,12 +110,11 @@ export function ChartPreview({
     );
   }
 
-  const orientation = chartType === "column" || chartType === "stacked-column" ? "vertical" : chartOrientation;
-  const showAxes = ["bar", "column", "stacked-bar", "stacked-column", "line", "area", "waterfall"].includes(chartType);
+  const showAxes = ["bar", "column", "stacked-bar", "stacked-column", "line", "area", "waterfall", "scatter"].includes(normalizedChartType);
 
-  if (chartType === "column" || chartType === "stacked-column" || ((chartType === "bar" || chartType === "stacked-bar") && orientation === "vertical")) {
+  if (normalizedChartType === "column" || normalizedChartType === "stacked-column" || ((normalizedChartType === "bar" || normalizedChartType === "stacked-bar") && orientation === "vertical")) {
     return (
-      <div className={chartType === "stacked-column" || chartType === "stacked-bar" ? "stacked-columns" : "vertical-chart"}>
+      <div className={normalizedChartType === "stacked-column" || normalizedChartType === "stacked-bar" ? "stacked-columns" : "vertical-chart"}>
         {showAxes && (xAxisLabel || yAxisLabel) ? (
           <div className="chart-axis-labels vertical-axis-labels">
             {yAxisLabel ? <span className="chart-axis-label">{yAxisLabel}</span> : <span />}
@@ -102,9 +124,9 @@ export function ChartPreview({
           {items.map((item, index) => {
             const height = Math.max(18, (item.value / max) * 150);
             return (
-              <div className={chartType === "stacked-column" || chartType === "stacked-bar" ? "stacked-column" : "vertical-bar"} key={item.label}>
+              <div className={normalizedChartType === "stacked-column" || normalizedChartType === "stacked-bar" ? "stacked-column" : "vertical-bar"} key={item.label}>
                 {showValues ? <div className="micro">{item.value}</div> : null}
-                {chartType === "stacked-column" || chartType === "stacked-bar" ? (
+                {normalizedChartType === "stacked-column" || normalizedChartType === "stacked-bar" ? (
                   <div className="stacked-column-bar" style={{ height }}>
                     <div className="stacked-segment" style={{ height: "100%", background: getColor(index) }} />
                   </div>
@@ -121,7 +143,7 @@ export function ChartPreview({
     );
   }
 
-  if (chartType === "line" || chartType === "area") {
+  if (normalizedChartType === "line" || normalizedChartType === "area") {
     const points = items.map((item, index) => {
       const x = items.length === 1 ? 200 : 20 + index * (360 / (items.length - 1));
       const y = 200 - (item.value / max) * 160;
@@ -131,7 +153,7 @@ export function ChartPreview({
     const areaPoints = `20,200 ${polyline} 380,200`;
 
     return (
-      <div className={chartType === "area" ? "area-chart" : "line-chart"}>
+      <div className={normalizedChartType === "area" ? "area-chart" : "line-chart"}>
         {showAxes && (xAxisLabel || yAxisLabel) ? (
           <div className="chart-axis-labels horizontal-axis-labels">
             {yAxisLabel ? <span className="chart-axis-label">{yAxisLabel}</span> : <span />}
@@ -140,7 +162,7 @@ export function ChartPreview({
         ) : null}
         <svg viewBox="0 0 400 220" preserveAspectRatio="none">
           <line x1="20" y1="200" x2="380" y2="200" stroke="rgba(23, 49, 38, 0.15)" strokeWidth="2" />
-          {chartType === "area" ? <polygon points={areaPoints} /> : null}
+          {normalizedChartType === "area" ? <polygon points={areaPoints} /> : null}
           <polyline points={polyline} />
           {points.map((point, index) => (
             <circle key={`${point.item.label}-${index}`} cx={point.x} cy={point.y} r="5" fill={getColor(index)} />
@@ -160,7 +182,7 @@ export function ChartPreview({
     );
   }
 
-  if (chartType === "radar") {
+  if (normalizedChartType === "radar") {
     const cx = 200;
     const cy = 110;
     const radius = 84;
@@ -198,7 +220,7 @@ export function ChartPreview({
     );
   }
 
-  if (chartType === "gauge") {
+  if (normalizedChartType === "gauge") {
     const current = items[0]?.value || 0;
     const percent = Math.max(0, Math.min(100, max ? (current / max) * 100 : 0));
     return (
@@ -214,7 +236,7 @@ export function ChartPreview({
     );
   }
 
-  if (chartType === "waterfall") {
+  if (normalizedChartType === "waterfall") {
     let runningTotal = 0;
     const points = items.map((item) => {
       const start = runningTotal;
@@ -241,7 +263,7 @@ export function ChartPreview({
     );
   }
 
-  if (chartType === "stacked-bar") {
+  if (normalizedChartType === "stacked-bar") {
     return (
       <div className="chart-shell">
         {showAxes && (xAxisLabel || yAxisLabel) ? (
@@ -273,7 +295,7 @@ export function ChartPreview({
     );
   }
 
-  if (chartType === "funnel") {
+  if (normalizedChartType === "funnel") {
     return (
       <div className="funnel-chart">
         {items.map((item, index) => (
@@ -289,7 +311,7 @@ export function ChartPreview({
     );
   }
 
-  if (chartType === "heatmap") {
+  if (normalizedChartType === "heatmap") {
     return (
       <div className="heat-grid">
         {items.map((item) => (
@@ -302,6 +324,41 @@ export function ChartPreview({
             {showLegend ? <span>{cap(item.label, compact ? 10 : 16)}</span> : null}
           </div>
         ))}
+      </div>
+    );
+  }
+
+  if (normalizedChartType === "scatter") {
+    const points = items.map((item, index) => {
+      const x = items.length === 1 ? 200 : 30 + index * (340 / Math.max(1, items.length - 1));
+      const y = 190 - (item.value / max) * 150;
+      return { item, x, y, r: chartType === "bubble" ? Math.max(8, (item.value / max) * 22) : 7 };
+    });
+    return (
+      <div className="line-chart">
+        {showAxes && (xAxisLabel || yAxisLabel) ? (
+          <div className="chart-axis-labels horizontal-axis-labels">
+            {yAxisLabel ? <span className="chart-axis-label">{yAxisLabel}</span> : <span />}
+            {xAxisLabel ? <span className="chart-axis-label">{xAxisLabel}</span> : null}
+          </div>
+        ) : null}
+        <svg viewBox="0 0 400 220" preserveAspectRatio="none">
+          <line x1="24" y1="196" x2="380" y2="196" stroke="rgba(23, 49, 38, 0.15)" strokeWidth="2" />
+          <line x1="24" y1="16" x2="24" y2="196" stroke="rgba(23, 49, 38, 0.15)" strokeWidth="2" />
+          {points.map((point, index) => (
+            <circle key={point.item.label} cx={point.x} cy={point.y} r={point.r} fill={getColor(index)} fillOpacity={chartType === "bubble" ? 0.75 : 1} />
+          ))}
+        </svg>
+        {showLegend ? (
+          <div className="badge-row">
+            {items.map((item, index) => (
+              <span className="badge" key={item.label}>
+                <span className="badge-dot" style={{ background: getColor(index) }} />
+                {cap(item.label, compact ? 12 : 18)}{showValues ? ` · ${item.value}` : ""}
+              </span>
+            ))}
+          </div>
+        ) : null}
       </div>
     );
   }

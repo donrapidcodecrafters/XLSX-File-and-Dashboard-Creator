@@ -51,7 +51,40 @@ import { ChartPreview } from "./ChartPreview";
 
 const STORAGE_KEY = "hosted-reporting-studio-v2";
 const REPORT_VIEW_OPTIONS: ReportViewMode[] = ["table", "summary", "chart", "timeline", "calendar", "kanban"];
-const CHART_OPTIONS: ChartType[] = ["bar", "column", "line", "area", "donut", "pie", "stacked-bar", "stacked-column", "funnel", "heatmap", "radar", "gauge", "waterfall"];
+const CHART_OPTIONS: ChartType[] = [
+  "bar",
+  "horizontal-bar",
+  "stacked-bar",
+  "horizontal-stacked-bar",
+  "column",
+  "stacked-column",
+  "line",
+  "line-bar",
+  "area",
+  "spline",
+  "area-spline",
+  "streamgraph",
+  "pie",
+  "donut",
+  "funnel",
+  "scatter",
+  "bubble",
+  "gauge",
+  "progress-bar",
+  "bullet",
+  "waterfall",
+  "radial-bar",
+  "variwide-bar",
+  "heatmap",
+  "radar",
+  "3d-bar",
+  "3d-stacked-bar",
+  "3d-area",
+  "3d-pie",
+  "3d-donut",
+  "3d-funnel",
+  "3d-scatter"
+];
 const CHART_AGGREGATION_OPTIONS: ChartAggregation[] = ["count", "sum", "avg", "min", "max"];
 const CHART_SORT_OPTIONS: Array<{ value: ChartSortMode; label: string }> = [
   { value: "value-desc", label: "Value high to low" },
@@ -375,7 +408,30 @@ function reportShowsChart(report: Pick<ReportDefinition, "view">) {
 }
 
 function chartUsesAxes(chartType: ChartType) {
-  return ["bar", "column", "stacked-bar", "stacked-column", "line", "area", "waterfall"].includes(chartType);
+  return [
+    "bar",
+    "horizontal-bar",
+    "column",
+    "stacked-bar",
+    "horizontal-stacked-bar",
+    "stacked-column",
+    "line",
+    "line-bar",
+    "area",
+    "spline",
+    "area-spline",
+    "streamgraph",
+    "scatter",
+    "bubble",
+    "waterfall",
+    "variwide-bar",
+    "bullet",
+    "progress-bar",
+    "3d-bar",
+    "3d-stacked-bar",
+    "3d-area",
+    "3d-scatter"
+  ].includes(chartType);
 }
 
 function clampWidgetWidth(value: number) {

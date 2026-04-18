@@ -5,7 +5,39 @@ export type FilterJoinOperator = "and" | "or";
 export type SortDirection = "asc" | "desc";
 export type WidgetMode = "linked" | "copied";
 export type ReportViewMode = "table" | "summary" | "chart" | "timeline" | "calendar" | "kanban";
-export type ChartType = "bar" | "column" | "line" | "area" | "donut" | "pie" | "stacked-bar" | "stacked-column" | "funnel" | "heatmap" | "radar" | "gauge" | "waterfall";
+export type ChartType =
+  | "bar"
+  | "column"
+  | "line"
+  | "area"
+  | "donut"
+  | "pie"
+  | "stacked-bar"
+  | "stacked-column"
+  | "funnel"
+  | "heatmap"
+  | "radar"
+  | "gauge"
+  | "waterfall"
+  | "horizontal-bar"
+  | "horizontal-stacked-bar"
+  | "line-bar"
+  | "spline"
+  | "area-spline"
+  | "streamgraph"
+  | "scatter"
+  | "bubble"
+  | "radial-bar"
+  | "variwide-bar"
+  | "progress-bar"
+  | "bullet"
+  | "3d-bar"
+  | "3d-stacked-bar"
+  | "3d-area"
+  | "3d-pie"
+  | "3d-donut"
+  | "3d-funnel"
+  | "3d-scatter";
 export type ChartAggregation = "count" | "sum" | "avg" | "min" | "max";
 export type ChartSortMode = "value-desc" | "value-asc" | "label-asc" | "label-desc";
 export type ChartOrientation = "vertical" | "horizontal";
