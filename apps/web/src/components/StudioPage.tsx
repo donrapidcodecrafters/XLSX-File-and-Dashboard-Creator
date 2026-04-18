@@ -309,6 +309,25 @@ function mergePreviewRows(existingRows: DataRow[] | undefined, incomingRows: Dat
   });
 }
 
+function looksLikeQuickbaseTableId(value: string) {
+  return /^[a-z0-9]{8,}$/i.test(String(value || "").trim());
+}
+
+function looksLikeQuickbaseFieldId(value: string) {
+  return /^\d+$/.test(String(value || "").trim());
+}
+
+function shouldAutoLoadQuickbaseSchema(document: StudioDocument) {
+  const quickbase = document.quickbase;
+  if (!quickbase.realmHostname || !quickbase.userToken || !quickbase.appId) return false;
+  const tables = document.bundle.tables || [];
+  if (!tables.length) return true;
+  return tables.some((table) =>
+    !looksLikeQuickbaseTableId(table.id) ||
+    (table.fields || []).some((field) => !looksLikeQuickbaseFieldId(field.id))
+  );
+}
+
 function downloadFile(filename: string, contents: string, type = "application/json") {
   const blob = new Blob([contents], { type });
   const url = URL.createObjectURL(blob);
@@ -592,6 +611,7 @@ export function StudioPage() {
   const navigate = useNavigate();
   const params = useParams();
   const importInputRef = useRef<HTMLInputElement | null>(null);
+  const schemaAutoloadedRef = useRef(false);
   const loadedPreviewFieldIdsRef = useRef<Record<string, string[]>>({});
   const previewLoadsRef = useRef<Set<string>>(new Set());
   const failedPreviewKeysRef = useRef<Set<string>>(new Set());
@@ -683,6 +703,20 @@ export function StudioPage() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (schemaAutoloadedRef.current) return;
+    if (!shouldAutoLoadQuickbaseSchema(documentState)) return;
+    schemaAutoloadedRef.current = true;
+    loadQuickbaseMetadata(true).catch(() => {
+      schemaAutoloadedRef.current = false;
+    });
+  }, [
+    documentState.quickbase.appId,
+    documentState.quickbase.realmHostname,
+    documentState.quickbase.userToken,
+    documentState.bundle.tables
+  ]);
 
   useEffect(() => {
     if (!activeObjectId && bundle.order[0]) {
@@ -851,9 +885,15 @@ export function StudioPage() {
     });
   }
 
-  function openCreateModal(type: CreateModalType) {
-    const table = bundle.tables[0] || null;
-    setCreateDraft(buildCreateDraft(table, type));
+  async function openCreateModal(type: CreateModalType) {
+    let nextTable: TableDefinition | null = bundle.tables[0] || null;
+    if (type === "report" && shouldAutoLoadQuickbaseSchema(documentState)) {
+      const schema = await loadQuickbaseMetadata(true);
+      if (schema) {
+        nextTable = convertQuickbaseSchemaToTables(schema)[0] || nextTable;
+      }
+    }
+    setCreateDraft(buildCreateDraft(nextTable, type));
     setEditingReportId(null);
     setCreateFieldQuery("");
     setCreateModalOpen(true);
@@ -1045,7 +1085,7 @@ export function StudioPage() {
     }
   }
 
-  async function loadQuickbaseMetadata() {
+  async function loadQuickbaseMetadata(silent = false) {
     setQuickbaseSchemaLoading(true);
     try {
       const response = await fetchQuickbaseSchema(documentState.quickbase);
@@ -1068,9 +1108,13 @@ export function StudioPage() {
           }
         });
       });
-      pushToast(`Loaded ${response.schema.tables.length} Quickbase tables and updated the report builder.`);
+      if (!silent) {
+        pushToast(`Loaded ${response.schema.tables.length} Quickbase tables and updated the report builder.`);
+      }
+      return response.schema;
     } catch (error) {
       pushToast(error instanceof Error ? error.message : "Quickbase schema lookup failed.", "danger");
+      return null;
     } finally {
       setQuickbaseSchemaLoading(false);
     }
@@ -1292,7 +1336,7 @@ export function StudioPage() {
             </div>
           </div>
           <div className="studio-actions">
-            <button onClick={loadQuickbaseMetadata} disabled={quickbaseSchemaLoading}>
+              <button onClick={() => { void loadQuickbaseMetadata(); }} disabled={quickbaseSchemaLoading}>
               {quickbaseSchemaLoading ? "Loading Quickbase schema…" : "Load table and field IDs"}
             </button>
             <button onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save to server"}</button>
@@ -1716,7 +1760,7 @@ export function StudioPage() {
                   </label>
                 </div>
                 <div className="studio-actions">
-                  <button onClick={loadQuickbaseMetadata} disabled={quickbaseSchemaLoading}>
+                  <button onClick={() => { void loadQuickbaseMetadata(); }} disabled={quickbaseSchemaLoading}>
                     {quickbaseSchemaLoading ? "Loading Quickbase schema…" : "Load table and field IDs"}
                   </button>
                   {quickbaseSchema ? <button onClick={autoDetectQuickbaseMappings}>Auto-detect storage fields</button> : null}
