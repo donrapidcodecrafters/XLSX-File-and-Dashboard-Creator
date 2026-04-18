@@ -97,6 +97,7 @@ export interface SummaryMetric {
 export interface ReportViewDefinition {
   mode: ReportViewMode;
   showChartInTable: boolean;
+  chartTitle: string;
   chartType: ChartType;
   chartOrientation: ChartOrientation;
   chartFieldId: string;

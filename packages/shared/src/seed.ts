@@ -18,6 +18,7 @@ function buildReportView(overrides: Partial<ReportViewDefinition> = {}): ReportV
   return {
     mode: "table",
     showChartInTable: false,
+    chartTitle: "",
     chartType: "bar",
     chartOrientation: "vertical",
     chartFieldId: "",

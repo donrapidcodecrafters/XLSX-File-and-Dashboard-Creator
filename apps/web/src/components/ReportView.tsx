@@ -114,6 +114,7 @@ export function ReportView({ report, table, result, loading, currentPage, onPage
             <ChartPreview
               chartType={report.view.chartType}
               data={result?.chartData || []}
+              title={report.view.chartTitle}
               chartOrientation={report.view.chartOrientation}
               xAxisLabel={report.view.chartXAxisLabel}
               yAxisLabel={report.view.chartYAxisLabel}

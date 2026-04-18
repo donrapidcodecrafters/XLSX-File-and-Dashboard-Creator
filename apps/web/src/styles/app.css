@@ -470,6 +470,113 @@ input {
   color: var(--text-soft);
 }
 
+.chart-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.axis-chart-shell {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.axis-chart-layout {
+  display: grid;
+  grid-template-columns: auto 52px minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.chart-axis-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-soft);
+}
+
+.chart-axis-title-vertical {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chart-axis-title-bottom {
+  text-align: center;
+}
+
+.chart-y-axis {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 196px;
+  padding: 4px 0 8px;
+}
+
+.chart-y-tick,
+.chart-x-tick {
+  font-size: 11px;
+  color: var(--text-soft);
+  overflow-wrap: anywhere;
+}
+
+.chart-y-tick {
+  text-align: right;
+}
+
+.chart-x-tick {
+  text-align: center;
+}
+
+.chart-plot-column {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.chart-plot-surface {
+  position: relative;
+  min-height: 196px;
+  padding: 8px 8px 0;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(247, 248, 243, 0.88), rgba(255, 255, 255, 0.7));
+  overflow: hidden;
+}
+
+.chart-grid-line {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  height: 1px;
+  background: rgba(23, 49, 38, 0.12);
+  pointer-events: none;
+}
+
+.chart-grid-svg-line {
+  stroke: rgba(23, 49, 38, 0.12);
+  stroke-width: 1;
+}
+
+.chart-axis-svg-line {
+  stroke: rgba(23, 49, 38, 0.2);
+  stroke-width: 2;
+}
+
+.chart-x-axis-labels {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.axis-aware-bars {
+  position: relative;
+  z-index: 1;
+  min-height: 180px;
+}
+
 .chart-axis-labels {
   display: flex;
   align-items: center;
@@ -596,6 +703,11 @@ input {
   gap: 12px;
 }
 
+.axis-chart .chart-axis-labels,
+.axis-chart-shell .chart-axis-labels {
+  margin-bottom: 4px;
+}
+
 .vertical-chart-bars {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
@@ -625,6 +737,12 @@ input {
   font-size: 11px;
   color: var(--text-soft);
   overflow-wrap: anywhere;
+}
+
+.axis-chart svg {
+  width: 100%;
+  height: 220px;
+  overflow: visible;
 }
 
 .line-chart svg,
@@ -1505,6 +1623,28 @@ select {
   .chart-row,
   .mini-bar {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .axis-chart-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .chart-axis-title-vertical {
+    writing-mode: initial;
+    transform: none;
+    justify-content: flex-start;
+  }
+
+  .chart-y-axis {
+    min-height: auto;
+    padding: 0;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .chart-y-tick {
+    text-align: left;
   }
 
   table {

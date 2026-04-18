@@ -243,6 +243,7 @@ export function DashboardView({ dashboard, tables }: DashboardViewProps) {
                     <ChartPreview
                       chartType={widget.report.view.chartType}
                       data={chartData}
+                      title={widget.report.view.chartTitle || widget.widget.title}
                       chartOrientation={widget.report.view.chartOrientation}
                       xAxisLabel={widget.report.view.chartXAxisLabel}
                       yAxisLabel={widget.report.view.chartYAxisLabel}

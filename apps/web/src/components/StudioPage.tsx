@@ -356,6 +356,7 @@ function buildCreateDraft(table?: TableDefinition | null, type: CreateModalType 
     view: {
       mode: "table",
       showChartInTable: false,
+      chartTitle: "",
       chartType: "bar",
       chartOrientation: "vertical",
       chartFieldId: firstFieldId,
@@ -540,6 +541,7 @@ function ReportPreview({ report, table, result }: { report: ReportDefinition; ta
         <ChartPreview
           chartType={report.view.chartType}
           data={result.chartData}
+          title={report.view.chartTitle}
           chartOrientation={report.view.chartOrientation}
           xAxisLabel={report.view.chartXAxisLabel}
           yAxisLabel={report.view.chartYAxisLabel}
@@ -745,6 +747,7 @@ function DashboardPreview({
                       <ChartPreview
                         chartType={widget.report.view.chartType}
                         data={widget.result.chartData}
+                        title={widget.report.view.chartTitle || widget.widget.title}
                         chartOrientation={widget.report.view.chartOrientation}
                         xAxisLabel={widget.report.view.chartXAxisLabel}
                         yAxisLabel={widget.report.view.chartYAxisLabel}
@@ -1346,6 +1349,7 @@ export function StudioPage() {
       view: {
         ...current.view,
         showChartInTable: false,
+        chartTitle: current.view.chartTitle || "",
         chartOrientation: "vertical",
         chartFieldId: table.fields[0]?.id || "",
         chartValueFieldId: "",
@@ -2244,9 +2248,11 @@ export function StudioPage() {
                     <div className="filter-grid">
                       <label className="field"><span>Mode</span><select value={createDraft.view.mode} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, mode: event.target.value as ReportViewMode, showChartInTable: event.target.value === "table" ? current.view.showChartInTable : false } }))}>{REPORT_VIEW_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
                       {createDraft.view.mode === "table" ? <label className="toggle-row"><input type="checkbox" checked={createDraft.view.showChartInTable} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, showChartInTable: event.target.checked } }))} /> Include chart above table</label> : null}
-                      <label className="field"><span>Title field</span><select value={createDraft.view.titleFieldId} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, titleFieldId: event.target.value } }))}>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>
+                      <label className="field"><span>Record title field</span><select value={createDraft.view.titleFieldId} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, titleFieldId: event.target.value } }))}>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>
+                      <div className="micro">Used for row, card, timeline, and calendar labels. It does not control the chart heading.</div>
                       {reportShowsChart({ view: createDraft.view }) ? (
                         <>
+                          <label className="field"><span>Chart title</span><input value={createDraft.view.chartTitle} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartTitle: event.target.value } }))} placeholder="Optional custom chart title" /></label>
                           <label className="field"><span>Chart type</span><select value={createDraft.view.chartType} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartType: event.target.value as ChartType } }))}>{CHART_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
                           {(createDraft.view.chartType === "bar" || createDraft.view.chartType === "stacked-bar") ? (
                             <label className="field"><span>Bar direction</span><select value={createDraft.view.chartOrientation} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartOrientation: event.target.value as "vertical" | "horizontal" } }))}><option value="vertical">Vertical</option><option value="horizontal">Horizontal</option></select></label>

@@ -15,6 +15,7 @@ interface ChartPreviewProps {
   chartType: ChartType;
   data: ChartDatum[];
   chartOrientation?: ChartOrientation;
+  title?: string;
   xAxisLabel?: string;
   yAxisLabel?: string;
   compact?: boolean;
@@ -49,10 +50,76 @@ function normalizeChartType(chartType: ChartType, orientation: ChartOrientation)
   return chartType;
 }
 
+function renderTitle(title?: string) {
+  const trimmed = title?.trim();
+  return trimmed ? <div className="chart-title">{trimmed}</div> : null;
+}
+
+function formatAxisValue(value: number) {
+  if (!Number.isFinite(value)) return "0";
+  const rounded = Math.abs(value) >= 100 ? Math.round(value) : Math.round(value * 100) / 100;
+  return new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: Math.abs(rounded) < 10 ? 2 : 0
+  }).format(rounded);
+}
+
+function buildAxisTicks(max: number, desired = 4) {
+  const safeMax = Math.max(max, 1);
+  const rawStep = safeMax / Math.max(desired, 1);
+  const magnitude = 10 ** Math.floor(Math.log10(rawStep || 1));
+  const normalized = rawStep / magnitude;
+  const niceBase = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 2.5 ? 2.5 : normalized <= 5 ? 5 : 10;
+  const step = niceBase * magnitude;
+  const axisMax = Math.ceil(safeMax / step) * step;
+  const ticks: number[] = [];
+  for (let value = 0; value <= axisMax + step / 1000; value += step) {
+    ticks.push(Number(value.toFixed(6)));
+  }
+  return ticks.length ? ticks : [0, axisMax];
+}
+
+function xLabelStep(length: number, compact: boolean) {
+  const target = compact ? 4 : 8;
+  return Math.max(1, Math.ceil(length / target));
+}
+
+function xTickLabel(label: string, index: number, length: number, compact: boolean) {
+  const step = xLabelStep(length, compact);
+  return index % step === 0 || index === length - 1 ? cap(label, compact ? 10 : 16) : "";
+}
+
+function axisMaxFor(values: number[], compact: boolean) {
+  const ticks = buildAxisTicks(Math.max(...values, 1), compact ? 3 : 4);
+  return {
+    ticks,
+    axisMax: ticks[ticks.length - 1] || 1
+  };
+}
+
+function renderAxisLegend(
+  items: ChartDatum[],
+  compact: boolean,
+  showLegend: boolean,
+  showValues: boolean
+) {
+  if (!showLegend) return null;
+  return (
+    <div className="badge-row">
+      {items.map((item, index) => (
+        <span className="badge" key={item.label}>
+          <span className="badge-dot" style={{ background: getColor(index) }} />
+          {cap(item.label, compact ? 12 : 18)}{showValues ? ` · ${item.value}` : ""}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export function ChartPreview({
   chartType,
   data,
   chartOrientation = "vertical",
+  title = "",
   xAxisLabel = "",
   yAxisLabel = "",
   compact = false,
@@ -70,6 +137,7 @@ export function ChartPreview({
   const orientation = chartType === "horizontal-bar" || chartType === "horizontal-stacked-bar"
     ? "horizontal"
     : (normalizedChartType === "column" || normalizedChartType === "stacked-column" ? "vertical" : chartOrientation);
+  const axisDriven = ["bar", "column", "stacked-bar", "stacked-column", "line", "area", "waterfall", "scatter"].includes(normalizedChartType);
 
   if (normalizedChartType === "donut" || normalizedChartType === "pie") {
     let offset = 0;
@@ -84,6 +152,7 @@ export function ChartPreview({
 
     return (
       <div className="chart-shell">
+        {renderTitle(title)}
         <div className="donut-shell">
           <div className={`donut ${normalizedChartType === "pie" ? "pie-chart" : ""}`} style={{ background: `conic-gradient(${stops})` }}>
             {normalizedChartType === "donut" ? (
@@ -96,88 +165,110 @@ export function ChartPreview({
             ) : null}
           </div>
         </div>
-        {showLegend ? (
-          <div className="badge-row">
-            {items.map((item, index) => (
-              <span className="badge" key={item.label}>
-                <span className="badge-dot" style={{ background: getColor(index) }} />
-                {cap(item.label, compact ? 12 : 18)}{showValues ? ` · ${item.value}` : ""}
-              </span>
-            ))}
-          </div>
-        ) : null}
+        {renderAxisLegend(items, compact, showLegend, showValues)}
       </div>
     );
   }
 
-  const showAxes = ["bar", "column", "stacked-bar", "stacked-column", "line", "area", "waterfall", "scatter"].includes(normalizedChartType);
-
   if (normalizedChartType === "column" || normalizedChartType === "stacked-column" || ((normalizedChartType === "bar" || normalizedChartType === "stacked-bar") && orientation === "vertical")) {
+    const { ticks, axisMax } = axisMaxFor(items.map((item) => item.value), compact);
+    const reversedTicks = [...ticks].reverse();
     return (
-      <div className={normalizedChartType === "stacked-column" || normalizedChartType === "stacked-bar" ? "stacked-columns" : "vertical-chart"}>
-        {showAxes && (xAxisLabel || yAxisLabel) ? (
-          <div className="chart-axis-labels vertical-axis-labels">
-            {yAxisLabel ? <span className="chart-axis-label">{yAxisLabel}</span> : <span />}
+      <div className="axis-chart-shell">
+        {renderTitle(title)}
+        <div className="axis-chart-layout">
+          {yAxisLabel ? <div className="chart-axis-title chart-axis-title-vertical">{yAxisLabel}</div> : null}
+          <div className="chart-y-axis">
+            {reversedTicks.map((tick) => (
+              <span className="chart-y-tick" key={tick}>{formatAxisValue(tick)}</span>
+            ))}
           </div>
-        ) : null}
-        <div className="vertical-chart-bars">
-          {items.map((item, index) => {
-            const height = Math.max(18, (item.value / max) * 150);
-            return (
-              <div className={normalizedChartType === "stacked-column" || normalizedChartType === "stacked-bar" ? "stacked-column" : "vertical-bar"} key={item.label}>
-                {showValues ? <div className="micro">{item.value}</div> : null}
-                {normalizedChartType === "stacked-column" || normalizedChartType === "stacked-bar" ? (
-                  <div className="stacked-column-bar" style={{ height }}>
-                    <div className="stacked-segment" style={{ height: "100%", background: getColor(index) }} />
-                  </div>
-                ) : (
-                  <div className="vertical-bar-column" style={{ height, background: `linear-gradient(180deg, ${getColor(index)}, ${getColor(index)}cc)` }} />
-                )}
-                {showLegend ? <div className="vertical-bar-label">{cap(item.label, compact ? 10 : 14)}</div> : null}
+          <div className="chart-plot-column">
+            <div className="chart-plot-surface">
+              {reversedTicks.map((tick) => {
+                const offset = axisMax === 0 ? 100 : ((axisMax - tick) / axisMax) * 100;
+                return <span className="chart-grid-line" key={`grid-${tick}`} style={{ top: `${offset}%` }} />;
+              })}
+              <div className="vertical-chart-bars axis-aware-bars">
+                {items.map((item, index) => {
+                  const height = Math.max(18, (item.value / axisMax) * 160);
+                  return (
+                    <div className={normalizedChartType === "stacked-column" || normalizedChartType === "stacked-bar" ? "stacked-column" : "vertical-bar"} key={item.label}>
+                      {showValues ? <div className="micro">{formatAxisValue(item.value)}</div> : null}
+                      {normalizedChartType === "stacked-column" || normalizedChartType === "stacked-bar" ? (
+                        <div className="stacked-column-bar" style={{ height }}>
+                          <div className="stacked-segment" style={{ height: "100%", background: getColor(index) }} />
+                        </div>
+                      ) : (
+                        <div className="vertical-bar-column" style={{ height, background: `linear-gradient(180deg, ${getColor(index)}, ${getColor(index)}cc)` }} />
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
+            </div>
+            <div className="chart-x-axis-labels" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
+              {items.map((item, index) => (
+                <span className="chart-x-tick" key={`${item.label}-${index}`}>
+                  {xTickLabel(item.label, index, items.length, compact)}
+                </span>
+              ))}
+            </div>
+            {xAxisLabel ? <div className="chart-axis-title chart-axis-title-bottom">{xAxisLabel}</div> : null}
+          </div>
         </div>
-        {showAxes && xAxisLabel ? <div className="chart-axis-label axis-label-bottom">{xAxisLabel}</div> : null}
       </div>
     );
   }
 
   if (normalizedChartType === "line" || normalizedChartType === "area") {
+    const { ticks, axisMax } = axisMaxFor(items.map((item) => item.value), compact);
+    const reversedTicks = [...ticks].reverse();
     const points = items.map((item, index) => {
       const x = items.length === 1 ? 200 : 20 + index * (360 / (items.length - 1));
-      const y = 200 - (item.value / max) * 160;
+      const y = 200 - (item.value / axisMax) * 160;
       return { x, y, item };
     });
     const polyline = points.map((point) => `${point.x},${point.y}`).join(" ");
     const areaPoints = `20,200 ${polyline} 380,200`;
 
     return (
-      <div className={normalizedChartType === "area" ? "area-chart" : "line-chart"}>
-        {showAxes && (xAxisLabel || yAxisLabel) ? (
-          <div className="chart-axis-labels horizontal-axis-labels">
-            {yAxisLabel ? <span className="chart-axis-label">{yAxisLabel}</span> : <span />}
-            {xAxisLabel ? <span className="chart-axis-label">{xAxisLabel}</span> : null}
-          </div>
-        ) : null}
-        <svg viewBox="0 0 400 220" preserveAspectRatio="none">
-          <line x1="20" y1="200" x2="380" y2="200" stroke="rgba(23, 49, 38, 0.15)" strokeWidth="2" />
-          {normalizedChartType === "area" ? <polygon points={areaPoints} /> : null}
-          <polyline points={polyline} />
-          {points.map((point, index) => (
-            <circle key={`${point.item.label}-${index}`} cx={point.x} cy={point.y} r="5" fill={getColor(index)} />
-          ))}
-        </svg>
-        {showLegend ? (
-          <div className="badge-row">
-            {items.map((item, index) => (
-              <span className="badge" key={item.label}>
-                <span className="badge-dot" style={{ background: getColor(index) }} />
-                {cap(item.label, compact ? 12 : 18)}{showValues ? ` · ${item.value}` : ""}
-              </span>
+      <div className="axis-chart-shell">
+        {renderTitle(title)}
+        <div className="axis-chart-layout">
+          {yAxisLabel ? <div className="chart-axis-title chart-axis-title-vertical">{yAxisLabel}</div> : null}
+          <div className="chart-y-axis">
+            {reversedTicks.map((tick) => (
+              <span className="chart-y-tick" key={tick}>{formatAxisValue(tick)}</span>
             ))}
           </div>
-        ) : null}
+          <div className="chart-plot-column">
+            <div className={normalizedChartType === "area" ? "area-chart axis-chart" : "line-chart axis-chart"}>
+              <svg viewBox="0 0 400 220" preserveAspectRatio="none">
+                {ticks.map((tick) => {
+                  const y = 200 - (tick / axisMax) * 160;
+                  return <line key={`line-${tick}`} x1="20" y1={y} x2="380" y2={y} className="chart-grid-svg-line" />;
+                })}
+                <line x1="20" y1="20" x2="20" y2="200" className="chart-axis-svg-line" />
+                <line x1="20" y1="200" x2="380" y2="200" className="chart-axis-svg-line" />
+                {normalizedChartType === "area" ? <polygon points={areaPoints} /> : null}
+                <polyline points={polyline} />
+                {points.map((point, index) => (
+                  <circle key={`${point.item.label}-${index}`} cx={point.x} cy={point.y} r="5" fill={getColor(index)} />
+                ))}
+              </svg>
+            </div>
+            <div className="chart-x-axis-labels" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
+              {items.map((item, index) => (
+                <span className="chart-x-tick" key={`${item.label}-${index}`}>
+                  {xTickLabel(item.label, index, items.length, compact)}
+                </span>
+              ))}
+            </div>
+            {xAxisLabel ? <div className="chart-axis-title chart-axis-title-bottom">{xAxisLabel}</div> : null}
+          </div>
+        </div>
+        {renderAxisLegend(items, compact, showLegend, showValues)}
       </div>
     );
   }
@@ -200,11 +291,12 @@ export function ChartPreview({
     const polyline = points.map((point) => `${point.x},${point.y}`).join(" ");
     return (
       <div className="radar-chart">
+        {renderTitle(title)}
         <svg viewBox="0 0 400 240" preserveAspectRatio="none">
           {[0.25, 0.5, 0.75, 1].map((ratio) => (
             <circle key={ratio} cx={cx} cy={cy} r={radius * ratio} fill="none" stroke="rgba(23,49,38,0.12)" />
           ))}
-          {points.map((point, index) => (
+          {points.map((point) => (
             <line key={point.item.label} x1={cx} y1={cy} x2={point.labelX} y2={point.labelY} stroke="rgba(23,49,38,0.12)" />
           ))}
           <polygon points={polyline} />
@@ -225,10 +317,11 @@ export function ChartPreview({
     const percent = Math.max(0, Math.min(100, max ? (current / max) * 100 : 0));
     return (
       <div className="gauge-chart">
+        {renderTitle(title)}
         <div className="gauge-track">
           <div className="gauge-fill" style={{ transform: `rotate(${(percent / 100) * 180}deg)` }} />
           <div className="gauge-center">
-            {showValues ? <strong>{current}</strong> : null}
+            {showValues ? <strong>{formatAxisValue(current)}</strong> : null}
             {showLegend ? <span>{cap(items[0]?.label || "Current", 18)}</span> : null}
           </div>
         </div>
@@ -246,6 +339,7 @@ export function ChartPreview({
     const maxTotal = Math.max(...points.map((item) => item.end), 1);
     return (
       <div className="waterfall-chart">
+        {renderTitle(title)}
         {points.map((item, index) => {
           const startPercent = (item.start / maxTotal) * 100;
           const widthPercent = Math.max(8, (item.value / maxTotal) * 100);
@@ -255,7 +349,7 @@ export function ChartPreview({
               <div className="waterfall-track">
                 <div className="waterfall-bar" style={{ marginLeft: `${startPercent}%`, width: `${widthPercent}%`, background: getColor(index) }} />
               </div>
-              {showValues ? <div className="chart-value">{item.value}</div> : null}
+              {showValues ? <div className="chart-value">{formatAxisValue(item.value)}</div> : null}
             </div>
           );
         })}
@@ -266,7 +360,8 @@ export function ChartPreview({
   if (normalizedChartType === "stacked-bar") {
     return (
       <div className="chart-shell">
-        {showAxes && (xAxisLabel || yAxisLabel) ? (
+        {renderTitle(title)}
+        {axisDriven && (xAxisLabel || yAxisLabel) ? (
           <div className="chart-axis-labels horizontal-axis-labels">
             {yAxisLabel ? <span className="chart-axis-label">{yAxisLabel}</span> : <span />}
             {xAxisLabel ? <span className="chart-axis-label">{xAxisLabel}</span> : null}
@@ -281,16 +376,7 @@ export function ChartPreview({
             />
           ))}
         </div>
-        {showLegend ? (
-          <div className="badge-row">
-            {items.map((item, index) => (
-              <span className="badge" key={item.label}>
-                <span className="badge-dot" style={{ background: getColor(index) }} />
-                {cap(item.label, compact ? 12 : 18)}{showValues ? ` · ${item.value}` : ""}
-              </span>
-            ))}
-          </div>
-        ) : null}
+        {renderAxisLegend(items, compact, showLegend, showValues)}
       </div>
     );
   }
@@ -298,13 +384,14 @@ export function ChartPreview({
   if (normalizedChartType === "funnel") {
     return (
       <div className="funnel-chart">
+        {renderTitle(title)}
         {items.map((item, index) => (
           <div
             className="funnel-step"
             key={item.label}
             style={{ width: `${Math.max(34, (item.value / max) * 100)}%`, background: getColor(index) }}
           >
-            {cap(item.label, compact ? 12 : 18)}{showValues ? ` · ${item.value}` : ""}
+            {cap(item.label, compact ? 12 : 18)}{showValues ? ` · ${formatAxisValue(item.value)}` : ""}
           </div>
         ))}
       </div>
@@ -314,13 +401,14 @@ export function ChartPreview({
   if (normalizedChartType === "heatmap") {
     return (
       <div className="heat-grid">
+        {renderTitle(title)}
         {items.map((item) => (
           <div
             className="heat-cell"
             key={item.label}
             style={{ background: `rgba(13, 124, 102, ${0.22 + (item.value / max) * 0.68})` }}
           >
-            {showValues ? <strong>{item.value}</strong> : null}
+            {showValues ? <strong>{formatAxisValue(item.value)}</strong> : null}
             {showLegend ? <span>{cap(item.label, compact ? 10 : 16)}</span> : null}
           </div>
         ))}
@@ -329,43 +417,56 @@ export function ChartPreview({
   }
 
   if (normalizedChartType === "scatter") {
+    const { ticks, axisMax } = axisMaxFor(items.map((item) => item.value), compact);
+    const reversedTicks = [...ticks].reverse();
     const points = items.map((item, index) => {
       const x = items.length === 1 ? 200 : 30 + index * (340 / Math.max(1, items.length - 1));
-      const y = 190 - (item.value / max) * 150;
-      return { item, x, y, r: chartType === "bubble" ? Math.max(8, (item.value / max) * 22) : 7 };
+      const y = 190 - (item.value / axisMax) * 150;
+      return { item, x, y, r: chartType === "bubble" ? Math.max(8, (item.value / axisMax) * 22) : 7 };
     });
     return (
-      <div className="line-chart">
-        {showAxes && (xAxisLabel || yAxisLabel) ? (
-          <div className="chart-axis-labels horizontal-axis-labels">
-            {yAxisLabel ? <span className="chart-axis-label">{yAxisLabel}</span> : <span />}
-            {xAxisLabel ? <span className="chart-axis-label">{xAxisLabel}</span> : null}
-          </div>
-        ) : null}
-        <svg viewBox="0 0 400 220" preserveAspectRatio="none">
-          <line x1="24" y1="196" x2="380" y2="196" stroke="rgba(23, 49, 38, 0.15)" strokeWidth="2" />
-          <line x1="24" y1="16" x2="24" y2="196" stroke="rgba(23, 49, 38, 0.15)" strokeWidth="2" />
-          {points.map((point, index) => (
-            <circle key={point.item.label} cx={point.x} cy={point.y} r={point.r} fill={getColor(index)} fillOpacity={chartType === "bubble" ? 0.75 : 1} />
-          ))}
-        </svg>
-        {showLegend ? (
-          <div className="badge-row">
-            {items.map((item, index) => (
-              <span className="badge" key={item.label}>
-                <span className="badge-dot" style={{ background: getColor(index) }} />
-                {cap(item.label, compact ? 12 : 18)}{showValues ? ` · ${item.value}` : ""}
-              </span>
+      <div className="axis-chart-shell">
+        {renderTitle(title)}
+        <div className="axis-chart-layout">
+          {yAxisLabel ? <div className="chart-axis-title chart-axis-title-vertical">{yAxisLabel}</div> : null}
+          <div className="chart-y-axis">
+            {reversedTicks.map((tick) => (
+              <span className="chart-y-tick" key={tick}>{formatAxisValue(tick)}</span>
             ))}
           </div>
-        ) : null}
+          <div className="chart-plot-column">
+            <div className="line-chart axis-chart">
+              <svg viewBox="0 0 400 220" preserveAspectRatio="none">
+                {ticks.map((tick) => {
+                  const y = 190 - (tick / axisMax) * 150;
+                  return <line key={`scatter-${tick}`} x1="24" y1={y} x2="380" y2={y} className="chart-grid-svg-line" />;
+                })}
+                <line x1="24" y1="16" x2="24" y2="196" className="chart-axis-svg-line" />
+                <line x1="24" y1="196" x2="380" y2="196" className="chart-axis-svg-line" />
+                {points.map((point, index) => (
+                  <circle key={point.item.label} cx={point.x} cy={point.y} r={point.r} fill={getColor(index)} fillOpacity={chartType === "bubble" ? 0.75 : 1} />
+                ))}
+              </svg>
+            </div>
+            <div className="chart-x-axis-labels" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
+              {items.map((item, index) => (
+                <span className="chart-x-tick" key={`${item.label}-${index}`}>
+                  {xTickLabel(item.label, index, items.length, compact)}
+                </span>
+              ))}
+            </div>
+            {xAxisLabel ? <div className="chart-axis-title chart-axis-title-bottom">{xAxisLabel}</div> : null}
+          </div>
+        </div>
+        {renderAxisLegend(items, compact, showLegend, showValues)}
       </div>
     );
   }
 
   return (
     <div className="chart-bars">
-      {showAxes && (xAxisLabel || yAxisLabel) ? (
+      {renderTitle(title)}
+      {axisDriven && (xAxisLabel || yAxisLabel) ? (
         <div className="chart-axis-labels horizontal-axis-labels">
           {yAxisLabel ? <span className="chart-axis-label">{yAxisLabel}</span> : <span />}
           {xAxisLabel ? <span className="chart-axis-label">{xAxisLabel}</span> : null}
@@ -377,7 +478,7 @@ export function ChartPreview({
           <div className="chart-track">
             <div className="chart-fill" style={{ width: `${Math.max(6, (item.value / max) * 100)}%`, background: `linear-gradient(90deg, ${getColor(index)}, ${getColor(index)}dd)` }} />
           </div>
-          {showValues ? <div className="chart-value">{item.value}</div> : null}
+          {showValues ? <div className="chart-value">{formatAxisValue(item.value)}</div> : null}
         </div>
       ))}
     </div>
