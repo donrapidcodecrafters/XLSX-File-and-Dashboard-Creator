@@ -168,6 +168,10 @@ input {
   min-width: 0;
 }
 
+.content > .studio-page {
+  min-height: calc(100vh - 112px);
+}
+
 .surface {
   display: grid;
   gap: 16px;
@@ -358,6 +362,164 @@ th {
   color: var(--text-soft);
 }
 
+.link-like {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--brand-deep);
+  font-weight: 700;
+}
+
+.studio-page {
+  display: grid;
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr) minmax(300px, 360px);
+  gap: 16px;
+}
+
+.studio-library,
+.studio-canvas,
+.studio-inspector {
+  min-height: 0;
+}
+
+.studio-library,
+.studio-inspector {
+  display: grid;
+  gap: 16px;
+}
+
+.studio-canvas {
+  display: grid;
+  gap: 16px;
+}
+
+.studio-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.studio-section-head h2 {
+  margin: 4px 0 0;
+  font-size: 24px;
+}
+
+.studio-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.studio-hero {
+  padding: 20px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 16px 46px rgba(22, 39, 31, 0.08);
+}
+
+.active-card {
+  border-color: rgba(13, 124, 102, 0.4);
+  box-shadow: 0 12px 28px rgba(13, 124, 102, 0.12);
+}
+
+.template-list,
+.stack-compact,
+.picker-list,
+.kanban-stack,
+.studio-preview-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.template-card-button {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+  min-height: auto;
+  padding: 14px;
+  text-align: left;
+}
+
+.picker-row,
+.inline-edit-row {
+  display: grid;
+  gap: 8px;
+  align-items: center;
+}
+
+.picker-row {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(247, 248, 243, 0.95);
+}
+
+.picker-row em {
+  font-style: normal;
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+.inline-edit-row {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+}
+
+.inline-edit-row input,
+.inline-edit-row select {
+  width: 100%;
+}
+
+.studio-card-grid,
+.kanban-board {
+  display: grid;
+  gap: 12px;
+}
+
+.studio-card-grid {
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.studio-mini-card,
+.kanban-column {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: rgba(247, 248, 243, 0.95);
+}
+
+.kanban-board {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.kanban-head,
+.studio-tab-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.active-tab {
+  border-color: rgba(13, 124, 102, 0.4);
+  background: rgba(13, 124, 102, 0.12);
+  color: var(--brand-deep);
+}
+
+select {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.92);
+  font: inherit;
+}
+
 @media (max-width: 1080px) {
   .main-layout {
     grid-template-columns: minmax(0, 1fr);
@@ -366,5 +528,13 @@ th {
   .hero {
     grid-template-columns: minmax(0, 1fr);
     display: grid;
+  }
+
+  .studio-page {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .inline-edit-row {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

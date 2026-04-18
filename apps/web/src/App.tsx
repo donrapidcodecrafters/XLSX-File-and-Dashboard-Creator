@@ -3,6 +3,7 @@ import { Link, Navigate, Route, Routes, useLocation, useParams } from "react-rou
 import type { CatalogSummaryItem, ReportDefinition, StudioObject, TableDefinition } from "@studio/shared";
 import { DashboardView } from "./components/DashboardView";
 import { ReportView } from "./components/ReportView";
+import { StudioPage } from "./components/StudioPage";
 import { fetchCatalog, fetchObject, fetchTables, runReport } from "./lib/api";
 import { getHostedContext } from "./lib/embed";
 
@@ -70,6 +71,7 @@ export function App() {
   const location = useLocation();
   const hosted = useMemo(() => getHostedContext(), [location.key]);
   const initial = objects[0];
+  const studioRoute = location.pathname.startsWith("/studio");
 
   return (
     <div className={`app-shell ${hosted.embed ? "embed-shell" : ""}`}>
@@ -77,17 +79,18 @@ export function App() {
         <header className="topbar">
           <div>
             <div className="eyebrow">Hosted Reporting Platform</div>
-            <h1>Node API + Worker Execution</h1>
+            <h1>Studio Builder + Hosted Views</h1>
           </div>
           <div className="topbar-meta">
+            <Link className="badge brand" to="/studio">Studio</Link>
             <span className="badge">{hosted.mode === "viewer" ? "Viewer" : "Builder shell"}</span>
             <span className="badge brand">{objects.length} objects</span>
           </div>
         </header>
       )}
 
-      <div className={`main-layout ${hosted.embed ? "embed-layout" : ""}`}>
-        {hosted.embed ? null : (
+      <div className={`main-layout ${hosted.embed || studioRoute ? "embed-layout" : ""}`}>
+        {hosted.embed || studioRoute ? null : (
           <aside className="sidebar">
             <div className="sidebar-head">
               <strong>Objects</strong>
@@ -107,9 +110,11 @@ export function App() {
 
         <main className="content">
           <Routes>
-            {initial ? <Route path="/" element={<Navigate to={`/${initial.type}/${initial.id}`} replace />} /> : null}
+            <Route path="/" element={<Navigate to="/studio" replace />} />
+            <Route path="/studio" element={<StudioPage />} />
+            <Route path="/studio/:objectId" element={<StudioPage />} />
             <Route path="/:type/:objectId" element={<ObjectPage tables={tables} />} />
-            <Route path="*" element={initial ? <Navigate to={`/${initial.type}/${initial.id}`} replace /> : <div className="empty-page">Loading catalog…</div>} />
+            <Route path="*" element={<Navigate to="/studio" replace />} />
           </Routes>
         </main>
       </div>
