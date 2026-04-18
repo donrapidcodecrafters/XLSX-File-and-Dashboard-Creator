@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { registerCatalogRoutes } from "./routes/catalog.js";
 import { registerRenderRoutes } from "./routes/render.js";
+import { registerStudioRoutes } from "./routes/studio.js";
 
 const app = Fastify({
   logger: true
@@ -13,6 +14,7 @@ await app.register(cors, {
 
 await registerCatalogRoutes(app);
 await registerRenderRoutes(app);
+await registerStudioRoutes(app);
 
 const port = Number(process.env.PORT || 3001);
 const host = process.env.HOST || "0.0.0.0";

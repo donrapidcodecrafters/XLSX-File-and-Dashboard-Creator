@@ -3,6 +3,7 @@ import type {
   ReportDefinition,
   ReportViewDefinition,
   SeedBundle,
+  StudioDocument,
   TableDefinition,
   WidgetDefinition
 } from "./models.js";
@@ -250,5 +251,51 @@ export function buildSeedBundle(): SeedBundle {
     data,
     objects,
     order: [dashboard.id, projects.id, tasks.id, invoices.id]
+  };
+}
+
+export function buildStudioDocument(): StudioDocument {
+  const bundle = buildSeedBundle();
+  const dashboard = bundle.objects["dashboard-executive-pulse"];
+  const groupedTaskReport = bundle.objects["report-task-pipeline"];
+
+  return {
+    bundle,
+    favorites: ["dashboard-executive-pulse"],
+    recent: ["dashboard-executive-pulse"],
+    templates: {
+      layouts: dashboard ? [{
+        id: "template-layout-executive",
+        type: "layout",
+        name: "Executive starter",
+        object: JSON.parse(JSON.stringify(dashboard))
+      }] : [],
+      yaml: groupedTaskReport ? [{
+        id: "template-yaml-task-pipeline",
+        type: "yaml",
+        name: "Grouped task report",
+        object: JSON.parse(JSON.stringify(groupedTaskReport))
+      }] : [],
+      upload: [{
+        id: "template-upload-invoice-mapping",
+        type: "upload",
+        name: "Invoice import mapping",
+        tableId: "invoices",
+        columnMap: {
+          Customer: "customer",
+          Region: "region",
+          Amount: "amount",
+          Status: "status"
+        },
+        object: null
+      }]
+    },
+    versions: {},
+    exportJobs: [],
+    sync: {
+      providerMode: "api",
+      lastSavedAt: "",
+      lastLoadedAt: ""
+    }
   };
 }

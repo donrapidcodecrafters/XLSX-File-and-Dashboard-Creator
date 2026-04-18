@@ -1,40 +1,34 @@
 import {
-  buildSeedBundle,
   type CatalogSummaryItem,
   type DashboardDefinition,
   type ReportDefinition,
-  type SeedBundle,
   type StudioObject,
   type TableDefinition,
   type WidgetDefinition
 } from "@studio/shared";
+import { studioStore } from "./studio-store.js";
 
 export class ObjectStore {
-  private readonly bundle: SeedBundle;
-
-  constructor(bundle: SeedBundle = buildSeedBundle()) {
-    this.bundle = bundle;
-  }
-
   getAppInfo() {
-    return this.bundle.app;
+    return studioStore.getBundle().app;
   }
 
   listTables(): TableDefinition[] {
-    return this.bundle.tables;
+    return studioStore.getBundle().tables;
   }
 
   getTable(tableId: string): TableDefinition | undefined {
-    return this.bundle.tables.find((table) => table.id === tableId);
+    return studioStore.getBundle().tables.find((table) => table.id === tableId);
   }
 
   getRows(tableId: string) {
-    return this.bundle.data[tableId] || [];
+    return studioStore.getBundle().data[tableId] || [];
   }
 
   listCatalog(): CatalogSummaryItem[] {
-    return this.bundle.order
-      .map((id) => this.bundle.objects[id])
+    const bundle = studioStore.getBundle();
+    return bundle.order
+      .map((id) => bundle.objects[id])
       .filter((object): object is StudioObject => Boolean(object))
       .map((object) => ({
         id: object.id,
@@ -49,16 +43,16 @@ export class ObjectStore {
   }
 
   getObject(id: string): StudioObject | undefined {
-    return this.bundle.objects[id];
+    return studioStore.getBundle().objects[id];
   }
 
   getReport(id: string): ReportDefinition | undefined {
-    const object = this.bundle.objects[id];
+    const object = studioStore.getBundle().objects[id];
     return object?.type === "report" ? object : undefined;
   }
 
   getDashboard(id: string): DashboardDefinition | undefined {
-    const object = this.bundle.objects[id];
+    const object = studioStore.getBundle().objects[id];
     return object?.type === "dashboard" ? object : undefined;
   }
 

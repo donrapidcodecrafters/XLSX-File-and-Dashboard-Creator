@@ -174,3 +174,47 @@ export interface SeedBundle {
   objects: Record<string, StudioObject>;
   order: string[];
 }
+
+export type StudioTemplateType = "layout" | "yaml" | "upload";
+
+export interface StudioTemplateRecord {
+  id: string;
+  type: StudioTemplateType;
+  name: string;
+  tableId?: string;
+  columnMap?: Record<string, string>;
+  object?: StudioObject | null;
+}
+
+export interface StudioVersionRecord {
+  id: string;
+  label: string;
+  savedAt: string;
+  object: StudioObject;
+}
+
+export interface StudioExportJob {
+  id: string;
+  objectId: string;
+  format: "xlsx" | "json";
+  status: "queued" | "complete";
+  createdAt: string;
+}
+
+export interface StudioDocument {
+  bundle: SeedBundle;
+  favorites: string[];
+  recent: string[];
+  templates: {
+    layouts: StudioTemplateRecord[];
+    yaml: StudioTemplateRecord[];
+    upload: StudioTemplateRecord[];
+  };
+  versions: Record<string, StudioVersionRecord[]>;
+  exportJobs: StudioExportJob[];
+  sync: {
+    providerMode: "local" | "api";
+    lastSavedAt: string;
+    lastLoadedAt: string;
+  };
+}

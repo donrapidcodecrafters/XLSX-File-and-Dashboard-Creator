@@ -1,0 +1,1079 @@
+{
+  "bundle": {
+    "app": {
+      "id": "seed-app",
+      "name": "Hosted Reporting Platform"
+    },
+    "tables": [
+      {
+        "id": "projects",
+        "name": "Projects",
+        "description": "Portfolio and delivery projects.",
+        "fields": [
+          {
+            "id": "recordId",
+            "label": "Record ID",
+            "type": "text"
+          },
+          {
+            "id": "projectName",
+            "label": "Project Name",
+            "type": "text"
+          },
+          {
+            "id": "status",
+            "label": "Status",
+            "type": "text",
+            "options": [
+              "Active",
+              "Planning",
+              "Delayed",
+              "Complete"
+            ]
+          },
+          {
+            "id": "owner",
+            "label": "Owner",
+            "type": "user"
+          },
+          {
+            "id": "region",
+            "label": "Region",
+            "type": "text",
+            "options": [
+              "North",
+              "South",
+              "East",
+              "West"
+            ]
+          },
+          {
+            "id": "budget",
+            "label": "Budget",
+            "type": "currency"
+          },
+          {
+            "id": "startDate",
+            "label": "Start Date",
+            "type": "date"
+          },
+          {
+            "id": "completion",
+            "label": "Completion",
+            "type": "number"
+          }
+        ]
+      },
+      {
+        "id": "tasks",
+        "name": "Tasks",
+        "description": "Execution pipeline items.",
+        "fields": [
+          {
+            "id": "recordId",
+            "label": "Record ID",
+            "type": "text"
+          },
+          {
+            "id": "taskName",
+            "label": "Task Name",
+            "type": "text"
+          },
+          {
+            "id": "projectName",
+            "label": "Project Name",
+            "type": "text"
+          },
+          {
+            "id": "status",
+            "label": "Status",
+            "type": "text",
+            "options": [
+              "Open",
+              "In Progress",
+              "Blocked",
+              "Done"
+            ]
+          },
+          {
+            "id": "assignee",
+            "label": "Assignee",
+            "type": "user"
+          },
+          {
+            "id": "priority",
+            "label": "Priority",
+            "type": "text",
+            "options": [
+              "Low",
+              "Medium",
+              "High"
+            ]
+          },
+          {
+            "id": "dueDate",
+            "label": "Due Date",
+            "type": "date"
+          },
+          {
+            "id": "hours",
+            "label": "Hours",
+            "type": "number"
+          }
+        ]
+      },
+      {
+        "id": "invoices",
+        "name": "Invoices",
+        "description": "Billing and collection status.",
+        "fields": [
+          {
+            "id": "recordId",
+            "label": "Record ID",
+            "type": "text"
+          },
+          {
+            "id": "customer",
+            "label": "Customer",
+            "type": "text"
+          },
+          {
+            "id": "region",
+            "label": "Region",
+            "type": "text",
+            "options": [
+              "North",
+              "South",
+              "East",
+              "West"
+            ]
+          },
+          {
+            "id": "amount",
+            "label": "Amount",
+            "type": "currency"
+          },
+          {
+            "id": "invoiceDate",
+            "label": "Invoice Date",
+            "type": "date"
+          },
+          {
+            "id": "paidDate",
+            "label": "Paid Date",
+            "type": "date"
+          },
+          {
+            "id": "status",
+            "label": "Status",
+            "type": "text",
+            "options": [
+              "Open",
+              "Paid",
+              "Overdue"
+            ]
+          }
+        ]
+      }
+    ],
+    "data": {
+      "projects": [
+        {
+          "recordId": "P-1001",
+          "projectName": "Atlas Migration",
+          "status": "Active",
+          "owner": "A. Brooks",
+          "region": "North",
+          "budget": 185000,
+          "startDate": "2026-01-02",
+          "completion": 64
+        },
+        {
+          "recordId": "P-1002",
+          "projectName": "Mercury Expansion",
+          "status": "Planning",
+          "owner": "S. Patel",
+          "region": "West",
+          "budget": 92000,
+          "startDate": "2026-02-14",
+          "completion": 22
+        },
+        {
+          "recordId": "P-1003",
+          "projectName": "Beacon Revamp",
+          "status": "Delayed",
+          "owner": "J. Kim",
+          "region": "South",
+          "budget": 143500,
+          "startDate": "2025-12-08",
+          "completion": 49
+        },
+        {
+          "recordId": "P-1004",
+          "projectName": "Harbor Rollout",
+          "status": "Active",
+          "owner": "L. Evans",
+          "region": "East",
+          "budget": 211000,
+          "startDate": "2026-01-18",
+          "completion": 71
+        },
+        {
+          "recordId": "P-1005",
+          "projectName": "Nova Launch",
+          "status": "Complete",
+          "owner": "M. Diaz",
+          "region": "North",
+          "budget": 126000,
+          "startDate": "2025-10-02",
+          "completion": 100
+        }
+      ],
+      "tasks": [
+        {
+          "recordId": "T-2001",
+          "taskName": "Finalize scope",
+          "projectName": "Atlas Migration",
+          "status": "Done",
+          "assignee": "A. Brooks",
+          "priority": "High",
+          "dueDate": "2026-01-09",
+          "hours": 14
+        },
+        {
+          "recordId": "T-2002",
+          "taskName": "Provision sandbox",
+          "projectName": "Mercury Expansion",
+          "status": "In Progress",
+          "assignee": "R. Singh",
+          "priority": "Medium",
+          "dueDate": "2026-02-21",
+          "hours": 11
+        },
+        {
+          "recordId": "T-2003",
+          "taskName": "Resolve vendor issue",
+          "projectName": "Beacon Revamp",
+          "status": "Blocked",
+          "assignee": "J. Kim",
+          "priority": "High",
+          "dueDate": "2026-01-25",
+          "hours": 18
+        },
+        {
+          "recordId": "T-2004",
+          "taskName": "Train field teams",
+          "projectName": "Harbor Rollout",
+          "status": "Open",
+          "assignee": "L. Evans",
+          "priority": "Medium",
+          "dueDate": "2026-02-03",
+          "hours": 8
+        },
+        {
+          "recordId": "T-2005",
+          "taskName": "QA signoff",
+          "projectName": "Nova Launch",
+          "status": "Done",
+          "assignee": "M. Diaz",
+          "priority": "Low",
+          "dueDate": "2026-01-04",
+          "hours": 5
+        }
+      ],
+      "invoices": [
+        {
+          "recordId": "I-3001",
+          "customer": "Northstar Health",
+          "region": "North",
+          "amount": 42000,
+          "invoiceDate": "2026-01-03",
+          "paidDate": "",
+          "status": "Open"
+        },
+        {
+          "recordId": "I-3002",
+          "customer": "Summit Retail",
+          "region": "West",
+          "amount": 18500,
+          "invoiceDate": "2025-12-18",
+          "paidDate": "2026-01-02",
+          "status": "Paid"
+        },
+        {
+          "recordId": "I-3003",
+          "customer": "Blue Ridge Energy",
+          "region": "South",
+          "amount": 27600,
+          "invoiceDate": "2025-12-27",
+          "paidDate": "",
+          "status": "Overdue"
+        },
+        {
+          "recordId": "I-3004",
+          "customer": "Harbor Foods",
+          "region": "East",
+          "amount": 39100,
+          "invoiceDate": "2026-01-06",
+          "paidDate": "",
+          "status": "Open"
+        },
+        {
+          "recordId": "I-3005",
+          "customer": "Nova Telecom",
+          "region": "North",
+          "amount": 24500,
+          "invoiceDate": "2025-12-30",
+          "paidDate": "2026-01-08",
+          "status": "Paid"
+        }
+      ]
+    },
+    "objects": {
+      "dashboard-executive-pulse": {
+        "id": "dashboard-executive-pulse",
+        "type": "dashboard",
+        "name": "Executive Pulse",
+        "description": "Operations, delivery, and finance in one hosted dashboard.",
+        "folder": "Executive",
+        "category": "Dashboard",
+        "tags": [
+          "executive",
+          "weekly"
+        ],
+        "updatedAt": "2026-01-19T12:00:00.000Z",
+        "tabs": [
+          {
+            "id": "tab-overview",
+            "name": "Overview",
+            "widgets": [
+              {
+                "id": "widget-overview-projects",
+                "title": "Project Portfolio",
+                "mode": "linked",
+                "reportId": "report-project-portfolio",
+                "layout": {
+                  "w": 7,
+                  "h": 4
+                }
+              },
+              {
+                "id": "widget-overview-tasks",
+                "title": "Task Pipeline",
+                "mode": "linked",
+                "reportId": "report-task-pipeline",
+                "layout": {
+                  "w": 5,
+                  "h": 4
+                }
+              }
+            ]
+          },
+          {
+            "id": "tab-finance",
+            "name": "Finance",
+            "widgets": [
+              {
+                "id": "widget-finance-invoices",
+                "title": "Invoice Health",
+                "mode": "linked",
+                "reportId": "report-invoice-health",
+                "layout": {
+                  "w": 6,
+                  "h": 4
+                }
+              },
+              {
+                "id": "widget-finance-projects",
+                "title": "Regional Portfolio Mix",
+                "mode": "copied",
+                "reportId": "report-project-portfolio",
+                "layout": {
+                  "w": 6,
+                  "h": 4
+                },
+                "snapshot": {
+                  "id": "snapshot-project-portfolio",
+                  "type": "report",
+                  "name": "Project Portfolio",
+                  "description": "Portfolio health and delivery progress across active and planned work.",
+                  "folder": "Operations",
+                  "category": "Reporting",
+                  "tags": [
+                    "portfolio",
+                    "delivery"
+                  ],
+                  "updatedAt": "2026-01-16T12:00:00.000Z",
+                  "sourceTableId": "projects",
+                  "selectedFieldIds": [
+                    "recordId",
+                    "projectName",
+                    "status",
+                    "owner",
+                    "region",
+                    "budget",
+                    "startDate",
+                    "completion"
+                  ],
+                  "filters": [
+                    {
+                      "id": "filter-project-status",
+                      "fieldId": "status",
+                      "operator": "equals",
+                      "value": "Active"
+                    }
+                  ],
+                  "groups": [],
+                  "sorts": [],
+                  "summaryMetrics": [
+                    {
+                      "id": "metric-project-count",
+                      "fieldId": "recordId",
+                      "op": "count",
+                      "label": "Projects"
+                    },
+                    {
+                      "id": "metric-project-budget",
+                      "fieldId": "budget",
+                      "op": "sum",
+                      "label": "Budget"
+                    },
+                    {
+                      "id": "metric-project-completion",
+                      "fieldId": "completion",
+                      "op": "avg",
+                      "label": "Avg progress"
+                    }
+                  ],
+                  "view": {
+                    "mode": "chart",
+                    "chartType": "donut",
+                    "chartFieldId": "region",
+                    "timelineDateField": "",
+                    "timelineEndField": "",
+                    "calendarDateField": "",
+                    "kanbanField": "",
+                    "titleFieldId": "projectName"
+                  }
+                }
+              }
+            ]
+          }
+        ],
+        "runtimeFilters": [
+          {
+            "id": "runtime-status",
+            "label": "Status",
+            "fieldId": "status",
+            "mode": "global",
+            "targetReportIds": [],
+            "defaultValue": ""
+          },
+          {
+            "id": "runtime-start-date",
+            "label": "Date range",
+            "fieldId": "startDate",
+            "mode": "selected",
+            "targetReportIds": [
+              "report-project-portfolio"
+            ],
+            "defaultValue": "CURRENT_MONTH"
+          }
+        ]
+      },
+      "report-project-portfolio": {
+        "id": "report-project-portfolio",
+        "type": "report",
+        "name": "Project Portfolio",
+        "description": "Portfolio health and delivery progress across active and planned work.",
+        "folder": "Operations",
+        "category": "Reporting",
+        "tags": [
+          "portfolio",
+          "delivery"
+        ],
+        "updatedAt": "2026-01-16T12:00:00.000Z",
+        "sourceTableId": "projects",
+        "selectedFieldIds": [
+          "recordId",
+          "projectName",
+          "status",
+          "owner",
+          "region",
+          "budget",
+          "startDate",
+          "completion"
+        ],
+        "filters": [
+          {
+            "id": "filter-project-status",
+            "fieldId": "status",
+            "operator": "equals",
+            "value": "Active"
+          }
+        ],
+        "groups": [],
+        "sorts": [],
+        "summaryMetrics": [
+          {
+            "id": "metric-project-count",
+            "fieldId": "recordId",
+            "op": "count",
+            "label": "Projects"
+          },
+          {
+            "id": "metric-project-budget",
+            "fieldId": "budget",
+            "op": "sum",
+            "label": "Budget"
+          },
+          {
+            "id": "metric-project-completion",
+            "fieldId": "completion",
+            "op": "avg",
+            "label": "Avg progress"
+          }
+        ],
+        "view": {
+          "mode": "chart",
+          "chartType": "bar",
+          "chartFieldId": "region",
+          "timelineDateField": "",
+          "timelineEndField": "",
+          "calendarDateField": "",
+          "kanbanField": "",
+          "titleFieldId": "projectName"
+        }
+      },
+      "report-task-pipeline": {
+        "id": "report-task-pipeline",
+        "type": "report",
+        "name": "Task Pipeline",
+        "description": "Execution pipeline by status and assignee.",
+        "folder": "Operations",
+        "category": "Reporting",
+        "tags": [
+          "tasks",
+          "operations"
+        ],
+        "updatedAt": "2026-01-17T12:00:00.000Z",
+        "sourceTableId": "tasks",
+        "selectedFieldIds": [
+          "recordId",
+          "taskName",
+          "projectName",
+          "status",
+          "assignee",
+          "priority",
+          "dueDate",
+          "hours"
+        ],
+        "filters": [],
+        "groups": [
+          {
+            "id": "group-task-status",
+            "fieldId": "status"
+          }
+        ],
+        "sorts": [],
+        "summaryMetrics": [
+          {
+            "id": "metric-task-count",
+            "fieldId": "recordId",
+            "op": "count",
+            "label": "Tasks"
+          },
+          {
+            "id": "metric-task-hours",
+            "fieldId": "hours",
+            "op": "sum",
+            "label": "Hours"
+          }
+        ],
+        "view": {
+          "mode": "kanban",
+          "chartType": "bar",
+          "chartFieldId": "",
+          "timelineDateField": "",
+          "timelineEndField": "",
+          "calendarDateField": "",
+          "kanbanField": "status",
+          "titleFieldId": "taskName"
+        }
+      },
+      "report-invoice-health": {
+        "id": "report-invoice-health",
+        "type": "report",
+        "name": "Invoice Health",
+        "description": "Open receivables, collection risk, and invoice aging.",
+        "folder": "Operations",
+        "category": "Reporting",
+        "tags": [
+          "finance",
+          "receivables"
+        ],
+        "updatedAt": "2026-01-18T12:00:00.000Z",
+        "sourceTableId": "invoices",
+        "selectedFieldIds": [
+          "recordId",
+          "customer",
+          "region",
+          "amount",
+          "invoiceDate",
+          "paidDate",
+          "status"
+        ],
+        "filters": [
+          {
+            "id": "filter-invoice-status",
+            "fieldId": "status",
+            "operator": "equals",
+            "value": "Open"
+          }
+        ],
+        "groups": [],
+        "sorts": [],
+        "summaryMetrics": [
+          {
+            "id": "metric-invoice-count",
+            "fieldId": "recordId",
+            "op": "count",
+            "label": "Invoices"
+          },
+          {
+            "id": "metric-invoice-amount",
+            "fieldId": "amount",
+            "op": "sum",
+            "label": "Open value"
+          }
+        ],
+        "view": {
+          "mode": "summary",
+          "chartType": "bar",
+          "chartFieldId": "",
+          "timelineDateField": "",
+          "timelineEndField": "",
+          "calendarDateField": "",
+          "kanbanField": "",
+          "titleFieldId": "customer"
+        }
+      }
+    },
+    "order": [
+      "dashboard-executive-pulse",
+      "report-project-portfolio",
+      "report-task-pipeline",
+      "report-invoice-health"
+    ]
+  },
+  "favorites": [
+    "dashboard-executive-pulse"
+  ],
+  "recent": [
+    "dashboard-executive-pulse"
+  ],
+  "templates": {
+    "layouts": [
+      {
+        "id": "template-layout-executive",
+        "type": "layout",
+        "name": "Executive starter",
+        "object": {
+          "id": "dashboard-executive-pulse",
+          "type": "dashboard",
+          "name": "Executive Pulse",
+          "description": "Operations, delivery, and finance in one hosted dashboard.",
+          "folder": "Executive",
+          "category": "Dashboard",
+          "tags": [
+            "executive",
+            "weekly"
+          ],
+          "updatedAt": "2026-01-19T12:00:00.000Z",
+          "tabs": [
+            {
+              "id": "tab-overview",
+              "name": "Overview",
+              "widgets": [
+                {
+                  "id": "widget-overview-projects",
+                  "title": "Project Portfolio",
+                  "mode": "linked",
+                  "reportId": "report-project-portfolio",
+                  "layout": {
+                    "w": 7,
+                    "h": 4
+                  }
+                },
+                {
+                  "id": "widget-overview-tasks",
+                  "title": "Task Pipeline",
+                  "mode": "linked",
+                  "reportId": "report-task-pipeline",
+                  "layout": {
+                    "w": 5,
+                    "h": 4
+                  }
+                }
+              ]
+            },
+            {
+              "id": "tab-finance",
+              "name": "Finance",
+              "widgets": [
+                {
+                  "id": "widget-finance-invoices",
+                  "title": "Invoice Health",
+                  "mode": "linked",
+                  "reportId": "report-invoice-health",
+                  "layout": {
+                    "w": 6,
+                    "h": 4
+                  }
+                },
+                {
+                  "id": "widget-finance-projects",
+                  "title": "Regional Portfolio Mix",
+                  "mode": "copied",
+                  "reportId": "report-project-portfolio",
+                  "layout": {
+                    "w": 6,
+                    "h": 4
+                  },
+                  "snapshot": {
+                    "id": "snapshot-project-portfolio",
+                    "type": "report",
+                    "name": "Project Portfolio",
+                    "description": "Portfolio health and delivery progress across active and planned work.",
+                    "folder": "Operations",
+                    "category": "Reporting",
+                    "tags": [
+                      "portfolio",
+                      "delivery"
+                    ],
+                    "updatedAt": "2026-01-16T12:00:00.000Z",
+                    "sourceTableId": "projects",
+                    "selectedFieldIds": [
+                      "recordId",
+                      "projectName",
+                      "status",
+                      "owner",
+                      "region",
+                      "budget",
+                      "startDate",
+                      "completion"
+                    ],
+                    "filters": [
+                      {
+                        "id": "filter-project-status",
+                        "fieldId": "status",
+                        "operator": "equals",
+                        "value": "Active"
+                      }
+                    ],
+                    "groups": [],
+                    "sorts": [],
+                    "summaryMetrics": [
+                      {
+                        "id": "metric-project-count",
+                        "fieldId": "recordId",
+                        "op": "count",
+                        "label": "Projects"
+                      },
+                      {
+                        "id": "metric-project-budget",
+                        "fieldId": "budget",
+                        "op": "sum",
+                        "label": "Budget"
+                      },
+                      {
+                        "id": "metric-project-completion",
+                        "fieldId": "completion",
+                        "op": "avg",
+                        "label": "Avg progress"
+                      }
+                    ],
+                    "view": {
+                      "mode": "chart",
+                      "chartType": "donut",
+                      "chartFieldId": "region",
+                      "timelineDateField": "",
+                      "timelineEndField": "",
+                      "calendarDateField": "",
+                      "kanbanField": "",
+                      "titleFieldId": "projectName"
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "runtimeFilters": [
+            {
+              "id": "runtime-status",
+              "label": "Status",
+              "fieldId": "status",
+              "mode": "global",
+              "targetReportIds": [],
+              "defaultValue": ""
+            },
+            {
+              "id": "runtime-start-date",
+              "label": "Date range",
+              "fieldId": "startDate",
+              "mode": "selected",
+              "targetReportIds": [
+                "report-project-portfolio"
+              ],
+              "defaultValue": "CURRENT_MONTH"
+            }
+          ]
+        }
+      }
+    ],
+    "yaml": [
+      {
+        "id": "template-yaml-task-pipeline",
+        "type": "yaml",
+        "name": "Grouped task report",
+        "object": {
+          "id": "report-task-pipeline",
+          "type": "report",
+          "name": "Task Pipeline",
+          "description": "Execution pipeline by status and assignee.",
+          "folder": "Operations",
+          "category": "Reporting",
+          "tags": [
+            "tasks",
+            "operations"
+          ],
+          "updatedAt": "2026-01-17T12:00:00.000Z",
+          "sourceTableId": "tasks",
+          "selectedFieldIds": [
+            "recordId",
+            "taskName",
+            "projectName",
+            "status",
+            "assignee",
+            "priority",
+            "dueDate",
+            "hours"
+          ],
+          "filters": [],
+          "groups": [
+            {
+              "id": "group-task-status",
+              "fieldId": "status"
+            }
+          ],
+          "sorts": [],
+          "summaryMetrics": [
+            {
+              "id": "metric-task-count",
+              "fieldId": "recordId",
+              "op": "count",
+              "label": "Tasks"
+            },
+            {
+              "id": "metric-task-hours",
+              "fieldId": "hours",
+              "op": "sum",
+              "label": "Hours"
+            }
+          ],
+          "view": {
+            "mode": "kanban",
+            "chartType": "bar",
+            "chartFieldId": "",
+            "timelineDateField": "",
+            "timelineEndField": "",
+            "calendarDateField": "",
+            "kanbanField": "status",
+            "titleFieldId": "taskName"
+          }
+        }
+      }
+    ],
+    "upload": [
+      {
+        "id": "template-upload-invoice-mapping",
+        "type": "upload",
+        "name": "Invoice import mapping",
+        "tableId": "invoices",
+        "columnMap": {
+          "Customer": "customer",
+          "Region": "region",
+          "Amount": "amount",
+          "Status": "status"
+        },
+        "object": null
+      }
+    ]
+  },
+  "versions": {
+    "dashboard-executive-pulse": [
+      {
+        "id": "version-1asrf0zy",
+        "label": "smoke",
+        "savedAt": "2026-04-18T18:28:47.670Z",
+        "object": {
+          "id": "dashboard-executive-pulse",
+          "type": "dashboard",
+          "name": "Executive Pulse",
+          "description": "Operations, delivery, and finance in one hosted dashboard.",
+          "folder": "Executive",
+          "category": "Dashboard",
+          "tags": [
+            "executive",
+            "weekly"
+          ],
+          "updatedAt": "2026-01-19T12:00:00.000Z",
+          "tabs": [
+            {
+              "id": "tab-overview",
+              "name": "Overview",
+              "widgets": [
+                {
+                  "id": "widget-overview-projects",
+                  "title": "Project Portfolio",
+                  "mode": "linked",
+                  "reportId": "report-project-portfolio",
+                  "layout": {
+                    "w": 7,
+                    "h": 4
+                  }
+                },
+                {
+                  "id": "widget-overview-tasks",
+                  "title": "Task Pipeline",
+                  "mode": "linked",
+                  "reportId": "report-task-pipeline",
+                  "layout": {
+                    "w": 5,
+                    "h": 4
+                  }
+                }
+              ]
+            },
+            {
+              "id": "tab-finance",
+              "name": "Finance",
+              "widgets": [
+                {
+                  "id": "widget-finance-invoices",
+                  "title": "Invoice Health",
+                  "mode": "linked",
+                  "reportId": "report-invoice-health",
+                  "layout": {
+                    "w": 6,
+                    "h": 4
+                  }
+                },
+                {
+                  "id": "widget-finance-projects",
+                  "title": "Regional Portfolio Mix",
+                  "mode": "copied",
+                  "reportId": "report-project-portfolio",
+                  "layout": {
+                    "w": 6,
+                    "h": 4
+                  },
+                  "snapshot": {
+                    "id": "snapshot-project-portfolio",
+                    "type": "report",
+                    "name": "Project Portfolio",
+                    "description": "Portfolio health and delivery progress across active and planned work.",
+                    "folder": "Operations",
+                    "category": "Reporting",
+                    "tags": [
+                      "portfolio",
+                      "delivery"
+                    ],
+                    "updatedAt": "2026-01-16T12:00:00.000Z",
+                    "sourceTableId": "projects",
+                    "selectedFieldIds": [
+                      "recordId",
+                      "projectName",
+                      "status",
+                      "owner",
+                      "region",
+                      "budget",
+                      "startDate",
+                      "completion"
+                    ],
+                    "filters": [
+                      {
+                        "id": "filter-project-status",
+                        "fieldId": "status",
+                        "operator": "equals",
+                        "value": "Active"
+                      }
+                    ],
+                    "groups": [],
+                    "sorts": [],
+                    "summaryMetrics": [
+                      {
+                        "id": "metric-project-count",
+                        "fieldId": "recordId",
+                        "op": "count",
+                        "label": "Projects"
+                      },
+                      {
+                        "id": "metric-project-budget",
+                        "fieldId": "budget",
+                        "op": "sum",
+                        "label": "Budget"
+                      },
+                      {
+                        "id": "metric-project-completion",
+                        "fieldId": "completion",
+                        "op": "avg",
+                        "label": "Avg progress"
+                      }
+                    ],
+                    "view": {
+                      "mode": "chart",
+                      "chartType": "donut",
+                      "chartFieldId": "region",
+                      "timelineDateField": "",
+                      "timelineEndField": "",
+                      "calendarDateField": "",
+                      "kanbanField": "",
+                      "titleFieldId": "projectName"
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "runtimeFilters": [
+            {
+              "id": "runtime-status",
+              "label": "Status",
+              "fieldId": "status",
+              "mode": "global",
+              "targetReportIds": [],
+              "defaultValue": ""
+            },
+            {
+              "id": "runtime-start-date",
+              "label": "Date range",
+              "fieldId": "startDate",
+              "mode": "selected",
+              "targetReportIds": [
+                "report-project-portfolio"
+              ],
+              "defaultValue": "CURRENT_MONTH"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "exportJobs": [],
+  "sync": {
+    "providerMode": "api",
+    "lastSavedAt": "",
+    "lastLoadedAt": ""
+  }
+}
