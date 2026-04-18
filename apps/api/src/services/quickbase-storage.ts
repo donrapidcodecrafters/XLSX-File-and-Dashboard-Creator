@@ -510,6 +510,53 @@ async function quickbaseWriteRecords(
   return quickbaseWriteRecordsXml(config, tableId, rows);
 }
 
+async function quickbaseDeleteRecordsXml(
+  config: StudioDocument["quickbase"],
+  tableId: string,
+  recordIds: string[]
+) {
+  for (const recordId of recordIds) {
+    if (!recordId) continue;
+    await quickbaseXmlRequest(
+      config,
+      tableId,
+      "API_DeleteRecord",
+      `<rid>${escapeXml(String(recordId))}</rid>`
+    );
+  }
+  return { numberDeleted: recordIds.length };
+}
+
+async function quickbaseDeleteRecordsRest(
+  config: StudioDocument["quickbase"],
+  tableId: string,
+  recordIds: string[]
+) {
+  if (!recordIds.length) return { numberDeleted: 0 };
+  const where = recordIds
+    .map((recordId) => `{'3'.EX.'${escapeQueryValue(recordId)}'}`)
+    .join("OR");
+  return quickbaseRestRequest(config, "/records", {
+    method: "DELETE",
+    body: {
+      from: tableId,
+      where
+    }
+  }) as Promise<{ numberDeleted?: number }>;
+}
+
+async function quickbaseDeleteRecords(
+  config: StudioDocument["quickbase"],
+  tableId: string,
+  recordIds: string[]
+) {
+  if (!recordIds.length) return { numberDeleted: 0 };
+  if (usingDirectQuickbaseApi(config)) {
+    return quickbaseDeleteRecordsRest(config, tableId, recordIds);
+  }
+  return quickbaseDeleteRecordsXml(config, tableId, recordIds);
+}
+
 async function quickbaseFetchRecordIdMap(
   config: StudioDocument["quickbase"],
   tableId: string,
@@ -780,6 +827,14 @@ async function syncObjectRecords(document: StudioDocument, user: QuickbaseUser) 
     });
 
     await quickbaseWriteRecords(config, config.objectTableId, rows);
+    const desiredKeys = new Set(objects.map((object) => makeCompositeKey([object.id])));
+    const deletedRecordIds = Array.from(existing.entries())
+      .filter(([key]) => !desiredKeys.has(key))
+      .map(([, recordId]) => recordId)
+      .filter(Boolean);
+    if (deletedRecordIds.length) {
+      await quickbaseDeleteRecords(config, config.objectTableId, deletedRecordIds);
+    }
     const verified = await quickbaseFetchRecordIdMap(config, config.objectTableId, [config.objectKeyFieldId]);
     const objectRecordIds: Record<string, string> = {};
     objects.forEach((object, index) => {

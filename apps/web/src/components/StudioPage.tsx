@@ -911,15 +911,19 @@ export function StudioPage() {
     pushToast("Object cloned.");
   }
 
-  function deleteObject(objectId: string) {
-    applyDocumentUpdate((draft) => {
-      delete draft.bundle.objects[objectId];
-      draft.bundle.order = draft.bundle.order.filter((item) => item !== objectId);
-      draft.favorites = draft.favorites.filter((item) => item !== objectId);
-      draft.recent = draft.recent.filter((item) => item !== objectId);
-    });
-    navigate(`/studio/${bundle.order.find((item) => item !== objectId) || ""}`);
+  async function deleteObject(objectId: string) {
+    const nextDocument = clone(documentState);
+    delete nextDocument.bundle.objects[objectId];
+    nextDocument.bundle.order = nextDocument.bundle.order.filter((item) => item !== objectId);
+    nextDocument.favorites = nextDocument.favorites.filter((item) => item !== objectId);
+    nextDocument.recent = nextDocument.recent.filter((item) => item !== objectId);
+
+    setHistory((previous) => [clone(documentState), ...previous].slice(0, 60));
+    setFuture([]);
+    setDocumentState(nextDocument);
+    navigate(`/studio/${nextDocument.bundle.order[0] || ""}`);
     pushToast("Object removed.", "warn");
+    await persistRemote(nextDocument);
   }
 
   function toggleFavorite(objectId: string) {
@@ -948,10 +952,10 @@ export function StudioPage() {
     pushToast("Reapplied change.");
   }
 
-  async function saveRemote() {
+  async function persistRemote(nextDocument: StudioDocument) {
     setSavingRemote(true);
     try {
-      const response = await saveStudioDocument(documentState);
+      const response = await saveStudioDocument(nextDocument);
       setDocumentState(normalizeStudioDocument(response.document));
       setLastQuickbaseSync(response.sync || null);
       if (response.sync?.enabled) {
@@ -977,6 +981,10 @@ export function StudioPage() {
     } finally {
       setSavingRemote(false);
     }
+  }
+
+  async function saveRemote() {
+    await persistRemote(documentState);
   }
 
   async function reloadRemote() {
