@@ -38,7 +38,7 @@ import {
   restoreStudioVersion,
   saveStudioDocument
 } from "../lib/studioApi";
-import { fetchAllReportRows } from "../lib/api";
+import { fetchAllReportRows, fetchReportExportBundle } from "../lib/api";
 import { exportDashboardWorkbook, exportReportWorkbook } from "../lib/workbookExport";
 import { ChartPreview } from "./ChartPreview";
 
@@ -1221,19 +1221,34 @@ export function StudioPage() {
 
   async function exportWorkbook() {
     if (activeReport && activeTable && reportResult) {
-      const fullRows = await fetchAllReportRows(activeReport.id).catch(() => reportResult.rows);
-      await exportReportWorkbook(activeReport, activeTable, reportResult, fullRows);
+      const exportResult = await fetchReportExportBundle(activeReport.id)
+        .then((response) => response.result)
+        .catch(async () => ({
+          ...reportResult,
+          rows: await fetchAllReportRows(activeReport.id).catch(() => reportResult.rows)
+        }));
+      await exportReportWorkbook(activeReport, activeTable, exportResult);
     } else if (activeDashboard && dashboardResult) {
-      const fullRowsByReportId: Record<string, DataRow[]> = {};
+      const exportResultsByReportId: Record<string, ReportRunResult> = {};
       await Promise.all(
         dashboardResult.tabs.flatMap((tab) =>
           tab.widgets.map(async (widget) => {
-            if (fullRowsByReportId[widget.report.id]) return;
-            fullRowsByReportId[widget.report.id] = await fetchAllReportRows(widget.report.id).catch(() => widget.result.rows);
+            if (exportResultsByReportId[widget.report.id]) return;
+            const filters = buildDashboardFilters(activeDashboard, widget.report.id, runtimeValues).map((filter) => ({
+              fieldId: filter.fieldId,
+              operator: filter.operator,
+              value: filter.value
+            }));
+            exportResultsByReportId[widget.report.id] = await fetchReportExportBundle(widget.report.id, filters)
+              .then((response) => response.result)
+              .catch(async () => ({
+                ...widget.result,
+                rows: await fetchAllReportRows(widget.report.id, filters).catch(() => widget.result.rows)
+              }));
           })
         )
       );
-      await exportDashboardWorkbook(activeDashboard, dashboardResult, fullRowsByReportId);
+      await exportDashboardWorkbook(activeDashboard, dashboardResult, exportResultsByReportId);
     } else {
       pushToast("Open a report or dashboard before exporting.", "warn");
       return;

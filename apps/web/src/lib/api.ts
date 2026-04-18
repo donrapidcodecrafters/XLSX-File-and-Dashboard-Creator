@@ -53,17 +53,24 @@ export function runReportPage(
   });
 }
 
+export function fetchReportExportBundle(
+  id: string,
+  filters: Array<{ fieldId: string; value: string; operator?: string }> = []
+) {
+  return request<{ result: ReportRunResult }>("/api/reports/" + encodeURIComponent(id) + "/export-bundle", {
+    method: "POST",
+    body: JSON.stringify({ filters })
+  });
+}
+
 export async function fetchAllReportRows(
   id: string,
   filters: Array<{ fieldId: string; value: string; operator?: string }> = [],
   pageSize = 500
 ) {
   try {
-    const response = await request<{ rows: ReportRunResult["rows"] }>("/api/reports/" + encodeURIComponent(id) + "/export-rows", {
-      method: "POST",
-      body: JSON.stringify({ filters })
-    });
-    return response.rows;
+    const response = await fetchReportExportBundle(id, filters);
+    return response.result.rows;
   } catch {
     // Fall back to page-by-page fetch if the export endpoint is not available yet.
   }

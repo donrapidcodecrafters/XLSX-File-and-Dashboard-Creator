@@ -92,17 +92,6 @@ function collectReportFieldIds(report: ReportDefinition) {
   ));
 }
 
-function collectExportFieldIds(report: ReportDefinition) {
-  return Array.from(new Set(
-    [
-      ...(report.selectedFieldIds || []),
-      ...(report.filters || []).map((item) => item.fieldId),
-      ...(report.sorts || []).map((item) => item.fieldId),
-      report.view.titleFieldId
-    ].filter(Boolean).map(String)
-  ));
-}
-
 function cacheKey(report: ReportDefinition, extraFilters: FilterDefinition[], options: ExecuteReportOptions): string {
   return JSON.stringify({
     reportId: report.id,
@@ -515,7 +504,7 @@ export async function fetchReportPage(report: ReportDefinition, extraFilters: Fi
   };
 }
 
-export async function fetchAllReportRowsForExport(report: ReportDefinition, extraFilters: FilterDefinition[] = []): Promise<DataRow[]> {
+export async function fetchReportExportBundle(report: ReportDefinition, extraFilters: FilterDefinition[] = []): Promise<ReportRunResult> {
   const table = objectStore.getTable(report.sourceTableId);
   if (!table) {
     throw new Error("Table not found for report " + report.id + ".");
@@ -524,39 +513,19 @@ export async function fetchAllReportRowsForExport(report: ReportDefinition, extr
   const quickbase = studioStore.getDocument().quickbase;
   if (quickbase.realmHostname && quickbase.userToken && quickbase.appId) {
     const filters = combineFilters(report, extraFilters);
-    const requestedFieldIds = collectExportFieldIds(report);
+    const requestedFieldIds = collectReportFieldIds(report);
     const { where, unsupportedFilters } = buildQuickbaseWhere(filters);
     const sortBy = buildQuickbaseSort(report);
-
-    if (!unsupportedFilters.length) {
-      const rows = await fetchQuickbaseTablePage(quickbase, table.id, requestedFieldIds, {
-        top: 1000,
-        skip: 0,
-        where,
-        sortBy
-      }).then(async (firstPage) => {
-        const combined = [...firstPage.rows];
-        const total = firstPage.totalRecords ?? firstPage.rows.length;
-        let skip = firstPage.rows.length;
-        while (skip < total) {
-          const page = await fetchQuickbaseTablePage(quickbase, table.id, requestedFieldIds, {
-            top: 1000,
-            skip,
-            where,
-            sortBy
-          });
-          if (!page.rows.length) break;
-          combined.push(...page.rows);
-          skip += page.rows.length;
-        }
-        return combined;
-      });
-      return projectRows(report, rows);
-    }
-
+    const metricSet = report.summaryMetrics.length
+      ? report.summaryMetrics
+      : [{ id: "default-count", fieldId: report.selectedFieldIds[0] || "recordId", op: "count" as const, label: "Rows" }];
+    const warnings = report.selectedFieldIds.length ? [] : ["This report has no selected fields."];
     const batchSize = 1000;
     let skip = 0;
     const rows: DataRow[] = [];
+    const summaryAccumulator = createMetricAccumulator(metricSet);
+    const chartGroups = new Map<string, number[]>();
+
     while (true) {
       const batch = await fetchQuickbaseTablePage(quickbase, table.id, requestedFieldIds, {
         top: batchSize,
@@ -566,17 +535,31 @@ export async function fetchAllReportRowsForExport(report: ReportDefinition, extr
       });
       if (!batch.rows.length) break;
       batch.rows.forEach((row) => {
-        if (filters.every((filter) => matchesFilter(row, filter))) {
-          rows.push(row);
-        }
+        if (unsupportedFilters.length && !filters.every((filter) => matchesFilter(row, filter))) return;
+        rows.push(row);
+        addMetricRow(summaryAccumulator, row);
+        addChartRow(chartGroups, report, row);
       });
       if (batch.rows.length < batchSize) break;
       skip += batch.rows.length;
     }
-    return projectRows(report, rows);
+    return {
+      reportId: report.id,
+      tableId: table.id,
+      totalRows: rows.length,
+      rows: projectRows(report, rows),
+      summary: finalizeMetricAccumulator(summaryAccumulator),
+      chartData: buildChartResult(chartGroups, report),
+      warnings
+    };
   }
 
-  return runReport(report, table, objectStore.getRows(table.id), extraFilters).rows;
+  return runReport(report, table, objectStore.getRows(table.id), extraFilters);
+}
+
+export async function fetchAllReportRowsForExport(report: ReportDefinition, extraFilters: FilterDefinition[] = []): Promise<DataRow[]> {
+  const result = await fetchReportExportBundle(report, extraFilters);
+  return result.rows;
 }
 
 export async function executeReport(report: ReportDefinition, extraFilters: FilterDefinition[] = [], options: ExecuteReportOptions = {}): Promise<ReportRunResult> {

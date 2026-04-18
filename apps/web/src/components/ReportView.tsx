@@ -3,7 +3,7 @@ import { useState } from "react";
 import type { ReportDefinition, ReportRunResult, TableDefinition } from "@studio/shared";
 import { LinkToolbar } from "./LinkToolbar";
 import { ChartPreview } from "./ChartPreview";
-import { fetchAllReportRows } from "../lib/api";
+import { fetchAllReportRows, fetchReportExportBundle } from "../lib/api";
 import { exportReportWorkbook } from "../lib/workbookExport";
 
 interface ReportViewProps {
@@ -25,8 +25,13 @@ export function ReportView({ report, table, result, loading, currentPage, onPage
     setExporting(true);
     setExportError("");
     try {
-      const fullRows = await fetchAllReportRows(report.id).catch(() => result.rows);
-      await exportReportWorkbook(report, table, result, fullRows);
+      const exportResult = await fetchReportExportBundle(report.id)
+        .then((response) => response.result)
+        .catch(async () => ({
+          ...result,
+          rows: await fetchAllReportRows(report.id).catch(() => result.rows)
+        }));
+      await exportReportWorkbook(report, table, exportResult);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Report export failed.";
       setExportError(message);

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import type { DashboardDefinition, DashboardRunResult, TableDefinition } from "@studio/shared";
-import { fetchAllReportRows, renderDashboard } from "../lib/api";
+import { buildDashboardFilters, type DashboardDefinition, type DashboardRunResult, type ReportRunResult, type TableDefinition } from "@studio/shared";
+import { fetchAllReportRows, fetchReportExportBundle, renderDashboard } from "../lib/api";
 import { LinkToolbar } from "./LinkToolbar";
 import { ChartPreview } from "./ChartPreview";
 import { exportDashboardWorkbook } from "../lib/workbookExport";
@@ -68,15 +68,32 @@ export function DashboardView({ dashboard, tables }: DashboardViewProps) {
     setExporting(true);
     setExportError("");
     try {
-      const reportIds = Array.from(new Set(result.tabs.flatMap((tab) => tab.widgets.map((widget) => widget.report.id))));
-      const fallbackRowsByReportId = Object.fromEntries(
-        result.tabs.flatMap((tab) => tab.widgets.map((widget) => [widget.report.id, widget.result.rows]))
+      const exportResultsByReportId = Object.fromEntries(
+        await Promise.all(
+          Array.from(new Set(result.tabs.flatMap((tab) => tab.widgets.map((widget) => widget.report.id)))).map(async (reportId) => {
+            const fallback = result.tabs.flatMap((tab) => tab.widgets).find((widget) => widget.report.id === reportId)?.result;
+            const filters = buildDashboardFilters(dashboard, reportId, runtimeFilters).map((filter) => ({
+              fieldId: filter.fieldId,
+              operator: filter.operator,
+              value: filter.value
+            }));
+            const exportResult = await fetchReportExportBundle(reportId, filters)
+              .then((response) => response.result)
+              .catch(async () => fallback
+                ? {
+                    ...fallback,
+                    rows: await fetchAllReportRows(reportId, filters).catch(() => fallback.rows)
+                  }
+                : null);
+            return [reportId, exportResult] as const;
+          })
+        )
       );
-      const rowEntries = await Promise.all(
-        reportIds.map(async (reportId) => [reportId, await fetchAllReportRows(reportId).catch(() => fallbackRowsByReportId[reportId] || [])] as const)
+      await exportDashboardWorkbook(
+        dashboard,
+        result,
+        Object.fromEntries(Object.entries(exportResultsByReportId).filter((entry): entry is [string, ReportRunResult] => Boolean(entry[1])))
       );
-      const fullRowsByReportId = Object.fromEntries(rowEntries);
-      await exportDashboardWorkbook(dashboard, result, fullRowsByReportId);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Dashboard export failed.";
       setExportError(message);

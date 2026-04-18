@@ -418,7 +418,7 @@ async function writeWorkbookFile(workbook: any, filename: string) {
   downloadBlob(filename, new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
 }
 
-export async function exportReportWorkbook(report: ReportDefinition, table: TableDefinition, result: ReportRunResult, fullRows?: DataRow[]) {
+export async function exportReportWorkbook(report: ReportDefinition, table: TableDefinition, result: ReportRunResult) {
   const ExcelJS = await import("exceljs");
   const workbook = new ExcelJS.Workbook();
   const usedNames = new Set<string>();
@@ -438,10 +438,10 @@ export async function exportReportWorkbook(report: ReportDefinition, table: Tabl
   }
 
   const dataSheet = workbook.addWorksheet(safeSheetName(`${report.name} Data`, usedNames));
-  const rows = rowsAsObjects(report.selectedFieldIds, fullRows || result.rows, table);
+  const rows = rowsAsObjects(report.selectedFieldIds, result.rows, table);
   const columns = Object.keys(rows[0] || Object.fromEntries(report.selectedFieldIds.map((fieldId) => [table.fields.find((field) => field.id === fieldId)?.label || fieldId, ""])));
   dataSheet.columns = columns.map((header) => ({ header, key: header, width: 22 }));
-  rows.forEach((row) => dataSheet.addRow(row));
+  dataSheet.addRows(rows);
 
   await writeWorkbookFile(workbook, `${report.id}.xlsx`);
 }
@@ -449,7 +449,7 @@ export async function exportReportWorkbook(report: ReportDefinition, table: Tabl
 export async function exportDashboardWorkbook(
   dashboard: DashboardRunResult["dashboard"],
   result: DashboardRunResult,
-  fullRowsByReportId?: Record<string, DataRow[]>
+  exportResultsByReportId?: Record<string, ReportRunResult>
 ) {
   const ExcelJS = await import("exceljs");
   const workbook = new ExcelJS.Workbook();
@@ -474,7 +474,8 @@ export async function exportDashboardWorkbook(
       tabSheet.getCell(`A${rowCursor}`).value = widget.report.name;
       tabSheet.getCell(`A${rowCursor}`).font = { size: 16, bold: true };
       rowCursor += 1;
-      const image = renderChartImage(widget.report.name, tab.name, widget.report.view.chartType, widget.result.chartData, widget.result.summary);
+      const exportResult = exportResultsByReportId?.[widget.report.id] || widget.result;
+      const image = renderChartImage(widget.report.name, tab.name, widget.report.view.chartType, exportResult.chartData, exportResult.summary);
       if (image) {
         const imageId = workbook.addImage({ base64: image, extension: "png" });
         tabSheet.addImage(imageId, {
@@ -488,13 +489,14 @@ export async function exportDashboardWorkbook(
 
     tab.widgets.forEach((widget) => {
       const tableSheet = workbook.addWorksheet(safeSheetName(`${tab.name} ${widget.report.name}`, usedNames));
+      const exportResult = exportResultsByReportId?.[widget.report.id] || widget.result;
       const rows = rowsAsObjects(
         widget.report.selectedFieldIds,
-        fullRowsByReportId?.[widget.report.id] || widget.result.rows
+        exportResult.rows
       );
       const columns = Object.keys(rows[0] || Object.fromEntries(widget.report.selectedFieldIds.map((fieldId) => [fieldId, ""])));
       tableSheet.columns = columns.map((header) => ({ header, key: header, width: 22 }));
-      rows.forEach((row) => tableSheet.addRow(row));
+      tableSheet.addRows(rows);
     });
   });
 
