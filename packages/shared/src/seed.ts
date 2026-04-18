@@ -333,6 +333,54 @@ export function buildStudioDocument(): StudioDocument {
   };
 }
 
+function mergeQuickbaseDefaults(defaults: StudioDocument["quickbase"], source?: Partial<StudioDocument["quickbase"]>) {
+  const current = source || {};
+  const legacyPlaceholders = new Set([
+    "example.quickbase.com",
+    "QB-EXAMPLE",
+    "bp1234567"
+  ]);
+
+  const resolve = (key: keyof StudioDocument["quickbase"]) => {
+    const value = current[key];
+    const text = typeof value === "string" ? value.trim() : "";
+    if (!text || legacyPlaceholders.has(text)) {
+      return defaults[key];
+    }
+    return value as string;
+  };
+
+  return {
+    ...defaults,
+    ...current,
+    realmHostname: resolve("realmHostname"),
+    userToken: resolve("userToken"),
+    appId: resolve("appId"),
+    apiBaseUrl: resolve("apiBaseUrl"),
+    objectTableId: resolve("objectTableId"),
+    objectKeyFieldId: resolve("objectKeyFieldId"),
+    objectTypeFieldId: resolve("objectTypeFieldId"),
+    objectNameFieldId: resolve("objectNameFieldId"),
+    objectConfigFieldId: resolve("objectConfigFieldId"),
+    objectOwnerFieldId: resolve("objectOwnerFieldId"),
+    objectUpdatedAtFieldId: resolve("objectUpdatedAtFieldId"),
+    objectUpdatedByFieldId: resolve("objectUpdatedByFieldId"),
+    settingsTableId: resolve("settingsTableId"),
+    settingsUserFieldId: resolve("settingsUserFieldId"),
+    settingsObjectFieldId: resolve("settingsObjectFieldId"),
+    settingsObjectKeyFieldId: resolve("settingsObjectKeyFieldId"),
+    settingsJsonFieldId: resolve("settingsJsonFieldId"),
+    settingsUpdatedByFieldId: resolve("settingsUpdatedByFieldId"),
+    versionTableId: resolve("versionTableId"),
+    versionObjectFieldId: resolve("versionObjectFieldId"),
+    versionObjectKeyFieldId: resolve("versionObjectKeyFieldId"),
+    versionSnapshotFieldId: resolve("versionSnapshotFieldId"),
+    versionChangedAtFieldId: resolve("versionChangedAtFieldId"),
+    versionChangedByFieldId: resolve("versionChangedByFieldId"),
+    versionUpdatedByFieldId: resolve("versionUpdatedByFieldId")
+  };
+}
+
 export function normalizeStudioDocument(input: Partial<StudioDocument> | null | undefined): StudioDocument {
   const defaults = buildStudioDocument();
   const source = input || {};
@@ -355,10 +403,7 @@ export function normalizeStudioDocument(input: Partial<StudioDocument> | null | 
       ...defaults.branding,
       ...(source.branding || {})
     },
-    quickbase: {
-      ...defaults.quickbase,
-      ...(source.quickbase || {})
-    },
+    quickbase: mergeQuickbaseDefaults(defaults.quickbase, source.quickbase),
     templates: {
       layouts: source.templates?.layouts || defaults.templates.layouts,
       yaml: source.templates?.yaml || defaults.templates.yaml,
