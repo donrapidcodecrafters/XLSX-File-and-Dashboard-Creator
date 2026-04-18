@@ -111,18 +111,18 @@ function ViewerPage({ objects }: { objects: CatalogSummaryItem[] }) {
 
   return (
     <section className="surface stack viewer-page">
-      <div className="hero">
+      <div className="hero viewer-hero">
         <div>
           <span className="badge brand">Viewing</span>
           <h1>Open Reports and Dashboards</h1>
           <p>Choose any saved report or dashboard to open it full screen with its live filters and navigation controls.</p>
         </div>
-        <div className="link-toolbar">
+        <div className="link-toolbar viewer-actions">
           <Link className="ghost-button" to="/studio">Open building area</Link>
         </div>
       </div>
 
-      <label className="field">
+      <label className="field viewer-search-field">
         <span>Search</span>
         <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search reports and dashboards" />
       </label>

@@ -331,6 +331,7 @@ input {
 .surface {
   display: grid;
   gap: 16px;
+  align-content: start;
   padding: 20px;
   border-radius: 24px;
   background: rgba(255, 255, 255, 0.78);
@@ -341,6 +342,7 @@ input {
 .stack {
   display: grid;
   gap: 16px;
+  align-content: start;
 }
 
 .hero {
@@ -381,6 +383,14 @@ input {
 
 .link-toolbar > * {
   flex: 0 1 auto;
+}
+
+.link-toolbar .ghost-button,
+.link-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
 }
 
 .reader-actions .link-toolbar {
@@ -1132,6 +1142,7 @@ th {
   grid-template-columns: minmax(0, 260px) minmax(0, 1fr) minmax(0, 320px);
   gap: 16px;
   min-width: 0;
+  align-items: start;
 }
 
 .studio-page-report {
@@ -1152,11 +1163,13 @@ th {
 .studio-inspector {
   display: grid;
   gap: 16px;
+  align-content: start;
 }
 
 .studio-canvas {
   display: grid;
   gap: 16px;
+  align-content: start;
 }
 
 .studio-section-head {
@@ -1218,6 +1231,34 @@ th {
   padding: 14px;
   text-align: left;
   cursor: pointer;
+}
+
+.viewer-hero,
+.studio-hero {
+  align-items: flex-start;
+}
+
+.viewer-actions {
+  align-items: flex-start;
+}
+
+.viewer-search-field {
+  max-width: 680px;
+}
+
+.viewer-search-field input,
+.studio-library .field input,
+.studio-library .field select {
+  min-height: 42px;
+}
+
+.studio-library > .surface,
+.studio-canvas > .surface,
+.studio-inspector > .surface,
+.studio-library > .card,
+.studio-canvas > .card,
+.studio-inspector > .card {
+  align-self: start;
 }
 
 .picker-row,
