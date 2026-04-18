@@ -4,6 +4,10 @@ import {
   buildDashboardFilters,
   buildDashboardResult,
   buildStudioDocument,
+  collectFilterFieldIds,
+  createFilterGroup,
+  createFilterRule,
+  filterHasValue,
   getReportFieldLabel,
   normalizeStudioDocument,
   runReport,
@@ -16,6 +20,8 @@ import {
   type ExportJobStatus,
   type FieldType,
   type FilterDefinition,
+  type FilterGroupDefinition,
+  type FilterNodeDefinition,
   type FilterOperator,
   type ReportDefinition,
   type ReportRunResult,
@@ -83,7 +89,7 @@ interface CreateObjectDraft {
   description: string;
   tableId: string;
   selectedFieldIds: string[];
-  filters: FilterDefinition[];
+  filterTree: FilterGroupDefinition;
   sorts: ReportDefinition["sorts"];
   summaryMetrics: SummaryMetric[];
   view: ReportDefinition["view"];
@@ -98,7 +104,7 @@ function buildDraftFromReport(report: ReportDefinition, table?: TableDefinition 
     description: report.description,
     tableId: sourceTableId,
     selectedFieldIds: clone(report.selectedFieldIds || []),
-    filters: clone(report.filters || []),
+    filterTree: clone(report.filterTree || createFilterGroup("and", clone(report.filters || []))),
     sorts: clone(report.sorts || []),
     summaryMetrics: clone(report.summaryMetrics || []),
     view: clone(report.view),
@@ -134,6 +140,65 @@ function saveLocalDocument(document: StudioDocument) {
 function formatCell(value: unknown) {
   if (Array.isArray(value)) return value.join(", ");
   return String(value ?? "");
+}
+
+function isFilterGroupNode(node: FilterNodeDefinition): node is FilterGroupDefinition {
+  return "type" in node && node.type === "group";
+}
+
+function flattenFilterTree(group: FilterGroupDefinition): FilterDefinition[] {
+  return group.conditions.flatMap((condition) => isFilterGroupNode(condition) ? flattenFilterTree(condition) : [condition]);
+}
+
+function updateFilterGroupNode(
+  group: FilterGroupDefinition,
+  nodeId: string,
+  updater: (node: FilterNodeDefinition, parent: FilterGroupDefinition) => FilterNodeDefinition | null
+): FilterGroupDefinition {
+  return {
+    ...group,
+    conditions: group.conditions.flatMap((condition) => {
+      if (condition.id === nodeId) {
+        const updated = updater(condition, group);
+        return updated ? [updated] : [];
+      }
+      if ("type" in condition && condition.type === "group") {
+        return [updateFilterGroupNode(condition, nodeId, updater)];
+      }
+      return [condition];
+    })
+  };
+}
+
+function addFilterRuleToGroup(group: FilterGroupDefinition, groupId: string, fieldId: string) {
+  return updateFilterGroupNode(group, groupId, (node) => {
+    if (!("type" in node) || node.type !== "group") return node;
+    return {
+      ...node,
+      conditions: [...node.conditions, createFilterRule(fieldId, "equals", "")]
+    };
+  });
+}
+
+function addFilterGroupToGroup(group: FilterGroupDefinition, groupId: string) {
+  return updateFilterGroupNode(group, groupId, (node) => {
+    if (!("type" in node) || node.type !== "group") return node;
+    return {
+      ...node,
+      conditions: [...node.conditions, createFilterGroup("and", [])]
+    };
+  });
+}
+
+function updateFilterRuleInGroup(group: FilterGroupDefinition, ruleId: string, updater: (rule: FilterDefinition) => FilterDefinition) {
+  return updateFilterGroupNode(group, ruleId, (node) => {
+    if (isFilterGroupNode(node)) return node;
+    return updater(node);
+  });
+}
+
+function removeFilterNodeFromGroup(group: FilterGroupDefinition, nodeId: string) {
+  return updateFilterGroupNode(group, nodeId, () => null);
 }
 
 function mapQuickbaseFieldType(fieldType: string, baseType: string): FieldType {
@@ -252,12 +317,14 @@ function buildCreateDraft(table?: TableDefinition | null, type: CreateModalType 
     description: "",
     tableId: table?.id || "",
     selectedFieldIds: table?.fields.slice(0, 6).map((field) => field.id) || [],
-    filters: [],
+    filterTree: createFilterGroup("and", []),
     sorts: [],
     summaryMetrics: firstFieldId ? [{ id: uid("metric"), fieldId: firstFieldId, op: "count", label: "Rows" }] : [],
     view: {
       mode: "table",
+      showChartInTable: false,
       chartType: "bar",
+      chartOrientation: "vertical",
       chartFieldId: firstFieldId,
       chartValueFieldId: "",
       chartAggregation: "count",
@@ -265,6 +332,8 @@ function buildCreateDraft(table?: TableDefinition | null, type: CreateModalType 
       chartSort: "value-desc",
       chartShowLegend: true,
       chartShowValues: true,
+      chartXAxisLabel: "",
+      chartYAxisLabel: "",
       timelineDateField: "",
       timelineEndField: "",
       calendarDateField: "",
@@ -282,7 +351,7 @@ function collectReportFieldIds(report: ReportDefinition) {
   return Array.from(new Set(
     [
       ...(report.selectedFieldIds || []),
-      ...(report.filters || []).map((item) => item.fieldId),
+      ...collectFilterFieldIds(report.filterTree || createFilterGroup("and", report.filters || [])),
       ...(report.groups || []).map((item) => item.fieldId),
       ...(report.sorts || []).map((item) => item.fieldId),
       ...((report.summaryMetrics || []).map((item) => item.fieldId)),
@@ -299,6 +368,14 @@ function collectReportFieldIds(report: ReportDefinition) {
 
 function getFieldLabel(report: ReportDefinition, table: TableDefinition | null | undefined, fieldId: string) {
   return table ? getReportFieldLabel(report, table, fieldId) : fieldId;
+}
+
+function reportShowsChart(report: Pick<ReportDefinition, "view">) {
+  return report.view.mode === "chart" || (report.view.mode === "table" && report.view.showChartInTable);
+}
+
+function chartUsesAxes(chartType: ChartType) {
+  return ["bar", "column", "stacked-bar", "stacked-column", "line", "area", "waterfall"].includes(chartType);
 }
 
 function clampWidgetWidth(value: number) {
@@ -356,8 +433,8 @@ function validationMessages(object: StudioObject, table?: TableDefinition | null
   const messages: string[] = [];
   if (object.type === "report") {
     if (!object.selectedFieldIds.length) messages.push("Select at least one field.");
-    if (object.view.mode === "chart" && !object.view.chartFieldId) messages.push("Choose a chart grouping field.");
-    if (object.view.mode === "chart" && object.view.chartAggregation !== "count" && !object.view.chartValueFieldId) messages.push("Choose a numeric value field for the chart.");
+    if (reportShowsChart(object) && !object.view.chartFieldId) messages.push("Choose an X axis field for the chart.");
+    if (reportShowsChart(object) && object.view.chartAggregation !== "count" && !object.view.chartValueFieldId) messages.push("Choose a Y axis value field for the chart.");
     if (object.view.mode === "timeline" && !object.view.timelineDateField) messages.push("Choose a timeline start field.");
     if (object.view.mode === "calendar" && !object.view.calendarDateField) messages.push("Choose a calendar date field.");
     if (object.view.mode === "kanban" && !object.view.kanbanField) messages.push("Choose a kanban column field.");
@@ -401,14 +478,37 @@ function ReportPreview({ report, table, result }: { report: ReportDefinition; ta
     );
   }
 
-  if (report.view.mode === "chart") {
+  if (reportShowsChart(report)) {
     return (
-      <ChartPreview
-        chartType={report.view.chartType}
-        data={result.chartData}
-        showLegend={report.view.chartShowLegend}
-        showValues={report.view.chartShowValues}
-      />
+      <div className="studio-preview-stack">
+        <ChartPreview
+          chartType={report.view.chartType}
+          data={result.chartData}
+          chartOrientation={report.view.chartOrientation}
+          xAxisLabel={report.view.chartXAxisLabel}
+          yAxisLabel={report.view.chartYAxisLabel}
+          showLegend={report.view.chartShowLegend}
+          showValues={report.view.chartShowValues}
+        />
+        {report.view.mode === "table" ? (
+          <div className="table-shell">
+            <table>
+              <thead>
+                <tr>
+                  {report.selectedFieldIds.map((fieldId) => <th key={fieldId}>{getReportFieldLabel(report, table, fieldId)}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {result.rows.map((row, index) => (
+                  <tr key={index}>
+                    {report.selectedFieldIds.map((fieldId) => <td key={fieldId}>{formatCell(row[fieldId])}</td>)}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+      </div>
     );
   }
 
@@ -516,6 +616,9 @@ function DashboardPreview({
     if (reportMode === "chart") return "chart";
     return "table";
   };
+  const shouldShowWidgetChart = (widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], report: ReportDefinition) =>
+    resolveWidgetDisplayMode(widget, report.view.mode) === "chart" ||
+    (resolveWidgetDisplayMode(widget, report.view.mode) === "table" && report.view.showChartInTable);
   return (
     <div className="studio-preview-stack">
       {dashboard.runtimeFilters.length ? (
@@ -581,11 +684,14 @@ function DashboardPreview({
                       ))}
                     </div>
                   ) : null}
-                  {resolveWidgetDisplayMode(widget.widget, widget.report.view.mode) === "chart" ? (
+                  {shouldShowWidgetChart(widget.widget, widget.report) ? (
                     <div className="mini-chart">
                       <ChartPreview
                         chartType={widget.report.view.chartType}
                         data={widget.result.chartData}
+                        chartOrientation={widget.report.view.chartOrientation}
+                        xAxisLabel={widget.report.view.chartXAxisLabel}
+                        yAxisLabel={widget.report.view.chartYAxisLabel}
                         compact
                         showLegend={widget.report.view.chartShowLegend}
                         showValues={widget.report.view.chartShowValues}
@@ -628,45 +734,102 @@ function DashboardPreview({
   );
 }
 
+function FilterGroupEditor({
+  table,
+  group,
+  onChange,
+  canRemove,
+  onRemove
+}: {
+  table: TableDefinition;
+  group: FilterGroupDefinition;
+  onChange: (group: FilterGroupDefinition) => void;
+  canRemove?: boolean;
+  onRemove?: () => void;
+}) {
+  return (
+    <div className="filter-group-editor">
+      <div className="card-head">
+        <strong>{canRemove ? "Group" : "Root group"}</strong>
+        <div className="studio-actions">
+          <label className="field compact-field">
+            <span>Match</span>
+            <select
+              value={group.join}
+              onChange={(event) => onChange({ ...group, join: event.target.value as "and" | "or" })}
+            >
+              <option value="and">All conditions (AND)</option>
+              <option value="or">Any condition (OR)</option>
+            </select>
+          </label>
+          <button type="button" onClick={() => onChange(addFilterRuleToGroup(group, group.id, table.fields[0]?.id || ""))}>Add rule</button>
+          <button type="button" onClick={() => onChange(addFilterGroupToGroup(group, group.id))}>Add group</button>
+          {canRemove && onRemove ? <button type="button" onClick={onRemove}>Remove group</button> : null}
+        </div>
+      </div>
+
+      <div className="stack-compact">
+        {group.conditions.length ? group.conditions.map((condition) => {
+          if (isFilterGroupNode(condition)) {
+            return (
+              <div className="filter-group-branch" key={condition.id}>
+                <FilterGroupEditor
+                  table={table}
+                  group={condition}
+                  canRemove
+                  onRemove={() => onChange(removeFilterNodeFromGroup(group, condition.id))}
+                  onChange={(nextGroup) => onChange(updateFilterGroupNode(group, condition.id, () => nextGroup))}
+                />
+              </div>
+            );
+          }
+          const rule = condition;
+          return (
+            <div className="inline-edit-row filter-rule-row" key={rule.id}>
+              <select
+                value={rule.fieldId}
+                onChange={(event) => onChange(updateFilterRuleInGroup(group, rule.id, (currentRule) => ({ ...currentRule, fieldId: event.target.value })))}
+              >
+                {table.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}
+              </select>
+              <select
+                value={rule.operator}
+                onChange={(event) => onChange(updateFilterRuleInGroup(group, rule.id, (currentRule) => ({ ...currentRule, operator: event.target.value as FilterOperator, value: filterHasValue({ ...currentRule, operator: event.target.value as FilterOperator }) ? currentRule.value : "" })))}
+              >
+                {FILTER_OPERATOR_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+              <input
+                value={rule.value}
+                disabled={!filterHasValue(rule)}
+                onChange={(event) => onChange(updateFilterRuleInGroup(group, rule.id, (currentRule) => ({ ...currentRule, value: event.target.value })))}
+                placeholder={filterHasValue(rule) ? "Filter value" : "No value needed"}
+              />
+              <button type="button" onClick={() => onChange(removeFilterNodeFromGroup(group, rule.id))}>Remove</button>
+            </div>
+          );
+        }) : <div className="empty-hint">No conditions yet. Add rules or nested groups.</div>}
+      </div>
+    </div>
+  );
+}
+
 function ReportFiltersAndSortsEditor({
   table,
-  filters,
+  filterTree,
   sorts,
-  onChangeFilters,
+  onChangeFilterTree,
   onChangeSorts
 }: {
   table: TableDefinition;
-  filters: FilterDefinition[];
+  filterTree: FilterGroupDefinition;
   sorts: ReportDefinition["sorts"];
-  onChangeFilters: (filters: FilterDefinition[]) => void;
+  onChangeFilterTree: (filterTree: FilterGroupDefinition) => void;
   onChangeSorts: (sorts: ReportDefinition["sorts"]) => void;
 }) {
   return (
     <div className="stack">
       <div className="card">
-        <div className="card-head">
-          <strong>Filters</strong>
-          <button onClick={() => onChangeFilters([...filters, { id: uid("filter"), fieldId: table.fields[0]?.id || "", operator: "equals", value: "" }])}>Add filter</button>
-        </div>
-        <div className="stack-compact">
-          {filters.length ? filters.map((filter) => (
-            <div className="inline-edit-row" key={filter.id}>
-              <select value={filter.fieldId} onChange={(event) => onChangeFilters(filters.map((item) => item.id === filter.id ? { ...item, fieldId: event.target.value } : item))}>
-                {table.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}
-              </select>
-              <select value={filter.operator} onChange={(event) => onChangeFilters(filters.map((item) => item.id === filter.id ? { ...item, operator: event.target.value as FilterOperator } : item))}>
-                {FILTER_OPERATOR_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-              </select>
-              <input
-                value={filter.value}
-                disabled={filter.operator === "blank" || filter.operator === "not-blank"}
-                onChange={(event) => onChangeFilters(filters.map((item) => item.id === filter.id ? { ...item, value: event.target.value } : item))}
-                placeholder={filter.operator === "blank" || filter.operator === "not-blank" ? "No value needed" : "Filter value"}
-              />
-              <button onClick={() => onChangeFilters(filters.filter((item) => item.id !== filter.id))}>Remove</button>
-            </div>
-          )) : <div className="empty-hint">No filters yet. Add rules before you create the report so large tables stay manageable.</div>}
-        </div>
+        <FilterGroupEditor table={table} group={filterTree} onChange={onChangeFilterTree} />
       </div>
 
       <div className="card">
@@ -767,7 +930,8 @@ export function StudioPage() {
       updatedAt: new Date().toISOString(),
       sourceTableId: createDraft.tableId,
       selectedFieldIds: createDraft.selectedFieldIds,
-      filters: createDraft.filters,
+      filters: flattenFilterTree(createDraft.filterTree),
+      filterTree: clone(createDraft.filterTree),
       groups: [],
       sorts: createDraft.sorts,
       summaryMetrics: createDraft.summaryMetrics,
@@ -1120,11 +1284,13 @@ export function StudioPage() {
       ...current,
       tableId: table.id,
       selectedFieldIds: table.fields.slice(0, 6).map((field) => field.id),
-      filters: [],
+      filterTree: createFilterGroup("and", []),
       sorts: [],
       summaryMetrics: table.fields[0] ? [{ id: uid("metric"), fieldId: table.fields[0].id, op: "count", label: "Rows" }] : [],
       view: {
         ...current.view,
+        showChartInTable: false,
+        chartOrientation: "vertical",
         chartFieldId: table.fields[0]?.id || "",
         chartValueFieldId: "",
         chartAggregation: "count",
@@ -1132,6 +1298,8 @@ export function StudioPage() {
         chartSort: current.view.chartSort || "value-desc",
         chartShowLegend: current.view.chartShowLegend ?? true,
         chartShowValues: current.view.chartShowValues ?? true,
+        chartXAxisLabel: current.view.chartXAxisLabel || "",
+        chartYAxisLabel: current.view.chartYAxisLabel || "",
         titleFieldId: table.fields[1]?.id || table.fields[0]?.id || "",
         timelineDateField: "",
         timelineEndField: "",
@@ -1190,7 +1358,8 @@ export function StudioPage() {
       updatedAt: new Date().toISOString(),
       sourceTableId: table.id,
       selectedFieldIds: createDraft.selectedFieldIds,
-      filters: clone(createDraft.filters),
+      filters: flattenFilterTree(createDraft.filterTree),
+      filterTree: clone(createDraft.filterTree),
       groups: [],
       sorts: clone(createDraft.sorts),
       summaryMetrics: clone(createDraft.summaryMetrics),
@@ -1977,7 +2146,7 @@ export function StudioPage() {
                         );
                       }) : <div className="empty-hint">Select fields first to set custom headers.</div>}
                     </div>
-                    {createDraft.view.mode === "chart" ? (
+                    {reportShowsChart({ view: createDraft.view }) ? (
                       <div className="stack-compact">
                         <div className="micro">Chart value labels</div>
                         {chartValueLabelOptions.length ? chartValueLabelOptions.map((label) => (
@@ -2005,9 +2174,9 @@ export function StudioPage() {
 
                   <ReportFiltersAndSortsEditor
                     table={createDraftTable}
-                    filters={createDraft.filters}
+                    filterTree={createDraft.filterTree}
                     sorts={createDraft.sorts}
-                    onChangeFilters={(filters) => setCreateDraft((current) => ({ ...current, filters }))}
+                    onChangeFilterTree={(filterTree) => setCreateDraft((current) => ({ ...current, filterTree }))}
                     onChangeSorts={(sorts) => setCreateDraft((current) => ({ ...current, sorts }))}
                   />
 
@@ -2017,13 +2186,23 @@ export function StudioPage() {
                       <span className="micro">Choose how the report should render by default.</span>
                     </div>
                     <div className="filter-grid">
-                      <label className="field"><span>Mode</span><select value={createDraft.view.mode} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, mode: event.target.value as ReportViewMode } }))}>{REPORT_VIEW_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
-                      <label className="field"><span>Chart type</span><select value={createDraft.view.chartType} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartType: event.target.value as ChartType } }))}>{CHART_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
-                      <label className="field"><span>Chart field</span><select value={createDraft.view.chartFieldId} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartFieldId: event.target.value } }))}>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>
+                      <label className="field"><span>Mode</span><select value={createDraft.view.mode} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, mode: event.target.value as ReportViewMode, showChartInTable: event.target.value === "table" ? current.view.showChartInTable : false } }))}>{REPORT_VIEW_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
+                      {createDraft.view.mode === "table" ? <label className="toggle-row"><input type="checkbox" checked={createDraft.view.showChartInTable} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, showChartInTable: event.target.checked } }))} /> Include chart above table</label> : null}
                       <label className="field"><span>Title field</span><select value={createDraft.view.titleFieldId} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, titleFieldId: event.target.value } }))}>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>
-                      {createDraft.view.mode === "chart" ? (
+                      {reportShowsChart({ view: createDraft.view }) ? (
                         <>
-                          <label className="field"><span>Value field</span><select value={createDraft.view.chartValueFieldId} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartValueFieldId: event.target.value } }))}><option value="">Count rows</option>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>
+                          <label className="field"><span>Chart type</span><select value={createDraft.view.chartType} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartType: event.target.value as ChartType } }))}>{CHART_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
+                          {(createDraft.view.chartType === "bar" || createDraft.view.chartType === "stacked-bar") ? (
+                            <label className="field"><span>Bar direction</span><select value={createDraft.view.chartOrientation} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartOrientation: event.target.value as "vertical" | "horizontal" } }))}><option value="vertical">Vertical</option><option value="horizontal">Horizontal</option></select></label>
+                          ) : null}
+                          <label className="field"><span>X axis field</span><select value={createDraft.view.chartFieldId} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartFieldId: event.target.value } }))}>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>
+                          <label className="field"><span>Y axis value field</span><select value={createDraft.view.chartValueFieldId} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartValueFieldId: event.target.value } }))}><option value="">Count rows</option>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>
+                          {chartUsesAxes(createDraft.view.chartType) ? (
+                            <>
+                              <label className="field"><span>X axis label</span><input value={createDraft.view.chartXAxisLabel} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartXAxisLabel: event.target.value } }))} placeholder="Optional custom x axis label" /></label>
+                              <label className="field"><span>Y axis label</span><input value={createDraft.view.chartYAxisLabel} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartYAxisLabel: event.target.value } }))} placeholder="Optional custom y axis label" /></label>
+                            </>
+                          ) : null}
                           <label className="field"><span>Aggregation</span><select value={createDraft.view.chartAggregation} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartAggregation: event.target.value as ChartAggregation, chartValueFieldId: event.target.value === "count" ? "" : current.view.chartValueFieldId } }))}>{CHART_AGGREGATION_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
                           <label className="field"><span>Chart sort</span><select value={createDraft.view.chartSort} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartSort: event.target.value as ChartSortMode } }))}>{CHART_SORT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
                           <label className="field"><span>Top results</span><input type="number" min="0" value={createDraft.view.chartTopN} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartTopN: Math.max(0, Number(event.target.value) || 0) } }))} /></label>

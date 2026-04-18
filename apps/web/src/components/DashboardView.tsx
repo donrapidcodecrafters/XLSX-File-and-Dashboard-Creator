@@ -18,6 +18,11 @@ function resolveWidgetDisplayMode(widget: DashboardRunResult["tabs"][number]["wi
   return "table";
 }
 
+function widgetShowsChart(widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], report: DashboardRunResult["tabs"][number]["widgets"][number]["report"]) {
+  const displayMode = resolveWidgetDisplayMode(widget, report.view.mode);
+  return displayMode === "chart" || (displayMode === "table" && report.view.showChartInTable);
+}
+
 function getFieldLabel(tables: TableDefinition[] | undefined, report: DashboardRunResult["tabs"][number]["widgets"][number]["report"], fieldId: string) {
   const table = tables?.find((item) => item.id === report.sourceTableId);
   return table ? getReportFieldLabel(report, table, fieldId) : fieldId;
@@ -233,11 +238,14 @@ export function DashboardView({ dashboard, tables }: DashboardViewProps) {
                     ))}
                   </div>
                 ) : null}
-                {resolveWidgetDisplayMode(widget.widget, widget.report.view.mode) === "chart" ? (
+                {widgetShowsChart(widget.widget, widget.report) ? (
                   <div className="mini-chart">
                     <ChartPreview
                       chartType={widget.report.view.chartType}
                       data={chartData}
+                      chartOrientation={widget.report.view.chartOrientation}
+                      xAxisLabel={widget.report.view.chartXAxisLabel}
+                      yAxisLabel={widget.report.view.chartYAxisLabel}
                       compact
                       showLegend={widget.report.view.chartShowLegend}
                       showValues={widget.report.view.chartShowValues}

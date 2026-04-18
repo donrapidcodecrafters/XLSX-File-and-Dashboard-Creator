@@ -1,12 +1,14 @@
 export type StudioObjectType = "report" | "dashboard";
 export type FieldType = "text" | "number" | "currency" | "date" | "datetime" | "user" | "multiselect";
 export type FilterOperator = "equals" | "not-equals" | "contains" | "not-contains" | "blank" | "not-blank" | "gt" | "gte" | "lt" | "lte";
+export type FilterJoinOperator = "and" | "or";
 export type SortDirection = "asc" | "desc";
 export type WidgetMode = "linked" | "copied";
 export type ReportViewMode = "table" | "summary" | "chart" | "timeline" | "calendar" | "kanban";
 export type ChartType = "bar" | "column" | "line" | "area" | "donut" | "pie" | "stacked-bar" | "stacked-column" | "funnel" | "heatmap" | "radar" | "gauge" | "waterfall";
 export type ChartAggregation = "count" | "sum" | "avg" | "min" | "max";
 export type ChartSortMode = "value-desc" | "value-asc" | "label-asc" | "label-desc";
+export type ChartOrientation = "vertical" | "horizontal";
 export type RuntimeFilterMode = "global" | "selected";
 
 export type DataValue = string | number | boolean | null | string[];
@@ -33,6 +35,15 @@ export interface FilterDefinition {
   value: string;
 }
 
+export interface FilterGroupDefinition {
+  id: string;
+  type: "group";
+  join: FilterJoinOperator;
+  conditions: FilterNodeDefinition[];
+}
+
+export type FilterNodeDefinition = FilterDefinition | FilterGroupDefinition;
+
 export interface SortDefinition {
   id: string;
   fieldId: string;
@@ -53,7 +64,9 @@ export interface SummaryMetric {
 
 export interface ReportViewDefinition {
   mode: ReportViewMode;
+  showChartInTable: boolean;
   chartType: ChartType;
+  chartOrientation: ChartOrientation;
   chartFieldId: string;
   chartValueFieldId: string;
   chartAggregation: ChartAggregation;
@@ -61,6 +74,8 @@ export interface ReportViewDefinition {
   chartSort: ChartSortMode;
   chartShowLegend: boolean;
   chartShowValues: boolean;
+  chartXAxisLabel: string;
+  chartYAxisLabel: string;
   timelineDateField: string;
   timelineEndField: string;
   calendarDateField: string;
@@ -89,6 +104,7 @@ export interface ReportDefinition extends BaseStudioObject {
   sourceTableId: string;
   selectedFieldIds: string[];
   filters: FilterDefinition[];
+  filterTree?: FilterGroupDefinition;
   groups: GroupDefinition[];
   sorts: SortDefinition[];
   summaryMetrics: SummaryMetric[];

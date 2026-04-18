@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { runReport, type ReportDefinition, type TableDefinition } from "@studio/shared";
+import { collectFilterFieldIds, createFilterGroup, runReport, type ReportDefinition, type TableDefinition } from "@studio/shared";
 import { loadQuickbaseSchema } from "../services/quickbase-schema.js";
 import { fetchQuickbaseTableRows } from "../services/quickbase-storage.js";
 
@@ -108,7 +108,7 @@ export async function registerQuickbaseRoutes(app: FastifyInstance) {
       const fieldIds = Array.from(new Set(
         [
           ...(report.selectedFieldIds || []),
-          ...(report.filters || []).map((item) => item.fieldId),
+          ...collectFilterFieldIds(report.filterTree || createFilterGroup("and", report.filters || [])),
           ...(report.groups || []).map((item) => item.fieldId),
           ...(report.sorts || []).map((item) => item.fieldId),
           ...((report.summaryMetrics || []).map((item) => item.fieldId)),

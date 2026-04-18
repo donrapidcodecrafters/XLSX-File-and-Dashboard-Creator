@@ -1,5 +1,25 @@
 import { Worker } from "node:worker_threads";
-import { buildDashboardFilters, buildDashboardResult, getChartLabel, runReport, type ChartAggregation, type DashboardRunResult, type DataRow, type FilterDefinition, type ReportDefinition, type ReportRunResult, type SummaryDatum, type SummaryMetric, type TableDefinition } from "@studio/shared";
+import {
+  buildCombinedFilterTree,
+  buildDashboardFilters,
+  buildDashboardResult,
+  collectFilterFieldIds,
+  createFilterGroup,
+  filterHasValue,
+  getChartLabel,
+  matchesFilterNode,
+  runReport,
+  type ChartAggregation,
+  type DashboardRunResult,
+  type DataRow,
+  type FilterDefinition,
+  type FilterGroupDefinition,
+  type ReportDefinition,
+  type ReportRunResult,
+  type SummaryDatum,
+  type SummaryMetric,
+  type TableDefinition
+} from "@studio/shared";
 import { ExecutionCache } from "./execution-cache.js";
 import { objectStore } from "./object-store.js";
 import { fetchQuickbaseTablePage } from "./quickbase-storage.js";
@@ -24,71 +44,16 @@ interface ExportProgressCallback {
 const DATE_TOKENS = new Set(["CURRENT_MONTH", "LAST_30_DAYS", "CURRENT_YEAR"]);
 const cache = new ExecutionCache<ReportRunResult>(20_000);
 
-function asArray<T>(value: T | T[] | null | undefined): T[] {
-  if (Array.isArray(value)) return value;
-  if (value === null || value === undefined || value === "") return [];
-  return [value];
-}
-
 function asNumber(value: unknown): number {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : 0;
-}
-
-function parseDateValue(value: unknown): Date | null {
-  if (!value) return null;
-  const date = new Date(String(value));
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function matchesDateToken(value: unknown, token: string): boolean {
-  const date = parseDateValue(value);
-  if (!date) return false;
-  const now = new Date("2026-01-15T12:00:00.000Z");
-  if (token === "CURRENT_MONTH") {
-    return date.getUTCFullYear() === now.getUTCFullYear() && date.getUTCMonth() === now.getUTCMonth();
-  }
-  if (token === "LAST_30_DAYS") {
-    const floor = new Date(now);
-    floor.setUTCDate(now.getUTCDate() - 30);
-    return date >= floor && date <= now;
-  }
-  if (token === "CURRENT_YEAR") {
-    return date.getUTCFullYear() === now.getUTCFullYear();
-  }
-  return false;
-}
-
-function matchesFilter(row: DataRow, filter: FilterDefinition): boolean {
-  const raw = row[filter.fieldId];
-  const expected = String(filter.value ?? "");
-  const candidates = asArray(raw).map((value) => String(value ?? ""));
-  const isBlank = candidates.length === 0 || candidates.every((value) => !String(value).trim());
-  if (filter.operator === "blank") return isBlank;
-  if (filter.operator === "not-blank") return !isBlank;
-  if (!expected) return true;
-  if (DATE_TOKENS.has(expected)) {
-    return matchesDateToken(raw, expected);
-  }
-  if (filter.operator === "contains") {
-    return candidates.some((value) => value.toLowerCase().includes(expected.toLowerCase()));
-  }
-  if (filter.operator === "not-contains") {
-    return candidates.every((value) => !value.toLowerCase().includes(expected.toLowerCase()));
-  }
-  if (filter.operator === "gt") return asNumber(raw) > asNumber(expected);
-  if (filter.operator === "gte") return asNumber(raw) >= asNumber(expected);
-  if (filter.operator === "lt") return asNumber(raw) < asNumber(expected);
-  if (filter.operator === "lte") return asNumber(raw) <= asNumber(expected);
-  if (filter.operator === "not-equals") return candidates.every((value) => value !== expected);
-  return candidates.some((value) => value === expected);
 }
 
 function collectReportFieldIds(report: ReportDefinition) {
   return Array.from(new Set(
     [
       ...(report.selectedFieldIds || []),
-      ...(report.filters || []).map((item) => item.fieldId),
+      ...collectFilterFieldIds(report.filterTree || createFilterGroup("and", report.filters || [])),
       ...(report.groups || []).map((item) => item.fieldId),
       ...(report.sorts || []).map((item) => item.fieldId),
       ...((report.summaryMetrics || []).map((item) => item.fieldId)),
@@ -139,8 +104,28 @@ function normalizePageOptions(options: ExecuteReportOptions) {
   };
 }
 
-function combineFilters(report: ReportDefinition, extraFilters: FilterDefinition[]) {
-  return [...report.filters, ...extraFilters].filter((filter) => Boolean(filter.value));
+function getCombinedFilterTree(report: ReportDefinition, extraFilters: FilterDefinition[]) {
+  return buildCombinedFilterTree(report, extraFilters);
+}
+
+function isFilterGroupNode(condition: FilterGroupDefinition["conditions"][number]): condition is FilterGroupDefinition {
+  return "type" in condition && condition.type === "group";
+}
+
+function isPushdownSafeTree(group: FilterGroupDefinition | null): group is FilterGroupDefinition {
+  if (!group) return false;
+  if (group.join !== "and") return false;
+  return group.conditions.every((condition) => {
+    if (isFilterGroupNode(condition)) return false;
+    if (!filterHasValue(condition)) return false;
+    if (DATE_TOKENS.has(String(condition.value || ""))) return false;
+    return ["equals", "contains", "gt", "gte", "lt", "lte"].includes(condition.operator);
+  });
+}
+
+function extractFlatPushdownFilters(group: FilterGroupDefinition | null): FilterDefinition[] {
+  if (!isPushdownSafeTree(group)) return [];
+  return group.conditions.filter((condition): condition is FilterDefinition => !isFilterGroupNode(condition));
 }
 
 function buildQuickbaseWhere(filters: FilterDefinition[]) {
@@ -310,13 +295,14 @@ async function fetchQuickbaseReportPageOnly(
 ): Promise<ReportRunResult> {
   const quickbase = studioStore.getDocument().quickbase;
   const { page, pageSize, startIndex } = normalizePageOptions(options);
-  const filters = combineFilters(report, extraFilters);
+  const filterTree = getCombinedFilterTree(report, extraFilters);
+  const filters = extractFlatPushdownFilters(filterTree);
   const requestedFieldIds = collectReportFieldIds(report);
   const warnings = report.selectedFieldIds.length ? [] : ["This report has no selected fields."];
-  const { where, unsupportedFilters } = buildQuickbaseWhere(filters);
+  const { where } = buildQuickbaseWhere(filters);
   const sortBy = buildQuickbaseSort(report);
 
-  if (unsupportedFilters.length) {
+  if (filterTree && !filters.length) {
     const full = await executeQuickbaseReportPage(report, table, extraFilters, options);
     return {
       ...full,
@@ -355,16 +341,17 @@ async function executeQuickbaseReportPage(
 ): Promise<ReportRunResult> {
   const quickbase = studioStore.getDocument().quickbase;
   const { page, pageSize, startIndex, endIndexExclusive } = normalizePageOptions(options);
-  const filters = combineFilters(report, extraFilters);
+  const filterTree = getCombinedFilterTree(report, extraFilters);
+  const filters = extractFlatPushdownFilters(filterTree);
   const requestedFieldIds = collectReportFieldIds(report);
   const metricSet = report.summaryMetrics.length
     ? report.summaryMetrics
     : [{ id: "default-count", fieldId: report.selectedFieldIds[0] || "recordId", op: "count" as const, label: "Rows" }];
   const warnings = report.selectedFieldIds.length ? [] : ["This report has no selected fields."];
-  const { where, unsupportedFilters } = buildQuickbaseWhere(filters);
+  const { where } = buildQuickbaseWhere(filters);
   const sortBy = buildQuickbaseSort(report);
 
-  if (!unsupportedFilters.length) {
+  if (!filterTree || (filters.length && isPushdownSafeTree(filterTree))) {
     const pageResult = await fetchQuickbaseTablePage(quickbase, table.id, requestedFieldIds, {
       top: pageSize,
       skip: startIndex,
@@ -425,7 +412,7 @@ async function executeQuickbaseReportPage(
     });
     if (!batch.rows.length) break;
     batch.rows.forEach((row) => {
-      if (!filters.every((filter) => matchesFilter(row, filter))) {
+      if (filterTree && !matchesFilterNode(row, filterTree)) {
         return;
       }
       addMetricRow(summaryAccumulator, row);
@@ -527,9 +514,10 @@ export async function fetchReportExportBundle(
 
   const quickbase = studioStore.getDocument().quickbase;
   if (quickbase.realmHostname && quickbase.userToken && quickbase.appId) {
-    const filters = combineFilters(report, extraFilters);
+    const filterTree = getCombinedFilterTree(report, extraFilters);
+    const filters = extractFlatPushdownFilters(filterTree);
     const requestedFieldIds = collectReportFieldIds(report);
-    const { where, unsupportedFilters } = buildQuickbaseWhere(filters);
+    const { where } = buildQuickbaseWhere(filters);
     const sortBy = buildQuickbaseSort(report);
     const metricSet = report.summaryMetrics.length
       ? report.summaryMetrics
@@ -553,7 +541,7 @@ export async function fetchReportExportBundle(
       if (!batch.rows.length) break;
       expectedTotal = Math.max(expectedTotal, batch.totalRecords ?? 0);
       batch.rows.forEach((row) => {
-        if (unsupportedFilters.length && !filters.every((filter) => matchesFilter(row, filter))) return;
+        if (filterTree && !isPushdownSafeTree(filterTree) && !matchesFilterNode(row, filterTree)) return;
         rows.push(row);
         addMetricRow(summaryAccumulator, row);
         addChartRow(chartGroups, report, row);

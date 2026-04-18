@@ -1,4 +1,5 @@
-import type {
+import {
+  type FilterDefinition,
   DashboardDefinition,
   ReportDefinition,
   ReportViewDefinition,
@@ -7,6 +8,7 @@ import type {
   TableDefinition,
   WidgetDefinition
 } from "./models.js";
+import { createFilterGroup } from "./report-engine.js";
 
 function timestamp(offset = 0): string {
   return new Date(Date.UTC(2026, 0, 15 + offset, 12, 0, 0)).toISOString();
@@ -15,7 +17,9 @@ function timestamp(offset = 0): string {
 function buildReportView(overrides: Partial<ReportViewDefinition> = {}): ReportViewDefinition {
   return {
     mode: "table",
+    showChartInTable: false,
     chartType: "bar",
+    chartOrientation: "vertical",
     chartFieldId: "",
     chartValueFieldId: "",
     chartAggregation: "count",
@@ -23,6 +27,8 @@ function buildReportView(overrides: Partial<ReportViewDefinition> = {}): ReportV
     chartSort: "value-desc",
     chartShowLegend: true,
     chartShowValues: true,
+    chartXAxisLabel: "",
+    chartYAxisLabel: "",
     timelineDateField: "",
     timelineEndField: "",
     calendarDateField: "",
@@ -33,6 +39,7 @@ function buildReportView(overrides: Partial<ReportViewDefinition> = {}): ReportV
 }
 
 function createReport(input: Partial<ReportDefinition> & Pick<ReportDefinition, "id" | "name" | "sourceTableId" | "selectedFieldIds">): ReportDefinition {
+  const filters = input.filters || [];
   return {
     id: input.id,
     type: "report",
@@ -44,7 +51,8 @@ function createReport(input: Partial<ReportDefinition> & Pick<ReportDefinition, 
     updatedAt: input.updatedAt || timestamp(),
     sourceTableId: input.sourceTableId,
     selectedFieldIds: input.selectedFieldIds,
-    filters: input.filters || [],
+    filters,
+    filterTree: input.filterTree || createFilterGroup("and", filters),
     groups: input.groups || [],
     sorts: input.sorts || [],
     summaryMetrics: input.summaryMetrics || [],
@@ -398,7 +406,14 @@ export function normalizeStudioDocument(input: Partial<StudioDocument> | null | 
     Object.entries(source.bundle?.objects || defaults.bundle.objects).map(([id, object]) => {
       if (object.type === "report") {
         const displayLabels = object.displayLabels || {};
-        return [id, { ...object, view: buildReportView(object.view || {}), displayLabels: { fields: displayLabels.fields || {}, chartValues: displayLabels.chartValues || {} } }];
+        const filters = object.filters || [];
+        return [id, {
+          ...object,
+          filters,
+          filterTree: object.filterTree || createFilterGroup("and", filters as FilterDefinition[]),
+          view: buildReportView(object.view || {}),
+          displayLabels: { fields: displayLabels.fields || {}, chartValues: displayLabels.chartValues || {} }
+        }];
       }
       return [id, object];
     })

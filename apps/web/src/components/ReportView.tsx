@@ -15,6 +15,10 @@ interface ReportViewProps {
   onPageChange: (page: number) => void;
 }
 
+function reportShowsChart(report: ReportDefinition) {
+  return report.view.mode === "chart" || (report.view.mode === "table" && report.view.showChartInTable);
+}
+
 export function ReportView({ report, table, result, loading, currentPage, onPageChange }: ReportViewProps) {
   const hosted = getHostedContext();
   const fullScreenUrl = buildObjectUrl("report", report.id, { viewer: true });
@@ -98,22 +102,27 @@ export function ReportView({ report, table, result, loading, currentPage, onPage
         ))}
       </div>
 
-      <div className="card">
-        <div className="card-head">
-          <strong>Chart</strong>
-          <span className="micro">{table?.name || report.sourceTableId}</span>
+      {reportShowsChart(report) ? (
+        <div className="card">
+          <div className="card-head">
+            <strong>Chart</strong>
+            <span className="micro">{table?.name || report.sourceTableId}</span>
+          </div>
+          {loading ? (
+            <div className="empty">Running report…</div>
+          ) : (
+            <ChartPreview
+              chartType={report.view.chartType}
+              data={result?.chartData || []}
+              chartOrientation={report.view.chartOrientation}
+              xAxisLabel={report.view.chartXAxisLabel}
+              yAxisLabel={report.view.chartYAxisLabel}
+              showLegend={report.view.chartShowLegend}
+              showValues={report.view.chartShowValues}
+            />
+          )}
         </div>
-        {loading ? (
-          <div className="empty">Running report…</div>
-        ) : (
-          <ChartPreview
-            chartType={report.view.chartType}
-            data={result?.chartData || []}
-            showLegend={report.view.chartShowLegend}
-            showValues={report.view.chartShowValues}
-          />
-        )}
-      </div>
+      ) : null}
 
       <div className="card">
         <div className="card-head">

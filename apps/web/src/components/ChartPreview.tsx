@@ -1,4 +1,4 @@
-import type { ChartDatum, ChartType } from "@studio/shared";
+import type { ChartDatum, ChartOrientation, ChartType } from "@studio/shared";
 
 const CHART_COLORS = [
   "#0d7c66",
@@ -14,6 +14,9 @@ const CHART_COLORS = [
 interface ChartPreviewProps {
   chartType: ChartType;
   data: ChartDatum[];
+  chartOrientation?: ChartOrientation;
+  xAxisLabel?: string;
+  yAxisLabel?: string;
   compact?: boolean;
   showLegend?: boolean;
   showValues?: boolean;
@@ -27,7 +30,16 @@ function getColor(index: number) {
   return CHART_COLORS[index % CHART_COLORS.length];
 }
 
-export function ChartPreview({ chartType, data, compact = false, showLegend = true, showValues = true }: ChartPreviewProps) {
+export function ChartPreview({
+  chartType,
+  data,
+  chartOrientation = "vertical",
+  xAxisLabel = "",
+  yAxisLabel = "",
+  compact = false,
+  showLegend = true,
+  showValues = true
+}: ChartPreviewProps) {
   if (!data.length) {
     return <div className="chart-empty">No chart data available.</div>;
   }
@@ -75,16 +87,24 @@ export function ChartPreview({ chartType, data, compact = false, showLegend = tr
     );
   }
 
-  if (chartType === "column" || chartType === "stacked-column") {
+  const orientation = chartType === "column" || chartType === "stacked-column" ? "vertical" : chartOrientation;
+  const showAxes = ["bar", "column", "stacked-bar", "stacked-column", "line", "area", "waterfall"].includes(chartType);
+
+  if (chartType === "column" || chartType === "stacked-column" || ((chartType === "bar" || chartType === "stacked-bar") && orientation === "vertical")) {
     return (
-      <div className={chartType === "stacked-column" ? "stacked-columns" : "vertical-chart"}>
+      <div className={chartType === "stacked-column" || chartType === "stacked-bar" ? "stacked-columns" : "vertical-chart"}>
+        {showAxes && (xAxisLabel || yAxisLabel) ? (
+          <div className="chart-axis-labels vertical-axis-labels">
+            {yAxisLabel ? <span className="chart-axis-label">{yAxisLabel}</span> : <span />}
+          </div>
+        ) : null}
         <div className="vertical-chart-bars">
           {items.map((item, index) => {
             const height = Math.max(18, (item.value / max) * 150);
             return (
-              <div className={chartType === "stacked-column" ? "stacked-column" : "vertical-bar"} key={item.label}>
+              <div className={chartType === "stacked-column" || chartType === "stacked-bar" ? "stacked-column" : "vertical-bar"} key={item.label}>
                 {showValues ? <div className="micro">{item.value}</div> : null}
-                {chartType === "stacked-column" ? (
+                {chartType === "stacked-column" || chartType === "stacked-bar" ? (
                   <div className="stacked-column-bar" style={{ height }}>
                     <div className="stacked-segment" style={{ height: "100%", background: getColor(index) }} />
                   </div>
@@ -96,6 +116,7 @@ export function ChartPreview({ chartType, data, compact = false, showLegend = tr
             );
           })}
         </div>
+        {showAxes && xAxisLabel ? <div className="chart-axis-label axis-label-bottom">{xAxisLabel}</div> : null}
       </div>
     );
   }
@@ -111,6 +132,12 @@ export function ChartPreview({ chartType, data, compact = false, showLegend = tr
 
     return (
       <div className={chartType === "area" ? "area-chart" : "line-chart"}>
+        {showAxes && (xAxisLabel || yAxisLabel) ? (
+          <div className="chart-axis-labels horizontal-axis-labels">
+            {yAxisLabel ? <span className="chart-axis-label">{yAxisLabel}</span> : <span />}
+            {xAxisLabel ? <span className="chart-axis-label">{xAxisLabel}</span> : null}
+          </div>
+        ) : null}
         <svg viewBox="0 0 400 220" preserveAspectRatio="none">
           <line x1="20" y1="200" x2="380" y2="200" stroke="rgba(23, 49, 38, 0.15)" strokeWidth="2" />
           {chartType === "area" ? <polygon points={areaPoints} /> : null}
@@ -217,6 +244,12 @@ export function ChartPreview({ chartType, data, compact = false, showLegend = tr
   if (chartType === "stacked-bar") {
     return (
       <div className="chart-shell">
+        {showAxes && (xAxisLabel || yAxisLabel) ? (
+          <div className="chart-axis-labels horizontal-axis-labels">
+            {yAxisLabel ? <span className="chart-axis-label">{yAxisLabel}</span> : <span />}
+            {xAxisLabel ? <span className="chart-axis-label">{xAxisLabel}</span> : null}
+          </div>
+        ) : null}
         <div className="stacked-track">
           {items.map((item, index) => (
             <div
@@ -275,6 +308,12 @@ export function ChartPreview({ chartType, data, compact = false, showLegend = tr
 
   return (
     <div className="chart-bars">
+      {showAxes && (xAxisLabel || yAxisLabel) ? (
+        <div className="chart-axis-labels horizontal-axis-labels">
+          {yAxisLabel ? <span className="chart-axis-label">{yAxisLabel}</span> : <span />}
+          {xAxisLabel ? <span className="chart-axis-label">{xAxisLabel}</span> : null}
+        </div>
+      ) : null}
       {items.map((item, index) => (
         <div className="chart-row" key={item.label}>
           {showLegend ? <div className="chart-label">{cap(item.label, compact ? 12 : 18)}</div> : null}

@@ -8,6 +8,10 @@ import type {
   DataRow,
   FieldDefinition,
   FilterDefinition,
+  FilterGroupDefinition,
+  FilterJoinOperator,
+  FilterNodeDefinition,
+  FilterOperator,
   ReportDefinition,
   ReportRunResult,
   SummaryDatum,
@@ -21,12 +25,67 @@ function getField(table: TableDefinition, fieldId: string): FieldDefinition | un
   return table.fields.find((field) => field.id === fieldId);
 }
 
+function isFilterGroup(node: FilterNodeDefinition): node is FilterGroupDefinition {
+  return (node as FilterGroupDefinition).type === "group";
+}
+
 export function getReportFieldLabel(report: ReportDefinition, table: TableDefinition, fieldId: string): string {
   return report.displayLabels?.fields?.[fieldId]?.trim() || getField(table, fieldId)?.label || fieldId;
 }
 
 export function getChartLabel(report: ReportDefinition, label: string): string {
   return report.displayLabels?.chartValues?.[label]?.trim() || label;
+}
+
+export function filterNeedsValue(operator: FilterOperator): boolean {
+  return operator !== "blank" && operator !== "not-blank";
+}
+
+export function filterHasValue(filter: FilterDefinition): boolean {
+  return filterNeedsValue(filter.operator) ? Boolean(String(filter.value ?? "").trim()) : true;
+}
+
+export function createFilterGroup(join: FilterJoinOperator = "and", conditions: FilterNodeDefinition[] = []): FilterGroupDefinition {
+  return {
+    id: `filter-group-${Math.random().toString(36).slice(2, 10)}`,
+    type: "group",
+    join,
+    conditions
+  };
+}
+
+export function createFilterRule(fieldId = "", operator: FilterOperator = "equals", value = ""): FilterDefinition {
+  return {
+    id: `filter-${Math.random().toString(36).slice(2, 10)}`,
+    fieldId,
+    operator,
+    value
+  };
+}
+
+export function normalizeFilterTree(report: Pick<ReportDefinition, "filters" | "filterTree">): FilterGroupDefinition {
+  if (report.filterTree && report.filterTree.type === "group") {
+    return report.filterTree;
+  }
+  return createFilterGroup("and", report.filters || []);
+}
+
+export function collectFilterFieldIds(node: FilterNodeDefinition | null | undefined): string[] {
+  if (!node) return [];
+  if (isFilterGroup(node)) {
+    return Array.from(new Set(node.conditions.flatMap((condition) => collectFilterFieldIds(condition))));
+  }
+  return node.fieldId ? [node.fieldId] : [];
+}
+
+export function buildCombinedFilterTree(report: Pick<ReportDefinition, "filters" | "filterTree">, extraFilters: FilterDefinition[] = []): FilterGroupDefinition | null {
+  const baseTree = normalizeFilterTree(report);
+  const extraTree = extraFilters.length ? createFilterGroup("and", extraFilters) : null;
+  const baseHasConditions = baseTree.conditions.length > 0;
+  if (!baseHasConditions && !extraTree) return null;
+  if (!baseHasConditions) return extraTree;
+  if (!extraTree) return baseTree;
+  return createFilterGroup("and", [baseTree, extraTree]);
 }
 
 function asArray<T>(value: T | T[] | null | undefined): T[] {
@@ -64,7 +123,7 @@ function matchesDateToken(value: unknown, token: string): boolean {
   return false;
 }
 
-function matchesFilter(row: DataRow, filter: FilterDefinition): boolean {
+export function matchesFilter(row: DataRow, filter: FilterDefinition): boolean {
   const raw = row[filter.fieldId];
   const expected = String(filter.value ?? "");
   const candidates = asArray(raw).map((value) => String(value ?? ""));
@@ -87,6 +146,20 @@ function matchesFilter(row: DataRow, filter: FilterDefinition): boolean {
   if (filter.operator === "lte") return asNumber(raw) <= asNumber(expected);
   if (filter.operator === "not-equals") return candidates.every((value) => value !== expected);
   return candidates.some((value) => value === expected);
+}
+
+export function matchesFilterNode(row: DataRow, node: FilterNodeDefinition): boolean {
+  if (isFilterGroup(node)) {
+    const activeConditions = node.conditions.filter((condition) => {
+      if (isFilterGroup(condition)) return condition.conditions.length > 0;
+      return filterHasValue(condition);
+    });
+    if (!activeConditions.length) return true;
+    return node.join === "or"
+      ? activeConditions.some((condition) => matchesFilterNode(row, condition))
+      : activeConditions.every((condition) => matchesFilterNode(row, condition));
+  }
+  return matchesFilter(row, node);
 }
 
 function sortRows(rows: DataRow[], sorts: ReportDefinition["sorts"]): DataRow[] {
@@ -177,8 +250,8 @@ export function runReport(
   rows: DataRow[],
   extraFilters: FilterDefinition[] = []
 ): ReportRunResult {
-  const filters = [...report.filters, ...extraFilters].filter((filter) => Boolean(filter.value));
-  const filtered = rows.filter((row) => filters.every((filter) => matchesFilter(row, filter)));
+  const filterTree = buildCombinedFilterTree(report, extraFilters);
+  const filtered = filterTree ? rows.filter((row) => matchesFilterNode(row, filterTree)) : rows;
   const sorted = sortRows(filtered, report.sorts);
   const projected = sorted.map((row) => {
     const next: DataRow = {};

@@ -470,6 +470,27 @@ input {
   color: var(--text-soft);
 }
 
+.chart-axis-labels {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.chart-axis-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-soft);
+}
+
+.vertical-axis-labels {
+  justify-content: flex-start;
+}
+
+.axis-label-bottom {
+  text-align: center;
+}
+
 .badge-row {
   display: flex;
   gap: 8px;
@@ -1086,6 +1107,29 @@ th {
   display: grid;
   gap: 8px;
   align-items: center;
+}
+
+.filter-group-editor {
+  display: grid;
+  gap: 12px;
+}
+
+.filter-group-branch {
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(17, 77, 63, 0.14);
+  background: rgba(244, 248, 245, 0.92);
+}
+
+.compact-field {
+  min-width: 220px;
+}
+
+.filter-rule-row {
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(247, 248, 243, 0.95);
 }
 
 .inline-edit-row {
