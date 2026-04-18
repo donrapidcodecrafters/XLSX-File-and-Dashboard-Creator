@@ -16,6 +16,7 @@ interface ChartPreviewProps {
   data: ChartDatum[];
   chartOrientation?: ChartOrientation;
   title?: string;
+  decimalPlaces?: number;
   xAxisLabel?: string;
   yAxisLabel?: string;
   compact?: boolean;
@@ -55,12 +56,12 @@ function renderTitle(title?: string) {
   return trimmed ? <div className="chart-title">{trimmed}</div> : null;
 }
 
-function formatAxisValue(value: number) {
+function formatAxisValue(value: number, decimalPlaces = 2) {
   if (!Number.isFinite(value)) return "0";
-  const rounded = Math.abs(value) >= 100 ? Math.round(value) : Math.round(value * 100) / 100;
   return new Intl.NumberFormat("en-US", {
-    maximumFractionDigits: Math.abs(rounded) < 10 ? 2 : 0
-  }).format(rounded);
+    minimumFractionDigits: decimalPlaces,
+    maximumFractionDigits: decimalPlaces
+  }).format(value);
 }
 
 function buildAxisTicks(max: number, desired = 4) {
@@ -120,6 +121,7 @@ export function ChartPreview({
   data,
   chartOrientation = "vertical",
   title = "",
+  decimalPlaces = 2,
   xAxisLabel = "",
   yAxisLabel = "",
   compact = false,
@@ -180,7 +182,7 @@ export function ChartPreview({
           {yAxisLabel ? <div className="chart-axis-title chart-axis-title-vertical">{yAxisLabel}</div> : null}
           <div className="chart-y-axis">
             {reversedTicks.map((tick) => (
-              <span className="chart-y-tick" key={tick}>{formatAxisValue(tick)}</span>
+              <span className="chart-y-tick" key={tick}>{formatAxisValue(tick, decimalPlaces)}</span>
             ))}
           </div>
           <div className="chart-plot-column">
@@ -194,7 +196,7 @@ export function ChartPreview({
                   const height = Math.max(18, (item.value / axisMax) * 160);
                   return (
                     <div className={normalizedChartType === "stacked-column" || normalizedChartType === "stacked-bar" ? "stacked-column" : "vertical-bar"} key={item.label}>
-                      {showValues ? <div className="micro">{formatAxisValue(item.value)}</div> : null}
+                      {showValues ? <div className="micro">{formatAxisValue(item.value, decimalPlaces)}</div> : null}
                       {normalizedChartType === "stacked-column" || normalizedChartType === "stacked-bar" ? (
                         <div className="stacked-column-bar" style={{ height }}>
                           <div className="stacked-segment" style={{ height: "100%", background: getColor(index) }} />
@@ -239,7 +241,7 @@ export function ChartPreview({
           {yAxisLabel ? <div className="chart-axis-title chart-axis-title-vertical">{yAxisLabel}</div> : null}
           <div className="chart-y-axis">
             {reversedTicks.map((tick) => (
-              <span className="chart-y-tick" key={tick}>{formatAxisValue(tick)}</span>
+              <span className="chart-y-tick" key={tick}>{formatAxisValue(tick, decimalPlaces)}</span>
             ))}
           </div>
           <div className="chart-plot-column">
@@ -321,7 +323,7 @@ export function ChartPreview({
         <div className="gauge-track">
           <div className="gauge-fill" style={{ transform: `rotate(${(percent / 100) * 180}deg)` }} />
           <div className="gauge-center">
-            {showValues ? <strong>{formatAxisValue(current)}</strong> : null}
+            {showValues ? <strong>{formatAxisValue(current, decimalPlaces)}</strong> : null}
             {showLegend ? <span>{cap(items[0]?.label || "Current", 18)}</span> : null}
           </div>
         </div>
@@ -349,7 +351,7 @@ export function ChartPreview({
               <div className="waterfall-track">
                 <div className="waterfall-bar" style={{ marginLeft: `${startPercent}%`, width: `${widthPercent}%`, background: getColor(index) }} />
               </div>
-              {showValues ? <div className="chart-value">{formatAxisValue(item.value)}</div> : null}
+              {showValues ? <div className="chart-value">{formatAxisValue(item.value, decimalPlaces)}</div> : null}
             </div>
           );
         })}
@@ -391,7 +393,7 @@ export function ChartPreview({
             key={item.label}
             style={{ width: `${Math.max(34, (item.value / max) * 100)}%`, background: getColor(index) }}
           >
-            {cap(item.label, compact ? 12 : 18)}{showValues ? ` · ${formatAxisValue(item.value)}` : ""}
+            {cap(item.label, compact ? 12 : 18)}{showValues ? ` · ${formatAxisValue(item.value, decimalPlaces)}` : ""}
           </div>
         ))}
       </div>
@@ -408,7 +410,7 @@ export function ChartPreview({
             key={item.label}
             style={{ background: `rgba(13, 124, 102, ${0.22 + (item.value / max) * 0.68})` }}
           >
-            {showValues ? <strong>{formatAxisValue(item.value)}</strong> : null}
+            {showValues ? <strong>{formatAxisValue(item.value, decimalPlaces)}</strong> : null}
             {showLegend ? <span>{cap(item.label, compact ? 10 : 16)}</span> : null}
           </div>
         ))}
@@ -431,7 +433,7 @@ export function ChartPreview({
           {yAxisLabel ? <div className="chart-axis-title chart-axis-title-vertical">{yAxisLabel}</div> : null}
           <div className="chart-y-axis">
             {reversedTicks.map((tick) => (
-              <span className="chart-y-tick" key={tick}>{formatAxisValue(tick)}</span>
+              <span className="chart-y-tick" key={tick}>{formatAxisValue(tick, decimalPlaces)}</span>
             ))}
           </div>
           <div className="chart-plot-column">
@@ -478,7 +480,7 @@ export function ChartPreview({
           <div className="chart-track">
             <div className="chart-fill" style={{ width: `${Math.max(6, (item.value / max) * 100)}%`, background: `linear-gradient(90deg, ${getColor(index)}, ${getColor(index)}dd)` }} />
           </div>
-          {showValues ? <div className="chart-value">{formatAxisValue(item.value)}</div> : null}
+          {showValues ? <div className="chart-value">{formatAxisValue(item.value, decimalPlaces)}</div> : null}
         </div>
       ))}
     </div>

@@ -8,6 +8,7 @@ import {
   createFilterGroup,
   createFilterRule,
   filterHasValue,
+  formatReportCellValue,
   getReportFieldLabel,
   normalizeStudioDocument,
   runReport,
@@ -170,7 +171,10 @@ function saveLocalDocument(document: StudioDocument) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(document));
 }
 
-function formatCell(value: unknown) {
+function formatCell(value: unknown, report?: ReportDefinition | null, table?: TableDefinition | null, fieldId?: string) {
+  if (report && table && fieldId) {
+    return formatReportCellValue(report, table, fieldId, value);
+  }
   if (Array.isArray(value)) return value.join(", ");
   return String(value ?? "");
 }
@@ -357,6 +361,7 @@ function buildCreateDraft(table?: TableDefinition | null, type: CreateModalType 
       mode: "table",
       showChartInTable: false,
       chartTitle: "",
+      decimalPlaces: 2,
       chartType: "bar",
       chartOrientation: "vertical",
       chartFieldId: firstFieldId,
@@ -525,7 +530,7 @@ function ReportPreview({ report, table, result }: { report: ReportDefinition; ta
             <tbody>
               {result.rows.map((row, index) => (
                 <tr key={index}>
-                  {report.selectedFieldIds.map((fieldId) => <td key={fieldId}>{formatCell(row[fieldId])}</td>)}
+                  {report.selectedFieldIds.map((fieldId) => <td key={fieldId}>{formatCell(row[fieldId], report, table, fieldId)}</td>)}
                 </tr>
               ))}
             </tbody>
@@ -542,6 +547,7 @@ function ReportPreview({ report, table, result }: { report: ReportDefinition; ta
           chartType={report.view.chartType}
           data={result.chartData}
           title={report.view.chartTitle}
+          decimalPlaces={report.view.decimalPlaces}
           chartOrientation={report.view.chartOrientation}
           xAxisLabel={report.view.chartXAxisLabel}
           yAxisLabel={report.view.chartYAxisLabel}
@@ -559,7 +565,7 @@ function ReportPreview({ report, table, result }: { report: ReportDefinition; ta
               <tbody>
                 {result.rows.map((row, index) => (
                   <tr key={index}>
-                    {report.selectedFieldIds.map((fieldId) => <td key={fieldId}>{formatCell(row[fieldId])}</td>)}
+                    {report.selectedFieldIds.map((fieldId) => <td key={fieldId}>{formatCell(row[fieldId], report, table, fieldId)}</td>)}
                   </tr>
                 ))}
               </tbody>
@@ -577,9 +583,9 @@ function ReportPreview({ report, table, result }: { report: ReportDefinition; ta
       <div className="studio-card-grid">
         {result.rows.map((row, index) => (
           <article className="studio-mini-card" key={index}>
-            <strong>{formatCell(row[titleFieldId])}</strong>
-            <span>{table.fields.find((field) => field.id === dateFieldId)?.label || "Date"}: {formatCell(row[dateFieldId])}</span>
-            {report.view.mode === "timeline" && report.view.timelineEndField ? <span>Ends: {formatCell(row[report.view.timelineEndField])}</span> : null}
+            <strong>{formatCell(row[titleFieldId], report, table, titleFieldId)}</strong>
+            <span>{table.fields.find((field) => field.id === dateFieldId)?.label || "Date"}: {formatCell(row[dateFieldId], report, table, dateFieldId)}</span>
+            {report.view.mode === "timeline" && report.view.timelineEndField ? <span>Ends: {formatCell(row[report.view.timelineEndField], report, table, report.view.timelineEndField)}</span> : null}
           </article>
         ))}
       </div>
@@ -591,7 +597,7 @@ function ReportPreview({ report, table, result }: { report: ReportDefinition; ta
     const titleFieldId = report.view.titleFieldId || report.selectedFieldIds[0];
     const columns = new Map<string, DataRow[]>();
     result.rows.forEach((row) => {
-      const key = formatCell(row[fieldId]) || "Unassigned";
+      const key = formatCell(row[fieldId], report, table, fieldId) || "Unassigned";
       columns.set(key, [...(columns.get(key) || []), row]);
     });
     return (
@@ -605,8 +611,8 @@ function ReportPreview({ report, table, result }: { report: ReportDefinition; ta
             <div className="kanban-stack">
               {rows.map((row, index) => (
                 <article className="studio-mini-card" key={index}>
-                  <strong>{formatCell(row[titleFieldId])}</strong>
-                  {report.selectedFieldIds.slice(1, 4).map((fieldId) => <span key={fieldId}>{formatCell(row[fieldId])}</span>)}
+                  <strong>{formatCell(row[titleFieldId], report, table, titleFieldId)}</strong>
+                  {report.selectedFieldIds.slice(1, 4).map((fieldId) => <span key={fieldId}>{formatCell(row[fieldId], report, table, fieldId)}</span>)}
                 </article>
               ))}
             </div>
@@ -627,7 +633,7 @@ function ReportPreview({ report, table, result }: { report: ReportDefinition; ta
         <tbody>
           {result.rows.map((row, index) => (
             <tr key={index}>
-              {report.selectedFieldIds.map((fieldId) => <td key={fieldId}>{formatCell(row[fieldId])}</td>)}
+              {report.selectedFieldIds.map((fieldId) => <td key={fieldId}>{formatCell(row[fieldId], report, table, fieldId)}</td>)}
             </tr>
           ))}
         </tbody>
@@ -748,6 +754,7 @@ function DashboardPreview({
                         chartType={widget.report.view.chartType}
                         data={widget.result.chartData}
                         title={widget.report.view.chartTitle || widget.widget.title}
+                        decimalPlaces={widget.report.view.decimalPlaces}
                         chartOrientation={widget.report.view.chartOrientation}
                         xAxisLabel={widget.report.view.chartXAxisLabel}
                         yAxisLabel={widget.report.view.chartYAxisLabel}
@@ -768,7 +775,7 @@ function DashboardPreview({
                         <tbody>
                           {widget.result.rows.slice(0, 8).map((row, index) => (
                             <tr key={index}>
-                              {widget.report.selectedFieldIds.slice(0, 6).map((fieldId) => <td key={fieldId}>{formatCell(row[fieldId])}</td>)}
+                              {widget.report.selectedFieldIds.slice(0, 6).map((fieldId) => <td key={fieldId}>{formatCell(row[fieldId], widget.report, widgetTable, fieldId)}</td>)}
                             </tr>
                           ))}
                         </tbody>
@@ -1350,6 +1357,7 @@ export function StudioPage() {
         ...current.view,
         showChartInTable: false,
         chartTitle: current.view.chartTitle || "",
+        decimalPlaces: Number.isFinite(Number(current.view.decimalPlaces)) ? Math.max(0, Math.min(6, Number(current.view.decimalPlaces))) : 2,
         chartOrientation: "vertical",
         chartFieldId: table.fields[0]?.id || "",
         chartValueFieldId: "",
@@ -2250,6 +2258,7 @@ export function StudioPage() {
                       {createDraft.view.mode === "table" ? <label className="toggle-row"><input type="checkbox" checked={createDraft.view.showChartInTable} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, showChartInTable: event.target.checked } }))} /> Include chart above table</label> : null}
                       <label className="field"><span>Record title field</span><select value={createDraft.view.titleFieldId} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, titleFieldId: event.target.value } }))}>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>
                       <div className="micro">Used for row, card, timeline, and calendar labels. It does not control the chart heading.</div>
+                      <label className="field"><span>Decimal places</span><input type="number" min="0" max="6" value={createDraft.view.decimalPlaces} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, decimalPlaces: Math.max(0, Math.min(6, Number(event.target.value) || 0)) } }))} /></label>
                       {reportShowsChart({ view: createDraft.view }) ? (
                         <>
                           <label className="field"><span>Chart title</span><input value={createDraft.view.chartTitle} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartTitle: event.target.value } }))} placeholder="Optional custom chart title" /></label>

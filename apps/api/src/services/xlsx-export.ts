@@ -1,6 +1,6 @@
 import ExcelJS from "exceljs";
 import type { Stream } from "node:stream";
-import { getReportFieldLabel, type DashboardDefinition, type DashboardRunResult, type ReportDefinition, type ReportRunResult, type TableDefinition } from "@studio/shared";
+import { formatNumericValue, formatReportCellValue, getReportDecimalPlaces, getReportFieldLabel, type DashboardDefinition, type DashboardRunResult, type ReportDefinition, type ReportRunResult, type TableDefinition } from "@studio/shared";
 
 interface ExportProgressCallback {
   (progress: number, message: string): void;
@@ -24,13 +24,8 @@ function safeFileName(name: string, fallback: string) {
   return next || fallback;
 }
 
-function formatCell(value: unknown) {
-  if (Array.isArray(value)) return value.join(", ");
-  if (value === null || value === undefined) return "";
-  return String(value);
-}
-
-function writeSummaryRows(sheet: any, result: ReportRunResult, startRow = 1) {
+function writeSummaryRows(sheet: any, report: ReportDefinition, result: ReportRunResult, startRow = 1) {
+  const decimalPlaces = getReportDecimalPlaces(report);
   let row = startRow;
   sheet.getRow(row).values = ["Metric", "Value"];
   sheet.getRow(row).font = { bold: true };
@@ -50,7 +45,7 @@ function writeSummaryRows(sheet: any, result: ReportRunResult, startRow = 1) {
   sheet.getRow(row).commit();
   row += 1;
   result.chartData.forEach((item) => {
-    sheet.addRow([item.label, item.value]).commit();
+    sheet.addRow([item.label, formatNumericValue(item.value, decimalPlaces)]).commit();
     row += 1;
   });
   if (!result.chartData.length) {
@@ -76,7 +71,7 @@ function writeDataSheet(
   }));
   const total = Math.max(result.rows.length, 1);
   result.rows.forEach((row, index) => {
-    sheet.addRow(report.selectedFieldIds.map((fieldId) => formatCell(row[fieldId]))).commit();
+    sheet.addRow(report.selectedFieldIds.map((fieldId) => formatReportCellValue(report, table, fieldId, row[fieldId]))).commit();
     if (onProgress && progressRange && (index === 0 || (index + 1) % 500 === 0 || index + 1 === total)) {
       const ratio = (index + 1) / total;
       const progress = progressRange.start + Math.round((progressRange.end - progressRange.start) * ratio);
@@ -107,7 +102,7 @@ export async function streamReportWorkbook(
   summarySheet.getRow(1).commit();
   summarySheet.getRow(2).values = [report.description || table.name];
   summarySheet.getRow(2).commit();
-  writeSummaryRows(summarySheet, result, 4);
+  writeSummaryRows(summarySheet, report, result, 4);
   summarySheet.commit();
   onProgress?.(78, "Writing summary sheet");
 
@@ -169,7 +164,7 @@ export async function streamDashboardWorkbook(
       sheet.getRow(1).commit();
       sheet.getRow(2).values = [tab.name];
       sheet.getRow(2).commit();
-      const nextRow = writeSummaryRows(sheet, exportResult, 4) + 1;
+      const nextRow = writeSummaryRows(sheet, widget.report, exportResult, 4) + 1;
       sheet.getRow(nextRow).values = ["Data"];
       sheet.getRow(nextRow).font = { bold: true };
       sheet.getRow(nextRow).commit();

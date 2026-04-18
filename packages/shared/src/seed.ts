@@ -19,6 +19,7 @@ function buildReportView(overrides: Partial<ReportViewDefinition> = {}): ReportV
     mode: "table",
     showChartInTable: false,
     chartTitle: "",
+    decimalPlaces: 2,
     chartType: "bar",
     chartOrientation: "vertical",
     chartFieldId: "",

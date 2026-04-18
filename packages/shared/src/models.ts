@@ -98,6 +98,7 @@ export interface ReportViewDefinition {
   mode: ReportViewMode;
   showChartInTable: boolean;
   chartTitle: string;
+  decimalPlaces: number;
   chartType: ChartType;
   chartOrientation: ChartOrientation;
   chartFieldId: string;

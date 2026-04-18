@@ -6,7 +6,9 @@ import {
   collectFilterFieldIds,
   createFilterGroup,
   filterHasValue,
+  formatMetricValue,
   getChartLabel,
+  getReportDecimalPlaces,
   matchesFilterNode,
   runReport,
   type ChartAggregation,
@@ -168,7 +170,7 @@ function buildQuickbaseSort(report: ReportDefinition) {
   }));
 }
 
-function summarizeRows(rows: DataRow[], metrics: SummaryMetric[]): SummaryDatum[] {
+function summarizeRows(rows: DataRow[], metrics: SummaryMetric[], decimalPlaces: number): SummaryDatum[] {
   return metrics.map((metric) => {
     let numericValue = 0;
     if (metric.op === "count") {
@@ -180,11 +182,7 @@ function summarizeRows(rows: DataRow[], metrics: SummaryMetric[]): SummaryDatum[
       if (metric.op === "min") numericValue = values.length ? Math.min(...values) : 0;
       if (metric.op === "max") numericValue = values.length ? Math.max(...values) : 0;
     }
-    const formattedValue = metric.op === "avg"
-      ? numericValue.toFixed(1)
-      : Number.isInteger(numericValue)
-        ? String(numericValue)
-        : numericValue.toFixed(2);
+    const formattedValue = formatMetricValue(numericValue, metric.op, decimalPlaces);
     return {
       label: metric.label,
       value: formattedValue,
@@ -217,7 +215,7 @@ function addMetricRow(accumulator: ReturnType<typeof createMetricAccumulator>, r
   });
 }
 
-function finalizeMetricAccumulator(accumulator: ReturnType<typeof createMetricAccumulator>): SummaryDatum[] {
+function finalizeMetricAccumulator(accumulator: ReturnType<typeof createMetricAccumulator>, decimalPlaces: number): SummaryDatum[] {
   return accumulator.map((entry) => {
     let numericValue = 0;
     if (entry.metric.op === "count") numericValue = entry.count;
@@ -225,11 +223,7 @@ function finalizeMetricAccumulator(accumulator: ReturnType<typeof createMetricAc
     if (entry.metric.op === "avg") numericValue = entry.count ? entry.sum / entry.count : 0;
     if (entry.metric.op === "min") numericValue = entry.count ? entry.min : 0;
     if (entry.metric.op === "max") numericValue = entry.count ? entry.max : 0;
-    const formattedValue = entry.metric.op === "avg"
-      ? numericValue.toFixed(1)
-      : Number.isInteger(numericValue)
-        ? String(numericValue)
-        : numericValue.toFixed(2);
+    const formattedValue = formatMetricValue(numericValue, entry.metric.op, decimalPlaces);
     return {
       label: entry.metric.label,
       value: formattedValue,
@@ -387,7 +381,7 @@ async function executeQuickbaseReportPage(
       tableId: table.id,
       totalRows,
       rows: projectRows(report, pageResult.rows),
-      summary: finalizeMetricAccumulator(summaryAccumulator),
+      summary: finalizeMetricAccumulator(summaryAccumulator, getReportDecimalPlaces(report)),
       chartData: buildChartResult(chartGroups, report),
       warnings,
       page,
@@ -431,7 +425,7 @@ async function executeQuickbaseReportPage(
     tableId: table.id,
     totalRows,
     rows: projectRows(report, pageRows),
-    summary: finalizeMetricAccumulator(summaryAccumulator),
+    summary: finalizeMetricAccumulator(summaryAccumulator, getReportDecimalPlaces(report)),
     chartData: buildChartResult(chartGroups, report),
     warnings,
     page,
@@ -559,7 +553,7 @@ export async function fetchReportExportBundle(
       tableId: table.id,
       totalRows: rows.length,
       rows: projectRows(report, rows),
-      summary: finalizeMetricAccumulator(summaryAccumulator),
+      summary: finalizeMetricAccumulator(summaryAccumulator, getReportDecimalPlaces(report)),
       chartData: buildChartResult(chartGroups, report),
       warnings
     };

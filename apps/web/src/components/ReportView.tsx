@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { getReportFieldLabel, type ExportJobStatus, type ReportDefinition, type ReportRunResult, type TableDefinition } from "@studio/shared";
+import { formatReportCellValue, getReportFieldLabel, type ExportJobStatus, type ReportDefinition, type ReportRunResult, type TableDefinition } from "@studio/shared";
 import { LinkToolbar } from "./LinkToolbar";
 import { ChartPreview } from "./ChartPreview";
 import { downloadExportJob, fetchExportJobStatus, startReportExportJob } from "../lib/api";
@@ -115,6 +115,7 @@ export function ReportView({ report, table, result, loading, currentPage, onPage
               chartType={report.view.chartType}
               data={result?.chartData || []}
               title={report.view.chartTitle}
+              decimalPlaces={report.view.decimalPlaces}
               chartOrientation={report.view.chartOrientation}
               xAxisLabel={report.view.chartXAxisLabel}
               yAxisLabel={report.view.chartYAxisLabel}
@@ -151,7 +152,7 @@ export function ReportView({ report, table, result, loading, currentPage, onPage
                 {(result?.rows || []).map((row, index) => (
                   <tr key={index}>
                     {report.selectedFieldIds.map((fieldId) => (
-                      <td key={fieldId}>{String(row[fieldId] ?? "")}</td>
+                      <td key={fieldId}>{table ? formatReportCellValue(report, table, fieldId, row[fieldId]) : String(row[fieldId] ?? "")}</td>
                     ))}
                   </tr>
                 ))}

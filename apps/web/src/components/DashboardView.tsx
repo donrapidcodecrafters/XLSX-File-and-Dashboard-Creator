@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { buildDashboardFilters, getReportFieldLabel, type DashboardDefinition, type DashboardRunResult, type ExportJobStatus, type ReportRunResult, type TableDefinition } from "@studio/shared";
+import { buildDashboardFilters, formatReportCellValue, getReportFieldLabel, type DashboardDefinition, type DashboardRunResult, type ExportJobStatus, type ReportRunResult, type TableDefinition } from "@studio/shared";
 import { downloadExportJob, fetchExportJobStatus, renderDashboard, runReportPage, startDashboardExportJob } from "../lib/api";
 import { LinkToolbar } from "./LinkToolbar";
 import { ChartPreview } from "./ChartPreview";
@@ -222,6 +222,7 @@ export function DashboardView({ dashboard, tables }: DashboardViewProps) {
               const pageLoading = widgetPageLoading[widget.widgetId];
               const summaryData = pagedResult.summary.length ? pagedResult.summary : widget.result.summary;
               const chartData = pagedResult.chartData.length ? pagedResult.chartData : widget.result.chartData;
+              const widgetTable = tables?.find((item) => item.id === widget.report.sourceTableId);
               return (
                 <article className="widget-card dashboard-layout-item" key={widget.widgetId} style={getWidgetLayoutStyle(widget.widget.layout)}>
                 <div className="widget-head">
@@ -244,6 +245,7 @@ export function DashboardView({ dashboard, tables }: DashboardViewProps) {
                       chartType={widget.report.view.chartType}
                       data={chartData}
                       title={widget.report.view.chartTitle || widget.widget.title}
+                      decimalPlaces={widget.report.view.decimalPlaces}
                       chartOrientation={widget.report.view.chartOrientation}
                       xAxisLabel={widget.report.view.chartXAxisLabel}
                       yAxisLabel={widget.report.view.chartYAxisLabel}
@@ -272,7 +274,7 @@ export function DashboardView({ dashboard, tables }: DashboardViewProps) {
                         {pagedResult.rows.map((row, index) => (
                           <tr key={index}>
                             {widget.report.selectedFieldIds.slice(0, 6).map((fieldId) => (
-                              <td key={fieldId}>{String(row[fieldId] ?? "")}</td>
+                              <td key={fieldId}>{widgetTable ? formatReportCellValue(widget.report, widgetTable, fieldId, row[fieldId]) : String(row[fieldId] ?? "")}</td>
                             ))}
                           </tr>
                         ))}

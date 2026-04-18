@@ -25,6 +25,43 @@ function getField(table: TableDefinition, fieldId: string): FieldDefinition | un
   return table.fields.find((field) => field.id === fieldId);
 }
 
+export function getReportDecimalPlaces(report: Pick<ReportDefinition, "view">): number {
+  const value = Number(report.view.decimalPlaces);
+  if (!Number.isFinite(value)) return 2;
+  return Math.max(0, Math.min(6, Math.round(value)));
+}
+
+export function formatNumericValue(value: number, decimalPlaces = 2): string {
+  const safe = Number.isFinite(value) ? value : 0;
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: decimalPlaces,
+    maximumFractionDigits: decimalPlaces
+  }).format(safe);
+}
+
+export function formatMetricValue(value: number, metricOp: SummaryMetric["op"], decimalPlaces = 2): string {
+  if (metricOp === "count") return formatNumericValue(value, 0);
+  return formatNumericValue(value, decimalPlaces);
+}
+
+export function formatReportCellValue(
+  report: Pick<ReportDefinition, "view">,
+  table: TableDefinition,
+  fieldId: string,
+  value: unknown
+): string {
+  if (Array.isArray(value)) return value.join(", ");
+  if (value === null || value === undefined || value === "") return "";
+  const field = getField(table, fieldId);
+  if (field && (field.type === "number" || field.type === "currency")) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) {
+      return formatNumericValue(numeric, getReportDecimalPlaces(report));
+    }
+  }
+  return String(value);
+}
+
 function isFilterGroup(node: FilterNodeDefinition): node is FilterGroupDefinition {
   return (node as FilterGroupDefinition).type === "group";
 }
@@ -178,7 +215,7 @@ function sortRows(rows: DataRow[], sorts: ReportDefinition["sorts"]): DataRow[] 
   });
 }
 
-function summarize(rows: DataRow[], metrics: SummaryMetric[]): SummaryDatum[] {
+function summarize(rows: DataRow[], metrics: SummaryMetric[], decimalPlaces: number): SummaryDatum[] {
   return metrics.map((metric) => {
     let numericValue = 0;
     if (metric.op === "count") {
@@ -190,11 +227,7 @@ function summarize(rows: DataRow[], metrics: SummaryMetric[]): SummaryDatum[] {
       if (metric.op === "min") numericValue = values.length ? Math.min(...values) : 0;
       if (metric.op === "max") numericValue = values.length ? Math.max(...values) : 0;
     }
-    const formattedValue = metric.op === "avg"
-      ? numericValue.toFixed(1)
-      : Number.isInteger(numericValue)
-        ? String(numericValue)
-        : numericValue.toFixed(2);
+    const formattedValue = formatMetricValue(numericValue, metric.op, decimalPlaces);
     return {
       label: metric.label,
       value: formattedValue,
@@ -275,7 +308,7 @@ export function runReport(
     tableId: table.id,
     totalRows: normalizedRows.length,
     rows: normalizedRows,
-    summary: summarize(sorted, metricSet),
+    summary: summarize(sorted, metricSet, getReportDecimalPlaces(report)),
     chartData: chartRows(sorted, report),
     warnings
   };
