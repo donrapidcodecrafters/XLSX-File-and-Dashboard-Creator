@@ -126,6 +126,46 @@ function hasVersionStorage(config: StudioDocument["quickbase"]) {
   );
 }
 
+function usingDirectQuickbaseApi(config: StudioDocument["quickbase"]) {
+  return String(config.apiBaseUrl || "").trim().replace(/\/$/, "") === "https://api.quickbase.com/v1";
+}
+
+async function quickbaseRestRequest(
+  config: StudioDocument["quickbase"],
+  path: string,
+  options: { method?: string; body?: unknown } = {}
+) {
+  const baseUrl = String(config.apiBaseUrl || "https://api.quickbase.com/v1").trim().replace(/\/$/, "");
+  const url = /^https?:\/\//i.test(path) ? path : `${baseUrl}${path}`;
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    "Content-Type": "application/json"
+  };
+  if (config.realmHostname) headers["QB-Realm-Hostname"] = normalizeHostname(config.realmHostname);
+  if (config.userToken) headers.Authorization = `QB-USER-TOKEN ${config.userToken}`;
+  if (config.appId) headers["X-Quickbase-App-Id"] = config.appId;
+
+  const response = await fetch(url, {
+    method: options.method || "GET",
+    headers,
+    body: options.body !== undefined ? JSON.stringify(options.body) : undefined
+  });
+
+  const text = await response.text();
+  let body: any = {};
+  try {
+    body = text ? JSON.parse(text) : {};
+  } catch {
+    body = { message: text };
+  }
+
+  if (!response.ok) {
+    throw new Error(body?.message || body?.description || `Quickbase REST request failed with status ${response.status}.`);
+  }
+
+  return body;
+}
+
 async function quickbaseXmlRequest(
   config: StudioDocument["quickbase"],
   dbid: string,
@@ -230,6 +270,42 @@ async function quickbaseQueryRecordsXml(
   return { data: records };
 }
 
+async function quickbaseQueryRecordsRest(
+  config: StudioDocument["quickbase"],
+  tableId: string,
+  select: string[],
+  where = "",
+  options: { top?: number; skip?: number; sortBy?: Array<{ fieldId: string; order?: "ASC" | "DESC" }> } = {}
+) {
+  const payload: Record<string, unknown> = {
+    from: tableId,
+    select: Array.from(new Set((select || []).filter(Boolean).map(qbFieldId))),
+    options: {
+      top: options.top || 200,
+      skip: options.skip || 0
+    }
+  };
+  if (where) payload.where = where;
+  if (options.sortBy?.length) payload.sortBy = options.sortBy;
+  return quickbaseRestRequest(config, "/records/query", {
+    method: "POST",
+    body: payload
+  }) as Promise<{ data: Array<Record<string, { value: unknown }>> }>;
+}
+
+async function quickbaseQueryRecords(
+  config: StudioDocument["quickbase"],
+  tableId: string,
+  select: string[],
+  where = "",
+  options: { top?: number; skip?: number; sortBy?: Array<{ fieldId: string; order?: "ASC" | "DESC" }> } = {}
+) {
+  if (usingDirectQuickbaseApi(config)) {
+    return quickbaseQueryRecordsRest(config, tableId, select, where, options);
+  }
+  return quickbaseQueryRecordsXml(config, tableId, select, where, options);
+}
+
 async function quickbaseFetchAllRecords(
   config: StudioDocument["quickbase"],
   tableId: string,
@@ -241,7 +317,7 @@ async function quickbaseFetchAllRecords(
   const top = Math.max(1, Number(options.top) || 200);
   let skip = 0;
   while (true) {
-    const response = await quickbaseQueryRecordsXml(config, tableId, select, where, {
+    const response = await quickbaseQueryRecords(config, tableId, select, where, {
       top,
       skip,
       sortBy: options.sortBy
@@ -306,6 +382,32 @@ async function quickbaseWriteRecordsXml(
     });
   }
   return { data: savedRows };
+}
+
+async function quickbaseWriteRecordsRest(
+  config: StudioDocument["quickbase"],
+  tableId: string,
+  rows: QuickbaseRecord[]
+) {
+  return quickbaseRestRequest(config, "/records", {
+    method: "POST",
+    body: {
+      to: tableId,
+      data: rows,
+      fieldsToReturn: [3]
+    }
+  }) as Promise<{ data: QuickbaseRecord[] }>;
+}
+
+async function quickbaseWriteRecords(
+  config: StudioDocument["quickbase"],
+  tableId: string,
+  rows: QuickbaseRecord[]
+) {
+  if (usingDirectQuickbaseApi(config)) {
+    return quickbaseWriteRecordsRest(config, tableId, rows);
+  }
+  return quickbaseWriteRecordsXml(config, tableId, rows);
 }
 
 async function quickbaseFetchRecordIdMap(
@@ -379,7 +481,7 @@ async function syncObjectRecords(document: StudioDocument, user: QuickbaseUser) 
       rows.push(record);
     });
 
-    const saved = await quickbaseWriteRecordsXml(config, config.objectTableId, rows);
+    const saved = await quickbaseWriteRecords(config, config.objectTableId, rows);
     const objectRecordIds: Record<string, string> = {};
     objects.forEach((object, index) => {
       const rid = qbFieldValue(saved.data[index], "3") || existing.get(makeCompositeKey([object.id]));
@@ -457,7 +559,7 @@ async function syncSettingsRecords(document: StudioDocument, user: QuickbaseUser
     qbSetField(userSettingsRecord, config.settingsUpdatedByFieldId, userValue);
     rows.push(userSettingsRecord);
 
-    await quickbaseWriteRecordsXml(config, config.settingsTableId, rows);
+    await quickbaseWriteRecords(config, config.settingsTableId, rows);
     return { count: 2, storageConfigCount: 1 };
   } catch (error) {
     throw new Error(
@@ -497,7 +599,7 @@ async function syncVersionRecords(document: StudioDocument, user: QuickbaseUser,
     });
 
     if (!rows.length) return { count: 0 };
-    await quickbaseWriteRecordsXml(config, config.versionTableId, rows);
+    await quickbaseWriteRecords(config, config.versionTableId, rows);
     return { count: rows.length };
   } catch (error) {
     throw new Error(
