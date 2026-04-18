@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import type { DashboardDefinition, DashboardRunResult, ExportJobStatus, TableDefinition } from "@studio/shared";
+import { getReportFieldLabel, type DashboardDefinition, type DashboardRunResult, type ExportJobStatus, type TableDefinition } from "@studio/shared";
 import { downloadExportJob, fetchExportJobStatus, renderDashboard, startDashboardExportJob } from "../lib/api";
 import { LinkToolbar } from "./LinkToolbar";
 import { ChartPreview } from "./ChartPreview";
@@ -18,8 +18,9 @@ function resolveWidgetDisplayMode(widget: DashboardRunResult["tabs"][number]["wi
   return "table";
 }
 
-function getFieldLabel(tables: TableDefinition[] | undefined, tableId: string, fieldId: string) {
-  return tables?.find((table) => table.id === tableId)?.fields.find((field) => field.id === fieldId)?.label || fieldId;
+function getFieldLabel(tables: TableDefinition[] | undefined, report: DashboardRunResult["tabs"][number]["widgets"][number]["report"], fieldId: string) {
+  const table = tables?.find((item) => item.id === report.sourceTableId);
+  return table ? getReportFieldLabel(report, table, fieldId) : fieldId;
 }
 
 function getWidgetLayoutStyle(layout: { w: number; h: number }) {
@@ -221,7 +222,7 @@ export function DashboardView({ dashboard, tables }: DashboardViewProps) {
                       <thead>
                         <tr>
                           {widget.report.selectedFieldIds.slice(0, 6).map((fieldId) => (
-                            <th key={fieldId}>{getFieldLabel(tables, widget.report.sourceTableId, fieldId)}</th>
+                            <th key={fieldId}>{getFieldLabel(tables, widget.report, fieldId)}</th>
                           ))}
                         </tr>
                       </thead>

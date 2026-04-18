@@ -48,7 +48,8 @@ function createReport(input: Partial<ReportDefinition> & Pick<ReportDefinition, 
     groups: input.groups || [],
     sorts: input.sorts || [],
     summaryMetrics: input.summaryMetrics || [],
-    view: input.view || buildReportView()
+    view: input.view || buildReportView(),
+    displayLabels: input.displayLabels || { fields: {}, chartValues: {} }
   };
 }
 
@@ -396,7 +397,8 @@ export function normalizeStudioDocument(input: Partial<StudioDocument> | null | 
   const normalizedObjects = Object.fromEntries(
     Object.entries(source.bundle?.objects || defaults.bundle.objects).map(([id, object]) => {
       if (object.type === "report") {
-        return [id, { ...object, view: buildReportView(object.view || {}) }];
+        const displayLabels = object.displayLabels || {};
+        return [id, { ...object, view: buildReportView(object.view || {}), displayLabels: { fields: displayLabels.fields || {}, chartValues: displayLabels.chartValues || {} } }];
       }
       return [id, object];
     })

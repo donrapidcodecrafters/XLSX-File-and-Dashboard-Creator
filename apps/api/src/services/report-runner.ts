@@ -1,5 +1,5 @@
 import { Worker } from "node:worker_threads";
-import { buildDashboardFilters, buildDashboardResult, runReport, type ChartAggregation, type DashboardRunResult, type DataRow, type FilterDefinition, type ReportDefinition, type ReportRunResult, type SummaryDatum, type SummaryMetric, type TableDefinition } from "@studio/shared";
+import { buildDashboardFilters, buildDashboardResult, getChartLabel, runReport, type ChartAggregation, type DashboardRunResult, type DataRow, type FilterDefinition, type ReportDefinition, type ReportRunResult, type SummaryDatum, type SummaryMetric, type TableDefinition } from "@studio/shared";
 import { ExecutionCache } from "./execution-cache.js";
 import { objectStore } from "./object-store.js";
 import { fetchQuickbaseTablePage } from "./quickbase-storage.js";
@@ -272,7 +272,7 @@ function aggregateChartValues(values: number[], aggregation: ChartAggregation) {
 function buildChartResult(chartGroups: Map<string, number[]>, report: ReportDefinition) {
   const aggregation = report.view.chartAggregation || "count";
   const rows = Array.from(chartGroups.entries()).map(([label, values]) => ({
-    label,
+    label: getChartLabel(report, label),
     value: aggregateChartValues(values, aggregation)
   }));
   const sort = report.view.chartSort || "value-desc";

@@ -4,6 +4,7 @@ import {
   buildDashboardFilters,
   buildDashboardResult,
   buildStudioDocument,
+  getReportFieldLabel,
   normalizeStudioDocument,
   runReport,
   type ChartAggregation,
@@ -82,6 +83,7 @@ interface CreateObjectDraft {
   sorts: ReportDefinition["sorts"];
   summaryMetrics: SummaryMetric[];
   view: ReportDefinition["view"];
+  displayLabels: ReportDefinition["displayLabels"];
 }
 
 function buildDraftFromReport(report: ReportDefinition, table?: TableDefinition | null): CreateObjectDraft {
@@ -95,7 +97,8 @@ function buildDraftFromReport(report: ReportDefinition, table?: TableDefinition 
     filters: clone(report.filters || []),
     sorts: clone(report.sorts || []),
     summaryMetrics: clone(report.summaryMetrics || []),
-    view: clone(report.view)
+    view: clone(report.view),
+    displayLabels: clone(report.displayLabels || { fields: {}, chartValues: {} })
   };
 }
 
@@ -263,6 +266,10 @@ function buildCreateDraft(table?: TableDefinition | null, type: CreateModalType 
       calendarDateField: "",
       kanbanField: "",
       titleFieldId: secondFieldId
+    },
+    displayLabels: {
+      fields: {},
+      chartValues: {}
     }
   };
 }
@@ -286,8 +293,8 @@ function collectReportFieldIds(report: ReportDefinition) {
   ));
 }
 
-function getFieldLabel(table: TableDefinition | null | undefined, fieldId: string) {
-  return table?.fields.find((field) => field.id === fieldId)?.label || fieldId;
+function getFieldLabel(report: ReportDefinition, table: TableDefinition | null | undefined, fieldId: string) {
+  return table ? getReportFieldLabel(report, table, fieldId) : fieldId;
 }
 
 function clampWidgetWidth(value: number) {
@@ -374,7 +381,7 @@ function ReportPreview({ report, table, result }: { report: ReportDefinition; ta
           <table>
             <thead>
               <tr>
-                {report.selectedFieldIds.map((fieldId) => <th key={fieldId}>{table.fields.find((field) => field.id === fieldId)?.label || fieldId}</th>)}
+                {report.selectedFieldIds.map((fieldId) => <th key={fieldId}>{getReportFieldLabel(report, table, fieldId)}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -452,7 +459,7 @@ function ReportPreview({ report, table, result }: { report: ReportDefinition; ta
       <table>
         <thead>
           <tr>
-            {report.selectedFieldIds.map((fieldId) => <th key={fieldId}>{table.fields.find((field) => field.id === fieldId)?.label || fieldId}</th>)}
+            {report.selectedFieldIds.map((fieldId) => <th key={fieldId}>{getReportFieldLabel(report, table, fieldId)}</th>)}
           </tr>
         </thead>
         <tbody>
@@ -586,7 +593,7 @@ function DashboardPreview({
                       <table>
                         <thead>
                           <tr>
-                            {widget.report.selectedFieldIds.slice(0, 6).map((fieldId) => <th key={fieldId}>{getFieldLabel(widgetTable, fieldId)}</th>)}
+                            {widget.report.selectedFieldIds.slice(0, 6).map((fieldId) => <th key={fieldId}>{getFieldLabel(widget.report, widgetTable, fieldId)}</th>)}
                           </tr>
                         </thead>
                         <tbody>
@@ -738,6 +745,33 @@ export function StudioPage() {
     if (!query) return createDraftTable.fields;
     return createDraftTable.fields.filter((field) => `${field.label} ${field.id} ${field.type}`.toLowerCase().includes(query));
   }, [createDraftTable, createFieldQuery]);
+  const createDraftPreview = useMemo(() => {
+    if (createDraft.type !== "report" || !createDraftTable || !createDraft.selectedFieldIds.length) return null;
+    const previewReport: ReportDefinition = {
+      id: editingReportId || "draft-report-preview",
+      type: "report",
+      name: createDraft.name || "Draft report",
+      description: createDraft.description,
+      folder: "Custom",
+      category: "Reporting",
+      tags: [],
+      updatedAt: new Date().toISOString(),
+      sourceTableId: createDraft.tableId,
+      selectedFieldIds: createDraft.selectedFieldIds,
+      filters: createDraft.filters,
+      groups: [],
+      sorts: createDraft.sorts,
+      summaryMetrics: createDraft.summaryMetrics,
+      view: createDraft.view,
+      displayLabels: createDraft.displayLabels
+    };
+    return runReport(previewReport, createDraftTable, bundle.data[createDraftTable.id] || []);
+  }, [bundle.data, createDraft, createDraftTable, editingReportId]);
+  const chartValueLabelOptions = useMemo(() => {
+    const previewLabels = createDraftPreview?.chartData.map((item) => item.label) || [];
+    const existingLabels = Object.keys(createDraft.displayLabels.chartValues || {});
+    return Array.from(new Set([...previewLabels, ...existingLabels]));
+  }, [createDraft.displayLabels.chartValues, createDraftPreview?.chartData]);
 
   function pushToast(message: string, tone: ToastTone = "ok") {
     const id = uid("toast");
@@ -1094,6 +1128,10 @@ export function StudioPage() {
         timelineEndField: "",
         calendarDateField: "",
         kanbanField: ""
+      },
+      displayLabels: {
+        fields: {},
+        chartValues: {}
       }
     }));
   }
@@ -1147,7 +1185,8 @@ export function StudioPage() {
       groups: [],
       sorts: clone(createDraft.sorts),
       summaryMetrics: clone(createDraft.summaryMetrics),
-      view: clone(createDraft.view)
+      view: clone(createDraft.view),
+      displayLabels: clone(createDraft.displayLabels)
     };
     applyDocumentUpdate((draft) => {
       draft.bundle.objects[report.id] = report;
@@ -1897,6 +1936,62 @@ export function StudioPage() {
                       ))}
                       {!visibleCreateFields.length ? <div className="empty-hint">No matching fields.</div> : null}
                     </div>
+                  </div>
+
+                  <div className="card">
+                    <div className="card-head">
+                      <strong>Display labels</strong>
+                      <span className="micro">Override field headers and chart labels for client-facing names.</span>
+                    </div>
+                    <div className="stack-compact">
+                      {createDraft.selectedFieldIds.length ? createDraft.selectedFieldIds.map((fieldId) => {
+                        const field = createDraftTable.fields.find((item) => item.id === fieldId);
+                        if (!field) return null;
+                        return (
+                          <label className="field" key={fieldId}>
+                            <span>{field.label}</span>
+                            <input
+                              value={createDraft.displayLabels.fields[fieldId] || ""}
+                              onChange={(event) => setCreateDraft((current) => ({
+                                ...current,
+                                displayLabels: {
+                                  ...current.displayLabels,
+                                  fields: {
+                                    ...current.displayLabels.fields,
+                                    [fieldId]: event.target.value
+                                  }
+                                }
+                              }))}
+                              placeholder={`Use "${field.label}"`}
+                            />
+                          </label>
+                        );
+                      }) : <div className="empty-hint">Select fields first to set custom headers.</div>}
+                    </div>
+                    {createDraft.view.mode === "chart" ? (
+                      <div className="stack-compact">
+                        <div className="micro">Chart value labels</div>
+                        {chartValueLabelOptions.length ? chartValueLabelOptions.map((label) => (
+                          <label className="field" key={label}>
+                            <span>{label}</span>
+                            <input
+                              value={createDraft.displayLabels.chartValues[label] || ""}
+                              onChange={(event) => setCreateDraft((current) => ({
+                                ...current,
+                                displayLabels: {
+                                  ...current.displayLabels,
+                                  chartValues: {
+                                    ...current.displayLabels.chartValues,
+                                    [label]: event.target.value
+                                  }
+                                }
+                              }))}
+                              placeholder={`Use "${label}"`}
+                            />
+                          </label>
+                        )) : <div className="empty-hint">Chart value overrides will appear once the chart has labels to rename.</div>}
+                      </div>
+                    ) : null}
                   </div>
 
                   <ReportFiltersAndSortsEditor

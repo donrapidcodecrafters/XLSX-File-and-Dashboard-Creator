@@ -68,6 +68,11 @@ export interface ReportViewDefinition {
   titleFieldId: string;
 }
 
+export interface ReportDisplayLabels {
+  fields: Record<string, string>;
+  chartValues: Record<string, string>;
+}
+
 export interface BaseStudioObject {
   id: string;
   type: StudioObjectType;
@@ -88,6 +93,7 @@ export interface ReportDefinition extends BaseStudioObject {
   sorts: SortDefinition[];
   summaryMetrics: SummaryMetric[];
   view: ReportViewDefinition;
+  displayLabels: ReportDisplayLabels;
 }
 
 export interface WidgetDefinition {

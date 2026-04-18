@@ -21,6 +21,14 @@ function getField(table: TableDefinition, fieldId: string): FieldDefinition | un
   return table.fields.find((field) => field.id === fieldId);
 }
 
+export function getReportFieldLabel(report: ReportDefinition, table: TableDefinition, fieldId: string): string {
+  return report.displayLabels?.fields?.[fieldId]?.trim() || getField(table, fieldId)?.label || fieldId;
+}
+
+export function getChartLabel(report: ReportDefinition, label: string): string {
+  return report.displayLabels?.chartValues?.[label]?.trim() || label;
+}
+
 function asArray<T>(value: T | T[] | null | undefined): T[] {
   if (Array.isArray(value)) return value;
   if (value === null || value === undefined || value === "") return [];
@@ -147,7 +155,7 @@ function chartRows(rows: DataRow[], report: ReportDefinition): ChartDatum[] {
   }
   const sorted = sortChartData(
     Array.from(groups.entries()).map(([label, values]) => ({
-      label,
+      label: getChartLabel(report, label),
       value: aggregateValues(values, aggregation)
     })),
     report.view.chartSort || "value-desc"

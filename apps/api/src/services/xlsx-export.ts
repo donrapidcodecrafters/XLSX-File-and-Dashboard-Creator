@@ -1,6 +1,6 @@
 import ExcelJS from "exceljs";
 import type { Stream } from "node:stream";
-import type { DashboardDefinition, DashboardRunResult, ReportDefinition, ReportRunResult, TableDefinition } from "@studio/shared";
+import { getReportFieldLabel, type DashboardDefinition, type DashboardRunResult, type ReportDefinition, type ReportRunResult, type TableDefinition } from "@studio/shared";
 
 interface ExportProgressCallback {
   (progress: number, message: string): void;
@@ -68,7 +68,7 @@ function writeDataSheet(
   onProgress?: ExportProgressCallback,
   progressRange?: { start: number; end: number; label: string }
 ) {
-  const headers = report.selectedFieldIds.map((fieldId) => table.fields.find((field) => field.id === fieldId)?.label || fieldId);
+  const headers = report.selectedFieldIds.map((fieldId) => getReportFieldLabel(report, table, fieldId));
   sheet.columns = headers.map((header) => ({
     header,
     key: header,
@@ -174,7 +174,7 @@ export async function streamDashboardWorkbook(
       sheet.getRow(nextRow).font = { bold: true };
       sheet.getRow(nextRow).commit();
 
-      const headers = widget.report.selectedFieldIds.map((fieldId) => table.fields.find((field) => field.id === fieldId)?.label || fieldId);
+      const headers = widget.report.selectedFieldIds.map((fieldId) => getReportFieldLabel(widget.report, table, fieldId));
       const headerRow = sheet.getRow(nextRow + 1);
       headerRow.values = headers;
       headerRow.font = { bold: true };

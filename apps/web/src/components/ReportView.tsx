@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import type { ExportJobStatus, ReportDefinition, ReportRunResult, TableDefinition } from "@studio/shared";
+import { getReportFieldLabel, type ExportJobStatus, type ReportDefinition, type ReportRunResult, type TableDefinition } from "@studio/shared";
 import { LinkToolbar } from "./LinkToolbar";
 import { ChartPreview } from "./ChartPreview";
 import { downloadExportJob, fetchExportJobStatus, startReportExportJob } from "../lib/api";
@@ -133,7 +133,7 @@ export function ReportView({ report, table, result, loading, currentPage, onPage
               <thead>
                 <tr>
                   {report.selectedFieldIds.map((fieldId) => (
-                    <th key={fieldId}>{table?.fields.find((field) => field.id === fieldId)?.label || fieldId}</th>
+                    <th key={fieldId}>{table ? getReportFieldLabel(report, table, fieldId) : fieldId}</th>
                   ))}
                 </tr>
               </thead>
