@@ -12,6 +12,7 @@ import {
   type DataRow,
   type FieldType,
   type FilterDefinition,
+  type FilterOperator,
   type ReportDefinition,
   type ReportRunResult,
   type ReportViewMode,
@@ -38,15 +39,36 @@ import { exportDashboardWorkbook, exportReportWorkbook } from "../lib/workbookEx
 const STORAGE_KEY = "hosted-reporting-studio-v2";
 const REPORT_VIEW_OPTIONS: ReportViewMode[] = ["table", "summary", "chart", "timeline", "calendar", "kanban"];
 const CHART_OPTIONS: ChartType[] = ["bar", "column", "line", "area", "donut", "pie", "stacked-bar", "stacked-column", "funnel", "heatmap"];
+const FILTER_OPERATOR_OPTIONS: Array<{ value: FilterOperator; label: string }> = [
+  { value: "equals", label: "Equals" },
+  { value: "contains", label: "Contains" },
+  { value: "gt", label: "Greater than" },
+  { value: "gte", label: "Greater than or equal" },
+  { value: "lt", label: "Less than" },
+  { value: "lte", label: "Less than or equal" }
+];
 
 type DrawerKind = null | "settings" | "share" | "templates" | "export" | "versions";
 type LibraryFilter = "all" | "report" | "dashboard";
 type ToastTone = "ok" | "warn" | "danger";
+type CreateModalType = "report" | "dashboard";
 
 interface ToastItem {
   id: string;
   tone: ToastTone;
   message: string;
+}
+
+interface CreateObjectDraft {
+  type: CreateModalType;
+  name: string;
+  description: string;
+  tableId: string;
+  selectedFieldIds: string[];
+  filters: FilterDefinition[];
+  sorts: ReportDefinition["sorts"];
+  summaryMetrics: SummaryMetric[];
+  view: ReportDefinition["view"];
 }
 
 function clone<T>(value: T): T {
@@ -111,6 +133,31 @@ function convertQuickbaseSchemaToTables(schema: QuickbaseAppSchema): TableDefini
       type: mapQuickbaseFieldType(field.fieldType, field.baseType)
     }))
   }));
+}
+
+function buildCreateDraft(table?: TableDefinition | null, type: CreateModalType = "report"): CreateObjectDraft {
+  const firstFieldId = table?.fields[0]?.id || "";
+  const secondFieldId = table?.fields[1]?.id || firstFieldId;
+  return {
+    type,
+    name: type === "report" ? "New Report" : "New Dashboard",
+    description: "",
+    tableId: table?.id || "",
+    selectedFieldIds: table?.fields.slice(0, 6).map((field) => field.id) || [],
+    filters: [],
+    sorts: [],
+    summaryMetrics: firstFieldId ? [{ id: uid("metric"), fieldId: firstFieldId, op: "count", label: "Rows" }] : [],
+    view: {
+      mode: "table",
+      chartType: "bar",
+      chartFieldId: firstFieldId,
+      timelineDateField: "",
+      timelineEndField: "",
+      calendarDateField: "",
+      kanbanField: "",
+      titleFieldId: secondFieldId
+    }
+  };
 }
 
 function downloadFile(filename: string, contents: string, type = "application/json") {
@@ -331,6 +378,67 @@ function DashboardPreview({
   );
 }
 
+function ReportFiltersAndSortsEditor({
+  table,
+  filters,
+  sorts,
+  onChangeFilters,
+  onChangeSorts
+}: {
+  table: TableDefinition;
+  filters: FilterDefinition[];
+  sorts: ReportDefinition["sorts"];
+  onChangeFilters: (filters: FilterDefinition[]) => void;
+  onChangeSorts: (sorts: ReportDefinition["sorts"]) => void;
+}) {
+  return (
+    <div className="stack">
+      <div className="card">
+        <div className="card-head">
+          <strong>Filters</strong>
+          <button onClick={() => onChangeFilters([...filters, { id: uid("filter"), fieldId: table.fields[0]?.id || "", operator: "equals", value: "" }])}>Add filter</button>
+        </div>
+        <div className="stack-compact">
+          {filters.length ? filters.map((filter) => (
+            <div className="inline-edit-row" key={filter.id}>
+              <select value={filter.fieldId} onChange={(event) => onChangeFilters(filters.map((item) => item.id === filter.id ? { ...item, fieldId: event.target.value } : item))}>
+                {table.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}
+              </select>
+              <select value={filter.operator} onChange={(event) => onChangeFilters(filters.map((item) => item.id === filter.id ? { ...item, operator: event.target.value as FilterOperator } : item))}>
+                {FILTER_OPERATOR_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+              <input value={filter.value} onChange={(event) => onChangeFilters(filters.map((item) => item.id === filter.id ? { ...item, value: event.target.value } : item))} placeholder="Filter value" />
+              <button onClick={() => onChangeFilters(filters.filter((item) => item.id !== filter.id))}>Remove</button>
+            </div>
+          )) : <div className="empty-hint">No filters yet. Add rules before you create the report so large tables stay manageable.</div>}
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-head">
+          <strong>Sorting</strong>
+          <button onClick={() => onChangeSorts([...sorts, { id: uid("sort"), fieldId: table.fields[0]?.id || "", direction: "asc" }])}>Add sort</button>
+        </div>
+        <div className="stack-compact">
+          {sorts.length ? sorts.map((sort) => (
+            <div className="inline-edit-row" key={sort.id}>
+              <select value={sort.fieldId} onChange={(event) => onChangeSorts(sorts.map((item) => item.id === sort.id ? { ...item, fieldId: event.target.value } : item))}>
+                {table.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}
+              </select>
+              <select value={sort.direction} onChange={(event) => onChangeSorts(sorts.map((item) => item.id === sort.id ? { ...item, direction: event.target.value as "asc" | "desc" } : item))}>
+                <option value="asc">Ascending</option>
+                <option value="desc">Descending</option>
+              </select>
+              <div />
+              <button onClick={() => onChangeSorts(sorts.filter((item) => item.id !== sort.id))}>Remove</button>
+            </div>
+          )) : <div className="empty-hint">No sorting yet.</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function StudioPage() {
   const navigate = useNavigate();
   const params = useParams();
@@ -354,6 +462,8 @@ export function StudioPage() {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [quickbaseSchema, setQuickbaseSchema] = useState<QuickbaseAppSchema | null>(null);
   const [quickbaseSchemaLoading, setQuickbaseSchemaLoading] = useState(false);
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [createDraft, setCreateDraft] = useState<CreateObjectDraft>(() => buildCreateDraft(loadLocalDocument().bundle.tables[0], "report"));
 
   const bundle = documentState.bundle;
   const objects = useMemo(() => bundle.order.map((id) => bundle.objects[id]).filter(Boolean), [bundle]);
@@ -362,6 +472,7 @@ export function StudioPage() {
   const activeReport = activeObject?.type === "report" ? activeObject : null;
   const activeDashboard = activeObject?.type === "dashboard" ? activeObject : null;
   const activeTable = activeReport ? bundle.tables.find((table) => table.id === activeReport.sourceTableId) || null : null;
+  const createDraftTable = bundle.tables.find((table) => table.id === createDraft.tableId) || bundle.tables[0] || null;
   const validation = activeObject ? validationMessages(activeObject, activeTable) : [];
 
   function pushToast(message: string, tone: ToastTone = "ok") {
@@ -474,62 +585,91 @@ export function StudioPage() {
     });
   }
 
-  function createReport() {
-    const table = bundle.tables[0];
+  function openCreateModal(type: CreateModalType) {
+    const table = bundle.tables[0] || null;
+    setCreateDraft(buildCreateDraft(table, type));
+    setCreateModalOpen(true);
+  }
+
+  function updateCreateDraftTable(tableId: string) {
+    const table = bundle.tables.find((item) => item.id === tableId) || bundle.tables[0] || null;
     if (!table) return;
+    setCreateDraft((current) => ({
+      ...current,
+      tableId: table.id,
+      selectedFieldIds: table.fields.slice(0, 6).map((field) => field.id),
+      filters: [],
+      sorts: [],
+      summaryMetrics: table.fields[0] ? [{ id: uid("metric"), fieldId: table.fields[0].id, op: "count", label: "Rows" }] : [],
+      view: {
+        ...current.view,
+        chartFieldId: table.fields[0]?.id || "",
+        titleFieldId: table.fields[1]?.id || table.fields[0]?.id || "",
+        timelineDateField: "",
+        timelineEndField: "",
+        calendarDateField: "",
+        kanbanField: ""
+      }
+    }));
+  }
+
+  function createFromDraft() {
+    if (createDraft.type === "dashboard") {
+      const dashboard: DashboardDefinition = {
+        id: uid("dashboard"),
+        type: "dashboard",
+        name: createDraft.name.trim() || "New Dashboard",
+        description: createDraft.description.trim(),
+        folder: "Custom",
+        category: "Dashboard",
+        tags: [],
+        updatedAt: new Date().toISOString(),
+        runtimeFilters: [],
+        tabs: [{ id: uid("tab"), name: "Overview", widgets: [] }]
+      };
+      applyDocumentUpdate((draft) => {
+        draft.bundle.objects[dashboard.id] = dashboard;
+        draft.bundle.order.unshift(dashboard.id);
+      });
+      setCreateModalOpen(false);
+      navigate(`/studio/${dashboard.id}`);
+      pushToast("Dashboard created.");
+      return;
+    }
+
+    const table = bundle.tables.find((item) => item.id === createDraft.tableId) || bundle.tables[0];
+    if (!table) {
+      pushToast("Load or configure a source table first.", "warn");
+      return;
+    }
+    if (!createDraft.selectedFieldIds.length) {
+      pushToast("Pick at least one field for the new report.", "warn");
+      return;
+    }
     const report: ReportDefinition = {
       id: uid("report"),
       type: "report",
-      name: "New Report",
-      description: "Hosted report definition.",
+      name: createDraft.name.trim() || "New Report",
+      description: createDraft.description.trim(),
       folder: "Custom",
       category: "Reporting",
       tags: [],
       updatedAt: new Date().toISOString(),
       sourceTableId: table.id,
-      selectedFieldIds: table.fields.slice(0, 6).map((field) => field.id),
-      filters: [],
+      selectedFieldIds: createDraft.selectedFieldIds,
+      filters: clone(createDraft.filters),
       groups: [],
-      sorts: [],
-      summaryMetrics: [{ id: uid("metric"), fieldId: table.fields[0]?.id || "recordId", op: "count", label: "Rows" }],
-      view: {
-        mode: "table",
-        chartType: "bar",
-        chartFieldId: table.fields[0]?.id || "",
-        timelineDateField: "",
-        timelineEndField: "",
-        calendarDateField: "",
-        kanbanField: "",
-        titleFieldId: table.fields[1]?.id || table.fields[0]?.id || ""
-      }
+      sorts: clone(createDraft.sorts),
+      summaryMetrics: clone(createDraft.summaryMetrics),
+      view: clone(createDraft.view)
     };
     applyDocumentUpdate((draft) => {
       draft.bundle.objects[report.id] = report;
       draft.bundle.order.unshift(report.id);
     });
+    setCreateModalOpen(false);
     navigate(`/studio/${report.id}`);
     pushToast("Report created.");
-  }
-
-  function createDashboard() {
-    const dashboard: DashboardDefinition = {
-      id: uid("dashboard"),
-      type: "dashboard",
-      name: "New Dashboard",
-      description: "Hosted dashboard definition.",
-      folder: "Custom",
-      category: "Dashboard",
-      tags: [],
-      updatedAt: new Date().toISOString(),
-      runtimeFilters: [],
-      tabs: [{ id: uid("tab"), name: "Overview", widgets: [] }]
-    };
-    applyDocumentUpdate((draft) => {
-      draft.bundle.objects[dashboard.id] = dashboard;
-      draft.bundle.order.unshift(dashboard.id);
-    });
-    navigate(`/studio/${dashboard.id}`);
-    pushToast("Dashboard created.");
   }
 
   function cloneObject(object: StudioObject) {
@@ -784,8 +924,8 @@ export function StudioPage() {
               <h2>{documentState.branding.navigationLabel}</h2>
             </div>
             <div className="studio-actions">
-              <button onClick={createReport}>New report</button>
-              <button onClick={createDashboard}>New dashboard</button>
+              <button onClick={() => openCreateModal("report")}>New report</button>
+              <button onClick={() => openCreateModal("dashboard")}>New dashboard</button>
             </div>
           </div>
           <label className="field">
@@ -1010,23 +1150,13 @@ export function StudioPage() {
             ) : null}
 
             {reportInspectorTab === "filters" ? (
-              <>
-                <div className="stack-compact">
-                  {activeReport.filters.map((filter) => (
-                    <div className="inline-edit-row" key={filter.id}>
-                      <select value={filter.fieldId} onChange={(event) => updateObject({ ...activeReport, filters: activeReport.filters.map((item) => item.id === filter.id ? { ...item, fieldId: event.target.value } : item) })}>
-                        {activeTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}
-                      </select>
-                      <select value={filter.operator} onChange={(event) => updateObject({ ...activeReport, filters: activeReport.filters.map((item) => item.id === filter.id ? { ...item, operator: event.target.value as FilterDefinition["operator"] } : item) })}>
-                        {["equals", "contains", "gt", "gte", "lt", "lte"].map((operator) => <option key={operator} value={operator}>{operator}</option>)}
-                      </select>
-                      <input value={filter.value} onChange={(event) => updateObject({ ...activeReport, filters: activeReport.filters.map((item) => item.id === filter.id ? { ...item, value: event.target.value } : item) })} />
-                      <button onClick={() => updateObject({ ...activeReport, filters: activeReport.filters.filter((item) => item.id !== filter.id) })}>Remove</button>
-                    </div>
-                  ))}
-                </div>
-                <button onClick={() => updateObject({ ...activeReport, filters: [...activeReport.filters, { id: uid("filter"), fieldId: activeTable.fields[0]?.id || "", operator: "equals", value: "" }] })}>Add filter</button>
-              </>
+              <ReportFiltersAndSortsEditor
+                table={activeTable}
+                filters={activeReport.filters}
+                sorts={activeReport.sorts}
+                onChangeFilters={(filters) => updateObject({ ...activeReport, filters })}
+                onChangeSorts={(sorts) => updateObject({ ...activeReport, sorts })}
+              />
             ) : null}
 
             {reportInspectorTab === "view" ? (
@@ -1189,6 +1319,115 @@ export function StudioPage() {
           </div>
         </div>
       </aside>
+
+      {createModalOpen ? (
+        <div className="studio-modal-backdrop" onClick={() => setCreateModalOpen(false)}>
+          <section className="studio-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="card-head">
+              <div>
+                <strong>Create {createDraft.type === "report" ? "Report" : "Dashboard"}</strong>
+                <div className="micro">Start fresh with the same field, filter, and sorting controls from the legacy builder.</div>
+              </div>
+              <button onClick={() => setCreateModalOpen(false)}>Close</button>
+            </div>
+
+            <div className="stack">
+              <div className="filter-grid compact-grid">
+                <label className="field">
+                  <span>Type</span>
+                  <select value={createDraft.type} onChange={(event) => setCreateDraft(buildCreateDraft(bundle.tables[0] || null, event.target.value as CreateModalType))}>
+                    <option value="report">Report</option>
+                    <option value="dashboard">Dashboard</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Name</span>
+                  <input value={createDraft.name} onChange={(event) => setCreateDraft((current) => ({ ...current, name: event.target.value }))} />
+                </label>
+              </div>
+              <label className="field">
+                <span>Description</span>
+                <input value={createDraft.description} onChange={(event) => setCreateDraft((current) => ({ ...current, description: event.target.value }))} />
+              </label>
+
+              {createDraft.type === "report" && createDraftTable ? (
+                <>
+                  <div className="card">
+                    <div className="card-head">
+                      <strong>Source table</strong>
+                      <span className="micro">Pick the Quickbase table first, then choose fields and report behavior.</span>
+                    </div>
+                    <label className="field">
+                      <span>Table</span>
+                      <select value={createDraft.tableId} onChange={(event) => updateCreateDraftTable(event.target.value)}>
+                        {bundle.tables.map((table) => <option key={table.id} value={table.id}>{table.name}</option>)}
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="card">
+                    <div className="card-head">
+                      <strong>Fields</strong>
+                      <span className="micro">{createDraft.selectedFieldIds.length} selected</span>
+                    </div>
+                    <div className="picker-list">
+                      {createDraftTable.fields.map((field) => (
+                        <label className="picker-row" key={field.id}>
+                          <input
+                            type="checkbox"
+                            checked={createDraft.selectedFieldIds.includes(field.id)}
+                            onChange={(event) => setCreateDraft((current) => ({
+                              ...current,
+                              selectedFieldIds: event.target.checked
+                                ? [...current.selectedFieldIds, field.id]
+                                : current.selectedFieldIds.filter((item) => item !== field.id)
+                            }))}
+                          />
+                          <span>{field.label}</span>
+                          <em>{field.type}</em>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <ReportFiltersAndSortsEditor
+                    table={createDraftTable}
+                    filters={createDraft.filters}
+                    sorts={createDraft.sorts}
+                    onChangeFilters={(filters) => setCreateDraft((current) => ({ ...current, filters }))}
+                    onChangeSorts={(sorts) => setCreateDraft((current) => ({ ...current, sorts }))}
+                  />
+
+                  <div className="card">
+                    <div className="card-head">
+                      <strong>View</strong>
+                      <span className="micro">Choose how the report should render by default.</span>
+                    </div>
+                    <div className="filter-grid">
+                      <label className="field"><span>Mode</span><select value={createDraft.view.mode} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, mode: event.target.value as ReportViewMode } }))}>{REPORT_VIEW_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
+                      <label className="field"><span>Chart type</span><select value={createDraft.view.chartType} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartType: event.target.value as ChartType } }))}>{CHART_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
+                      <label className="field"><span>Chart field</span><select value={createDraft.view.chartFieldId} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartFieldId: event.target.value } }))}>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>
+                      <label className="field"><span>Title field</span><select value={createDraft.view.titleFieldId} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, titleFieldId: event.target.value } }))}>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>
+                      {createDraft.view.mode === "kanban" ? <label className="field"><span>Kanban field</span><select value={createDraft.view.kanbanField} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, kanbanField: event.target.value } }))}><option value="">Select a field</option>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label> : null}
+                      {createDraft.view.mode === "timeline" ? (
+                        <>
+                          <label className="field"><span>Timeline start</span><select value={createDraft.view.timelineDateField} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, timelineDateField: event.target.value } }))}><option value="">Select a field</option>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>
+                          <label className="field"><span>Timeline end</span><select value={createDraft.view.timelineEndField} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, timelineEndField: event.target.value } }))}><option value="">Select a field</option>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>
+                        </>
+                      ) : null}
+                      {createDraft.view.mode === "calendar" ? <label className="field"><span>Calendar date</span><select value={createDraft.view.calendarDateField} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, calendarDateField: event.target.value } }))}><option value="">Select a field</option>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label> : null}
+                    </div>
+                  </div>
+                </>
+              ) : null}
+
+              <div className="studio-actions modal-actions">
+                <button onClick={createFromDraft}>{createDraft.type === "report" ? "Create report" : "Create dashboard"}</button>
+              </div>
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       {drawer ? (
         <div className="studio-drawer-backdrop" onClick={() => setDrawer(null)}>
