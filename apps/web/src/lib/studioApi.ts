@@ -1,4 +1,4 @@
-import type { StudioDocument, StudioVersionRecord } from "@studio/shared";
+import type { ReportDefinition, ReportRunResult, StudioDocument, StudioVersionRecord, TableDefinition } from "@studio/shared";
 
 export interface QuickbaseSyncResult {
   enabled: boolean;
@@ -105,6 +105,26 @@ export function fetchQuickbaseTablePreview(
       tableId,
       fieldIds,
       top
+    })
+  });
+}
+
+export function fetchQuickbaseReportPreview(
+  config: StudioDocument["quickbase"],
+  report: ReportDefinition,
+  table: TableDefinition
+) {
+  return request<{ result: ReportRunResult }>("/api/quickbase/report-preview", {
+    method: "POST",
+    body: JSON.stringify({
+      quickbase: {
+        realmHostname: config.realmHostname,
+        userToken: config.userToken,
+        appToken: config.appToken,
+        appId: config.appId
+      },
+      report,
+      table
     })
   });
 }

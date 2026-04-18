@@ -27,6 +27,7 @@ import {
 } from "@studio/shared";
 import {
   createStudioSnapshot,
+  fetchQuickbaseReportPreview,
   fetchQuickbaseSchema,
   fetchQuickbaseTablePreview,
   fetchStudioDocument,
@@ -613,6 +614,8 @@ export function StudioPage() {
   const [quickbaseSchema, setQuickbaseSchema] = useState<QuickbaseAppSchema | null>(null);
   const [quickbaseSchemaLoading, setQuickbaseSchemaLoading] = useState(false);
   const [lastQuickbaseSync, setLastQuickbaseSync] = useState<QuickbaseSyncResult | null>(null);
+  const [liveReportResult, setLiveReportResult] = useState<ReportRunResult | null>(null);
+  const [liveReportLoading, setLiveReportLoading] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editingReportId, setEditingReportId] = useState<string | null>(null);
   const [createDraft, setCreateDraft] = useState<CreateObjectDraft>(() => buildCreateDraft(loadLocalDocument().bundle.tables[0], "report"));
@@ -764,6 +767,46 @@ export function StudioPage() {
     documentState.quickbase.userToken
   ]);
 
+  useEffect(() => {
+    let active = true;
+    if (!activeReport || !activeTable) {
+      setLiveReportResult(null);
+      setLiveReportLoading(false);
+      return;
+    }
+    if (!documentState.quickbase.realmHostname || !documentState.quickbase.userToken || !documentState.quickbase.appId) {
+      setLiveReportResult(null);
+      setLiveReportLoading(false);
+      return;
+    }
+
+    setLiveReportLoading(true);
+    fetchQuickbaseReportPreview(documentState.quickbase, activeReport, activeTable)
+      .then((response) => {
+        if (!active) return;
+        setLiveReportResult(response.result);
+      })
+      .catch((error) => {
+        if (!active) return;
+        setLiveReportResult(null);
+        pushToast(error instanceof Error ? error.message : "Quickbase report preview failed.", "warn");
+      })
+      .finally(() => {
+        if (active) setLiveReportLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [
+    activeReport?.id,
+    activeReport?.updatedAt,
+    activeTable?.id,
+    documentState.quickbase.appId,
+    documentState.quickbase.realmHostname,
+    documentState.quickbase.userToken
+  ]);
+
   const filteredObjects = useMemo(() => {
     const query = libraryQuery.trim().toLowerCase();
     return objects.filter((object) => {
@@ -775,10 +818,11 @@ export function StudioPage() {
     });
   }, [objects, libraryQuery, libraryFilter, favoritesOnly, recentOnly, documentState.favorites, documentState.recent]);
 
-  const reportResult = useMemo(() => {
+  const localReportResult = useMemo(() => {
     if (!activeReport || !activeTable) return null;
     return runReport(activeReport, activeTable, bundle.data[activeReport.sourceTableId] || []);
   }, [activeReport, activeTable, bundle.data]);
+  const reportResult = liveReportResult || localReportResult;
 
   const dashboardResult = useMemo(() => {
     if (!activeDashboard) return null;
@@ -1320,21 +1364,29 @@ export function StudioPage() {
           </section>
         ) : null}
 
-        {activeReport && activeTable && reportResult ? (
+        {activeReport && activeTable && (reportResult || liveReportLoading) ? (
           <section className="surface stack">
             <div className="card-head">
               <strong>Report Preview</strong>
-              <span className="micro">{reportResult.totalRows} rows · {activeTable.name}</span>
+              <span className="micro">
+                {liveReportLoading && !reportResult ? "Loading live Quickbase data…" : `${reportResult?.totalRows || 0} rows · ${activeTable.name}`}
+              </span>
             </div>
-            <div className="summary-grid">
-              {reportResult.summary.map((item) => (
-                <div className="summary-card" key={item.label}>
-                  <strong>{item.value}</strong>
-                  <span>{item.label}</span>
+            {reportResult ? (
+              <>
+                <div className="summary-grid">
+                  {reportResult.summary.map((item) => (
+                    <div className="summary-card" key={item.label}>
+                      <strong>{item.value}</strong>
+                      <span>{item.label}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-            <ReportPreview report={activeReport} table={activeTable} result={reportResult} />
+                <ReportPreview report={activeReport} table={activeTable} result={reportResult} />
+              </>
+            ) : (
+              <div className="empty-hint">Loading live Quickbase rows for this report.</div>
+            )}
           </section>
         ) : null}
 
