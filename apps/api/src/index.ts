@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { registerCatalogRoutes } from "./routes/catalog.js";
+import { registerQuickbaseRoutes } from "./routes/quickbase.js";
 import { registerRenderRoutes } from "./routes/render.js";
 import { registerStudioRoutes } from "./routes/studio.js";
 
@@ -13,6 +14,7 @@ await app.register(cors, {
 });
 
 await registerCatalogRoutes(app);
+await registerQuickbaseRoutes(app);
 await registerRenderRoutes(app);
 await registerStudioRoutes(app);
 

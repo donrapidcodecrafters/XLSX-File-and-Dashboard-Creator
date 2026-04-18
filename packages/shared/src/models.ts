@@ -213,6 +213,7 @@ export interface StudioDocument {
   quickbase: {
     realmHostname: string;
     userToken: string;
+    appToken: string;
     appId: string;
     apiBaseUrl: string;
     objectTableId: string;

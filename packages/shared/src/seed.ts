@@ -271,6 +271,7 @@ export function buildStudioDocument(): StudioDocument {
     quickbase: {
       realmHostname: "",
       userToken: "",
+      appToken: "",
       appId: "",
       apiBaseUrl: "https://api.quickbase.com/v1",
       objectTableId: "",

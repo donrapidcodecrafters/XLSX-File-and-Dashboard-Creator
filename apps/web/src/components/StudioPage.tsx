@@ -25,7 +25,9 @@ import {
 } from "@studio/shared";
 import {
   createStudioSnapshot,
+  fetchQuickbaseSchema,
   fetchStudioDocument,
+  type QuickbaseAppSchema,
   fetchStudioVersions,
   restoreStudioVersion,
   saveStudioDocument
@@ -315,6 +317,8 @@ export function StudioPage() {
   const [drawer, setDrawer] = useState<DrawerKind>(null);
   const [versionList, setVersionList] = useState<StudioVersionRecord[]>([]);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const [quickbaseSchema, setQuickbaseSchema] = useState<QuickbaseAppSchema | null>(null);
+  const [quickbaseSchemaLoading, setQuickbaseSchemaLoading] = useState(false);
 
   const bundle = documentState.bundle;
   const objects = useMemo(() => bundle.order.map((id) => bundle.objects[id]).filter(Boolean), [bundle]);
@@ -568,6 +572,25 @@ export function StudioPage() {
     }
   }
 
+  async function loadQuickbaseMetadata() {
+    setQuickbaseSchemaLoading(true);
+    try {
+      const response = await fetchQuickbaseSchema(documentState.quickbase);
+      setQuickbaseSchema(response.schema);
+      pushToast(`Loaded ${response.schema.tables.length} Quickbase tables.`);
+    } catch (error) {
+      pushToast(error instanceof Error ? error.message : "Quickbase schema lookup failed.", "danger");
+    } finally {
+      setQuickbaseSchemaLoading(false);
+    }
+  }
+
+  function assignQuickbaseTable(field: "objectTableId" | "settingsTableId" | "versionTableId", tableId: string) {
+    applyDocumentUpdate((draft) => {
+      draft.quickbase[field] = tableId;
+    });
+  }
+
   async function openVersions() {
     if (!activeObject) return;
     try {
@@ -753,7 +776,7 @@ export function StudioPage() {
             <button onClick={() => setDrawer("settings")}>Open</button>
           </div>
           <div className="micro">
-            Set your platform name, Quickbase realm, token, app ID, and table IDs here.
+            Set your platform name, Quickbase realm, app ID, table IDs, and field IDs here.
           </div>
           <div className="summary-grid">
             <div className="summary-card">
@@ -765,7 +788,21 @@ export function StudioPage() {
               <span>App ID</span>
             </div>
           </div>
-          <button onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save to server"}</button>
+          <div className="studio-actions">
+            <button onClick={loadQuickbaseMetadata} disabled={quickbaseSchemaLoading}>
+              {quickbaseSchemaLoading ? "Loading Quickbase schema…" : "Load table and field IDs"}
+            </button>
+            <button onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save to server"}</button>
+          </div>
+          {quickbaseSchema ? (
+            <div className="card">
+              <div className="card-head">
+                <strong>{quickbaseSchema.name}</strong>
+                <span className="micro">{quickbaseSchema.tables.length} tables</span>
+              </div>
+              <div className="micro">{quickbaseSchema.description || "Quickbase schema loaded."}</div>
+            </div>
+          ) : null}
         </div>
 
         <div className="surface stack">
@@ -1059,7 +1096,7 @@ export function StudioPage() {
                           ...activeDashboard,
                           tabs: activeDashboard.tabs.map((item) => item.id === tab.id ? { ...item, widgets: [...item.widgets, { id: uid("widget"), title: report.name, mode: "linked", reportId: report.id, layout: { w: 6, h: 4 } }] } : item)
                         });
-                      }}>Add widget</button>
+                      }}>Add card</button>
                     </div>
                   ))}
                 </div>
@@ -1149,6 +1186,10 @@ export function StudioPage() {
                     <input value={documentState.quickbase.userToken} onChange={(event) => applyDocumentUpdate((draft) => { draft.quickbase.userToken = event.target.value; })} placeholder="QB-USER-TOKEN ..." />
                   </label>
                   <label className="field">
+                    <span>App token</span>
+                    <input value={documentState.quickbase.appToken} onChange={(event) => applyDocumentUpdate((draft) => { draft.quickbase.appToken = event.target.value; })} placeholder="Optional app token" />
+                  </label>
+                  <label className="field">
                     <span>App ID</span>
                     <input value={documentState.quickbase.appId} onChange={(event) => applyDocumentUpdate((draft) => { draft.quickbase.appId = event.target.value; })} placeholder="App DBID" />
                   </label>
@@ -1170,9 +1211,46 @@ export function StudioPage() {
                   </label>
                 </div>
                 <div className="studio-actions">
+                  <button onClick={loadQuickbaseMetadata} disabled={quickbaseSchemaLoading}>
+                    {quickbaseSchemaLoading ? "Loading Quickbase schema…" : "Load table and field IDs"}
+                  </button>
                   <button onClick={reloadRemote}>Load from server</button>
                   <button onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save to server"}</button>
                 </div>
+                {quickbaseSchema ? (
+                  <div className="stack-compact">
+                    <div className="card">
+                      <div className="card-head">
+                        <strong>{quickbaseSchema.name}</strong>
+                        <span className="micro">{quickbaseSchema.id}</span>
+                      </div>
+                      <div className="micro">{quickbaseSchema.description || "Quickbase app schema loaded."}</div>
+                    </div>
+                    {quickbaseSchema.tables.map((table) => (
+                      <div className="card" key={table.id}>
+                        <div className="card-head">
+                          <strong>{table.name}</strong>
+                          <span className="micro">{table.id}</span>
+                        </div>
+                        {table.description ? <div className="micro">{table.description}</div> : null}
+                        <div className="studio-actions">
+                          <button onClick={() => assignQuickbaseTable("objectTableId", table.id)}>Use for reports and dashboards</button>
+                          <button onClick={() => assignQuickbaseTable("settingsTableId", table.id)}>Use for user settings</button>
+                          <button onClick={() => assignQuickbaseTable("versionTableId", table.id)}>Use for version history</button>
+                        </div>
+                        <div className="field-id-list">
+                          {table.fields.map((field) => (
+                            <div className="field-id-row" key={`${table.id}-${field.fid}`}>
+                              <strong>{field.label}</strong>
+                              <span>FID {field.fid}</span>
+                              <span>{field.fieldType || field.baseType}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             ) : null}
 
