@@ -10,6 +10,7 @@ import {
   type DashboardDefinition,
   type DashboardRunResult,
   type DataRow,
+  type FieldType,
   type FilterDefinition,
   type ReportDefinition,
   type ReportRunResult,
@@ -76,6 +77,40 @@ function saveLocalDocument(document: StudioDocument) {
 function formatCell(value: unknown) {
   if (Array.isArray(value)) return value.join(", ");
   return String(value ?? "");
+}
+
+function mapQuickbaseFieldType(fieldType: string, baseType: string): FieldType {
+  const normalized = `${fieldType || ""} ${baseType || ""}`.toLowerCase();
+  if (normalized.includes("currency")) return "currency";
+  if (normalized.includes("date") && normalized.includes("time")) return "datetime";
+  if (normalized.includes("datetime") || normalized.includes("timestamp")) return "datetime";
+  if (normalized.includes("date")) return "date";
+  if (normalized.includes("user")) return "user";
+  if (normalized.includes("multi")) return "multiselect";
+  if (
+    normalized.includes("numeric") ||
+    normalized.includes("number") ||
+    normalized.includes("percent") ||
+    normalized.includes("rating") ||
+    normalized.includes("duration") ||
+    normalized.includes("record id")
+  ) {
+    return "number";
+  }
+  return "text";
+}
+
+function convertQuickbaseSchemaToTables(schema: QuickbaseAppSchema): TableDefinition[] {
+  return schema.tables.map((table) => ({
+    id: table.id,
+    name: table.name,
+    description: table.description || "Quickbase table",
+    fields: table.fields.map((field) => ({
+      id: field.fid,
+      label: field.label,
+      type: mapQuickbaseFieldType(field.fieldType, field.baseType)
+    }))
+  }));
 }
 
 function downloadFile(filename: string, contents: string, type = "application/json") {
@@ -577,7 +612,17 @@ export function StudioPage() {
     try {
       const response = await fetchQuickbaseSchema(documentState.quickbase);
       setQuickbaseSchema(response.schema);
-      pushToast(`Loaded ${response.schema.tables.length} Quickbase tables.`);
+      const nextTables = convertQuickbaseSchemaToTables(response.schema);
+      applyDocumentUpdate((draft) => {
+        draft.bundle.app.id = response.schema.id || draft.bundle.app.id;
+        draft.bundle.app.name = response.schema.name || draft.bundle.app.name;
+        draft.bundle.tables = nextTables;
+        draft.bundle.data = {
+          ...draft.bundle.data,
+          ...Object.fromEntries(nextTables.map((table) => [table.id, draft.bundle.data[table.id] || []]))
+        };
+      });
+      pushToast(`Loaded ${response.schema.tables.length} Quickbase tables and updated the report builder.`);
     } catch (error) {
       pushToast(error instanceof Error ? error.message : "Quickbase schema lookup failed.", "danger");
     } finally {
