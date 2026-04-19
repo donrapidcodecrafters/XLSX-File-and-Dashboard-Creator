@@ -191,26 +191,50 @@ function isScheduleDue(schedule: RefreshScheduleConfig, nextRunAt: string, now =
   return now.getTime() >= dueAt.getTime();
 }
 
-async function fetchAllTableRows(document: StudioDocument, table: TableDefinition) {
+type TableRefreshProgress = {
+  loadedRows: number;
+  fetchedPages: number;
+  message: string;
+};
+
+async function fetchAllTableRows(
+  document: StudioDocument,
+  table: TableDefinition,
+  onProgress?: (progress: TableRefreshProgress) => void
+) {
   const quickbase = getQuickbaseConfigForTable(document, table);
   const savedReportId = getSavedReportIdForTable(document, table);
   if (savedReportId) {
-    const pageSize = 1000;
+    const pageSize = 250;
     let skip = 0;
     const merged = new Map<string, DataRow>();
+    let fetchedPages = 0;
+    let previousPageSignature = "";
     while (true) {
       const page = await fetchQuickbaseRowsBySavedReport(quickbase, getQuickbaseTableId(table), savedReportId, {
         top: pageSize,
         skip
       });
       if (!page.length) break;
+      fetchedPages += 1;
+      const beforeSize = merged.size;
       page.forEach((row) => {
         const recordId = String(row.__recordId || "");
         const existing = merged.get(recordId) || { __recordId: recordId };
         Object.assign(existing, row);
         merged.set(recordId, existing);
       });
+      onProgress?.({
+        loadedRows: merged.size,
+        fetchedPages,
+        message: `Loading ${table.name}: ${merged.size.toLocaleString()} rows saved so far`
+      });
+      const currentPageSignature = `${page[0]?.__recordId || ""}:${page[page.length - 1]?.__recordId || ""}:${page.length}`;
       if (page.length < pageSize) break;
+      if (merged.size === beforeSize || currentPageSignature === previousPageSignature) {
+        throw new Error(`Refresh could not move past the same saved report page for ${table.name}. Check Quickbase source report ${savedReportId} and make sure it returns all records in a stable order.`);
+      }
+      previousPageSignature = currentPageSignature;
       skip += page.length;
     }
     return Array.from(merged.values());
@@ -218,6 +242,7 @@ async function fetchAllTableRows(document: StudioDocument, table: TableDefinitio
   const fieldIds = table.fields.map((field) => field.id).filter(Boolean);
   const chunks = chunk(fieldIds, 30);
   const merged = new Map<string, DataRow>();
+  let fetchedPages = 0;
   for (const fieldChunk of chunks) {
     let skip = 0;
     while (true) {
@@ -231,6 +256,12 @@ async function fetchAllTableRows(document: StudioDocument, table: TableDefinitio
         const existing = merged.get(recordId) || { __recordId: recordId };
         Object.assign(existing, row);
         merged.set(recordId, existing);
+      });
+      fetchedPages += 1;
+      onProgress?.({
+        loadedRows: merged.size,
+        fetchedPages,
+        message: `Loading ${table.name}: ${merged.size.toLocaleString()} rows saved so far`
       });
       if (page.rows.length < 1000) break;
       skip += page.rows.length;
@@ -418,7 +449,18 @@ export async function refreshAllCachedDataWithProgress(
         rowCount: totalRows,
         estimatedSecondsRemaining
       });
-      const rows = await fetchAllTableRows(nextDocument, table);
+      const rows = await fetchAllTableRows(nextDocument, table, ({ loadedRows, message }) => {
+        const tableShare = 80 / totalTables;
+        const withinTable = Math.min(0.92, loadedRows / Math.max(loadedRows + 10000, 1));
+        updateDocumentProgress(
+          5 + Math.round((index / totalTables) * 80 + tableShare * withinTable),
+          message,
+          {
+            tableCount: tableIds.length,
+            rowCount: totalRows + loadedRows
+          }
+        );
+      });
       nextDocument.bundle.data[tableId] = rows;
       totalRows += rows.length;
       const completedTables = index + 1;
@@ -547,7 +589,18 @@ export async function refreshObjectCachedDataWithProgress(
         rowCount: totalRows,
         estimatedSecondsRemaining
       });
-      const rows = await fetchAllTableRows(nextDocument, table);
+      const rows = await fetchAllTableRows(nextDocument, table, ({ loadedRows, message }) => {
+        const tableShare = 80 / totalTables;
+        const withinTable = Math.min(0.92, loadedRows / Math.max(loadedRows + 10000, 1));
+        updateDocumentProgress(
+          5 + Math.round((index / totalTables) * 80 + tableShare * withinTable),
+          message,
+          {
+            tableCount: tableIds.length,
+            rowCount: totalRows + loadedRows
+          }
+        );
+      });
       nextDocument.bundle.data[tableId] = rows;
       totalRows += rows.length;
       const completedTables = index + 1;
