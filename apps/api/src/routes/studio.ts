@@ -19,8 +19,28 @@ export async function registerStudioRoutes(app: FastifyInstance) {
       reply.code(400);
       return { message: "Document payload is required." };
     }
-    updateRefreshScheduleMetadata(body.document);
-    const provisioned = await ensureQuickbaseStorageForProfiles(body.document);
+    const current = studioStore.getDocument();
+    const mergedDocument: StudioDocument = {
+      ...body.document,
+      bundle: {
+        ...body.document.bundle,
+        // Keep server-side cached rows instead of requiring the browser to upload them on every save.
+        data: current.bundle.data
+      },
+      sync: {
+        ...body.document.sync,
+        refreshStatus: current.sync.refreshStatus
+      },
+      quickbaseProfiles: body.document.quickbaseProfiles.map((profile) => {
+        const existing = current.quickbaseProfiles.find((item) => item.id === profile.id);
+        return {
+          ...profile,
+          refreshStatus: existing?.refreshStatus || profile.refreshStatus
+        };
+      })
+    };
+    updateRefreshScheduleMetadata(mergedDocument);
+    const provisioned = await ensureQuickbaseStorageForProfiles(mergedDocument);
     const document = studioStore.saveDocument(provisioned);
     const sync = await syncStudioDocumentToQuickbase(document).catch((error) => ({
       enabled: true,

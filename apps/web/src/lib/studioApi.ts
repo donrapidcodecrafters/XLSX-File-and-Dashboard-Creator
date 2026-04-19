@@ -36,6 +36,17 @@ export interface QuickbaseRealmApp {
   name: string;
 }
 
+function buildSavePayload(document: StudioDocument): StudioDocument {
+  return {
+    ...document,
+    bundle: {
+      ...document.bundle,
+      // Cached table rows stay on the server; saves should only send workspace metadata.
+      data: {}
+    }
+  };
+}
+
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "http://localhost:3001").replace(/\/$/, "");
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -63,7 +74,7 @@ export function fetchStudioDocument() {
 export function saveStudioDocument(document: StudioDocument) {
   return request<{ document: StudioDocument; sync?: QuickbaseSyncResult }>("/api/studio/document", {
     method: "PUT",
-    body: JSON.stringify({ document })
+    body: JSON.stringify({ document: buildSavePayload(document) })
   });
 }
 
