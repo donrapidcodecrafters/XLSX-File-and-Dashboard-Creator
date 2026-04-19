@@ -37,6 +37,7 @@ interface WorkerRequest {
 interface ExecuteReportOptions {
   page?: number;
   pageSize?: number;
+  includeRows?: boolean;
 }
 
 interface ExecuteDashboardOptions {
@@ -86,6 +87,13 @@ function cacheKey(report: ReportDefinition, extraFilters: FilterDefinition[], op
   });
 }
 
+function reportNeedsAggregates(report: ReportDefinition) {
+  if (report.summaryMetrics.length) return true;
+  if (report.view.mode === "summary" || report.view.mode === "chart") return true;
+  if (report.view.mode === "table" && report.view.showChartInTable) return true;
+  return false;
+}
+
 function runReportWorker(payload: WorkerRequest): Promise<ReportRunResult> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL("../workers/report.worker.js", import.meta.url), {
@@ -105,6 +113,7 @@ function normalizePageOptions(options: ExecuteReportOptions) {
   return {
     page,
     pageSize,
+    includeRows: options.includeRows !== false,
     startIndex: (page - 1) * pageSize,
     endIndexExclusive: page * pageSize
   };
@@ -292,7 +301,7 @@ async function fetchQuickbaseReportPageOnly(
   options: ExecuteReportOptions
 ): Promise<ReportRunResult> {
   const quickbase = studioStore.getDocument().quickbase;
-  const { page, pageSize, startIndex } = normalizePageOptions(options);
+  const { page, pageSize, includeRows, startIndex } = normalizePageOptions(options);
   const filterTree = getCombinedFilterTree(report, extraFilters);
   const filters = extractFlatPushdownFilters(filterTree);
   const requestedFieldIds = collectReportFieldIds(report);
@@ -301,11 +310,41 @@ async function fetchQuickbaseReportPageOnly(
   const sortBy = buildQuickbaseSort(report);
 
   if (filterTree && !filters.length) {
-    const full = await executeQuickbaseReportPage(report, table, extraFilters, options);
+    const batchSize = 500;
+    let skip = 0;
+    let totalRows = 0;
+    const pageRows: DataRow[] = [];
+    while (true) {
+      const batch = await fetchQuickbaseTablePage(quickbase, table.id, requestedFieldIds, {
+        top: batchSize,
+        skip,
+        sortBy
+      });
+      if (!batch.rows.length) break;
+      batch.rows.forEach((row) => {
+        if (filterTree && !matchesFilterNode(row, filterTree)) {
+          return;
+        }
+        if (includeRows && totalRows >= startIndex && totalRows < startIndex + pageSize) {
+          pageRows.push(row);
+        }
+        totalRows += 1;
+      });
+      if (batch.rows.length < batchSize) break;
+      skip += batchSize;
+    }
     return {
-      ...full,
+      reportId: report.id,
+      tableId: table.id,
+      totalRows,
+      rows: includeRows ? projectRows(report, pageRows) : [],
       summary: [],
-      chartData: []
+      chartData: [],
+      warnings,
+      page,
+      pageSize,
+      totalPages: Math.max(1, Math.ceil(totalRows / pageSize)),
+      hasNextPage: page * pageSize < totalRows
     };
   }
 
@@ -338,7 +377,7 @@ async function executeQuickbaseReportPage(
   options: ExecuteReportOptions
 ): Promise<ReportRunResult> {
   const quickbase = studioStore.getDocument().quickbase;
-  const { page, pageSize, startIndex, endIndexExclusive } = normalizePageOptions(options);
+  const { page, pageSize, includeRows, startIndex, endIndexExclusive } = normalizePageOptions(options);
   const filterTree = getCombinedFilterTree(report, extraFilters);
   const filters = extractFlatPushdownFilters(filterTree);
   const requestedFieldIds = collectReportFieldIds(report);
@@ -350,12 +389,14 @@ async function executeQuickbaseReportPage(
   const sortBy = buildQuickbaseSort(report);
 
   if (!filterTree || (filters.length && isPushdownSafeTree(filterTree))) {
-    const pageResult = await fetchQuickbaseTablePage(quickbase, table.id, requestedFieldIds, {
-      top: pageSize,
-      skip: startIndex,
-      where,
-      sortBy
-    });
+    const pageResult = includeRows
+      ? await fetchQuickbaseTablePage(quickbase, table.id, requestedFieldIds, {
+          top: pageSize,
+          skip: startIndex,
+          where,
+          sortBy
+        })
+      : null;
 
     const summaryAccumulator = createMetricAccumulator(metricSet);
     const batchSize = 500;
@@ -379,19 +420,19 @@ async function executeQuickbaseReportPage(
       scanSkip += batchSize;
     }
 
-    const totalRows = pageResult.totalRecords ?? scannedRows;
+    const totalRows = pageResult?.totalRecords ?? scannedRows;
     return {
       reportId: report.id,
       tableId: table.id,
       totalRows,
-      rows: projectRows(report, pageResult.rows),
+      rows: includeRows && pageResult ? projectRows(report, pageResult.rows) : [],
       summary: finalizeMetricAccumulator(summaryAccumulator, getReportDecimalPlaces(report)),
       chartData: buildChartResult(chartGroups, report),
       warnings,
       page,
       pageSize,
       totalPages: Math.max(1, Math.ceil(totalRows / pageSize)),
-      hasNextPage: page * pageSize < totalRows
+      hasNextPage: includeRows ? page * pageSize < totalRows : false
     };
   }
 
@@ -415,7 +456,7 @@ async function executeQuickbaseReportPage(
       }
       addMetricRow(summaryAccumulator, row);
       addChartRow(chartGroups, report, row);
-      if (totalRows >= startIndex && totalRows < endIndexExclusive) {
+      if (includeRows && totalRows >= startIndex && totalRows < endIndexExclusive) {
         pageRows.push(row);
       }
       totalRows += 1;
@@ -428,14 +469,14 @@ async function executeQuickbaseReportPage(
     reportId: report.id,
     tableId: table.id,
     totalRows,
-    rows: projectRows(report, pageRows),
+    rows: includeRows ? projectRows(report, pageRows) : [],
     summary: finalizeMetricAccumulator(summaryAccumulator, getReportDecimalPlaces(report)),
     chartData: buildChartResult(chartGroups, report),
     warnings,
     page,
     pageSize,
     totalPages: Math.max(1, Math.ceil(totalRows / pageSize)),
-    hasNextPage: page * pageSize < totalRows
+    hasNextPage: includeRows ? page * pageSize < totalRows : false
   };
 }
 
@@ -573,17 +614,20 @@ export async function fetchAllReportRowsForExport(report: ReportDefinition, extr
 }
 
 export async function executeReport(report: ReportDefinition, extraFilters: FilterDefinition[] = [], options: ExecuteReportOptions = {}): Promise<ReportRunResult> {
+  const table = objectStore.getTable(report.sourceTableId);
+  if (!table) {
+    throw new Error("Table not found for report " + report.id + ".");
+  }
+  if (!reportNeedsAggregates(report)) {
+    return fetchReportPage(report, extraFilters, options);
+  }
+  const quickbase = studioStore.getDocument().quickbase;
+  if (quickbase.realmHostname && quickbase.userToken && quickbase.appId) {
+    return executeQuickbaseReportPage(report, table, extraFilters, options);
+  }
+
   const key = cacheKey(report, extraFilters, options);
   return cache.getOrCreate(key, async () => {
-    const table = objectStore.getTable(report.sourceTableId);
-    if (!table) {
-      throw new Error("Table not found for report " + report.id + ".");
-    }
-    const quickbase = studioStore.getDocument().quickbase;
-    if (quickbase.realmHostname && quickbase.userToken && quickbase.appId) {
-      return executeQuickbaseReportPage(report, table, extraFilters, options);
-    }
-
     const rows = objectStore.getRows(table.id);
     if (rows.length <= 1500) {
       const full = runReport(report, table, rows, extraFilters);
@@ -624,6 +668,11 @@ function widgetNeedsAggregates(report: ReportDefinition, widget: DashboardRunRes
   return widget.showSummary || displayMode === "summary" || needsChart;
 }
 
+function widgetNeedsRows(report: ReportDefinition, widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"]) {
+  const displayMode = resolveDashboardWidgetDisplayMode(report, widget);
+  return displayMode === "table" || widget.showDetails;
+}
+
 function buildDashboardExecutionKey(report: ReportDefinition, widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], extraFilters: FilterDefinition[]) {
   return JSON.stringify({
     reportId: report.id,
@@ -661,7 +710,7 @@ export async function executeDashboard(
         let pending = executionCache.get(executionKey);
         if (!pending) {
           pending = widgetNeedsAggregates(report, widget)
-            ? executeReport(report, extraFilters, { page: 1, pageSize: 100 })
+            ? executeReport(report, extraFilters, { page: 1, pageSize: 100, includeRows: widgetNeedsRows(report, widget) })
             : fetchReportPage(report, extraFilters, { page: 1, pageSize: 100 });
           executionCache.set(executionKey, pending);
         }

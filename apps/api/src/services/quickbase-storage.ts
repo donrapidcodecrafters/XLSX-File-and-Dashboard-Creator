@@ -41,9 +41,37 @@ const parser = new XMLParser({
 const STORAGE_CONFIG_KEY = "__studioStorageConfig__";
 const USER_SETTINGS_KEY = "__studioUserSettings__";
 const QUICKBASE_RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
+const QUICKBASE_CACHE_TTL_MS = 60_000;
+
+type CacheEntry<T> = {
+  expiresAt: number;
+  value: Promise<T>;
+};
+
+const bootstrapRowsCache = new Map<string, CacheEntry<Array<Record<string, { value: unknown }>>>>();
+const currentUserCache = new Map<string, CacheEntry<QuickbaseUser>>();
+const storedObjectsCache = new Map<string, CacheEntry<StudioObject[]>>();
+const schemaCache = new Map<string, CacheEntry<Awaited<ReturnType<typeof loadQuickbaseSchema>> | null>>();
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getOrCreateCacheValue<T>(cache: Map<string, CacheEntry<T>>, key: string, loader: () => Promise<T>) {
+  const now = Date.now();
+  const existing = cache.get(key);
+  if (existing && existing.expiresAt > now) {
+    return existing.value;
+  }
+  const pending = loader().catch((error) => {
+    cache.delete(key);
+    throw error;
+  });
+  cache.set(key, {
+    expiresAt: now + QUICKBASE_CACHE_TTL_MS,
+    value: pending
+  });
+  return pending;
 }
 
 function parseRetryAfterMs(value: string | null) {
@@ -165,6 +193,28 @@ function isRecordIdField(fid: string) {
 
 function usingDirectQuickbaseApi(config: StudioDocument["quickbase"]) {
   return String(config.apiBaseUrl || "").trim().replace(/\/$/, "") === "https://api.quickbase.com/v1";
+}
+
+function quickbaseConfigCacheKey(config: StudioDocument["quickbase"]) {
+  return [
+    normalizeHostname(config.realmHostname),
+    config.appId || "",
+    config.objectTableId || "",
+    config.settingsTableId || "",
+    config.versionTableId || "",
+    usingDirectQuickbaseApi(config) ? "rest" : "xml"
+  ].join("::");
+}
+
+function invalidateQuickbaseCaches(config: StudioDocument["quickbase"]) {
+  const prefix = quickbaseConfigCacheKey(config);
+  [bootstrapRowsCache, currentUserCache, storedObjectsCache, schemaCache].forEach((cache) => {
+    for (const key of cache.keys()) {
+      if (key === prefix || key.startsWith(prefix + "::")) {
+        cache.delete(key);
+      }
+    }
+  });
 }
 
 async function quickbaseRestRequest(
@@ -576,27 +626,29 @@ async function quickbaseFetchRecordIdMap(
 }
 
 async function quickbaseFetchCurrentUser(config: StudioDocument["quickbase"]): Promise<QuickbaseUser> {
-  try {
-    const api = await quickbaseXmlRequest(config, "main", "API_GetUserInfo");
-    const user = api?.user || {};
-    const firstName = textValue(user?.firstName);
-    const lastName = textValue(user?.lastName);
-    const login = textValue(user?.login);
-    const email = textValue(user?.email);
-    return {
-      id: String(user?.id || ""),
-      login,
-      email,
-      name: [firstName, lastName].filter(Boolean).join(" ").trim() || login || email || String(user?.id || "")
-    };
-  } catch {
-    return {
-      id: "",
-      login: "",
-      email: "",
-      name: ""
-    };
-  }
+  return getOrCreateCacheValue(currentUserCache, quickbaseConfigCacheKey(config), async () => {
+    try {
+      const api = await quickbaseXmlRequest(config, "main", "API_GetUserInfo");
+      const user = api?.user || {};
+      const firstName = textValue(user?.firstName);
+      const lastName = textValue(user?.lastName);
+      const login = textValue(user?.login);
+      const email = textValue(user?.email);
+      return {
+        id: String(user?.id || ""),
+        login,
+        email,
+        name: [firstName, lastName].filter(Boolean).join(" ").trim() || login || email || String(user?.id || "")
+      };
+    } catch {
+      return {
+        id: "",
+        login: "",
+        email: "",
+        name: ""
+      };
+    }
+  });
 }
 
 function quickbaseUserValue(user: QuickbaseUser) {
@@ -632,23 +684,29 @@ function mergeQuickbaseConfig(
 
 async function loadQuickbaseBootstrapRows(config: StudioDocument["quickbase"]) {
   if (!hasQuickbaseConnection(config) || !config.settingsTableId) return [];
-  const availableFieldIds: string[] = await quickbaseListFieldIds(config, config.settingsTableId).catch(() => []);
-  const candidateFieldIds = uniqueFieldIds([
-    "3",
-    config.settingsUserFieldId,
-    config.settingsObjectFieldId,
-    config.settingsObjectKeyFieldId,
-    config.settingsJsonFieldId,
-    config.settingsUpdatedByFieldId,
-    "6",
-    "7",
-    "8",
-    "9",
-    "10"
-  ]).filter((fieldId) => !availableFieldIds.length || availableFieldIds.includes(fieldId));
-  if (!candidateFieldIds.length) return [];
-  const response = await quickbaseQueryRecords(config, config.settingsTableId, candidateFieldIds, "", { top: 100 });
-  return response.data;
+  return getOrCreateCacheValue(
+    bootstrapRowsCache,
+    `${quickbaseConfigCacheKey(config)}::bootstrap`,
+    async () => {
+      const availableFieldIds: string[] = await quickbaseListFieldIds(config, config.settingsTableId).catch(() => []);
+      const candidateFieldIds = uniqueFieldIds([
+        "3",
+        config.settingsUserFieldId,
+        config.settingsObjectFieldId,
+        config.settingsObjectKeyFieldId,
+        config.settingsJsonFieldId,
+        config.settingsUpdatedByFieldId,
+        "6",
+        "7",
+        "8",
+        "9",
+        "10"
+      ]).filter((fieldId) => !availableFieldIds.length || availableFieldIds.includes(fieldId));
+      if (!candidateFieldIds.length) return [];
+      const response = await quickbaseQueryRecords(config, config.settingsTableId, candidateFieldIds, "", { top: 100 });
+      return response.data;
+    }
+  );
 }
 
 async function resolveStoredQuickbaseConfig(
@@ -673,31 +731,37 @@ async function resolveStoredQuickbaseConfig(
 
 async function loadStoredObjects(config: StudioDocument["quickbase"]) {
   if (!hasObjectStorage(config)) return [] as StudioObject[];
-  const select = uniqueFieldIds([
-    "3",
-    config.objectKeyFieldId,
-    config.objectTypeFieldId,
-    config.objectNameFieldId,
-    config.objectConfigFieldId
-  ]);
-  const rows = await quickbaseFetchAllRecords(config, config.objectTableId, select, "", { top: 200 });
-  const objects: StudioObject[] = [];
-  rows.forEach((row) => {
-    const payload = parseJsonValue(qbFieldValue(row, config.objectConfigFieldId));
-    if (!payload || (payload.type !== "report" && payload.type !== "dashboard")) return;
-    const object = payload as StudioObject;
-    if (!object.id) {
-      object.id = String(qbFieldValue(row, config.objectKeyFieldId) || qbFieldValue(row, "3") || "");
+  return getOrCreateCacheValue(
+    storedObjectsCache,
+    `${quickbaseConfigCacheKey(config)}::objects`,
+    async () => {
+      const select = uniqueFieldIds([
+        "3",
+        config.objectKeyFieldId,
+        config.objectTypeFieldId,
+        config.objectNameFieldId,
+        config.objectConfigFieldId
+      ]);
+      const rows = await quickbaseFetchAllRecords(config, config.objectTableId, select, "", { top: 200 });
+      const objects: StudioObject[] = [];
+      rows.forEach((row) => {
+        const payload = parseJsonValue(qbFieldValue(row, config.objectConfigFieldId));
+        if (!payload || (payload.type !== "report" && payload.type !== "dashboard")) return;
+        const object = payload as StudioObject;
+        if (!object.id) {
+          object.id = String(qbFieldValue(row, config.objectKeyFieldId) || qbFieldValue(row, "3") || "");
+        }
+        if (!object.name) {
+          object.name = String(qbFieldValue(row, config.objectNameFieldId) || object.id || "Saved Object");
+        }
+        if (!object.updatedAt) {
+          object.updatedAt = new Date().toISOString();
+        }
+        objects.push(object);
+      });
+      return objects;
     }
-    if (!object.name) {
-      object.name = String(qbFieldValue(row, config.objectNameFieldId) || object.id || "Saved Object");
-    }
-    if (!object.updatedAt) {
-      object.updatedAt = new Date().toISOString();
-    }
-    objects.push(object);
-  });
-  return objects;
+  );
 }
 
 function loadUserSettingsFromRows(
@@ -763,15 +827,21 @@ export async function hydrateStudioDocumentFromQuickbase(document: StudioDocumen
   }
 
   const { config: resolvedConfig, bootstrapRows } = await resolveStoredQuickbaseConfig(base.quickbase);
-  const user = await quickbaseFetchCurrentUser(resolvedConfig);
-  const storedObjects = await loadStoredObjects(resolvedConfig).catch(() => []);
+  const [user, storedObjects, loadedSchema] = await Promise.all([
+    quickbaseFetchCurrentUser(resolvedConfig),
+    loadStoredObjects(resolvedConfig).catch(() => []),
+    getOrCreateCacheValue(
+      schemaCache,
+      `${quickbaseConfigCacheKey(resolvedConfig)}::schema`,
+      async () => loadQuickbaseSchema({
+        realmHostname: resolvedConfig.realmHostname,
+        userToken: resolvedConfig.userToken,
+        appToken: resolvedConfig.appToken,
+        appId: resolvedConfig.appId
+      }).catch(() => null)
+    )
+  ]);
   const storedUserSettings = loadUserSettingsFromRows(bootstrapRows, resolvedConfig, user);
-  const loadedSchema = await loadQuickbaseSchema({
-    realmHostname: resolvedConfig.realmHostname,
-    userToken: resolvedConfig.userToken,
-    appToken: resolvedConfig.appToken,
-    appId: resolvedConfig.appId
-  }).catch(() => null);
   const loadedTables = loadedSchema ? convertQuickbaseSchemaToTables(loadedSchema) : base.bundle.tables;
 
   const next = normalizeStudioDocument({
@@ -1039,6 +1109,7 @@ export async function syncStudioDocumentToQuickbase(document: StudioDocument): P
   const { count: savedObjects, objectRecordIds } = await syncObjectRecords(document, user);
   const { count: savedSettings, storageConfigCount: savedStorageConfig } = await syncSettingsRecords(document, user);
   const { count: savedVersions } = await syncVersionRecords(document, user, objectRecordIds);
+  invalidateQuickbaseCaches(config);
 
   const allVerified = savedObjects > 0 || savedSettings > 0 || savedVersions > 0;
 
