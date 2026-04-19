@@ -1239,15 +1239,17 @@ export async function hydrateStudioDocumentFromQuickbase(document: StudioDocumen
   const nextTables = loadedTables.length ? loadedTables : base.bundle.tables;
   const remappedObjects = Array.from(mergedObjects.values()).map((object) => remapObjectTableIds(object, nextTables));
   const hasStoredWorkspace = mergedObjects.size > 0 || Object.keys(mergedVersions).length > 0 || Boolean(storedUserSettings);
+  const hasAnyQuickbaseProfileConnection = normalizedProfiles.some((profile) => hasQuickbaseConnection(profile.quickbase));
+  const useEmptyWorkspaceFallback = hasAnyQuickbaseProfileConnection && !hasStoredWorkspace;
   const nextObjects = mergedObjects.size
     ? Object.fromEntries(remappedObjects.map((object) => [object.id, object]))
-    : (hasStoredWorkspace ? {} : base.bundle.objects);
+    : (useEmptyWorkspaceFallback ? {} : (hasStoredWorkspace ? {} : base.bundle.objects));
   const nextOrder = mergedObjects.size
     ? remappedObjects
         .slice()
         .sort((left, right) => String(right.updatedAt || "").localeCompare(String(left.updatedAt || "")))
         .map((object) => object.id)
-    : (hasStoredWorkspace ? [] : base.bundle.order);
+    : (useEmptyWorkspaceFallback ? [] : (hasStoredWorkspace ? [] : base.bundle.order));
 
   const next = normalizeStudioDocument({
     ...base,
@@ -1269,8 +1271,8 @@ export async function hydrateStudioDocumentFromQuickbase(document: StudioDocumen
         ? true
         : base.branding.openLinksInNewTab === true
     } : base.branding,
-    favorites: Array.isArray(storedUserSettings?.favorites) ? storedUserSettings.favorites.map(String) : base.favorites,
-    recent: Array.isArray(storedUserSettings?.recent) ? storedUserSettings.recent.map(String) : base.recent,
+    favorites: Array.isArray(storedUserSettings?.favorites) ? storedUserSettings.favorites.map(String) : (useEmptyWorkspaceFallback ? [] : base.favorites),
+    recent: Array.isArray(storedUserSettings?.recent) ? storedUserSettings.recent.map(String) : (useEmptyWorkspaceFallback ? [] : base.recent),
     sync: {
       ...base.sync,
       ...(storedUserSettings?.sync || {}),

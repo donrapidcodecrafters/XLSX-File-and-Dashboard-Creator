@@ -240,12 +240,27 @@ function typeLabel(type: StudioObject["type"]) {
   return type === "report" ? "Report" : "Dashboard";
 }
 
+function buildEmptyLocalDocument() {
+  const seed = buildStudioDocument();
+  return normalizeStudioDocument({
+    ...seed,
+    bundle: {
+      ...seed.bundle,
+      objects: {},
+      order: [],
+      data: {}
+    },
+    favorites: [],
+    recent: []
+  });
+}
+
 function loadLocalDocument() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? normalizeStudioDocument(JSON.parse(raw) as StudioDocument) : buildStudioDocument();
+    return raw ? normalizeStudioDocument(JSON.parse(raw) as StudioDocument) : buildEmptyLocalDocument();
   } catch {
-    return buildStudioDocument();
+    return buildEmptyLocalDocument();
   }
 }
 
