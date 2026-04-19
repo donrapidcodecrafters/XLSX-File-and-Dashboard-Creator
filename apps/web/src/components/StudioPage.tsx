@@ -603,7 +603,33 @@ function validationMessages(object: StudioObject, table?: TableDefinition | null
   return messages;
 }
 
-function ReportPreview({ report, table, result }: { report: ReportDefinition; table: TableDefinition; result: ReportRunResult }) {
+function ReportPreview({
+  report,
+  table,
+  result,
+  currentPage,
+  onPageChange,
+  pageSize = 100
+}: {
+  report: ReportDefinition;
+  table: TableDefinition;
+  result: ReportRunResult;
+  currentPage: number;
+  onPageChange: (page: number) => void;
+  pageSize?: number;
+}) {
+  const totalPages = Math.max(1, Math.ceil((result.totalRows || result.rows.length || 0) / pageSize));
+  const page = Math.min(Math.max(1, currentPage), totalPages);
+  const startIndex = (page - 1) * pageSize;
+  const visibleRows = result.rows.slice(startIndex, startIndex + pageSize);
+  const pager = result.totalRows > pageSize ? (
+    <div className="link-toolbar">
+      <button className="ghost-button" disabled={page <= 1} onClick={() => onPageChange(Math.max(1, page - 1))}>Previous</button>
+      <span className="micro">Page {page} of {totalPages}</span>
+      <button className="ghost-button" disabled={page >= totalPages} onClick={() => onPageChange(Math.min(totalPages, page + 1))}>Next</button>
+    </div>
+  ) : null;
+
   if (report.view.mode === "summary") {
     return (
       <div className="studio-preview-stack">
@@ -615,6 +641,7 @@ function ReportPreview({ report, table, result }: { report: ReportDefinition; ta
             </div>
           ))}
         </div>
+        {pager}
         <div className="table-shell">
           <table>
             <thead>
@@ -623,7 +650,7 @@ function ReportPreview({ report, table, result }: { report: ReportDefinition; ta
               </tr>
             </thead>
             <tbody>
-              {result.rows.map((row, index) => (
+              {visibleRows.map((row, index) => (
                 <tr key={index}>
                   {report.selectedFieldIds.map((fieldId) => <td key={fieldId}>{formatCell(row[fieldId], report, table, fieldId)}</td>)}
                 </tr>
@@ -650,22 +677,25 @@ function ReportPreview({ report, table, result }: { report: ReportDefinition; ta
           showValues={report.view.chartShowValues}
         />
         {report.view.mode === "table" ? (
-          <div className="table-shell">
-            <table>
-              <thead>
-                <tr>
-                  {report.selectedFieldIds.map((fieldId) => <th key={fieldId}>{getReportFieldLabel(report, table, fieldId)}</th>)}
-                </tr>
-              </thead>
-              <tbody>
-                {result.rows.map((row, index) => (
-                  <tr key={index}>
-                    {report.selectedFieldIds.map((fieldId) => <td key={fieldId}>{formatCell(row[fieldId], report, table, fieldId)}</td>)}
+          <>
+            {pager}
+            <div className="table-shell">
+              <table>
+                <thead>
+                  <tr>
+                    {report.selectedFieldIds.map((fieldId) => <th key={fieldId}>{getReportFieldLabel(report, table, fieldId)}</th>)}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {visibleRows.map((row, index) => (
+                    <tr key={index}>
+                      {report.selectedFieldIds.map((fieldId) => <td key={fieldId}>{formatCell(row[fieldId], report, table, fieldId)}</td>)}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         ) : null}
       </div>
     );
@@ -675,14 +705,17 @@ function ReportPreview({ report, table, result }: { report: ReportDefinition; ta
     const dateFieldId = report.view.mode === "timeline" ? report.view.timelineDateField : report.view.calendarDateField;
     const titleFieldId = report.view.titleFieldId || report.selectedFieldIds[0];
     return (
-      <div className="studio-card-grid">
-        {result.rows.map((row, index) => (
+      <div className="studio-preview-stack">
+        {pager}
+        <div className="studio-card-grid">
+          {visibleRows.map((row, index) => (
           <article className="studio-mini-card" key={index}>
             <strong>{formatCell(row[titleFieldId], report, table, titleFieldId)}</strong>
             <span>{table.fields.find((field) => field.id === dateFieldId)?.label || "Date"}: {formatCell(row[dateFieldId], report, table, dateFieldId)}</span>
             {report.view.mode === "timeline" && report.view.timelineEndField ? <span>Ends: {formatCell(row[report.view.timelineEndField], report, table, report.view.timelineEndField)}</span> : null}
           </article>
-        ))}
+          ))}
+        </div>
       </div>
     );
   }
@@ -696,8 +729,12 @@ function ReportPreview({ report, table, result }: { report: ReportDefinition; ta
       columns.set(key, [...(columns.get(key) || []), row]);
     });
     return (
-      <div className="kanban-board">
-        {Array.from(columns.entries()).map(([key, rows]) => (
+      <div className="studio-preview-stack">
+        {pager}
+        <div className="kanban-board">
+        {Array.from(new Map<string, DataRow[]>(
+          Array.from(columns.entries()).map(([key, rows]) => [key, rows.slice(startIndex, startIndex + pageSize)])
+        ).entries()).map(([key, rows]) => (
           <section className="kanban-column" key={key}>
             <div className="kanban-head">
               <strong>{key}</strong>
@@ -713,26 +750,30 @@ function ReportPreview({ report, table, result }: { report: ReportDefinition; ta
             </div>
           </section>
         ))}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="table-shell">
-      <table>
-        <thead>
-          <tr>
-            {report.selectedFieldIds.map((fieldId) => <th key={fieldId}>{getReportFieldLabel(report, table, fieldId)}</th>)}
-          </tr>
-        </thead>
-        <tbody>
-          {result.rows.map((row, index) => (
-            <tr key={index}>
-              {report.selectedFieldIds.map((fieldId) => <td key={fieldId}>{formatCell(row[fieldId], report, table, fieldId)}</td>)}
+    <div className="studio-preview-stack">
+      {pager}
+      <div className="table-shell">
+        <table>
+          <thead>
+            <tr>
+              {report.selectedFieldIds.map((fieldId) => <th key={fieldId}>{getReportFieldLabel(report, table, fieldId)}</th>)}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {visibleRows.map((row, index) => (
+              <tr key={index}>
+                {report.selectedFieldIds.map((fieldId) => <td key={fieldId}>{formatCell(row[fieldId], report, table, fieldId)}</td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -1105,6 +1146,7 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
         : "Run a refresh after you choose the source tables and enter a report ID for each one.");
   const [liveReportResult, setLiveReportResult] = useState<ReportRunResult | null>(null);
   const [liveReportLoading, setLiveReportLoading] = useState(false);
+  const [previewPage, setPreviewPage] = useState(1);
   const [exportJob, setExportJob] = useState<ExportJobStatus | null>(null);
   const [downloadedJobId, setDownloadedJobId] = useState("");
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -1262,6 +1304,10 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
       setRuntimeValues(Object.fromEntries(activeDashboard.runtimeFilters.map((filter) => [filter.id, filter.defaultValue || ""])));
     }
   }, [activeDashboard?.id]);
+
+  useEffect(() => {
+    setPreviewPage(1);
+  }, [activeReport?.id, activeReport?.updatedAt]);
 
   useEffect(() => {
     let active = true;
@@ -2488,7 +2534,13 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
                     </div>
                   ))}
                 </div>
-                <ReportPreview report={activeReport} table={activeTable} result={reportResult} />
+                <ReportPreview
+                  report={activeReport}
+                  table={activeTable}
+                  result={reportResult}
+                  currentPage={previewPage}
+                  onPageChange={setPreviewPage}
+                />
               </>
             ) : (
               <div className="empty-hint">Loading live Quickbase rows for this report.</div>
