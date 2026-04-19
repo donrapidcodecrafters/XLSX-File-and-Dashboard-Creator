@@ -60,7 +60,7 @@ function getObjectTableIds(document: StudioDocument, objectId: string) {
 }
 
 function getTable(document: StudioDocument, tableId: string) {
-  return document.bundle.tables.find((table) => table.id === tableId);
+  return document.bundle.tables.find((table) => table.id === tableId || table.quickbaseTableId === tableId);
 }
 
 function getQuickbaseConfigForTable(document: StudioDocument, table: TableDefinition) {
@@ -83,7 +83,12 @@ function getUsedTableIdsForProfile(document: StudioDocument, profileId: string) 
 function getRefreshTableIdsForProfile(document: StudioDocument, profileId: string) {
   const profile = document.quickbaseProfiles.find((item) => item.id === profileId);
   const configured = Array.isArray(profile?.refreshSource?.tableIds) ? profile.refreshSource.tableIds.filter(Boolean) : [];
-  return configured.length ? configured : getUsedTableIdsForProfile(document, profileId);
+  if (!configured.length) {
+    return getUsedTableIdsForProfile(document, profileId);
+  }
+  return Array.from(new Set(
+    configured.map((tableId) => getTable(document, tableId)?.id || tableId)
+  ));
 }
 
 function getSavedReportIdForTable(document: StudioDocument, table: TableDefinition) {

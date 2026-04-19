@@ -18,7 +18,7 @@ export class ObjectStore {
   }
 
   getTable(tableId: string): TableDefinition | undefined {
-    return studioStore.getBundle().tables.find((table) => table.id === tableId);
+    return studioStore.getBundle().tables.find((table) => table.id === tableId || table.quickbaseTableId === tableId);
   }
 
   getRows(tableId: string) {
