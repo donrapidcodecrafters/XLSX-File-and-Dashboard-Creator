@@ -9,6 +9,8 @@ import { getHostedContext } from "./lib/embed";
 import type { QuickbaseTableLinkContext } from "./lib/quickbaseLinks";
 import { fetchStudioDocument, fetchStudioRefreshJob, startStudioObjectRefresh, startStudioRefresh } from "./lib/studioApi";
 
+const SESSION_RECENT_KEY = "studio-session-recent";
+
 function typeLabel(type: "report" | "dashboard") {
   return type === "report" ? "Report" : "Dashboard";
 }
@@ -79,6 +81,15 @@ function useCatalog() {
   const [objects, setObjects] = useState<CatalogSummaryItem[]>([]);
   const [tables, setTables] = useState<TableDefinition[]>([]);
   const [studioDocument, setStudioDocument] = useState<StudioDocument | null>(null);
+  const [recentIds, setRecentIds] = useState<string[]>(() => {
+    try {
+      const raw = window.sessionStorage.getItem(SESSION_RECENT_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed.map(String) : [];
+    } catch {
+      return [];
+    }
+  });
 
   const reloadCatalog = useCallback(async () => {
     fetchCatalog().then((response) => setObjects(response.objects));
@@ -87,12 +98,13 @@ function useCatalog() {
   }, []);
 
   const markObjectAsRecent = useCallback((objectId: string) => {
-    setStudioDocument((current) => {
-      if (!current || !objectId) return current;
-      return {
-        ...current,
-        recent: [objectId, ...(current.recent || []).filter((item) => item !== objectId)].slice(0, 10)
-      };
+    if (!objectId) return;
+    setRecentIds((current) => {
+      const next = [objectId, ...current.filter((item) => item !== objectId)].slice(0, 10);
+      try {
+        window.sessionStorage.setItem(SESSION_RECENT_KEY, JSON.stringify(next));
+      } catch {}
+      return next;
     });
   }, []);
 
@@ -100,7 +112,7 @@ function useCatalog() {
     void reloadCatalog();
   }, []);
 
-  return { objects, tables, studioDocument, reloadCatalog, markObjectAsRecent };
+  return { objects, tables, studioDocument, recentIds, reloadCatalog, markObjectAsRecent };
 }
 
 function formatTimestamp(value?: string) {
@@ -141,11 +153,13 @@ function getProfileIdsForCatalogItem(item: CatalogSummaryItem, studioDocument: S
 function HomePage({
   objects,
   studioDocument,
+  recentIds,
   refreshAllSignal = 0,
   openLinksInNewTab = false
 }: {
   objects: CatalogSummaryItem[];
   studioDocument: StudioDocument | null;
+  recentIds: string[];
   refreshAllSignal?: number;
   openLinksInNewTab?: boolean;
 }) {
@@ -155,7 +169,7 @@ function HomePage({
   const rankedObjects = [...objects].sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime());
   const reports = rankedObjects.filter((object) => object.type === "report");
   const dashboards = rankedObjects.filter((object) => object.type === "dashboard");
-  const recentObjects = (studioDocument?.recent || [])
+  const recentObjects = recentIds
     .map((id) => catalogLookup.get(id))
     .filter((item): item is CatalogSummaryItem => Boolean(item))
     .slice(0, 6) || [];
@@ -737,7 +751,7 @@ function ViewerPage({ objects, refreshAllSignal = 0, openLinksInNewTab = false }
 }
 
 export function App() {
-  const { objects, tables, studioDocument, reloadCatalog, markObjectAsRecent } = useCatalog();
+  const { objects, tables, studioDocument, recentIds, reloadCatalog, markObjectAsRecent } = useCatalog();
   const location = useLocation();
   const hosted = useMemo(() => getHostedContext(), [location.key]);
   const [studioSettingsSignal, setStudioSettingsSignal] = useState(0);
@@ -828,7 +842,7 @@ export function App() {
 
         <main className={`content ${readerRoute ? "reader-content" : ""}`}>
           <Routes>
-            <Route path="/" element={<HomePage objects={objects} studioDocument={studioDocument} refreshAllSignal={homeRefreshSignal} openLinksInNewTab={openLinksInNewTab} />} />
+            <Route path="/" element={<HomePage objects={objects} studioDocument={studioDocument} recentIds={recentIds} refreshAllSignal={homeRefreshSignal} openLinksInNewTab={openLinksInNewTab} />} />
             <Route path="/viewer" element={<ViewerPage objects={objects} refreshAllSignal={viewerRefreshSignal} openLinksInNewTab={openLinksInNewTab} />} />
             <Route path="/studio" element={<StudioPage openSettingsSignal={studioSettingsSignal} refreshAllSignal={studioRefreshSignal} />} />
             <Route path="/studio/:objectId" element={<StudioPage openSettingsSignal={studioSettingsSignal} refreshAllSignal={studioRefreshSignal} />} />
