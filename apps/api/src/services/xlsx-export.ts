@@ -61,14 +61,13 @@ function writeDataSheet(
   table: TableDefinition,
   result: ReportRunResult,
   onProgress?: ExportProgressCallback,
-  progressRange?: { start: number; end: number; label: string }
+  progressRange?: { start: number; end: number; label: string },
+  options?: { writeHeaderRow?: boolean }
 ) {
   const headers = report.selectedFieldIds.map((fieldId) => getReportFieldLabel(report, table, fieldId));
-  sheet.columns = headers.map((header) => ({
-    header,
-    key: header,
-    width: Math.min(32, Math.max(16, header.length + 4))
-  }));
+  if (options?.writeHeaderRow !== false) {
+    sheet.addRow(headers).commit();
+  }
   const total = Math.max(result.rows.length, 1);
   result.rows.forEach((row, index) => {
     sheet.addRow(report.selectedFieldIds.map((fieldId) => formatReportCellValue(report, table, fieldId, row[fieldId]))).commit();
@@ -107,11 +106,19 @@ export async function streamReportWorkbook(
   onProgress?.(78, "Writing summary sheet");
 
   const dataSheet = workbook.addWorksheet(safeSheetName(`${report.name} Data`, usedNames));
+  dataSheet.columns = report.selectedFieldIds.map((fieldId) => {
+    const header = getReportFieldLabel(report, table, fieldId);
+    return {
+      header,
+      key: fieldId,
+      width: Math.min(32, Math.max(16, header.length + 4))
+    };
+  });
   writeDataSheet(dataSheet, report, table, result, onProgress, {
     start: 80,
     end: 98,
     label: "Writing data sheet"
-  });
+  }, { writeHeaderRow: false });
   dataSheet.commit();
 
   await workbook.commit();
@@ -168,12 +175,6 @@ export async function streamDashboardWorkbook(
       sheet.getRow(nextRow).values = ["Data"];
       sheet.getRow(nextRow).font = { bold: true };
       sheet.getRow(nextRow).commit();
-
-      const headers = widget.report.selectedFieldIds.map((fieldId) => getReportFieldLabel(widget.report, table, fieldId));
-      const headerRow = sheet.getRow(nextRow + 1);
-      headerRow.values = headers;
-      headerRow.font = { bold: true };
-      headerRow.commit();
       const totalWidgets = Math.max(widgets.length, 1);
       const widgetStart = 76 + Math.round((20 * widgetIndex) / totalWidgets);
       const widgetEnd = 76 + Math.round((20 * (widgetIndex + 1)) / totalWidgets);
