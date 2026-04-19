@@ -169,7 +169,7 @@ export function DashboardView({
             ) : (
               <>
                 <button className="ghost-button" onClick={() => window.history.back()}>Back</button>
-                <Link className="ghost-button" to="/viewer">Home</Link>
+                <Link className="ghost-button" to="/">Home</Link>
                 <Link className="ghost-button" to={`/studio/${dashboard.id}`} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>Open in building area</Link>
               </>
             )}
