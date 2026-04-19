@@ -63,6 +63,17 @@ function ObjectPage({ tables, platformName, studioDocument }: { tables: TableDef
     [liveModeProfileIds, studioDocument]
   );
 
+  async function reloadObject(targetObjectId = params.objectId) {
+    if (!targetObjectId) return;
+    setLoading(true);
+    try {
+      const response = await fetchObject(targetObjectId);
+      setObject(response.object);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   useEffect(() => {
     if (!params.objectId) return;
     let active = true;
@@ -129,6 +140,7 @@ function ObjectPage({ tables, platformName, studioDocument }: { tables: TableDef
           setRefreshJob(response.job);
           if (response.job.status === "complete") {
             setRefreshNonce((current) => current + 1);
+            void reloadObject();
           }
         })
         .catch(() => undefined);
@@ -291,7 +303,13 @@ function ViewerPage({ objects, refreshAllSignal = 0 }: { objects: CatalogSummary
 
       <label className="field viewer-search-field">
         <span>Search</span>
-        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search reports and dashboards" />
+        <input
+          id="viewer-search"
+          name="viewerSearch"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search reports and dashboards"
+        />
       </label>
 
       <div className="viewer-grid">
