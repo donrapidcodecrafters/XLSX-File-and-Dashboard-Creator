@@ -5,7 +5,7 @@ import { downloadExportJob, fetchExportJobStatus, renderDashboard, runReportPage
 import { LinkToolbar } from "./LinkToolbar";
 import { ChartPreview } from "./ChartPreview";
 import { buildObjectUrl, getHostedContext } from "../lib/embed";
-import { buildQuickbaseChartDatumUrl, buildQuickbaseRecordEditUrl, type QuickbaseTableLinkContext } from "../lib/quickbaseLinks";
+import { buildQuickbaseChartDatumUrl, buildQuickbaseRecordEditUrl, buildQuickbaseReportFilterTree, type QuickbaseTableLinkContext } from "../lib/quickbaseLinks";
 
 interface DashboardViewProps {
   dashboard: DashboardDefinition;
@@ -267,6 +267,10 @@ export function DashboardView({
               const widgetTable = tables?.find((item) => item.id === widget.report.sourceTableId || item.quickbaseTableId === widget.report.sourceTableId);
               const quickbaseLinkContext = getQuickbaseLinkContext?.(widget.report.sourceTableId) || null;
               const chartFieldId = getChartFieldId(widget.report);
+              const widgetQuickbaseFilterTree = buildQuickbaseReportFilterTree(
+                widget.report,
+                buildDashboardFilters(dashboard, widget.report.id, runtimeFilters)
+              );
               return (
                 <article className="widget-card dashboard-layout-item" key={widget.widgetId} style={getWidgetLayoutStyle(widget.widget.layout)}>
                 <div className="widget-head">
@@ -297,7 +301,7 @@ export function DashboardView({
                       showLegend={widget.report.view.chartShowLegend}
                       showValues={widget.report.view.chartShowValues}
                       openLinksInNewTab={openLinksInNewTab}
-                      getDatumHref={(datum) => buildQuickbaseChartDatumUrl(quickbaseLinkContext, widgetTable, chartFieldId, datum)}
+                      getDatumHref={(datum) => buildQuickbaseChartDatumUrl(quickbaseLinkContext, widgetTable, chartFieldId, datum, widgetQuickbaseFilterTree)}
                     />
                   </div>
                 ) : null}

@@ -5,7 +5,7 @@ import { LinkToolbar } from "./LinkToolbar";
 import { ChartPreview } from "./ChartPreview";
 import { downloadExportJob, fetchExportJobStatus, startReportExportJob } from "../lib/api";
 import { buildObjectUrl, getHostedContext } from "../lib/embed";
-import { buildQuickbaseChartDatumUrl, buildQuickbaseRecordEditUrl, type QuickbaseTableLinkContext } from "../lib/quickbaseLinks";
+import { buildQuickbaseChartDatumUrl, buildQuickbaseRecordEditUrl, buildQuickbaseReportFilterTree, type QuickbaseTableLinkContext } from "../lib/quickbaseLinks";
 
 interface ReportViewProps {
   report: ReportDefinition;
@@ -60,6 +60,7 @@ export function ReportView({
   const [exportJob, setExportJob] = useState<ExportJobStatus | null>(null);
   const [downloadedJobId, setDownloadedJobId] = useState("");
   const chartFieldId = getChartFieldId(report);
+  const quickbaseFilterTree = buildQuickbaseReportFilterTree(report);
 
   useEffect(() => {
     if (!exportJob || exportJob.status === "complete" || exportJob.status === "failed") return;
@@ -175,7 +176,7 @@ export function ReportView({
               showLegend={report.view.chartShowLegend}
               showValues={report.view.chartShowValues}
               openLinksInNewTab={openLinksInNewTab}
-              getDatumHref={(datum) => buildQuickbaseChartDatumUrl(quickbaseLinkContext, table, chartFieldId, datum)}
+              getDatumHref={(datum) => buildQuickbaseChartDatumUrl(quickbaseLinkContext, table, chartFieldId, datum, quickbaseFilterTree)}
             />
           )}
         </div>

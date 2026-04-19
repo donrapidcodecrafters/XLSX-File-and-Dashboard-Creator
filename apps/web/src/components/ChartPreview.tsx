@@ -108,15 +108,6 @@ function columnBottomPad(itemCount: number, compact: boolean, hasAxisLabel: bool
   return densityPad + (hasAxisLabel ? 18 : 0);
 }
 
-function valueDisplayStep(itemCount: number, slotSize: number, compact: boolean) {
-  if (compact) return slotSize >= 84 ? 1 : slotSize >= 62 ? 2 : 999;
-  if (slotSize >= 108) return 1;
-  if (slotSize >= 78) return 2;
-  if (slotSize >= 56) return 3;
-  if (itemCount <= 4) return 1;
-  return 999;
-}
-
 function renderAxisLegend(
   items: ChartDatum[],
   compact: boolean,
@@ -284,7 +275,6 @@ export function ChartPreview({
     const plotHeight = chartHeight - topPad - bottomPad;
     const step = plotWidth / Math.max(items.length, 1);
     const barWidth = Math.max(18, Math.min(56, step * 0.58));
-    const displayStep = valueDisplayStep(items.length, step, compact);
     return (
       <div className="axis-chart-shell">
         {renderTitle(title)}
@@ -320,7 +310,7 @@ export function ChartPreview({
               const content = (
                 <g key={`${item.label}-${index}`} className={href ? "chart-linkable" : undefined}>
                   <rect x={x} y={y} width={barWidth} height={height} rx="10" fill={getColor(index)} fillOpacity="0.9" />
-                  {showValues && (displayStep === 1 || index % displayStep === 0 || index === 0 || index === items.length - 1) ? (
+                  {showValues ? (
                     <text x={x + barWidth / 2} y={y - 8} textAnchor="middle" className="chart-svg-value">
                       {formatAxisValue(item.value, decimalPlaces)}
                     </text>
@@ -368,7 +358,6 @@ export function ChartPreview({
     const plotHeight = chartHeight - topPad - bottomPad;
     const rowHeight = plotHeight / Math.max(items.length, 1);
     const barHeight = Math.max(14, Math.min(28, rowHeight * 0.56));
-    const displayStep = valueDisplayStep(items.length, rowHeight * 2, compact);
     return (
       <div className="axis-chart-shell">
         {renderTitle(title)}
@@ -404,7 +393,7 @@ export function ChartPreview({
                 <g key={`${item.label}-${index}`} className={href ? "chart-linkable" : undefined}>
                   <text x={leftPad - 12} y={y + barHeight / 2 + 4} textAnchor="end" className="chart-svg-label">{cap(item.label, compact ? 12 : 18)}</text>
                   <rect x={leftPad} y={y} width={width} height={barHeight} rx="10" fill={getColor(index)} fillOpacity="0.9" />
-                  {showValues && (displayStep === 1 || index % displayStep === 0 || index === 0 || index === items.length - 1) ? (
+                  {showValues ? (
                     <text x={leftPad + width + 10} y={y + barHeight / 2 + 4} textAnchor="start" className="chart-svg-value">
                       {formatAxisValue(item.value, decimalPlaces)}
                     </text>
