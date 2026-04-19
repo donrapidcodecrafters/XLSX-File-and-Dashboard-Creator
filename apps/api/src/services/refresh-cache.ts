@@ -476,19 +476,32 @@ export async function refreshAllCachedData(reason: "manual" | "scheduled" = "man
 export async function refreshAllCachedDataWithProgress(
   reason: "manual" | "scheduled" = "manual",
   onProgress?: (progress: number, message: string, extras?: { tableCount?: number; rowCount?: number; estimatedSecondsRemaining?: number }) => void,
-  profileId = ""
+  profileId = "",
+  activeJobId = ""
 ) {
   await studioStore.hydrateFromQuickbase(true);
   const startDocument = studioStore.getLiveDocument();
   updateRefreshScheduleMetadata(startDocument);
   updateLegacyActiveQuickbase(startDocument);
   startDocument.sync.refreshStatus.running = true;
-  startDocument.sync.refreshStatus.activeJobId = startDocument.sync.refreshStatus.activeJobId || "";
+  startDocument.sync.refreshStatus.activeJobId = activeJobId || startDocument.sync.refreshStatus.activeJobId || "";
   startDocument.sync.refreshStatus.progress = 1;
   startDocument.sync.refreshStatus.message = "Preparing refresh";
   startDocument.sync.refreshStatus.estimatedSecondsRemaining = undefined;
   startDocument.sync.refreshStatus.lastStartedAt = new Date().toISOString();
   startDocument.sync.refreshStatus.lastError = "";
+  const startupProfiles = profileId
+    ? startDocument.quickbaseProfiles.filter((profile) => profile.id === profileId)
+    : startDocument.quickbaseProfiles;
+  startupProfiles.forEach((profile) => {
+    profile.refreshStatus.running = true;
+    profile.refreshStatus.activeJobId = activeJobId || profile.refreshStatus.activeJobId || "";
+    profile.refreshStatus.progress = 1;
+    profile.refreshStatus.message = "Preparing refresh";
+    profile.refreshStatus.estimatedSecondsRemaining = undefined;
+    profile.refreshStatus.lastStartedAt = startDocument.sync.refreshStatus.lastStartedAt;
+    profile.refreshStatus.lastError = "";
+  });
   studioStore.flushCurrent({ markSavedAt: false });
 
   try {
@@ -623,19 +636,33 @@ export async function refreshAllCachedDataWithProgress(
 
 export async function refreshObjectCachedDataWithProgress(
   objectId: string,
-  onProgress?: (progress: number, message: string, extras?: { tableCount?: number; rowCount?: number; estimatedSecondsRemaining?: number }) => void
+  onProgress?: (progress: number, message: string, extras?: { tableCount?: number; rowCount?: number; estimatedSecondsRemaining?: number }) => void,
+  activeJobId = ""
 ) {
   await studioStore.hydrateFromQuickbase(true);
   const startDocument = studioStore.getLiveDocument();
   updateRefreshScheduleMetadata(startDocument);
   updateLegacyActiveQuickbase(startDocument);
   startDocument.sync.refreshStatus.running = true;
-  startDocument.sync.refreshStatus.activeJobId = startDocument.sync.refreshStatus.activeJobId || "";
+  startDocument.sync.refreshStatus.activeJobId = activeJobId || startDocument.sync.refreshStatus.activeJobId || "";
   startDocument.sync.refreshStatus.progress = 1;
   startDocument.sync.refreshStatus.message = "Preparing object refresh";
   startDocument.sync.refreshStatus.estimatedSecondsRemaining = undefined;
   startDocument.sync.refreshStatus.lastStartedAt = new Date().toISOString();
   startDocument.sync.refreshStatus.lastError = "";
+  const startupTableIds = getObjectTableIds(startDocument, objectId);
+  const startupProfiles = getProfilesForTableIds(startDocument, startupTableIds);
+  startupProfiles.forEach((profileId) => {
+    syncProfileRefreshStatus(startDocument, profileId, (status) => {
+      status.running = true;
+      status.activeJobId = activeJobId || status.activeJobId || "";
+      status.progress = 1;
+      status.message = "Preparing object refresh";
+      status.estimatedSecondsRemaining = undefined;
+      status.lastStartedAt = startDocument.sync.refreshStatus.lastStartedAt;
+      status.lastError = "";
+    });
+  });
   studioStore.flushCurrent({ markSavedAt: false });
 
   try {
@@ -783,9 +810,11 @@ export function startRefreshScheduler(logger?: FastifyBaseLogger) {
       }
       try {
         logger?.info({ profileId: profile.id }, "Starting scheduled app refresh");
+        let scheduledJobId = "";
         const job = refreshJobStore.createJob("scheduled", async ({ update }) => {
-          await refreshAllCachedDataWithProgress("scheduled", (progress, message, extras) => update(progress, message, extras), profile.id);
+          await refreshAllCachedDataWithProgress("scheduled", (progress, message, extras) => update(progress, message, extras), profile.id, scheduledJobId);
         });
+        scheduledJobId = job.id;
         const current = studioStore.getLiveDocument();
         current.sync.refreshStatus.running = true;
         current.sync.refreshStatus.activeJobId = job.id;

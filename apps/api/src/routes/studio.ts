@@ -131,15 +131,17 @@ export async function registerStudioRoutes(app: FastifyInstance) {
 
   app.post("/api/studio/refresh/start", async (request, reply) => {
     try {
+      let jobId = "";
       const job = refreshJobStore.createJob("manual", async ({ update }) => {
         const result = await refreshAllCachedDataWithProgress("manual", (progress, message, extras) => {
           update(progress, message, extras);
-        });
+        }, "", jobId);
         return {
           tableCount: result.tableCount,
           rowCount: result.rowCount
         };
       });
+      jobId = job.id;
       const current = studioStore.getLiveDocument();
       current.sync.refreshStatus.running = true;
       current.sync.refreshStatus.activeJobId = job.id;
@@ -167,15 +169,17 @@ export async function registerStudioRoutes(app: FastifyInstance) {
   app.post("/api/studio/objects/:id/refresh/start", async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
+      let jobId = "";
       const job = refreshJobStore.createJob("manual", async ({ update }) => {
         const result = await refreshObjectCachedDataWithProgress(id, (progress, message, extras) => {
           update(progress, message, extras);
-        });
+        }, jobId);
         return {
           tableCount: result.tableCount,
           rowCount: result.rowCount
         };
       });
+      jobId = job.id;
       const current = studioStore.getLiveDocument();
       current.sync.refreshStatus.running = true;
       current.sync.refreshStatus.activeJobId = job.id;
