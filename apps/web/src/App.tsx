@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { normalizeStudioDocument, type CatalogSummaryItem, type ReportDefinition, type StudioDocument, type StudioObject, type TableDefinition } from "@studio/shared";
 import { DashboardView } from "./components/DashboardView";
@@ -82,13 +82,27 @@ function useCatalog() {
   const [tables, setTables] = useState<TableDefinition[]>([]);
   const [studioDocument, setStudioDocument] = useState<StudioDocument | null>(null);
 
-  useEffect(() => {
+  const reloadCatalog = useCallback(async () => {
     fetchCatalog().then((response) => setObjects(response.objects));
     fetchTables().then((response) => setTables(response.tables));
     fetchStudioDocument().then((response) => setStudioDocument(normalizeStudioDocument(response.document))).catch(() => undefined);
   }, []);
 
-  return { objects, tables, studioDocument };
+  function markObjectAsRecent(objectId: string) {
+    setStudioDocument((current) => {
+      if (!current || !objectId) return current;
+      return {
+        ...current,
+        recent: [objectId, ...(current.recent || []).filter((item) => item !== objectId)].slice(0, 10)
+      };
+    });
+  }
+
+  useEffect(() => {
+    void reloadCatalog();
+  }, []);
+
+  return { objects, tables, studioDocument, reloadCatalog, markObjectAsRecent };
 }
 
 function formatTimestamp(value?: string) {
@@ -129,145 +143,163 @@ function HomePage({
   openLinksInNewTab?: boolean;
 }) {
   const catalogLookup = useMemo(() => buildCatalogItemLookup(objects, studioDocument), [objects, studioDocument]);
-  const reports = objects.filter((object) => object.type === "report");
-  const dashboards = objects.filter((object) => object.type === "dashboard");
+  const rankedObjects = [...objects].sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime());
+  const reports = rankedObjects.filter((object) => object.type === "report");
+  const dashboards = rankedObjects.filter((object) => object.type === "dashboard");
   const recentObjects = (studioDocument?.recent || [])
     .map((id) => catalogLookup.get(id))
     .filter((item): item is CatalogSummaryItem => Boolean(item))
-    .slice(0, 6);
+    .slice(0, 6) || [];
   const favoriteObjects = (studioDocument?.favorites || [])
     .map((id) => catalogLookup.get(id))
     .filter((item): item is CatalogSummaryItem => Boolean(item))
-    .slice(0, 6);
+    .slice(0, 6) || [];
+  const recentOrLatest = recentObjects.length ? recentObjects : rankedObjects.slice(0, 6);
+  const favoritesOrFeatured = favoriteObjects.length ? favoriteObjects : [...dashboards, ...reports].slice(0, 6);
   const appProfiles = studioDocument?.quickbaseProfiles || [];
   const totalCachedRows = appProfiles.reduce((sum, profile) => sum + (profile.refreshStatus.cachedRowCount || 0), 0);
+  const healthTone = totalCachedRows > 0 ? "Up to date" : "Needs refresh";
 
   return (
-    <section className="surface stack home-page">
-      <div className="hero home-hero">
-        <div>
-          <span className="badge brand">Home</span>
-          <h1>Platform Home</h1>
-          <p>See refresh status, cached data, saved content, and jump directly into the reports and dashboards people use most.</p>
-        </div>
-        <div className="link-toolbar viewer-actions">
-          <Link className="ghost-button" to="/viewer">Browse all reports and dashboards</Link>
-          <Link className="ghost-button" to="/studio">Open building area</Link>
-        </div>
-      </div>
-
-      <div className="home-stat-grid">
-        <div className="summary-card">
-          <strong>{objects.length}</strong>
-          <span>Saved reports and dashboards</span>
-        </div>
-        <div className="summary-card">
-          <strong>{reports.length}</strong>
-          <span>Reports</span>
-        </div>
-        <div className="summary-card">
-          <strong>{dashboards.length}</strong>
-          <span>Dashboards</span>
-        </div>
-        <div className="summary-card">
-          <strong>{totalCachedRows.toLocaleString()}</strong>
-          <span>Rows saved for faster loading</span>
-        </div>
-      </div>
-
-      <div className="home-section-grid">
-        <div className="card">
-          <div className="card-head">
-            <strong>Platform Status</strong>
-            <span className="micro">What is happening right now</span>
+    <section className="surface home-page">
+      <div className="home-shell">
+        <section className="home-hero-panel">
+          <div className="home-hero-copy">
+            <span className="badge brand">Home</span>
+            <h1>{studioDocument?.branding.homeLabel || "Reporting platform home"}</h1>
+            <p>Everything important in one place: refresh health, connected apps, recent activity, favorites, and fast access to the reports and dashboards people use every day.</p>
           </div>
-          <div className="home-status-list">
-            <div className="home-status-item">
-              <strong>Last full refresh</strong>
-              <span>{formatTimestamp(studioDocument?.sync.refreshStatus.lastSuccessAt)}</span>
+          <div className="home-hero-actions">
+            <Link className="ghost-button" to="/viewer">Browse reports and dashboards</Link>
+            <Link className="ghost-button" to="/studio">Open building area</Link>
+          </div>
+          <div className="home-highlight-grid">
+            <div className="home-highlight-card home-highlight-card-primary">
+              <span className="micro">Platform health</span>
+              <strong>{healthTone}</strong>
+              <span>Last refresh {formatTimestamp(studioDocument?.sync.refreshStatus.lastSuccessAt)}</span>
             </div>
-            <div className="home-status-item">
-              <strong>Next scheduled refresh</strong>
-              <span>{formatTimestamp(studioDocument?.sync.refreshStatus.nextRunAt)}</span>
+            <div className="home-highlight-card">
+              <span className="micro">Saved content</span>
+              <strong>{objects.length}</strong>
+              <span>{reports.length} reports · {dashboards.length} dashboards</span>
             </div>
-            <div className="home-status-item">
-              <strong>Current refresh message</strong>
-              <span>{studioDocument?.sync.refreshStatus.message || "No refresh has run yet."}</span>
-            </div>
-            <div className="home-status-item">
-              <strong>Saved favorites</strong>
-              <span>{(studioDocument?.favorites || []).length}</span>
+            <div className="home-highlight-card">
+              <span className="micro">Rows saved for faster loading</span>
+              <strong>{totalCachedRows.toLocaleString()}</strong>
+              <span>Across {appProfiles.length} connected app{appProfiles.length === 1 ? "" : "s"}</span>
             </div>
           </div>
-        </div>
+        </section>
 
-        <div className="card">
-          <div className="card-head">
-            <strong>Connected Apps</strong>
-            <span className="micro">Refresh and cache status by app</span>
-          </div>
-          <div className="home-app-list">
-            {appProfiles.length ? appProfiles.map((profile) => (
-              <div className="home-app-item" key={profile.id}>
-                <div className="home-app-head">
-                  <strong>{profile.label || "Quickbase app"}</strong>
-                  <span className="badge">{profile.liveMode ? "Live mode" : "Cached mode"}</span>
-                </div>
-                <span>Last refresh: {formatTimestamp(profile.refreshStatus.lastSuccessAt)}</span>
-                <span>Next refresh: {formatTimestamp(profile.refreshStatus.nextRunAt)}</span>
-                <span>Rows saved: {(profile.refreshStatus.cachedRowCount || 0).toLocaleString()}</span>
+        <section className="home-main-grid">
+          <div className="home-column home-column-wide">
+            <div className="card home-section-card">
+              <div className="card-head">
+                <strong>{recentObjects.length ? "Recently Opened" : "Latest Activity"}</strong>
+                <span className="micro">{recentObjects.length ? "Quickly reopen active work" : "Start here if nothing has been opened yet"}</span>
               </div>
-            )) : (
-              <div className="empty">No Quickbase apps are configured yet.</div>
-            )}
-          </div>
-        </div>
-      </div>
+              <div className="viewer-grid home-object-grid">
+                {recentOrLatest.length ? recentOrLatest.map((object) => (
+                  <Link key={object.id} className="home-object-card" to={`/${object.type}/${object.id}`} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>
+                    <span className="badge">{typeLabel(object.type)}</span>
+                    <strong>{object.name}</strong>
+                    <span>{object.description || "No description yet."}</span>
+                    <span className="micro">{object.folder} · {object.category}</span>
+                  </Link>
+                )) : (
+                  <div className="empty-page">No reports or dashboards are available yet.</div>
+                )}
+              </div>
+            </div>
 
-      <div className="home-section-grid">
-        <div className="card">
-          <div className="card-head">
-            <strong>Recently Opened</strong>
-            <span className="micro">Quickly reopen active work</span>
+            <div className="card home-section-card">
+              <div className="card-head">
+                <strong>{favoriteObjects.length ? "Favorites" : "Featured Dashboards and Reports"}</strong>
+                <span className="micro">{favoriteObjects.length ? "Pinned items for quick access" : "Helpful starting points until favorites are set"}</span>
+              </div>
+              <div className="viewer-grid home-object-grid">
+                {favoritesOrFeatured.length ? favoritesOrFeatured.map((object) => (
+                  <Link key={object.id} className="home-object-card" to={`/${object.type}/${object.id}`} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>
+                    <span className="badge">{typeLabel(object.type)}</span>
+                    <strong>{object.name}</strong>
+                    <span>{object.description || "No description yet."}</span>
+                    <span className="micro">{object.folder} · {object.category}</span>
+                  </Link>
+                )) : (
+                  <div className="empty-page">No favorites or featured content are available yet.</div>
+                )}
+              </div>
+            </div>
           </div>
-          <div className="viewer-grid home-object-grid">
-            {recentObjects.length ? recentObjects.map((object) => (
-              <Link key={object.id} className="viewer-card" to={`/${object.type}/${object.id}`} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>
-                <span className="badge">{typeLabel(object.type)}</span>
-                <strong>{object.name}</strong>
-                <span>{object.description || "No description yet."}</span>
-                <span className="micro">{object.folder} · {object.category}</span>
-              </Link>
-            )) : (
-              <div className="empty-page">No reports or dashboards have been opened yet.</div>
-            )}
-          </div>
-        </div>
 
-        <div className="card">
-          <div className="card-head">
-            <strong>Favorites</strong>
-            <span className="micro">Pinned items for quick access</span>
+          <div className="home-column">
+            <div className="card home-section-card">
+              <div className="card-head">
+                <strong>Platform Status</strong>
+                <span className="micro">What is happening right now</span>
+              </div>
+              <div className="home-status-list">
+                <div className="home-status-item">
+                  <strong>Last full refresh</strong>
+                  <span>{formatTimestamp(studioDocument?.sync.refreshStatus.lastSuccessAt)}</span>
+                </div>
+                <div className="home-status-item">
+                  <strong>Next scheduled refresh</strong>
+                  <span>{formatTimestamp(studioDocument?.sync.refreshStatus.nextRunAt)}</span>
+                </div>
+                <div className="home-status-item">
+                  <strong>Current refresh message</strong>
+                  <span>{studioDocument?.sync.refreshStatus.message || "No refresh has run yet."}</span>
+                </div>
+                <div className="home-status-item">
+                  <strong>Favorites saved</strong>
+                  <span>{(studioDocument?.favorites || []).length}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="card home-section-card">
+              <div className="card-head">
+                <strong>Connected Apps</strong>
+                <span className="micro">Refresh and cache status by app</span>
+              </div>
+              <div className="home-app-list">
+                {appProfiles.length ? appProfiles.map((profile) => (
+                  <div className="home-app-item" key={profile.id}>
+                    <div className="home-app-head">
+                      <strong>{profile.label || "Quickbase app"}</strong>
+                      <span className="badge">{profile.liveMode ? "Live mode" : "Cached mode"}</span>
+                    </div>
+                    <span>Last refresh: {formatTimestamp(profile.refreshStatus.lastSuccessAt)}</span>
+                    <span>Next refresh: {formatTimestamp(profile.refreshStatus.nextRunAt)}</span>
+                    <span>Rows saved: {(profile.refreshStatus.cachedRowCount || 0).toLocaleString()}</span>
+                  </div>
+                )) : (
+                  <div className="empty">No Quickbase apps are configured yet.</div>
+                )}
+              </div>
+            </div>
           </div>
-          <div className="viewer-grid home-object-grid">
-            {favoriteObjects.length ? favoriteObjects.map((object) => (
-              <Link key={object.id} className="viewer-card" to={`/${object.type}/${object.id}`} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>
-                <span className="badge">{typeLabel(object.type)}</span>
-                <strong>{object.name}</strong>
-                <span>{object.description || "No description yet."}</span>
-                <span className="micro">{object.folder} · {object.category}</span>
-              </Link>
-            )) : (
-              <div className="empty-page">No favorites have been saved yet.</div>
-            )}
-          </div>
-        </div>
+        </section>
       </div>
     </section>
   );
 }
 
-function ObjectPage({ tables, platformName, studioDocument, openLinksInNewTab = false }: { tables: TableDefinition[]; platformName: string; studioDocument: StudioDocument | null; openLinksInNewTab?: boolean }) {
+function ObjectPage({
+  tables,
+  platformName,
+  studioDocument,
+  openLinksInNewTab = false,
+  onObjectViewed
+}: {
+  tables: TableDefinition[];
+  platformName: string;
+  studioDocument: StudioDocument | null;
+  openLinksInNewTab?: boolean;
+  onObjectViewed: (objectId: string) => void;
+}) {
   const params = useParams();
   const [object, setObject] = useState<StudioObject | null>(null);
   const [result, setResult] = useState<any>(null);
@@ -309,6 +341,7 @@ function ObjectPage({ tables, platformName, studioDocument, openLinksInNewTab = 
         if (!active) return;
         setObject(response.object);
         setResult(null);
+        onObjectViewed(response.object.id);
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -316,7 +349,7 @@ function ObjectPage({ tables, platformName, studioDocument, openLinksInNewTab = 
     return () => {
       active = false;
     };
-  }, [params.objectId]);
+  }, [onObjectViewed, params.objectId]);
 
   useEffect(() => {
     if (object) {
@@ -567,7 +600,7 @@ function ViewerPage({ objects, refreshAllSignal = 0, openLinksInNewTab = false }
 }
 
 export function App() {
-  const { objects, tables, studioDocument } = useCatalog();
+  const { objects, tables, studioDocument, reloadCatalog, markObjectAsRecent } = useCatalog();
   const location = useLocation();
   const hosted = useMemo(() => getHostedContext(), [location.key]);
   const [studioSettingsSignal, setStudioSettingsSignal] = useState(0);
@@ -582,6 +615,10 @@ export function App() {
   const navLabel = studioDocument?.branding.navigationLabel || "Reports and Dashboards";
   const readerFullScreen = readerRoute || hosted.mode === "viewer" || hosted.embed;
   const hideSidebar = hosted.embed || studioRoute || readerRoute || viewerRoute || homeRoute;
+
+  useEffect(() => {
+    void reloadCatalog();
+  }, [location.pathname, reloadCatalog]);
 
   useEffect(() => {
     if (readerRoute) return;
@@ -629,7 +666,7 @@ export function App() {
         </header>
       )}
 
-      <div className={`main-layout ${hosted.embed || studioRoute || readerRoute || viewerRoute ? "embed-layout" : ""} ${readerRoute ? "reader-layout" : ""}`}>
+      <div className={`main-layout ${hosted.embed || studioRoute || readerRoute || viewerRoute || homeRoute ? "embed-layout" : ""} ${readerRoute ? "reader-layout" : ""}`}>
         {hideSidebar ? null : (
           <aside className="sidebar">
             <div className="sidebar-head">
@@ -654,7 +691,7 @@ export function App() {
             <Route path="/viewer" element={<ViewerPage objects={objects} refreshAllSignal={viewerRefreshSignal} openLinksInNewTab={openLinksInNewTab} />} />
             <Route path="/studio" element={<StudioPage openSettingsSignal={studioSettingsSignal} refreshAllSignal={studioRefreshSignal} />} />
             <Route path="/studio/:objectId" element={<StudioPage openSettingsSignal={studioSettingsSignal} refreshAllSignal={studioRefreshSignal} />} />
-            <Route path="/:type/:objectId" element={<ObjectPage tables={tables} platformName={platformName} studioDocument={studioDocument} openLinksInNewTab={openLinksInNewTab} />} />
+            <Route path="/:type/:objectId" element={<ObjectPage tables={tables} platformName={platformName} studioDocument={studioDocument} openLinksInNewTab={openLinksInNewTab} onObjectViewed={markObjectAsRecent} />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
