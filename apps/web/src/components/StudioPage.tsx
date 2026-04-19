@@ -41,9 +41,11 @@ import {
 } from "@studio/shared";
 import {
   createStudioSnapshot,
+  fetchQuickbaseApps,
   fetchQuickbaseReportPreview,
   fetchQuickbaseSchema,
   fetchStudioDocument,
+  type QuickbaseRealmApp,
   type QuickbaseAppSchema,
   type QuickbaseSyncResult,
   fetchStudioRefreshJob,
@@ -905,7 +907,7 @@ function FilterGroupEditor({
   return (
     <div className="filter-group-editor">
       <div className="card-head">
-        <strong>{canRemove ? "Group" : "Root group"}</strong>
+        <strong>{canRemove ? "Group" : "Filter group"}</strong>
         <div className="studio-actions">
           <label className="field compact-field">
             <span>Match</span>
@@ -1035,6 +1037,8 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [quickbaseSchema, setQuickbaseSchema] = useState<QuickbaseAppSchema | null>(null);
   const [quickbaseSchemaLoading, setQuickbaseSchemaLoading] = useState(false);
+  const [realmApps, setRealmApps] = useState<QuickbaseRealmApp[]>([]);
+  const [realmAppsLoading, setRealmAppsLoading] = useState(false);
   const [refreshingCache, setRefreshingCache] = useState(false);
   const [refreshJob, setRefreshJob] = useState<RefreshJobStatus | null>(null);
   const [lastQuickbaseSync, setLastQuickbaseSync] = useState<QuickbaseSyncResult | null>(null);
@@ -1044,6 +1048,21 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
     () => activeQuickbaseProfile ? getTablesForQuickbaseProfile(documentState, activeQuickbaseProfile.id) : [],
     [documentState, activeQuickbaseProfile]
   );
+
+  const savedRowsForApp = activeQuickbaseProfile?.refreshStatus.cachedRowCount || 0;
+  const refreshStatusTitle = activeQuickbaseProfile?.refreshStatus.running
+    ? "Refreshing saved data"
+    : activeQuickbaseProfile?.refreshStatus.lastSuccessAt
+      ? (savedRowsForApp > 0 ? "Saved data is ready" : "Refresh finished but nothing was saved")
+      : "No saved data yet";
+  const refreshStatusDetail = activeQuickbaseProfile?.refreshStatus.lastError
+    || (activeQuickbaseProfile?.refreshStatus.running
+      ? "We are updating the saved Quickbase data for this app now."
+      : activeQuickbaseProfile?.refreshStatus.lastSuccessAt
+        ? (savedRowsForApp > 0
+          ? `This app has ${savedRowsForApp.toLocaleString()} rows saved for faster loading.`
+          : "The refresh ran, but it did not save any rows. Check that each selected Quickbase source report returns every record and every field you need.")
+        : "Run a refresh after you choose the source tables and enter a report ID for each one.");
   const [liveReportResult, setLiveReportResult] = useState<ReportRunResult | null>(null);
   const [liveReportLoading, setLiveReportLoading] = useState(false);
   const [exportJob, setExportJob] = useState<ExportJobStatus | null>(null);
@@ -1699,6 +1718,26 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
     }
   }
 
+  async function loadRealmApps(silent = false) {
+    const profile = activeQuickbaseProfile;
+    if (!profile) {
+      pushToast("Add a Quickbase app profile first.", "warn");
+      return;
+    }
+    setRealmAppsLoading(true);
+    try {
+      const response = await fetchQuickbaseApps(profile.quickbase);
+      setRealmApps(response.apps);
+      if (!silent) {
+        pushToast(`Found ${response.apps.length} Quickbase apps you can access in this realm.`);
+      }
+    } catch (error) {
+      pushToast(error instanceof Error ? error.message : "Quickbase app lookup failed.", "danger");
+    } finally {
+      setRealmAppsLoading(false);
+    }
+  }
+
   function updateQuickbaseField(field: keyof StudioDocument["quickbase"], value: string) {
     applyDocumentUpdate((draft) => {
       const profile = draft.quickbaseProfiles.find((item) => item.id === draft.activeQuickbaseProfileId);
@@ -1842,6 +1881,24 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
         };
       });
     });
+  }
+
+  function applyQuickbaseAppSelection(appId: string) {
+    const selected = realmApps.find((item) => item.id === appId);
+    applyDocumentUpdate((draft) => {
+      const profile = draft.quickbaseProfiles.find((item) => item.id === draft.activeQuickbaseProfileId);
+      if (!profile) return;
+      profile.quickbase.appId = appId;
+      if (selected) {
+        profile.label = selected.name;
+      }
+      draft.quickbase.appId = appId;
+      if (selected && (!draft.branding.platformName || draft.branding.platformName === "Hosted Reporting Platform")) {
+        draft.branding.platformName = selected.name;
+      }
+      draft.bundle.tables = draft.bundle.tables.filter((table) => table.quickbaseProfileId !== profile.id);
+    });
+    setQuickbaseSchema(null);
   }
 
   function updateQuickbaseProfileLiveMode(enabled: boolean) {
@@ -2630,7 +2687,7 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
                   <div className="summary-card"><strong>{documentState.sync.lastSavedAt ? new Date(documentState.sync.lastSavedAt).toLocaleTimeString() : "n/a"}</strong><span>Last save</span></div>
                   <div className="summary-card"><strong>{activeQuickbaseProfile?.refreshStatus.lastSuccessAt ? new Date(activeQuickbaseProfile.refreshStatus.lastSuccessAt).toLocaleString() : "Not refreshed"}</strong><span>Last app refresh</span></div>
                   <div className="summary-card"><strong>{activeQuickbaseProfile?.refreshStatus.nextRunAt ? new Date(activeQuickbaseProfile.refreshStatus.nextRunAt).toLocaleString() : "Not scheduled"}</strong><span>Next app refresh</span></div>
-                  <div className="summary-card"><strong>{(activeQuickbaseProfile?.refreshStatus.cachedRowCount || 0).toLocaleString()}</strong><span>Cached rows for app</span></div>
+                  <div className="summary-card"><strong>{savedRowsForApp.toLocaleString()}</strong><span>Rows saved for faster loading</span></div>
                 </div>
                 <label className="field">
                   <span>Platform name</span>
@@ -2701,6 +2758,20 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
                     <input value={activeQuickbaseConfig.appId} onChange={(event) => updateQuickbaseField("appId", event.target.value)} placeholder="App DBID" />
                   </label>
                   <label className="field">
+                    <span>Choose from your Quickbase apps</span>
+                    <div className="inline-actions">
+                      <select value={activeQuickbaseConfig.appId} onChange={(event) => applyQuickbaseAppSelection(event.target.value)}>
+                        <option value="">Select an app from this realm</option>
+                        {realmApps.map((item) => (
+                          <option key={item.id} value={item.id}>{item.name} ({item.id})</option>
+                        ))}
+                      </select>
+                      <button onClick={() => { void loadRealmApps(); }} disabled={realmAppsLoading}>
+                        {realmAppsLoading ? "Finding apps…" : "Find apps"}
+                      </button>
+                    </div>
+                  </label>
+                  <label className="field">
                     <span>API base URL</span>
                     <input value={activeQuickbaseConfig.apiBaseUrl} onChange={(event) => updateQuickbaseField("apiBaseUrl", event.target.value)} placeholder="https://api.quickbase.com/v1" />
                   </label>
@@ -2710,6 +2781,9 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
                     </button>
                     {quickbaseSchema ? <button onClick={autoDetectQuickbaseMappings}>Auto-detect storage fields</button> : null}
                     <button onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save settings"}</button>
+                  </div>
+                  <div className="micro">
+                    Tip: use <strong>Find apps</strong> to see the Quickbase apps you can access in this realm, then pick the one you want instead of typing the App ID manually.
                   </div>
                   {quickbaseSchema ? (
                     <div className="card">
@@ -2805,9 +2879,9 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
                         {!activeProfileTables.length ? <div className="empty-hint">Load tables and fields for this app first.</div> : null}
                       </div>
                     </div>
-                    <div className="micro">
-                      Create one Quickbase source report per selected table that returns every record and every field needed by this platform. Then enter that report ID here, for example `125`.
-                    </div>
+                  <div className="micro">
+                    Create one Quickbase source report per selected table that returns every record and every field needed by this platform. Then enter that report ID here, for example `125`.
+                  </div>
                     {activeQuickbaseProfile?.refreshSource.tableIds.length ? (
                       <div className="stack-compact">
                         {activeQuickbaseProfile.refreshSource.tableIds.map((tableId) => {
@@ -2825,9 +2899,9 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
                         })}
                       </div>
                     ) : null}
-                    <div className="micro">
-                      Requirement: every selected table must have a report ID. Scheduled refresh for this app uses all of the selected table/report ID pairs.
-                    </div>
+                  <div className="micro">
+                    Requirement: every selected table must have a report ID. Scheduled refresh for this app uses all of the selected table/report ID pairs.
+                  </div>
                   </div>
                   <div className="studio-actions">
                     <button onClick={saveRemote} disabled={savingRemote || refreshingCache}>
@@ -2841,8 +2915,8 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
                     This app schedule is saved with the rest of the system settings JSON in Quickbase.
                   </div>
                   <div className={`sync-status ${activeQuickbaseProfile?.refreshStatus.lastError ? "sync-status-warn" : "sync-status-ok"}`}>
-                    <strong>{activeQuickbaseProfile?.refreshStatus.running ? "Refresh in progress" : activeQuickbaseProfile?.refreshStatus.lastSuccessAt ? "Refresh cache ready" : "No refresh cache yet"}</strong>
-                    <span>{activeQuickbaseProfile?.refreshStatus.lastError || `Cached tables: ${activeQuickbaseProfile?.refreshStatus.cachedTableIds.join(", ") || "none"}`}</span>
+                    <strong>{refreshStatusTitle}</strong>
+                    <span>{refreshStatusDetail}</span>
                   </div>
                 </div>
                 <div className="studio-actions">

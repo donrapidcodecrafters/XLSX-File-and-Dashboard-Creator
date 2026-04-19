@@ -1197,6 +1197,16 @@ export async function hydrateStudioDocumentFromQuickbase(document: StudioDocumen
     });
   });
   const nextTables = loadedTables.length ? loadedTables : base.bundle.tables;
+  const hasStoredWorkspace = mergedObjects.size > 0 || Object.keys(mergedVersions).length > 0 || Boolean(storedUserSettings);
+  const nextObjects = mergedObjects.size
+    ? Object.fromEntries(Array.from(mergedObjects.values()).map((object) => [object.id, object]))
+    : (hasStoredWorkspace ? {} : base.bundle.objects);
+  const nextOrder = mergedObjects.size
+    ? Array.from(mergedObjects.values())
+        .slice()
+        .sort((left, right) => String(right.updatedAt || "").localeCompare(String(left.updatedAt || "")))
+        .map((object) => object.id)
+    : (hasStoredWorkspace ? [] : base.bundle.order);
 
   const next = normalizeStudioDocument({
     ...base,
@@ -1207,13 +1217,8 @@ export async function hydrateStudioDocumentFromQuickbase(document: StudioDocumen
       ...base.bundle,
       tables: nextTables,
       data: Object.fromEntries(nextTables.map((table) => [table.id, base.bundle.data[table.id] || []])),
-      ...(mergedObjects.size ? {
-        objects: Object.fromEntries(Array.from(mergedObjects.values()).map((object) => [object.id, object])),
-        order: Array.from(mergedObjects.values())
-          .slice()
-          .sort((left, right) => String(right.updatedAt || "").localeCompare(String(left.updatedAt || "")))
-          .map((object) => object.id)
-      } : {})
+      objects: nextObjects,
+      order: nextOrder
     },
     branding: storedUserSettings?.branding ? {
       platformName: String(storedUserSettings.branding.platformName || base.branding.platformName),

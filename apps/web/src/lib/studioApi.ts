@@ -31,6 +31,11 @@ export interface QuickbaseAppSchema {
   tables: QuickbaseTableSchema[];
 }
 
+export interface QuickbaseRealmApp {
+  id: string;
+  name: string;
+}
+
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "http://localhost:3001").replace(/\/$/, "");
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -105,6 +110,17 @@ export function fetchQuickbaseSchema(config: StudioDocument["quickbase"]) {
       userToken: config.userToken,
       appToken: config.appToken,
       appId: config.appId
+    })
+  });
+}
+
+export function fetchQuickbaseApps(config: Pick<StudioDocument["quickbase"], "realmHostname" | "userToken" | "appToken">) {
+  return request<{ apps: QuickbaseRealmApp[] }>("/api/quickbase/apps", {
+    method: "POST",
+    body: JSON.stringify({
+      realmHostname: config.realmHostname,
+      userToken: config.userToken,
+      appToken: config.appToken
     })
   });
 }

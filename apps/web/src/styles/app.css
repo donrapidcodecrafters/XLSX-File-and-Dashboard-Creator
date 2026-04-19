@@ -105,6 +105,16 @@ input {
   background: rgba(255, 255, 255, 0.92);
 }
 
+.inline-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.inline-actions > *:first-child {
+  flex: 1 1 auto;
+}
+
 .app-shell {
   display: grid;
   gap: 16px;

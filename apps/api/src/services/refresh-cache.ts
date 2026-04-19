@@ -195,11 +195,12 @@ async function fetchAllTableRows(document: StudioDocument, table: TableDefinitio
   const quickbase = getQuickbaseConfigForTable(document, table);
   const savedReportId = getSavedReportIdForTable(document, table);
   if (savedReportId) {
+    const pageSize = 250;
     let skip = 0;
     const merged = new Map<string, DataRow>();
     while (true) {
       const page = await fetchQuickbaseRowsBySavedReport(quickbase, getQuickbaseTableId(table), savedReportId, {
-        top: 1000,
+        top: pageSize,
         skip
       });
       if (!page.length) break;
@@ -209,7 +210,7 @@ async function fetchAllTableRows(document: StudioDocument, table: TableDefinitio
         Object.assign(existing, row);
         merged.set(recordId, existing);
       });
-      if (page.length < 1000) break;
+      if (page.length < pageSize) break;
       skip += page.length;
     }
     return Array.from(merged.values());
