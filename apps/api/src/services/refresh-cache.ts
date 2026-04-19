@@ -157,6 +157,10 @@ export async function refreshAllCachedData(reason: "manual" | "scheduled" = "man
   const startDocument = JSON.parse(JSON.stringify(hydrated)) as StudioDocument;
   updateRefreshScheduleMetadata(startDocument);
   startDocument.sync.refreshStatus.running = true;
+  startDocument.sync.refreshStatus.activeJobId = "";
+  startDocument.sync.refreshStatus.progress = 1;
+  startDocument.sync.refreshStatus.message = "Preparing refresh";
+  startDocument.sync.refreshStatus.estimatedSecondsRemaining = undefined;
   startDocument.sync.refreshStatus.lastStartedAt = new Date().toISOString();
   startDocument.sync.refreshStatus.lastError = "";
   studioStore.saveDocument(startDocument, { markSavedAt: false });
@@ -174,6 +178,10 @@ export async function refreshAllCachedData(reason: "manual" | "scheduled" = "man
       totalRows += rows.length;
     }
     nextDocument.sync.refreshStatus.running = false;
+    nextDocument.sync.refreshStatus.activeJobId = "";
+    nextDocument.sync.refreshStatus.progress = 100;
+    nextDocument.sync.refreshStatus.message = "Refresh complete";
+    nextDocument.sync.refreshStatus.estimatedSecondsRemaining = 0;
     nextDocument.sync.refreshStatus.lastCompletedAt = new Date().toISOString();
     nextDocument.sync.refreshStatus.lastSuccessAt = nextDocument.sync.refreshStatus.lastCompletedAt;
     nextDocument.sync.refreshStatus.lastError = "";
@@ -191,6 +199,9 @@ export async function refreshAllCachedData(reason: "manual" | "scheduled" = "man
   } catch (error) {
     const failed = studioStore.getDocument();
     failed.sync.refreshStatus.running = false;
+    failed.sync.refreshStatus.activeJobId = "";
+    failed.sync.refreshStatus.message = error instanceof Error ? error.message : "Refresh failed.";
+    failed.sync.refreshStatus.estimatedSecondsRemaining = undefined;
     failed.sync.refreshStatus.lastCompletedAt = new Date().toISOString();
     failed.sync.refreshStatus.lastError = error instanceof Error ? error.message : "Refresh failed.";
     updateRefreshScheduleMetadata(failed);
@@ -201,12 +212,16 @@ export async function refreshAllCachedData(reason: "manual" | "scheduled" = "man
 
 export async function refreshAllCachedDataWithProgress(
   reason: "manual" | "scheduled" = "manual",
-  onProgress?: (progress: number, message: string, extras?: { tableCount?: number; rowCount?: number }) => void
+  onProgress?: (progress: number, message: string, extras?: { tableCount?: number; rowCount?: number; estimatedSecondsRemaining?: number }) => void
 ) {
   const hydrated = await studioStore.hydrateFromQuickbase(true);
   const startDocument = JSON.parse(JSON.stringify(hydrated)) as StudioDocument;
   updateRefreshScheduleMetadata(startDocument);
   startDocument.sync.refreshStatus.running = true;
+  startDocument.sync.refreshStatus.activeJobId = "";
+  startDocument.sync.refreshStatus.progress = 1;
+  startDocument.sync.refreshStatus.message = "Preparing refresh";
+  startDocument.sync.refreshStatus.estimatedSecondsRemaining = undefined;
   startDocument.sync.refreshStatus.lastStartedAt = new Date().toISOString();
   startDocument.sync.refreshStatus.lastError = "";
   studioStore.saveDocument(startDocument, { markSavedAt: false });
@@ -217,17 +232,55 @@ export async function refreshAllCachedDataWithProgress(
     const nextDocument = JSON.parse(JSON.stringify(latest)) as StudioDocument;
     let totalRows = 0;
     const totalTables = Math.max(tableIds.length, 1);
-    onProgress?.(4, "Preparing refresh", { tableCount: tableIds.length, rowCount: 0 });
+    const startedAt = Date.now();
+    const updateDocumentProgress = (
+      progress: number,
+      message: string,
+      extras?: { tableCount?: number; rowCount?: number; estimatedSecondsRemaining?: number }
+    ) => {
+      const current = studioStore.getDocument();
+      current.sync.refreshStatus.running = true;
+      current.sync.refreshStatus.progress = progress;
+      current.sync.refreshStatus.message = message;
+      current.sync.refreshStatus.estimatedSecondsRemaining = extras?.estimatedSecondsRemaining;
+      studioStore.saveDocument(current, { markSavedAt: false });
+      onProgress?.(progress, message, extras);
+    };
+
+    updateDocumentProgress(4, "Preparing refresh", { tableCount: tableIds.length, rowCount: 0 });
     for (const [index, tableId] of tableIds.entries()) {
       const table = getTable(nextDocument, tableId);
       if (!table) continue;
-      onProgress?.(5 + Math.round((index / totalTables) * 80), `Refreshing ${table.name}`, { tableCount: tableIds.length, rowCount: totalRows });
+      const startedTables = index;
+      const elapsedSeconds = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
+      const estimatedSecondsRemaining = startedTables > 0
+        ? Math.max(0, Math.round((elapsedSeconds / startedTables) * (tableIds.length - startedTables)))
+        : undefined;
+      updateDocumentProgress(5 + Math.round((index / totalTables) * 80), `Refreshing ${table.name}`, {
+        tableCount: tableIds.length,
+        rowCount: totalRows,
+        estimatedSecondsRemaining
+      });
       const rows = await fetchAllTableRows(nextDocument, table);
       nextDocument.bundle.data[tableId] = rows;
       totalRows += rows.length;
-      onProgress?.(5 + Math.round(((index + 1) / totalTables) * 80), `Refreshed ${table.name}`, { tableCount: tableIds.length, rowCount: totalRows });
+      const completedTables = index + 1;
+      const elapsedAfterTable = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
+      const remainingTables = tableIds.length - completedTables;
+      const tableEta = remainingTables > 0
+        ? Math.max(0, Math.round((elapsedAfterTable / completedTables) * remainingTables))
+        : 0;
+      updateDocumentProgress(5 + Math.round((completedTables / totalTables) * 80), `Refreshed ${table.name}`, {
+        tableCount: tableIds.length,
+        rowCount: totalRows,
+        estimatedSecondsRemaining: tableEta
+      });
     }
     nextDocument.sync.refreshStatus.running = false;
+    nextDocument.sync.refreshStatus.activeJobId = "";
+    nextDocument.sync.refreshStatus.progress = 100;
+    nextDocument.sync.refreshStatus.message = "Refresh complete";
+    nextDocument.sync.refreshStatus.estimatedSecondsRemaining = 0;
     nextDocument.sync.refreshStatus.lastCompletedAt = new Date().toISOString();
     nextDocument.sync.refreshStatus.lastSuccessAt = nextDocument.sync.refreshStatus.lastCompletedAt;
     nextDocument.sync.refreshStatus.lastError = "";
@@ -246,6 +299,9 @@ export async function refreshAllCachedDataWithProgress(
   } catch (error) {
     const failed = studioStore.getDocument();
     failed.sync.refreshStatus.running = false;
+    failed.sync.refreshStatus.activeJobId = "";
+    failed.sync.refreshStatus.message = error instanceof Error ? error.message : "Refresh failed.";
+    failed.sync.refreshStatus.estimatedSecondsRemaining = undefined;
     failed.sync.refreshStatus.lastCompletedAt = new Date().toISOString();
     failed.sync.refreshStatus.lastError = error instanceof Error ? error.message : "Refresh failed.";
     updateRefreshScheduleMetadata(failed);
@@ -273,9 +329,16 @@ export function startRefreshScheduler(logger?: FastifyBaseLogger) {
     }
     try {
       logger?.info("Starting scheduled refresh");
-      refreshJobStore.createJob("scheduled", async ({ update }) => {
+      const job = refreshJobStore.createJob("scheduled", async ({ update }) => {
         await refreshAllCachedDataWithProgress("scheduled", (progress, message, extras) => update(progress, message, extras));
       });
+      const current = studioStore.getDocument();
+      current.sync.refreshStatus.running = true;
+      current.sync.refreshStatus.activeJobId = job.id;
+      current.sync.refreshStatus.progress = Math.max(current.sync.refreshStatus.progress || 0, 1);
+      current.sync.refreshStatus.message = current.sync.refreshStatus.message || "Starting refresh";
+      current.sync.refreshStatus.lastError = "";
+      studioStore.saveDocument(current, { markSavedAt: false });
       logger?.info("Scheduled refresh queued");
     } catch (error) {
       logger?.error(error, "Scheduled refresh failed");

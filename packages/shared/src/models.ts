@@ -212,6 +212,10 @@ export interface RefreshScheduleConfig {
 
 export interface RefreshStatus {
   running: boolean;
+  activeJobId: string;
+  progress: number;
+  message: string;
+  estimatedSecondsRemaining?: number;
   lastStartedAt: string;
   lastCompletedAt: string;
   lastSuccessAt: string;

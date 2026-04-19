@@ -357,11 +357,15 @@ export function buildStudioDocument(): StudioDocument {
         dayOfMonth: 1,
         timeZone: "America/Denver"
       },
-      refreshStatus: {
-        running: false,
-        lastStartedAt: "",
-        lastCompletedAt: "",
-        lastSuccessAt: "",
+    refreshStatus: {
+      running: false,
+      activeJobId: "",
+      progress: 0,
+      message: "",
+      estimatedSecondsRemaining: undefined,
+      lastStartedAt: "",
+      lastCompletedAt: "",
+      lastSuccessAt: "",
         lastError: "",
         nextRunAt: "",
         cachedTableIds: [],

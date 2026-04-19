@@ -2,6 +2,7 @@ import type { RefreshJobStatus } from "@studio/shared";
 import { randomUUID } from "node:crypto";
 
 type RefreshJobRunner = (helpers: {
+  jobId: string;
   update: (progress: number, message: string, extras?: Partial<RefreshJobStatus>) => void;
 }) => Promise<Partial<RefreshJobStatus> | void>;
 
@@ -39,6 +40,7 @@ export class RefreshJobStore {
     this.update(job.id, 1, "Starting refresh", { status: "running", startedAt: new Date().toISOString() });
     try {
       const extras = await runner({
+        jobId: job.id,
         update: (progress, message, partial) => this.update(job.id, progress, message, { status: "running", ...(partial || {}) })
       });
       this.update(job.id, 100, "Refresh complete", {
@@ -65,7 +67,7 @@ export class RefreshJobStore {
     const now = Date.now();
     const startedAt = extras.startedAt || current.startedAt;
     let estimatedSecondsRemaining = extras.estimatedSecondsRemaining;
-    if (estimatedSecondsRemaining === undefined && startedAt && progress > 0 && progress < 100) {
+    if (estimatedSecondsRemaining === undefined && startedAt && progress >= 15 && progress < 100) {
       const elapsedSeconds = Math.max(1, Math.round((now - new Date(startedAt).getTime()) / 1000));
       estimatedSecondsRemaining = Math.max(0, Math.round((elapsedSeconds / progress) * (100 - progress)));
     }

@@ -80,6 +80,13 @@ export async function registerStudioRoutes(app: FastifyInstance) {
           rowCount: result.rowCount
         };
       });
+      const current = studioStore.getDocument();
+      current.sync.refreshStatus.running = true;
+      current.sync.refreshStatus.activeJobId = job.id;
+      current.sync.refreshStatus.progress = Math.max(current.sync.refreshStatus.progress || 0, 1);
+      current.sync.refreshStatus.message = current.sync.refreshStatus.message || "Starting refresh";
+      current.sync.refreshStatus.lastError = "";
+      studioStore.saveDocument(current, { markSavedAt: false });
       return { job };
     } catch (error) {
       reply.code(500);
@@ -92,7 +99,28 @@ export async function registerStudioRoutes(app: FastifyInstance) {
 
   app.get("/api/studio/refresh/jobs/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const job = refreshJobStore.getJob(id);
+    let job = refreshJobStore.getJob(id);
+    if (!job) {
+      const document = studioStore.getDocument();
+      const status = document.sync.refreshStatus;
+      if (status.activeJobId === id || (status.running && !status.activeJobId)) {
+        job = {
+          id,
+          status: status.running ? "running" : (status.lastError ? "failed" : "complete"),
+          progress: status.progress || 0,
+          message: status.message || (status.running ? "Refreshing…" : "Refresh complete"),
+          error: status.lastError || undefined,
+          reason: "manual",
+          createdAt: status.lastStartedAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          startedAt: status.lastStartedAt || undefined,
+          completedAt: status.lastCompletedAt || undefined,
+          estimatedSecondsRemaining: status.estimatedSecondsRemaining,
+          tableCount: status.cachedTableIds?.length || undefined,
+          rowCount: status.cachedRowCount || undefined
+        };
+      }
+    }
     if (!job) {
       reply.code(404);
       return { message: "Refresh job not found." };
