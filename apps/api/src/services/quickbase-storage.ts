@@ -1,6 +1,6 @@
 import { XMLParser } from "fast-xml-parser";
-import { normalizeStudioDocument, type DataRow, type FieldType, type StudioDocument, type StudioObject, type TableDefinition } from "@studio/shared";
-import { loadQuickbaseSchema } from "./quickbase-schema.js";
+import { normalizeStudioDocument, type DataRow, type FieldType, type StudioDocument, type StudioObject, type StudioVersionRecord, type TableDefinition } from "@studio/shared";
+import { loadQuickbaseSchema, type QuickbaseAppSchema } from "./quickbase-schema.js";
 
 interface QuickbaseUser {
   id: string;
@@ -42,6 +42,37 @@ const STORAGE_CONFIG_KEY = "__studioStorageConfig__";
 const USER_SETTINGS_KEY = "__studioUserSettings__";
 const QUICKBASE_RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
 const QUICKBASE_CACHE_TTL_MS = 60_000;
+const STORAGE_TABLE_NAMES = {
+  objects: "Saved Reports and Dashboards",
+  settings: "Studio User Settings",
+  versions: "Studio Version History"
+} as const;
+const STORAGE_FIELD_SPECS = {
+  objects: [
+    { key: "objectKeyFieldId", label: "Object ID", type: "text" },
+    { key: "objectTypeFieldId", label: "Type", type: "text" },
+    { key: "objectNameFieldId", label: "Name", type: "text" },
+    { key: "objectConfigFieldId", label: "JSON Config", type: "text-multi-line" },
+    { key: "objectOwnerFieldId", label: "Owner", type: "text" },
+    { key: "objectUpdatedAtFieldId", label: "Updated At", type: "text" },
+    { key: "objectUpdatedByFieldId", label: "Updated By", type: "text" }
+  ],
+  settings: [
+    { key: "settingsUserFieldId", label: "User", type: "text" },
+    { key: "settingsObjectFieldId", label: "Object Record", type: "text" },
+    { key: "settingsObjectKeyFieldId", label: "Object ID", type: "text" },
+    { key: "settingsJsonFieldId", label: "Settings JSON", type: "text-multi-line" },
+    { key: "settingsUpdatedByFieldId", label: "Updated By", type: "text" }
+  ],
+  versions: [
+    { key: "versionObjectFieldId", label: "Object Record", type: "text" },
+    { key: "versionObjectKeyFieldId", label: "Object ID", type: "text" },
+    { key: "versionSnapshotFieldId", label: "Snapshot JSON", type: "text-multi-line" },
+    { key: "versionChangedAtFieldId", label: "Changed At", type: "text" },
+    { key: "versionChangedByFieldId", label: "Changed By", type: "text" },
+    { key: "versionUpdatedByFieldId", label: "Updated By", type: "text" }
+  ]
+} as const;
 
 type CacheEntry<T> = {
   expiresAt: number;
@@ -89,6 +120,13 @@ function parseRetryAfterMs(value: string | null) {
 
 function normalizeHostname(value: string) {
   return String(value || "").trim().replace(/^https?:\/\//i, "").replace(/\/$/, "");
+}
+
+function normalizeQuickbaseLabel(value: string) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
 function escapeXml(value: string) {
@@ -339,6 +377,41 @@ async function quickbaseXmlRequest(
   throw new Error(
     `Quickbase ${action} failed for table ${dbid}. Tried ${failures.join(" then ")}. Confirm the DBID belongs to a real Quickbase table in realm ${hostname}.`
   );
+}
+
+async function quickbaseCreateTableXml(
+  config: StudioDocument["quickbase"],
+  tableName: string,
+  pluralNoun = "Records"
+) {
+  const api = await quickbaseXmlRequest(
+    config,
+    config.appId,
+    "API_CreateTable",
+    [
+      `<tname>${escapeXml(tableName)}</tname>`,
+      `<pnoun>${escapeXml(pluralNoun)}</pnoun>`
+    ].join("")
+  );
+  return String(textValue(api?.newdbid) || "");
+}
+
+async function quickbaseAddFieldXml(
+  config: StudioDocument["quickbase"],
+  tableId: string,
+  label: string,
+  type: string
+) {
+  const api = await quickbaseXmlRequest(
+    config,
+    tableId,
+    "API_AddField",
+    [
+      `<label>${escapeXml(label)}</label>`,
+      `<type>${escapeXml(type)}</type>`
+    ].join("")
+  );
+  return String(textValue(api?.fid) || "");
 }
 
 async function quickbaseQueryRecordsXml(
@@ -812,16 +885,28 @@ async function resolveStoredQuickbaseConfig(
   config: StudioDocument["quickbase"];
   bootstrapRows: Array<Record<string, { value: unknown }>>;
 }> {
-  const bootstrapRows = await loadQuickbaseBootstrapRows(config).catch(() => []);
-  const scope = `${normalizeHostname(config.realmHostname)}::${config.appId}`;
+  let bootstrapConfig = config;
+  if (hasQuickbaseConnection(config) && !config.settingsTableId) {
+    const schema = await loadQuickbaseSchema({
+      realmHostname: config.realmHostname,
+      userToken: config.userToken,
+      appToken: config.appToken,
+      appId: config.appId
+    }).catch(() => null);
+    if (schema) {
+      bootstrapConfig = mergeQuickbaseConfig(config, detectQuickbaseStorageConfig(schema));
+    }
+  }
+  const bootstrapRows = await loadQuickbaseBootstrapRows(bootstrapConfig).catch(() => []);
+  const scope = `${normalizeHostname(bootstrapConfig.realmHostname)}::${bootstrapConfig.appId}`;
   const storagePayload = bootstrapRows
-    .map((row) => uniqueFieldIds(["8", config.settingsJsonFieldId, "7"]).map((fid) => parseJsonValue(qbFieldValue(row, fid))).find(Boolean))
+    .map((row) => uniqueFieldIds(["8", bootstrapConfig.settingsJsonFieldId, "7"]).map((fid) => parseJsonValue(qbFieldValue(row, fid))).find(Boolean))
     .find((payload: any) => payload?.type === "storageConfig" && (!payload.scope || payload.scope === scope)) as
       | { storage?: Partial<StudioDocument["quickbase"]> }
       | undefined;
 
   return {
-    config: mergeQuickbaseConfig(config, storagePayload?.storage || null),
+    config: mergeQuickbaseConfig(bootstrapConfig, storagePayload?.storage || null),
     bootstrapRows
   };
 }
@@ -861,6 +946,36 @@ async function loadStoredObjects(config: StudioDocument["quickbase"]) {
   );
 }
 
+async function loadStoredVersions(config: StudioDocument["quickbase"]) {
+  if (!hasVersionStorage(config)) return {} as Record<string, StudioVersionRecord[]>;
+  const select = uniqueFieldIds([
+    "3",
+    config.versionObjectKeyFieldId,
+    config.versionSnapshotFieldId,
+    config.versionChangedAtFieldId
+  ]);
+  const rows = await quickbaseFetchAllRecords(config, config.versionTableId, select, "", { top: 200 });
+  const versions: Record<string, StudioVersionRecord[]> = {};
+  rows.forEach((row) => {
+    const objectId = String(qbFieldValue(row, config.versionObjectKeyFieldId) || "").trim();
+    if (!objectId) return;
+    const payload = parseJsonValue(qbFieldValue(row, config.versionSnapshotFieldId));
+    if (!payload?.snapshot) return;
+    const version: StudioVersionRecord = {
+      id: String(payload.id || qbFieldValue(row, "3") || `version-${Math.random().toString(36).slice(2, 10)}`),
+      label: String(payload.label || "Version"),
+      savedAt: String(payload.changedAt || qbFieldValue(row, config.versionChangedAtFieldId) || new Date().toISOString()),
+      object: payload.snapshot
+    };
+    versions[objectId] ||= [];
+    versions[objectId].push(version);
+  });
+  Object.values(versions).forEach((entries) => {
+    entries.sort((left, right) => String(right.savedAt || "").localeCompare(String(left.savedAt || "")));
+  });
+  return versions;
+}
+
 function loadUserSettingsFromRows(
   rows: Array<Record<string, { value: unknown }>>,
   config: StudioDocument["quickbase"],
@@ -881,6 +996,72 @@ function loadUserSettingsFromRows(
   const exact = parsedRows.find((entry) => entry.payload?.type === "userSettings" && String(qbFieldValue(entry.row, config.settingsUserFieldId || "6")) === userValue);
   const fallback = parsedRows.find((entry) => entry.payload?.type === "userSettings");
   return exact?.payload || fallback?.payload || null;
+}
+
+function findQuickbaseTableByNames(tables: QuickbaseAppSchema["tables"], names: string[]) {
+  const wanted = names.map(normalizeQuickbaseLabel);
+  return tables.find((table) => wanted.includes(normalizeQuickbaseLabel(table.name))) || null;
+}
+
+function findQuickbaseFieldIdByLabels(fields: QuickbaseAppSchema["tables"][number]["fields"], labels: string[]) {
+  const wanted = labels.map(normalizeQuickbaseLabel);
+  const match = fields.find((field) => wanted.includes(normalizeQuickbaseLabel(field.label)));
+  return match ? String(match.fid) : "";
+}
+
+function detectQuickbaseStorageConfig(schema: QuickbaseAppSchema) {
+  const detected: Partial<StudioDocument["quickbase"]> = {};
+
+  const objectTable = findQuickbaseTableByNames(schema.tables, [
+    STORAGE_TABLE_NAMES.objects,
+    "Saved Reports",
+    "Studio Items",
+    "Reporting Studio Items",
+    "Saved Studio Items"
+  ]);
+  if (objectTable) {
+    detected.objectTableId = objectTable.id;
+    detected.objectKeyFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, ["Object ID", "Studio Item Key", "Studio Item ID", "Item Key", "Report ID"]);
+    detected.objectTypeFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, ["Type", "Object Type"]);
+    detected.objectNameFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, ["Name", "Object Name", "Report Name"]);
+    detected.objectConfigFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, ["JSON Config", "Config JSON", "Json", "Configuration"]);
+    detected.objectOwnerFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, ["Owner", "Object Owner"]);
+    detected.objectUpdatedAtFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, ["Updated", "Updated At", "Modified", "Modified At"]);
+    detected.objectUpdatedByFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, ["Updated By", "Modified By"]);
+  }
+
+  const settingsTable = findQuickbaseTableByNames(schema.tables, [
+    STORAGE_TABLE_NAMES.settings,
+    "User Report Settings",
+    "User Settings",
+    "Report User Settings"
+  ]);
+  if (settingsTable) {
+    detected.settingsTableId = settingsTable.id;
+    detected.settingsUserFieldId = findQuickbaseFieldIdByLabels(settingsTable.fields, ["User", "User ID", "Email"]);
+    detected.settingsObjectFieldId = findQuickbaseFieldIdByLabels(settingsTable.fields, ["Object Record", "Studio Item Record"]);
+    detected.settingsObjectKeyFieldId = findQuickbaseFieldIdByLabels(settingsTable.fields, ["Object", "Object ID", "Studio Item Key", "Report ID"]);
+    detected.settingsJsonFieldId = findQuickbaseFieldIdByLabels(settingsTable.fields, ["Json", "JSON", "Settings JSON"]);
+    detected.settingsUpdatedByFieldId = findQuickbaseFieldIdByLabels(settingsTable.fields, ["Updated By", "Modified By"]);
+  }
+
+  const versionTable = findQuickbaseTableByNames(schema.tables, [
+    STORAGE_TABLE_NAMES.versions,
+    "Report Version History",
+    "Version History",
+    "Saved Report Version History"
+  ]);
+  if (versionTable) {
+    detected.versionTableId = versionTable.id;
+    detected.versionObjectFieldId = findQuickbaseFieldIdByLabels(versionTable.fields, ["Object Record", "Studio Item Record"]);
+    detected.versionObjectKeyFieldId = findQuickbaseFieldIdByLabels(versionTable.fields, ["Object", "Object ID", "Studio Item Key", "Report ID", "Version"]);
+    detected.versionSnapshotFieldId = findQuickbaseFieldIdByLabels(versionTable.fields, ["Json", "JSON", "Snapshot JSON"]);
+    detected.versionChangedAtFieldId = findQuickbaseFieldIdByLabels(versionTable.fields, ["Changed At", "Updated At", "Updated", "Modified At"]);
+    detected.versionChangedByFieldId = findQuickbaseFieldIdByLabels(versionTable.fields, ["Changed By", "Updated By", "Modified By"]);
+    detected.versionUpdatedByFieldId = findQuickbaseFieldIdByLabels(versionTable.fields, ["Updated By", "Changed By", "Modified By"]);
+  }
+
+  return detected;
 }
 
 function mapQuickbaseFieldType(fieldType: string, baseType: string): FieldType {
@@ -926,21 +1107,22 @@ function convertQuickbaseSchemaToTables(
 
 export async function hydrateStudioDocumentFromQuickbase(document: StudioDocument): Promise<StudioDocument> {
   const base = normalizeStudioDocument(document);
-  if (!hasQuickbaseConnection(base.quickbase)) {
+  const bootstrapConfig =
+    (base.quickbaseProfiles.find((profile) => profile.id === base.activeQuickbaseProfileId && hasQuickbaseConnection(profile.quickbase))?.quickbase)
+    || (base.quickbaseProfiles.find((profile) => hasQuickbaseConnection(profile.quickbase))?.quickbase)
+    || (hasQuickbaseConnection(base.quickbase) ? base.quickbase : null);
+  if (!bootstrapConfig) {
     return base;
   }
 
-  const { config: resolvedConfig, bootstrapRows } = await resolveStoredQuickbaseConfig(base.quickbase);
-  const [user, storedObjects] = await Promise.all([
-    quickbaseFetchCurrentUser(resolvedConfig),
-    loadStoredObjects(resolvedConfig).catch(() => [])
-  ]);
+  const { config: resolvedConfig, bootstrapRows } = await resolveStoredQuickbaseConfig(bootstrapConfig);
+  const user = await quickbaseFetchCurrentUser(resolvedConfig);
   const storedUserSettings = loadUserSettingsFromRows(bootstrapRows, resolvedConfig, user);
   const profileSeed = Array.isArray(storedUserSettings?.quickbaseProfiles) && storedUserSettings.quickbaseProfiles.length
     ? storedUserSettings.quickbaseProfiles
     : base.quickbaseProfiles;
   const activeQuickbaseProfileId = String(storedUserSettings?.activeQuickbaseProfileId || base.activeQuickbaseProfileId || "");
-  const normalizedProfiles = normalizeStudioDocument({
+  let normalizedProfiles = normalizeStudioDocument({
     ...base,
     quickbaseProfiles: profileSeed,
     activeQuickbaseProfileId
@@ -954,6 +1136,21 @@ export async function hydrateStudioDocumentFromQuickbase(document: StudioDocumen
       apiBaseUrl: profile.quickbase.apiBaseUrl || resolvedConfig.apiBaseUrl
     }, null)
   }));
+
+  normalizedProfiles = await Promise.all(
+    normalizedProfiles.map(async (profile) => {
+      if (!hasQuickbaseConnection(profile.quickbase)) return profile;
+      try {
+        const { config } = await resolveStoredQuickbaseConfig(profile.quickbase);
+        return {
+          ...profile,
+          quickbase: config
+        };
+      } catch {
+        return profile;
+      }
+    })
+  );
 
   const loadedTablesByProfile = await Promise.all(
     normalizedProfiles.map(async (profile) => {
@@ -972,6 +1169,33 @@ export async function hydrateStudioDocumentFromQuickbase(document: StudioDocumen
     })
   );
   const loadedTables = loadedTablesByProfile.flat();
+  const storedByProfile = await Promise.all(
+    normalizedProfiles.map(async (profile) => {
+      if (!hasQuickbaseConnection(profile.quickbase)) {
+        return { objects: [] as StudioObject[], versions: {} as Record<string, StudioVersionRecord[]> };
+      }
+      const [objects, versions] = await Promise.all([
+        loadStoredObjects(profile.quickbase).catch(() => [] as StudioObject[]),
+        loadStoredVersions(profile.quickbase).catch(() => ({} as Record<string, StudioVersionRecord[]>))
+      ]);
+      return { objects, versions };
+    })
+  );
+  const mergedObjects = new Map<string, StudioObject>();
+  storedByProfile.flatMap((entry) => entry.objects).forEach((object) => {
+    const current = mergedObjects.get(object.id);
+    if (!current || String(object.updatedAt || "") >= String(current.updatedAt || "")) {
+      mergedObjects.set(object.id, object);
+    }
+  });
+  const mergedVersions: Record<string, StudioVersionRecord[]> = {};
+  storedByProfile.forEach((entry) => {
+    Object.entries(entry.versions).forEach(([objectId, versions]) => {
+      mergedVersions[objectId] ||= [];
+      mergedVersions[objectId].push(...versions);
+      mergedVersions[objectId].sort((left, right) => String(right.savedAt || "").localeCompare(String(left.savedAt || "")));
+    });
+  });
   const nextTables = loadedTables.length ? loadedTables : base.bundle.tables;
 
   const next = normalizeStudioDocument({
@@ -983,9 +1207,9 @@ export async function hydrateStudioDocumentFromQuickbase(document: StudioDocumen
       ...base.bundle,
       tables: nextTables,
       data: Object.fromEntries(nextTables.map((table) => [table.id, base.bundle.data[table.id] || []])),
-      ...(storedObjects.length ? {
-        objects: Object.fromEntries(storedObjects.map((object) => [object.id, object])),
-        order: storedObjects
+      ...(mergedObjects.size ? {
+        objects: Object.fromEntries(Array.from(mergedObjects.values()).map((object) => [object.id, object])),
+        order: Array.from(mergedObjects.values())
           .slice()
           .sort((left, right) => String(right.updatedAt || "").localeCompare(String(left.updatedAt || "")))
           .map((object) => object.id)
@@ -1006,10 +1230,92 @@ export async function hydrateStudioDocumentFromQuickbase(document: StudioDocumen
         ...(storedUserSettings?.sync?.refreshSchedule || {})
       },
       lastLoadedAt: new Date().toISOString()
-    }
+    },
+    versions: Object.keys(mergedVersions).length ? mergedVersions : base.versions
   });
 
   return next;
+}
+
+async function ensureQuickbaseStorageForConfig(config: StudioDocument["quickbase"]) {
+  if (!hasQuickbaseConnection(config)) return config;
+
+  let schema = await loadQuickbaseSchema({
+    realmHostname: config.realmHostname,
+    userToken: config.userToken,
+    appToken: config.appToken,
+    appId: config.appId
+  });
+  let detected = detectQuickbaseStorageConfig(schema);
+
+  if (!detected.objectTableId) {
+    await quickbaseCreateTableXml(config, STORAGE_TABLE_NAMES.objects, "Saved Items");
+  }
+  if (!detected.settingsTableId) {
+    await quickbaseCreateTableXml(config, STORAGE_TABLE_NAMES.settings, "Settings");
+  }
+  if (!detected.versionTableId) {
+    await quickbaseCreateTableXml(config, STORAGE_TABLE_NAMES.versions, "Versions");
+  }
+
+  schema = await loadQuickbaseSchema({
+    realmHostname: config.realmHostname,
+    userToken: config.userToken,
+    appToken: config.appToken,
+    appId: config.appId
+  });
+  detected = detectQuickbaseStorageConfig(schema);
+
+  const objectTable = schema.tables.find((table) => table.id === detected.objectTableId);
+  const settingsTable = schema.tables.find((table) => table.id === detected.settingsTableId);
+  const versionTable = schema.tables.find((table) => table.id === detected.versionTableId);
+
+  if (objectTable) {
+    for (const field of STORAGE_FIELD_SPECS.objects) {
+      if (!(detected as Record<string, unknown>)[field.key]) {
+        await quickbaseAddFieldXml(config, objectTable.id, field.label, field.type);
+      }
+    }
+  }
+  if (settingsTable) {
+    for (const field of STORAGE_FIELD_SPECS.settings) {
+      if (!(detected as Record<string, unknown>)[field.key]) {
+        await quickbaseAddFieldXml(config, settingsTable.id, field.label, field.type);
+      }
+    }
+  }
+  if (versionTable) {
+    for (const field of STORAGE_FIELD_SPECS.versions) {
+      if (!(detected as Record<string, unknown>)[field.key]) {
+        await quickbaseAddFieldXml(config, versionTable.id, field.label, field.type);
+      }
+    }
+  }
+
+  const refreshedSchema = await loadQuickbaseSchema({
+    realmHostname: config.realmHostname,
+    userToken: config.userToken,
+    appToken: config.appToken,
+    appId: config.appId
+  });
+  schemaCache.delete(`${quickbaseConfigCacheKey(config)}::schema`);
+  return mergeQuickbaseConfig(config, detectQuickbaseStorageConfig(refreshedSchema) || null);
+}
+
+export async function ensureQuickbaseStorageForProfiles(document: StudioDocument): Promise<StudioDocument> {
+  const next = normalizeStudioDocument(document);
+  next.quickbaseProfiles = await Promise.all(
+    next.quickbaseProfiles.map(async (profile) => ({
+      ...profile,
+      quickbase: await ensureQuickbaseStorageForConfig(profile.quickbase)
+    }))
+  );
+  const active = next.quickbaseProfiles.find((profile) => profile.id === next.activeQuickbaseProfileId) || next.quickbaseProfiles[0];
+  if (active) {
+    next.quickbase = active.quickbase;
+    next.sync.refreshSchedule = active.refreshSchedule;
+  }
+  return normalizeStudioDocument(next);
 }
 
 async function syncObjectRecords(document: StudioDocument, user: QuickbaseUser) {
@@ -1196,8 +1502,9 @@ async function syncVersionRecords(document: StudioDocument, user: QuickbaseUser,
 }
 
 export async function syncStudioDocumentToQuickbase(document: StudioDocument): Promise<QuickbaseSyncSummary> {
-  const config = document.quickbase;
-  if (!hasQuickbaseConnection(config)) {
+  const provisionedDocument = await ensureQuickbaseStorageForProfiles(document);
+  const connectedProfiles = provisionedDocument.quickbaseProfiles.filter((profile) => hasQuickbaseConnection(profile.quickbase));
+  if (!connectedProfiles.length) {
     return {
       enabled: false,
       ok: true,
@@ -1209,51 +1516,50 @@ export async function syncStudioDocumentToQuickbase(document: StudioDocument): P
     };
   }
 
-  const missing: string[] = [];
-  if (!hasObjectStorage(config)) missing.push("saved reports and dashboards table mappings");
-  if (!hasSettingsStorage(config)) missing.push("user settings table mappings");
-  if (!hasVersionStorage(config)) missing.push("version history table mappings");
-  if (missing.length) {
-    return {
-      enabled: true,
-      ok: false,
-      message: `Quickbase sync is configured but missing ${missing.join(", ")}.`,
-      savedObjects: 0,
-      savedSettings: 0,
-      savedVersions: 0,
-      savedStorageConfig: 0
-    };
+  let savedObjects = 0;
+  let savedSettings = 0;
+  let savedVersions = 0;
+  let savedStorageConfig = 0;
+
+  for (const profile of connectedProfiles) {
+    const config = profile.quickbase;
+    const missing: string[] = [];
+    if (!hasObjectStorage(config)) missing.push("saved reports and dashboards table mappings");
+    if (!hasSettingsStorage(config)) missing.push("user settings table mappings");
+    if (!hasVersionStorage(config)) missing.push("version history table mappings");
+    if (missing.length) continue;
+
+    const invalidMappings: string[] = [];
+    if (isRecordIdField(config.objectKeyFieldId)) {
+      invalidMappings.push("saved reports and dashboards key field FID cannot be 3 (Record ID#)");
+    }
+    if (isRecordIdField(config.settingsObjectKeyFieldId)) {
+      invalidMappings.push("user settings object key field FID cannot be 3 (Record ID#)");
+    }
+    if (isRecordIdField(config.versionObjectKeyFieldId)) {
+      invalidMappings.push("version history object key field FID cannot be 3 (Record ID#)");
+    }
+    if (invalidMappings.length) {
+      throw new Error(invalidMappings.join(". ") + ". Use separate text fields to store report/dashboard object IDs.");
+    }
+
+    const user = await quickbaseFetchCurrentUser(config);
+    const profileDocument = normalizeStudioDocument({
+      ...provisionedDocument,
+      quickbase: config,
+      activeQuickbaseProfileId: profile.id
+    });
+    const syncedObjects = await syncObjectRecords(profileDocument, user);
+    const syncedSettings = await syncSettingsRecords(profileDocument, user);
+    const syncedVersions = await syncVersionRecords(profileDocument, user, syncedObjects.objectRecordIds);
+    savedObjects += syncedObjects.count;
+    savedSettings += syncedSettings.count;
+    savedVersions += syncedVersions.count;
+    savedStorageConfig += syncedSettings.storageConfigCount;
+    invalidateQuickbaseCaches(config);
   }
 
-  const invalidMappings: string[] = [];
-  if (isRecordIdField(config.objectKeyFieldId)) {
-    invalidMappings.push("saved reports and dashboards key field FID cannot be 3 (Record ID#)");
-  }
-  if (isRecordIdField(config.settingsObjectKeyFieldId)) {
-    invalidMappings.push("user settings object key field FID cannot be 3 (Record ID#)");
-  }
-  if (isRecordIdField(config.versionObjectKeyFieldId)) {
-    invalidMappings.push("version history object key field FID cannot be 3 (Record ID#)");
-  }
-  if (invalidMappings.length) {
-    return {
-      enabled: true,
-      ok: false,
-      message: invalidMappings.join(". ") + ". Use separate text fields to store report/dashboard object IDs.",
-      savedObjects: 0,
-      savedSettings: 0,
-      savedVersions: 0,
-      savedStorageConfig: 0
-    };
-  }
-
-  const user = await quickbaseFetchCurrentUser(config);
-  const { count: savedObjects, objectRecordIds } = await syncObjectRecords(document, user);
-  const { count: savedSettings, storageConfigCount: savedStorageConfig } = await syncSettingsRecords(document, user);
-  const { count: savedVersions } = await syncVersionRecords(document, user, objectRecordIds);
-  invalidateQuickbaseCaches(config);
-
-  const allVerified = savedObjects > 0 || savedSettings > 0 || savedVersions > 0;
+  const allVerified = savedObjects > 0 || savedSettings > 0 || savedVersions > 0 || savedStorageConfig > 0;
 
   return {
     enabled: true,

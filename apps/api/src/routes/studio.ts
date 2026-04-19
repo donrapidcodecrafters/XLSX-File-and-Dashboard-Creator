@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { StudioDocument } from "@studio/shared";
 import { studioStore } from "../services/studio-store.js";
-import { syncStudioDocumentToQuickbase } from "../services/quickbase-storage.js";
+import { ensureQuickbaseStorageForProfiles, syncStudioDocumentToQuickbase } from "../services/quickbase-storage.js";
 import { refreshAllCachedDataWithProgress, refreshObjectCachedDataWithProgress, updateRefreshScheduleMetadata } from "../services/refresh-cache.js";
 import { refreshJobStore } from "../services/refresh-jobs.js";
 
@@ -20,7 +20,8 @@ export async function registerStudioRoutes(app: FastifyInstance) {
       return { message: "Document payload is required." };
     }
     updateRefreshScheduleMetadata(body.document);
-    const document = studioStore.saveDocument(body.document);
+    const provisioned = await ensureQuickbaseStorageForProfiles(body.document);
+    const document = studioStore.saveDocument(provisioned);
     const sync = await syncStudioDocumentToQuickbase(document).catch((error) => ({
       enabled: true,
       ok: false,
