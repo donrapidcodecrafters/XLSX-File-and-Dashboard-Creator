@@ -1264,7 +1264,10 @@ export async function hydrateStudioDocumentFromQuickbase(document: StudioDocumen
     branding: storedUserSettings?.branding ? {
       platformName: String(storedUserSettings.branding.platformName || base.branding.platformName),
       navigationLabel: String(storedUserSettings.branding.navigationLabel || base.branding.navigationLabel),
-      homeLabel: String(storedUserSettings.branding.homeLabel || base.branding.homeLabel)
+      homeLabel: String(storedUserSettings.branding.homeLabel || base.branding.homeLabel),
+      openLinksInNewTab: storedUserSettings.branding.openLinksInNewTab === true
+        ? true
+        : base.branding.openLinksInNewTab === true
     } : base.branding,
     favorites: Array.isArray(storedUserSettings?.favorites) ? storedUserSettings.favorites.map(String) : base.favorites,
     recent: Array.isArray(storedUserSettings?.recent) ? storedUserSettings.recent.map(String) : base.recent,
