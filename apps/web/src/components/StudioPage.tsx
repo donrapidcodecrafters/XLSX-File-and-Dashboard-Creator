@@ -455,6 +455,8 @@ function buildCreateDraft(table?: TableDefinition | null, type: CreateModalType 
     view: {
       mode: "table",
       showChartInTable: false,
+      showSummary: true,
+      showDetails: true,
       chartTitle: "",
       decimalPlaces: 2,
       chartType: "bar",
@@ -506,6 +508,16 @@ function getFieldLabel(report: ReportDefinition, table: TableDefinition | null |
 
 function reportShowsChart(report: Pick<ReportDefinition, "view">) {
   return report.view.mode === "chart" || (report.view.mode === "table" && report.view.showChartInTable);
+}
+
+function reportShowsSummary(report: Pick<ReportDefinition, "view">) {
+  if (typeof report.view.showSummary === "boolean") return report.view.showSummary;
+  return report.view.mode === "table" || report.view.mode === "summary" || report.view.mode === "chart";
+}
+
+function reportShowsDetails(report: Pick<ReportDefinition, "view">) {
+  if (typeof report.view.showDetails === "boolean") return report.view.showDetails;
+  return report.view.mode === "table" || report.view.mode === "timeline" || report.view.mode === "calendar" || report.view.mode === "kanban";
 }
 
 function chartUsesAxes(chartType: ChartType) {
@@ -637,31 +649,37 @@ function ReportPreview({
   if (report.view.mode === "summary") {
     return (
       <div className="studio-preview-stack">
-        <div className="summary-grid">
-          {result.summary.map((item) => (
-            <div className="summary-card" key={item.label}>
-              <strong>{item.value}</strong>
-              <span>{item.label}</span>
+        {reportShowsSummary(report) ? (
+          <div className="summary-grid">
+            {result.summary.map((item) => (
+              <div className="summary-card" key={item.label}>
+                <strong>{item.value}</strong>
+                <span>{item.label}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        {reportShowsDetails(report) ? (
+          <>
+            {pager}
+            <div className="table-shell">
+              <table>
+                <thead>
+                  <tr>
+                    {report.selectedFieldIds.map((fieldId) => <th key={fieldId}>{getReportFieldLabel(report, table, fieldId)}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleRows.map((row, index) => (
+                    <tr key={index}>
+                      {report.selectedFieldIds.map((fieldId) => <td key={fieldId}>{formatCell(row[fieldId], report, table, fieldId)}</td>)}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          ))}
-        </div>
-        {pager}
-        <div className="table-shell">
-          <table>
-            <thead>
-              <tr>
-                {report.selectedFieldIds.map((fieldId) => <th key={fieldId}>{getReportFieldLabel(report, table, fieldId)}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {visibleRows.map((row, index) => (
-                <tr key={index}>
-                  {report.selectedFieldIds.map((fieldId) => <td key={fieldId}>{formatCell(row[fieldId], report, table, fieldId)}</td>)}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+          </>
+        ) : null}
       </div>
     );
   }
@@ -680,7 +698,7 @@ function ReportPreview({
           showLegend={report.view.chartShowLegend}
           showValues={report.view.chartShowValues}
         />
-        {report.view.mode === "table" ? (
+        {reportShowsDetails(report) ? (
           <>
             {pager}
             <div className="table-shell">
@@ -708,6 +726,9 @@ function ReportPreview({
   if (report.view.mode === "timeline" || report.view.mode === "calendar") {
     const dateFieldId = report.view.mode === "timeline" ? report.view.timelineDateField : report.view.calendarDateField;
     const titleFieldId = report.view.titleFieldId || report.selectedFieldIds[0];
+    if (!reportShowsDetails(report)) {
+      return <div className="empty-hint">Detail cards are turned off for this report.</div>;
+    }
     return (
       <div className="studio-preview-stack">
         {pager}
@@ -727,6 +748,9 @@ function ReportPreview({
   if (report.view.mode === "kanban") {
     const fieldId = report.view.kanbanField || report.selectedFieldIds[0];
     const titleFieldId = report.view.titleFieldId || report.selectedFieldIds[0];
+    if (!reportShowsDetails(report)) {
+      return <div className="empty-hint">Detail cards are turned off for this report.</div>;
+    }
     const columns = new Map<string, DataRow[]>();
     result.rows.forEach((row) => {
       const key = formatCell(row[fieldId], report, table, fieldId) || "Unassigned";
@@ -1604,6 +1628,8 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
       view: {
         ...current.view,
         showChartInTable: false,
+        showSummary: current.view.showSummary ?? true,
+        showDetails: current.view.showDetails ?? true,
         chartTitle: current.view.chartTitle || "",
         decimalPlaces: Number.isFinite(Number(current.view.decimalPlaces)) ? Math.max(0, Math.min(6, Number(current.view.decimalPlaces))) : 2,
         chartOrientation: "vertical",
@@ -2550,14 +2576,16 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
             </div>
             {reportResult ? (
               <>
-                <div className="summary-grid">
-                  {reportResult.summary.map((item) => (
-                    <div className="summary-card" key={item.label}>
-                      <strong>{item.value}</strong>
-                      <span>{item.label}</span>
-                    </div>
-                  ))}
-                </div>
+                {reportShowsSummary(activeReport) ? (
+                  <div className="summary-grid">
+                    {reportResult.summary.map((item) => (
+                      <div className="summary-card" key={item.label}>
+                        <strong>{item.value}</strong>
+                        <span>{item.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
                 <ReportPreview
                   report={activeReport}
                   table={activeTable}
@@ -2963,7 +2991,22 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
                         <div className="builder-subsection-grid">
                           <label className="field">
                             <span>Mode</span>
-                            <select value={createDraft.view.mode} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, mode: event.target.value as ReportViewMode, showChartInTable: event.target.value === "table" ? current.view.showChartInTable : false } }))}>
+                            <select
+                              value={createDraft.view.mode}
+                              onChange={(event) => setCreateDraft((current) => {
+                                const nextMode = event.target.value as ReportViewMode;
+                                return {
+                                  ...current,
+                                  view: {
+                                    ...current.view,
+                                    mode: nextMode,
+                                    showChartInTable: nextMode === "table" ? current.view.showChartInTable : false,
+                                    showSummary: nextMode === "table" || nextMode === "summary" || nextMode === "chart",
+                                    showDetails: nextMode === "table" || nextMode === "timeline" || nextMode === "calendar" || nextMode === "kanban"
+                                  }
+                                };
+                              })}
+                            >
                               {REPORT_VIEW_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
                             </select>
                           </label>
@@ -2976,6 +3019,26 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
                           <label className="field">
                             <span>Decimal places</span>
                             <input type="number" min="0" max="6" value={createDraft.view.decimalPlaces} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, decimalPlaces: Math.max(0, Math.min(6, Number(event.target.value) || 0)) } }))} />
+                          </label>
+                          <label className="toggle-row builder-subsection-toggle">
+                            <input
+                              type="checkbox"
+                              checked={createDraft.view.showSummary ?? reportShowsSummary({ view: createDraft.view })}
+                              onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, showSummary: event.target.checked } }))}
+                            />
+                            Show summary metrics
+                          </label>
+                          <label className="toggle-row builder-subsection-toggle">
+                            <input
+                              type="checkbox"
+                              checked={createDraft.view.showDetails ?? reportShowsDetails({ view: createDraft.view })}
+                              onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, showDetails: event.target.checked } }))}
+                            />
+                            {createDraft.view.mode === "chart" || createDraft.view.mode === "summary"
+                              ? "Include detail rows"
+                              : createDraft.view.mode === "kanban" || createDraft.view.mode === "timeline" || createDraft.view.mode === "calendar"
+                                ? "Show detail cards"
+                                : "Show detail rows"}
                           </label>
                           {createDraft.view.mode === "table" ? (
                             <label className="toggle-row builder-subsection-toggle">

@@ -101,6 +101,8 @@ export interface SummaryMetric {
 export interface ReportViewDefinition {
   mode: ReportViewMode;
   showChartInTable: boolean;
+  showSummary: boolean;
+  showDetails: boolean;
   chartTitle: string;
   decimalPlaces: number;
   chartType: ChartType;

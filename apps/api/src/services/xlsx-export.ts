@@ -28,6 +28,16 @@ function reportShowsChart(report: ReportDefinition) {
   return report.view.mode === "chart" || (report.view.mode === "table" && report.view.showChartInTable);
 }
 
+function reportShowsSummary(report: ReportDefinition) {
+  if (typeof report.view.showSummary === "boolean") return report.view.showSummary;
+  return report.view.mode === "table" || report.view.mode === "summary" || report.view.mode === "chart";
+}
+
+function reportShowsDetails(report: ReportDefinition) {
+  if (typeof report.view.showDetails === "boolean") return report.view.showDetails;
+  return report.view.mode === "table" || report.view.mode === "timeline" || report.view.mode === "calendar" || report.view.mode === "kanban";
+}
+
 function widgetDisplayMode(widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], report: ReportDefinition) {
   if (widget.displayMode !== "inherit") return widget.displayMode;
   if (report.view.mode === "summary") return "summary";
@@ -214,12 +224,6 @@ function mergeRowRange(sheet: ExcelJS.Worksheet, row: number, startCol: number, 
   }
 }
 
-function mergeBlock(sheet: ExcelJS.Worksheet, startRow: number, endRow: number, startCol: number, endCol: number) {
-  for (let row = startRow; row <= endRow; row += 1) {
-    mergeRowRange(sheet, row, startCol, endCol);
-  }
-}
-
 function layoutDashboardWidgets(widgets: DashboardRunResult["tabs"][number]["widgets"]) {
   const placements: Array<{
     widget: DashboardRunResult["tabs"][number]["widgets"][number];
@@ -344,7 +348,6 @@ async function writeDashboardTabSheet(
     const exportResult = exportResultsByReportId[widget.report.id] || widget.result;
     const table = tablesById[widget.report.sourceTableId];
     if (!table) continue;
-    mergeBlock(sheet, startRow, endRow, startCol, endCol);
     writeWidgetTitle(sheet, startRow, startCol, endCol, widget.widget.title || widget.report.name, widget.report.name !== widget.widget.title ? widget.report.name : "");
     let contentRow = startRow + 3;
     if (widget.widget.showSummary) {
@@ -392,9 +395,18 @@ export async function streamReportWorkbook(
   workbook.creator = "Cadence Reporting Portal";
   workbook.created = new Date();
 
-  const includeSummary = result.summary.length > 0;
+  const includeSummary = reportShowsSummary(report) && result.summary.length > 0;
   const includeChart = reportShowsChart(report);
-  const includeDetails = report.view.mode === "table";
+  const includeDetails = reportShowsDetails(report);
+
+  if (includeDetails) {
+    const dataSheet = workbook.addWorksheet(safeSheetName(`${report.name} Data`, usedNames));
+    writeDataSheet(dataSheet, report, table, result, onProgress, {
+      start: 80,
+      end: 98,
+      label: "Writing data sheet"
+    });
+  }
 
   if (includeSummary || includeChart) {
     const summarySheet = workbook.addWorksheet(safeSheetName(`${report.name} Summary`, usedNames));
@@ -409,15 +421,6 @@ export async function streamReportWorkbook(
         summarySheet.getCell(`A${chartRow}`).value = "Chart only";
       }
     }
-  }
-
-  if (includeDetails) {
-    const dataSheet = workbook.addWorksheet(safeSheetName(`${report.name} Data`, usedNames));
-    writeDataSheet(dataSheet, report, table, result, onProgress, {
-      start: 80,
-      end: 98,
-      label: "Writing data sheet"
-    });
   }
 
   await workbook.xlsx.write(output);
@@ -468,11 +471,6 @@ export async function streamDashboardWorkbook(
   const detailSheetNames: Record<string, string> = {};
   const tabSheetNamesById: Record<string, string> = {};
 
-  rendered.tabs.forEach((tab) => {
-    const tabSheet = workbook.addWorksheet(safeSheetName(tab.name, usedNames));
-    tabSheetNamesById[tab.id] = tabSheet.name;
-  });
-
   for (const [widgetIndex, { tab, widget }] of widgets.entries()) {
     const exportResult = exportResultsByReportId[widget.report.id] || widget.result;
     const table = tablesById[widget.report.sourceTableId];
@@ -498,6 +496,11 @@ export async function streamDashboardWorkbook(
       label: `Writing ${widget.report.name}`
     });
   }
+
+  rendered.tabs.forEach((tab) => {
+    const tabSheet = workbook.addWorksheet(safeSheetName(tab.name, usedNames));
+    tabSheetNamesById[tab.id] = tabSheet.name;
+  });
 
   for (const tab of rendered.tabs) {
     const sheetName = tabSheetNamesById[tab.id];

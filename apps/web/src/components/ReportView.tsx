@@ -20,6 +20,16 @@ function reportShowsChart(report: ReportDefinition) {
   return report.view.mode === "chart" || (report.view.mode === "table" && report.view.showChartInTable);
 }
 
+function reportShowsSummary(report: ReportDefinition) {
+  if (typeof report.view.showSummary === "boolean") return report.view.showSummary;
+  return report.view.mode === "table" || report.view.mode === "summary" || report.view.mode === "chart";
+}
+
+function reportShowsDetails(report: ReportDefinition) {
+  if (typeof report.view.showDetails === "boolean") return report.view.showDetails;
+  return report.view.mode === "table" || report.view.mode === "timeline" || report.view.mode === "calendar" || report.view.mode === "kanban";
+}
+
 function formatFreshnessTimestamp(value?: string) {
   if (!value) return "";
   const date = new Date(value);
@@ -116,14 +126,16 @@ export function ReportView({ report, table, result, loading, currentPage, onPage
         </div>
       ) : null}
 
-      <div className="summary-grid">
-        {(result?.summary || []).map((item) => (
-          <div className="summary-card" key={item.label}>
-            <strong>{item.value}</strong>
-            <span>{item.label}</span>
-          </div>
-        ))}
-      </div>
+      {reportShowsSummary(report) ? (
+        <div className="summary-grid">
+          {(result?.summary || []).map((item) => (
+            <div className="summary-card" key={item.label}>
+              <strong>{item.value}</strong>
+              <span>{item.label}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       {reportShowsChart(report) ? (
         <div className="card">
@@ -149,41 +161,43 @@ export function ReportView({ report, table, result, loading, currentPage, onPage
         </div>
       ) : null}
 
-      <div className="card">
-        <div className="card-head">
-          <strong>Details</strong>
-          <span className="micro">{result?.totalRows || 0} rows</span>
-        </div>
-        <div className="link-toolbar">
-          <button className="ghost-button" disabled={currentPage <= 1 || loading} onClick={() => onPageChange(Math.max(1, currentPage - 1))}>Previous</button>
-          <span className="micro">Page {result?.page || currentPage} of {totalPages}</span>
-          <button className="ghost-button" disabled={!result?.hasNextPage || loading} onClick={() => onPageChange(currentPage + 1)}>Next</button>
-        </div>
-        {loading ? (
-          <div className="empty">Loading rows…</div>
-        ) : (
-          <div className="table-shell">
-            <table>
-              <thead>
-                <tr>
-                  {report.selectedFieldIds.map((fieldId) => (
-                    <th key={fieldId}>{table ? getReportFieldLabel(report, table, fieldId) : fieldId}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {(result?.rows || []).map((row, index) => (
-                  <tr key={index}>
+      {reportShowsDetails(report) ? (
+        <div className="card">
+          <div className="card-head">
+            <strong>Details</strong>
+            <span className="micro">{result?.totalRows || 0} rows</span>
+          </div>
+          <div className="link-toolbar">
+            <button className="ghost-button" disabled={currentPage <= 1 || loading} onClick={() => onPageChange(Math.max(1, currentPage - 1))}>Previous</button>
+            <span className="micro">Page {result?.page || currentPage} of {totalPages}</span>
+            <button className="ghost-button" disabled={!result?.hasNextPage || loading} onClick={() => onPageChange(currentPage + 1)}>Next</button>
+          </div>
+          {loading ? (
+            <div className="empty">Loading rows…</div>
+          ) : (
+            <div className="table-shell">
+              <table>
+                <thead>
+                  <tr>
                     {report.selectedFieldIds.map((fieldId) => (
-                      <td key={fieldId}>{table ? formatReportCellValue(report, table, fieldId, row[fieldId]) : String(row[fieldId] ?? "")}</td>
+                      <th key={fieldId}>{table ? getReportFieldLabel(report, table, fieldId) : fieldId}</th>
                     ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+                </thead>
+                <tbody>
+                  {(result?.rows || []).map((row, index) => (
+                    <tr key={index}>
+                      {report.selectedFieldIds.map((fieldId) => (
+                        <td key={fieldId}>{table ? formatReportCellValue(report, table, fieldId, row[fieldId]) : String(row[fieldId] ?? "")}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ) : null}
     </section>
   );
 }

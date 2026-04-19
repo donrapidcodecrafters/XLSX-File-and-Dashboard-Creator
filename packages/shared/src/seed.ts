@@ -17,9 +17,12 @@ function timestamp(offset = 0): string {
 }
 
 function buildReportView(overrides: Partial<ReportViewDefinition> = {}): ReportViewDefinition {
+  const mode = overrides.mode || "table";
   return {
-    mode: "table",
+    mode,
     showChartInTable: false,
+    showSummary: overrides.showSummary ?? (mode === "table" || mode === "summary" || mode === "chart"),
+    showDetails: overrides.showDetails ?? (mode === "table" || mode === "timeline" || mode === "calendar" || mode === "kanban"),
     chartTitle: "",
     decimalPlaces: 2,
     chartType: "bar",
