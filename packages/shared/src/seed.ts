@@ -370,7 +370,8 @@ export function buildStudioDocument(): StudioDocument {
     branding: {
       platformName: "Cadence Reporting Portal",
       navigationLabel: "Reports and Dashboards",
-      homeLabel: "Workspace"
+      homeLabel: "Workspace",
+      openLinksInNewTab: false
     },
     quickbase: defaultQuickbase,
     quickbaseProfiles: [defaultProfile],

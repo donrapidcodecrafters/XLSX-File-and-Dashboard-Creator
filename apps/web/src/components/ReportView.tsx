@@ -14,6 +14,7 @@ interface ReportViewProps {
   currentPage: number;
   onPageChange: (page: number) => void;
   onRefresh: () => void;
+  openLinksInNewTab?: boolean;
 }
 
 function reportShowsChart(report: ReportDefinition) {
@@ -36,7 +37,7 @@ function formatFreshnessTimestamp(value?: string) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
-export function ReportView({ report, table, result, loading, currentPage, onPageChange, onRefresh }: ReportViewProps) {
+export function ReportView({ report, table, result, loading, currentPage, onPageChange, onRefresh, openLinksInNewTab = false }: ReportViewProps) {
   const hosted = getHostedContext();
   const fullScreenUrl = buildObjectUrl("report", report.id, { viewer: true });
   const totalPages = result?.totalPages || 1;
@@ -87,7 +88,7 @@ export function ReportView({ report, table, result, loading, currentPage, onPage
               <>
                 <button className="ghost-button" onClick={() => window.history.back()}>Back</button>
                 <Link className="ghost-button" to="/viewer">Home</Link>
-                <Link className="ghost-button" to={`/studio/${report.id}`}>Open in building area</Link>
+                <Link className="ghost-button" to={`/studio/${report.id}`} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>Open in building area</Link>
               </>
             )}
             <button className="ghost-button" onClick={() => { void beginExport(); }} disabled={!result || exportJob?.status === "queued" || exportJob?.status === "running"}>

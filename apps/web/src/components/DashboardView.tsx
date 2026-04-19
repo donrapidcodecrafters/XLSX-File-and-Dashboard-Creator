@@ -12,6 +12,7 @@ interface DashboardViewProps {
   refreshNonce?: number;
   onRefresh?: () => void;
   forceLive?: boolean;
+  openLinksInNewTab?: boolean;
 }
 
 function resolveWidgetDisplayMode(widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], reportMode: string) {
@@ -46,7 +47,7 @@ function formatFreshnessTimestamp(value?: string) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
-export function DashboardView({ dashboard, tables, refreshNonce = 0, onRefresh, forceLive = false }: DashboardViewProps) {
+export function DashboardView({ dashboard, tables, refreshNonce = 0, onRefresh, forceLive = false, openLinksInNewTab = false }: DashboardViewProps) {
   const hosted = getHostedContext();
   const fullScreenUrl = buildObjectUrl("dashboard", dashboard.id, { viewer: true });
   const defaults = useMemo(
@@ -155,7 +156,7 @@ export function DashboardView({ dashboard, tables, refreshNonce = 0, onRefresh, 
               <>
                 <button className="ghost-button" onClick={() => window.history.back()}>Back</button>
                 <Link className="ghost-button" to="/viewer">Home</Link>
-                <Link className="ghost-button" to={`/studio/${dashboard.id}`}>Open in building area</Link>
+                <Link className="ghost-button" to={`/studio/${dashboard.id}`} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>Open in building area</Link>
               </>
             )}
             <button className="ghost-button" onClick={() => { void beginExport(); }} disabled={!result || exportJob?.status === "queued" || exportJob?.status === "running"}>
@@ -254,7 +255,7 @@ export function DashboardView({ dashboard, tables, refreshNonce = 0, onRefresh, 
                 <article className="widget-card dashboard-layout-item" key={widget.widgetId} style={getWidgetLayoutStyle(widget.widget.layout)}>
                 <div className="widget-head">
                   <strong>{widget.widget.title || widget.report.name}</strong>
-                  <Link to={`/report/${widget.report.id}`} className="widget-link">Open report</Link>
+                  <Link to={`/report/${widget.report.id}`} className="widget-link" target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>Open report</Link>
                 </div>
                 {widget.widget.showSummary ? (
                   <div className="widget-metrics">

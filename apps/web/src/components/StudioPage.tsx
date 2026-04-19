@@ -2345,7 +2345,7 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
               </div>
               <div className="nav-list">
                 {filteredObjects.length ? filteredObjects.map((object) => (
-                  <Link key={object.id} className="nav-card" to={`/studio/${object.id}`}>
+                  <Link key={object.id} className="nav-card" to={`/studio/${object.id}`} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>
                     <span className="badge">{typeLabel(object.type)}</span>
                     <strong>{object.name}</strong>
                     <span className="micro">{object.folder} · {object.category}</span>
@@ -2424,6 +2424,7 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
   const defaultUrl = `${window.location.origin}${import.meta.env.BASE_URL}#/${activeObject.type}/${activeObject.id}`;
   const viewerUrl = `${window.location.origin}${import.meta.env.BASE_URL}?mode=viewer#/${activeObject.type}/${activeObject.id}`;
   const embedUrl = `${window.location.origin}${import.meta.env.BASE_URL}?embed=1&mode=viewer#/${activeObject.type}/${activeObject.id}`;
+  const openLinksInNewTab = documentState.branding.openLinksInNewTab === true;
 
   return (
     <>
@@ -2484,7 +2485,7 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
           </div>
           <div className="nav-list">
             {filteredObjects.map((object) => (
-              <Link key={object.id} className={`nav-card ${object.id === activeObject.id ? "active-card" : ""}`} to={`/studio/${object.id}`}>
+              <Link key={object.id} className={`nav-card ${object.id === activeObject.id ? "active-card" : ""}`} to={`/studio/${object.id}`} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>
                 <span className="badge">{typeLabel(object.type)}</span>
                 <strong>{object.name}</strong>
                 <span className="micro">{object.folder} · {object.category}</span>
@@ -2631,7 +2632,13 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
               setRuntimeValues={setRuntimeValues}
               widgetSearch={widgetSearch}
               draggingWidget={draggingWidget}
-              onOpenReport={(reportId) => navigate(`/studio/${reportId}`)}
+              onOpenReport={(reportId) => {
+                if (openLinksInNewTab) {
+                  window.open(`${window.location.origin}${import.meta.env.BASE_URL}#/studio/${reportId}`, "_blank", "noopener,noreferrer");
+                  return;
+                }
+                navigate(`/studio/${reportId}`);
+              }}
               onStartWidgetDrag={(tabId, widgetId) => setDraggingWidget({ tabId, widgetId })}
               onEndWidgetDrag={() => setDraggingWidget(null)}
               onDropWidget={(tabId, widgetId) => {
@@ -2805,7 +2812,7 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
             <span className="micro">Open, share, save, and export this workspace.</span>
           </div>
           <div className="nav-list">
-            <Link className="nav-card" to={`/${activeObject.type}/${activeObject.id}`}>
+            <Link className="nav-card" to={`/${activeObject.type}/${activeObject.id}`} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>
               <span className="badge">Full screen</span>
               <strong>Open full-screen view</strong>
               <span className="micro">{defaultUrl}</span>
@@ -3141,6 +3148,14 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
                 <label className="field">
                   <span>Home label</span>
                   <input value={documentState.branding.homeLabel} onChange={(event) => applyDocumentUpdate((draft) => { draft.branding.homeLabel = event.target.value; })} />
+                </label>
+                <label className="toggle-row">
+                  <input
+                    type="checkbox"
+                    checked={documentState.branding.openLinksInNewTab === true}
+                    onChange={(event) => applyDocumentUpdate((draft) => { draft.branding.openLinksInNewTab = event.target.checked; })}
+                  />
+                  Open reports and dashboards in a new tab
                 </label>
                 <div className="card">
                   <div className="card-head">

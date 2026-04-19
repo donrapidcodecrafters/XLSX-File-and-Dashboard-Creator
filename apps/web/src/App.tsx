@@ -47,7 +47,7 @@ function useCatalog() {
   return { objects, tables, studioDocument };
 }
 
-function ObjectPage({ tables, platformName, studioDocument }: { tables: TableDefinition[]; platformName: string; studioDocument: StudioDocument | null }) {
+function ObjectPage({ tables, platformName, studioDocument, openLinksInNewTab = false }: { tables: TableDefinition[]; platformName: string; studioDocument: StudioDocument | null; openLinksInNewTab?: boolean }) {
   const params = useParams();
   const [object, setObject] = useState<StudioObject | null>(null);
   const [result, setResult] = useState<any>(null);
@@ -199,6 +199,7 @@ function ObjectPage({ tables, platformName, studioDocument }: { tables: TableDef
           currentPage={page}
           onPageChange={setPage}
           onRefresh={() => { void startObjectRefresh(); }}
+          openLinksInNewTab={openLinksInNewTab}
         />
       </>
     );
@@ -232,12 +233,13 @@ function ObjectPage({ tables, platformName, studioDocument }: { tables: TableDef
         tables={tables}
         refreshNonce={refreshNonce}
         onRefresh={() => { void startObjectRefresh(); }}
+        openLinksInNewTab={openLinksInNewTab}
       />
     </>
   );
 }
 
-function ViewerPage({ objects, refreshAllSignal = 0 }: { objects: CatalogSummaryItem[]; refreshAllSignal?: number }) {
+function ViewerPage({ objects, refreshAllSignal = 0, openLinksInNewTab = false }: { objects: CatalogSummaryItem[]; refreshAllSignal?: number; openLinksInNewTab?: boolean }) {
   const [query, setQuery] = useState("");
   const [refreshJob, setRefreshJob] = useState<any>(null);
   const filtered = useMemo(() => {
@@ -314,7 +316,7 @@ function ViewerPage({ objects, refreshAllSignal = 0 }: { objects: CatalogSummary
 
       <div className="viewer-grid">
         {filtered.map((object) => (
-          <Link key={object.id} className="viewer-card" to={`/${object.type}/${object.id}`}>
+          <Link key={object.id} className="viewer-card" to={`/${object.type}/${object.id}`} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>
             <span className="badge">{typeLabel(object.type)}</span>
             <strong>{object.name}</strong>
             <span>{object.description || "No description yet."}</span>
@@ -338,6 +340,7 @@ export function App() {
   const viewerRoute = location.pathname === "/viewer";
   const readerRoute = /^\/(report|dashboard)\//.test(location.pathname);
   const platformName = studioDocument?.branding.platformName || "Reporting Portal";
+  const openLinksInNewTab = studioDocument?.branding.openLinksInNewTab === true;
   const navLabel = studioDocument?.branding.navigationLabel || "Reports and Dashboards";
   const readerFullScreen = readerRoute || hosted.mode === "viewer" || hosted.embed;
   const hideSidebar = hosted.embed || studioRoute || readerRoute || viewerRoute;
@@ -392,7 +395,7 @@ export function App() {
             </div>
             <nav className="nav-list">
               {objects.map((object) => (
-                <Link key={object.id} className="nav-card" to={`/${object.type}/${object.id}`}>
+                <Link key={object.id} className="nav-card" to={`/${object.type}/${object.id}`} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>
                   <span className="badge">{typeLabel(object.type)}</span>
                   <strong>{object.name}</strong>
                   <span className="micro">{object.folder} · {object.category}</span>
@@ -405,10 +408,10 @@ export function App() {
         <main className={`content ${readerRoute ? "reader-content" : ""}`}>
           <Routes>
             <Route path="/" element={<Navigate to="/viewer" replace />} />
-            <Route path="/viewer" element={<ViewerPage objects={objects} refreshAllSignal={viewerRefreshSignal} />} />
+            <Route path="/viewer" element={<ViewerPage objects={objects} refreshAllSignal={viewerRefreshSignal} openLinksInNewTab={openLinksInNewTab} />} />
             <Route path="/studio" element={<StudioPage openSettingsSignal={studioSettingsSignal} refreshAllSignal={studioRefreshSignal} />} />
             <Route path="/studio/:objectId" element={<StudioPage openSettingsSignal={studioSettingsSignal} refreshAllSignal={studioRefreshSignal} />} />
-            <Route path="/:type/:objectId" element={<ObjectPage tables={tables} platformName={platformName} studioDocument={studioDocument} />} />
+            <Route path="/:type/:objectId" element={<ObjectPage tables={tables} platformName={platformName} studioDocument={studioDocument} openLinksInNewTab={openLinksInNewTab} />} />
             <Route path="*" element={<Navigate to="/viewer" replace />} />
           </Routes>
         </main>

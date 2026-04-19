@@ -394,6 +394,7 @@ export interface StudioDocument {
     platformName: string;
     navigationLabel: string;
     homeLabel: string;
+    openLinksInNewTab: boolean;
   };
   quickbase: QuickbaseConnectionConfig;
   quickbaseProfiles: QuickbaseAppProfile[];
