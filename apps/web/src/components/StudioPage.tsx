@@ -7,6 +7,7 @@ import {
   collectFilterFieldIds,
   createFilterGroup,
   createFilterRule,
+  filterNeedsValue,
   filterHasValue,
   formatReportCellValue,
   getReportFieldLabel,
@@ -1017,15 +1018,15 @@ function FilterGroupEditor({
               </select>
               <select
                 value={rule.operator}
-                onChange={(event) => onChange(updateFilterRuleInGroup(group, rule.id, (currentRule) => ({ ...currentRule, operator: event.target.value as FilterOperator, value: filterHasValue({ ...currentRule, operator: event.target.value as FilterOperator }) ? currentRule.value : "" })))}
+                onChange={(event) => onChange(updateFilterRuleInGroup(group, rule.id, (currentRule) => ({ ...currentRule, operator: event.target.value as FilterOperator, value: filterNeedsValue(event.target.value as FilterOperator) ? currentRule.value : "" })))}
               >
                 {FILTER_OPERATOR_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
               <input
                 value={rule.value}
-                disabled={!filterHasValue(rule)}
+                disabled={!filterNeedsValue(rule.operator)}
                 onChange={(event) => onChange(updateFilterRuleInGroup(group, rule.id, (currentRule) => ({ ...currentRule, value: event.target.value })))}
-                placeholder={filterHasValue(rule) ? "Filter value" : "No value needed"}
+                placeholder={filterNeedsValue(rule.operator) ? "Filter value" : "No value needed"}
               />
               <button type="button" onClick={() => onChange(removeFilterNodeFromGroup(group, rule.id))}>Remove</button>
             </div>
