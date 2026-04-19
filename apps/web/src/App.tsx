@@ -442,6 +442,7 @@ function ObjectPage({
     () => liveModeProfileIds.map((profileId) => studioDocument?.quickbaseProfiles.find((profile) => profile.id === profileId)).filter(Boolean),
     [liveModeProfileIds, studioDocument]
   );
+  const globalZeroSavedRows = (studioDocument?.sync.refreshStatus.cachedRowCount || 0) === 0;
   const liveModeEnabled = useMemo(
     () => liveModeProfileIds.some((profileId) => studioDocument?.quickbaseProfiles.find((profile) => profile.id === profileId)?.liveMode === true),
     [liveModeProfileIds, studioDocument]
@@ -548,10 +549,10 @@ function ObjectPage({
     if (!object || autoRefreshForId === object.id || refreshJob?.status === "queued" || refreshJob?.status === "running") {
       return;
     }
-    if (!liveModeEnabled && !zeroSavedRowsForObject) return;
+    if (!liveModeEnabled && !zeroSavedRowsForObject && !globalZeroSavedRows) return;
     setAutoRefreshForId(object.id);
     void startObjectRefresh();
-  }, [autoRefreshForId, liveModeEnabled, object, refreshJob?.status, zeroSavedRowsForObject]);
+  }, [autoRefreshForId, globalZeroSavedRows, liveModeEnabled, object, refreshJob?.status, zeroSavedRowsForObject]);
 
   useEffect(() => {
     if (!object || !result || loading) return;
