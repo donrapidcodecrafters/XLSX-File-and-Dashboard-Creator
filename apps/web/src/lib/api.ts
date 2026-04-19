@@ -222,6 +222,10 @@ export function fetchExportJobStatus(id: string) {
 
 export function downloadExportJob(id: string, options: { directDownload?: boolean; popupWindow?: Window | null } = {}) {
   const downloadUrl = API_BASE + "/api/exports/jobs/" + encodeURIComponent(id) + "/download";
+  if (options.popupWindow && !options.popupWindow.closed) {
+    options.popupWindow.location.href = downloadUrl;
+    return;
+  }
   if (options.directDownload) {
     void downloadExportBlob(downloadUrl, `export-${id}.xlsx`, options.popupWindow);
     return;
