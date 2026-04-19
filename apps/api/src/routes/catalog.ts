@@ -28,7 +28,11 @@ export async function registerCatalogRoutes(app: FastifyInstance) {
   app.get("/api/objects/:id", async (request, reply) => {
     await studioStore.hydrateFromQuickbase();
     const { id } = request.params as { id: string };
-    const object = objectStore.getObject(id);
+    let object = objectStore.getObject(id);
+    if (!object) {
+      await studioStore.hydrateFromQuickbase(true);
+      object = objectStore.getObject(id);
+    }
     if (!object) {
       reply.code(404);
       return { message: "Object not found." };

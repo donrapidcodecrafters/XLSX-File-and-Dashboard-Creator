@@ -490,6 +490,7 @@ input {
   display: grid;
   gap: 10px;
   min-width: 0;
+  overflow: hidden;
 }
 
 .axis-chart-layout {
@@ -518,6 +519,45 @@ input {
   text-align: center;
 }
 
+.axis-svg-shell {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.bar-chart-svg {
+  display: block;
+  width: 100%;
+  min-height: 240px;
+}
+
+.chart-svg-tick,
+.chart-svg-label,
+.chart-svg-value,
+.chart-svg-axis-title {
+  fill: var(--text-soft);
+  font-family: var(--sans);
+}
+
+.chart-svg-tick {
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.chart-svg-label {
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.chart-svg-value {
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.chart-svg-axis-title {
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .chart-y-axis {
   display: flex;
   flex-direction: column;
@@ -539,6 +579,7 @@ input {
 
 .chart-x-tick {
   text-align: center;
+  line-height: 1.2;
 }
 
 .chart-plot-column {
@@ -821,7 +862,7 @@ input {
 .axis-chart svg {
   width: 100%;
   height: 220px;
-  overflow: visible;
+  overflow: hidden;
 }
 
 .line-chart svg,
@@ -829,7 +870,7 @@ input {
 .radar-chart svg {
   width: 100%;
   height: 220px;
-  overflow: visible;
+  overflow: hidden;
 }
 
 .line-chart polyline,
@@ -1770,6 +1811,16 @@ select {
 
   .chart-y-tick {
     text-align: left;
+  }
+
+  .bar-chart-svg {
+    min-height: 210px;
+  }
+
+  .chart-svg-tick,
+  .chart-svg-label,
+  .chart-svg-value {
+    font-size: 9px;
   }
 
   table {

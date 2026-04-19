@@ -86,7 +86,8 @@ function xLabelStep(length: number, compact: boolean) {
 
 function xTickLabel(label: string, index: number, length: number, compact: boolean) {
   const step = xLabelStep(length, compact);
-  return index % step === 0 || index === length - 1 ? cap(label, compact ? 10 : 16) : "";
+  const maxLength = compact ? 8 : length >= 10 ? 10 : length >= 7 ? 12 : 16;
+  return index % step === 0 || index === length - 1 ? cap(label, maxLength) : "";
 }
 
 function axisMaxFor(values: number[], compact: boolean) {
@@ -95,6 +96,29 @@ function axisMaxFor(values: number[], compact: boolean) {
     ticks,
     axisMax: ticks[ticks.length - 1] || 1
   };
+}
+
+function axisTickTextWidth(ticks: number[], decimalPlaces: number, compact: boolean) {
+  const longest = ticks.reduce((max, tick) => {
+    const length = formatAxisValue(tick, decimalPlaces).length;
+    return Math.max(max, length);
+  }, 1);
+  const perChar = compact ? 6.4 : 7.6;
+  return Math.min(160, Math.max(72, Math.round(longest * perChar + 24)));
+}
+
+function columnBottomPad(itemCount: number, compact: boolean, hasAxisLabel: boolean) {
+  const densityPad = itemCount >= 12 ? 118 : itemCount >= 9 ? 102 : itemCount >= 6 ? 88 : 74;
+  return densityPad + (hasAxisLabel ? 18 : 0);
+}
+
+function valueDisplayStep(itemCount: number, slotSize: number, compact: boolean) {
+  if (compact) return slotSize >= 84 ? 1 : slotSize >= 62 ? 2 : 999;
+  if (slotSize >= 108) return 1;
+  if (slotSize >= 78) return 2;
+  if (slotSize >= 56) return 3;
+  if (itemCount <= 4) return 1;
+  return 999;
 }
 
 function renderAxisLegend(
@@ -182,15 +206,16 @@ export function ChartPreview({
   if (normalizedChartType === "column" || normalizedChartType === "stacked-column" || ((normalizedChartType === "bar" || normalizedChartType === "stacked-bar") && orientation === "vertical")) {
     const { ticks, axisMax } = axisMaxFor(items.map((item) => item.value), compact);
     const chartWidth = 760;
-    const chartHeight = 320;
-    const leftPad = 72;
+    const chartHeight = 348;
+    const leftPad = axisTickTextWidth(ticks, decimalPlaces, compact);
     const rightPad = 24;
     const topPad = 24;
-    const bottomPad = xAxisLabel ? 88 : 72;
+    const bottomPad = columnBottomPad(items.length, compact, Boolean(xAxisLabel));
     const plotWidth = chartWidth - leftPad - rightPad;
     const plotHeight = chartHeight - topPad - bottomPad;
     const step = plotWidth / Math.max(items.length, 1);
     const barWidth = Math.max(18, Math.min(56, step * 0.58));
+    const displayStep = valueDisplayStep(items.length, step, compact);
     return (
       <div className="axis-chart-shell">
         {renderTitle(title)}
@@ -225,12 +250,16 @@ export function ChartPreview({
               return (
                 <g key={`${item.label}-${index}`}>
                   <rect x={x} y={y} width={barWidth} height={height} rx="10" fill={getColor(index)} fillOpacity="0.9" />
-                  {showValues ? <text x={x + barWidth / 2} y={y - 8} textAnchor="middle" className="chart-svg-value">{formatAxisValue(item.value, decimalPlaces)}</text> : null}
+                  {showValues && (displayStep === 1 || index % displayStep === 0 || index === 0 || index === items.length - 1) ? (
+                    <text x={x + barWidth / 2} y={y - 8} textAnchor="middle" className="chart-svg-value">
+                      {formatAxisValue(item.value, decimalPlaces)}
+                    </text>
+                  ) : null}
                   <text
                     x={x + barWidth / 2}
-                    y={topPad + plotHeight + 18}
+                    y={topPad + plotHeight + 16}
                     textAnchor="end"
-                    transform={`rotate(-32 ${x + barWidth / 2} ${topPad + plotHeight + 18})`}
+                    transform={`rotate(-40 ${x + barWidth / 2} ${topPad + plotHeight + 16})`}
                     className="chart-svg-label"
                   >
                     {xTickLabel(item.label, index, items.length, compact)}
@@ -253,14 +282,15 @@ export function ChartPreview({
     const { ticks, axisMax } = axisMaxFor(items.map((item) => item.value), compact);
     const chartWidth = 760;
     const chartHeight = Math.max(220, 84 + items.length * 44);
-    const leftPad = 180;
-    const rightPad = showValues ? 92 : 28;
+    const leftPad = Math.min(220, Math.max(132, items.reduce((max, item) => Math.max(max, cap(item.label, compact ? 12 : 18).length), 1) * 8 + 36));
+    const rightPad = showValues ? axisTickTextWidth([axisMax], decimalPlaces, compact) : 28;
     const topPad = 20;
     const bottomPad = xAxisLabel ? 54 : 36;
     const plotWidth = chartWidth - leftPad - rightPad;
     const plotHeight = chartHeight - topPad - bottomPad;
     const rowHeight = plotHeight / Math.max(items.length, 1);
     const barHeight = Math.max(14, Math.min(28, rowHeight * 0.56));
+    const displayStep = valueDisplayStep(items.length, rowHeight * 2, compact);
     return (
       <div className="axis-chart-shell">
         {renderTitle(title)}
@@ -284,7 +314,11 @@ export function ChartPreview({
                 <g key={`${item.label}-${index}`}>
                   <text x={leftPad - 12} y={y + barHeight / 2 + 4} textAnchor="end" className="chart-svg-label">{cap(item.label, compact ? 12 : 18)}</text>
                   <rect x={leftPad} y={y} width={width} height={barHeight} rx="10" fill={getColor(index)} fillOpacity="0.9" />
-                  {showValues ? <text x={leftPad + width + 10} y={y + barHeight / 2 + 4} textAnchor="start" className="chart-svg-value">{formatAxisValue(item.value, decimalPlaces)}</text> : null}
+                  {showValues && (displayStep === 1 || index % displayStep === 0 || index === 0 || index === items.length - 1) ? (
+                    <text x={leftPad + width + 10} y={y + barHeight / 2 + 4} textAnchor="start" className="chart-svg-value">
+                      {formatAxisValue(item.value, decimalPlaces)}
+                    </text>
+                  ) : null}
                 </g>
               );
             })}
@@ -302,6 +336,7 @@ export function ChartPreview({
   if (normalizedChartType === "line" || normalizedChartType === "area") {
     const { ticks, axisMax } = axisMaxFor(items.map((item) => item.value), compact);
     const reversedTicks = [...ticks].reverse();
+    const yAxisWidth = axisTickTextWidth(ticks, decimalPlaces, compact);
     const points = items.map((item, index) => {
       const x = items.length === 1 ? 200 : 20 + index * (360 / (items.length - 1));
       const y = 200 - (item.value / axisMax) * 160;
@@ -313,7 +348,7 @@ export function ChartPreview({
     return (
       <div className="axis-chart-shell">
         {renderTitle(title)}
-        <div className="axis-chart-layout">
+        <div className="axis-chart-layout" style={{ gridTemplateColumns: `auto ${yAxisWidth}px minmax(0, 1fr)` }}>
           {yAxisLabel ? <div className="chart-axis-title chart-axis-title-vertical">{yAxisLabel}</div> : null}
           <div className="chart-y-axis">
             {reversedTicks.map((tick) => (
@@ -497,6 +532,7 @@ export function ChartPreview({
   if (normalizedChartType === "scatter") {
     const { ticks, axisMax } = axisMaxFor(items.map((item) => item.value), compact);
     const reversedTicks = [...ticks].reverse();
+    const yAxisWidth = axisTickTextWidth(ticks, decimalPlaces, compact);
     const points = items.map((item, index) => {
       const x = items.length === 1 ? 200 : 30 + index * (340 / Math.max(1, items.length - 1));
       const y = 190 - (item.value / axisMax) * 150;
@@ -505,7 +541,7 @@ export function ChartPreview({
     return (
       <div className="axis-chart-shell">
         {renderTitle(title)}
-        <div className="axis-chart-layout">
+        <div className="axis-chart-layout" style={{ gridTemplateColumns: `auto ${yAxisWidth}px minmax(0, 1fr)` }}>
           {yAxisLabel ? <div className="chart-axis-title chart-axis-title-vertical">{yAxisLabel}</div> : null}
           <div className="chart-y-axis">
             {reversedTicks.map((tick) => (
