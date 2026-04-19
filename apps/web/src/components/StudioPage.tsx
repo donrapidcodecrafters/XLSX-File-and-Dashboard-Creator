@@ -1123,12 +1123,26 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
   const bundle = documentState.bundle;
   const objects = useMemo(() => bundle.order.map((id) => bundle.objects[id]).filter(Boolean), [bundle]);
   const activeObjectId = params.objectId && bundle.objects[params.objectId] ? params.objectId : bundle.order[0];
-  const activeObject = activeObjectId ? bundle.objects[activeObjectId] : null;
-  const activeReport = activeObject?.type === "report" ? activeObject : null;
-  const activeDashboard = activeObject?.type === "dashboard" ? activeObject : null;
+  const hasActiveObject = Boolean(activeObjectId && bundle.objects[activeObjectId]);
+  const activeObject = hasActiveObject
+    ? bundle.objects[activeObjectId as string]
+    : ({
+        id: "",
+        type: "dashboard",
+        name: "No reports or dashboards yet",
+        description: "Create a report or dashboard, or open Settings to connect Quickbase and load workspace data.",
+        folder: "",
+        category: "",
+        tags: [],
+        updatedAt: "",
+        runtimeFilters: [],
+        tabs: []
+      } as StudioObject);
+  const activeReport = hasActiveObject && activeObject.type === "report" ? activeObject : null;
+  const activeDashboard = hasActiveObject && activeObject.type === "dashboard" ? activeObject : null;
   const activeTable = activeReport ? bundle.tables.find((table) => table.id === activeReport.sourceTableId) || null : null;
   const createDraftTable = bundle.tables.find((table) => table.id === createDraft.tableId) || bundle.tables[0] || null;
-  const validation = activeObject ? validationMessages(activeObject, activeTable) : [];
+  const validation = hasActiveObject ? validationMessages(activeObject, activeTable) : [];
   const visibleCreateFields = useMemo(() => {
     if (!createDraftTable) return [];
     const query = createFieldQuery.trim().toLowerCase();
@@ -2371,25 +2385,27 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
       <div className="studio-canvas">
         <div className="hero studio-hero">
           <div>
-            <span className="badge brand">{typeLabel(activeObject.type)}</span>
+            <span className="badge brand">{hasActiveObject ? typeLabel(activeObject.type) : "Workspace"}</span>
             <h1>{activeObject.name}</h1>
             <p>{activeObject.description || "Build, save, share, and export reports and dashboards from one workspace."}</p>
             <div className="micro-row">
-              <span>{loadingRemote ? "Loading saved workspace…" : "Saved workspace loaded"}</span>
+              <span>{loadingRemote ? "Loading saved workspace…" : hasActiveObject ? "Saved workspace loaded" : "Workspace ready"}</span>
               <span>{documentState.sync.lastSavedAt ? `Last saved ${new Date(documentState.sync.lastSavedAt).toLocaleString()}` : "Not saved yet"}</span>
             </div>
           </div>
           <div className="link-toolbar">
             <button onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save"}</button>
+            {!hasActiveObject ? <button onClick={() => openCreateModal("report")}>Create report</button> : null}
+            {!hasActiveObject ? <button onClick={() => openCreateModal("dashboard")}>Create dashboard</button> : null}
             {activeReport ? <button onClick={() => openEditReportModal(activeReport)}>Edit report</button> : null}
             {activeReport ? <button onClick={() => deleteObject(activeReport.id)}>Delete report</button> : null}
-            <button onClick={() => toggleFavorite(activeObject.id)}>{documentState.favorites.includes(activeObject.id) ? "Unfavorite" : "Favorite"}</button>
-            <button onClick={() => cloneObject(activeObject)}>Clone</button>
+            {hasActiveObject ? <button onClick={() => toggleFavorite(activeObject.id)}>{documentState.favorites.includes(activeObject.id) ? "Unfavorite" : "Favorite"}</button> : null}
+            {hasActiveObject ? <button onClick={() => cloneObject(activeObject)}>Clone</button> : null}
             <button onClick={undo} disabled={!history.length}>Undo</button>
             <button onClick={redo} disabled={!future.length}>Redo</button>
-            <button onClick={() => setDrawer("share")}>Share</button>
-            <button onClick={() => setDrawer("export")}>Export</button>
-            <button onClick={openVersions}>History</button>
+            {hasActiveObject ? <button onClick={() => setDrawer("share")}>Share</button> : null}
+            {hasActiveObject ? <button onClick={() => setDrawer("export")}>Export</button> : null}
+            {hasActiveObject ? <button onClick={openVersions}>History</button> : null}
           </div>
         </div>
 

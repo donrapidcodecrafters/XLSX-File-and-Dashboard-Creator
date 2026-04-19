@@ -1667,7 +1667,7 @@ th {
   bottom: 16px;
   display: grid;
   gap: 10px;
-  z-index: 30;
+  z-index: 80;
 }
 
 .toast {
