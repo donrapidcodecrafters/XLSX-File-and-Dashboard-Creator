@@ -79,6 +79,17 @@ function shouldUseLiveQuickbase(tableId: string, forceLive = false) {
   return Boolean(quickbase.realmHostname && quickbase.userToken && quickbase.appId && tableId);
 }
 
+function getQuickbaseConfigForTable(table: TableDefinition) {
+  const document = studioStore.getDocument();
+  const profileId = table.quickbaseProfileId || "";
+  const profile = profileId ? document.quickbaseProfiles.find((item) => item.id === profileId) : null;
+  return profile?.quickbase || document.quickbase;
+}
+
+function getQuickbaseTableId(table: TableDefinition) {
+  return table.quickbaseTableId || table.id;
+}
+
 function asNumber(value: unknown): number {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : 0;
@@ -328,7 +339,7 @@ async function fetchQuickbaseReportPageOnly(
   extraFilters: FilterDefinition[],
   options: ExecuteReportOptions
 ): Promise<ReportRunResult> {
-  const quickbase = studioStore.getDocument().quickbase;
+  const tableQuickbase = getQuickbaseConfigForTable(table);
   const { page, pageSize, includeRows, startIndex } = normalizePageOptions(options);
   const filterTree = getCombinedFilterTree(report, extraFilters);
   const filters = extractFlatPushdownFilters(filterTree);
@@ -343,7 +354,7 @@ async function fetchQuickbaseReportPageOnly(
     let totalRows = 0;
     const pageRows: DataRow[] = [];
     while (true) {
-      const batch = await fetchQuickbaseTablePage(quickbase, table.id, requestedFieldIds, {
+      const batch = await fetchQuickbaseTablePage(tableQuickbase, getQuickbaseTableId(table), requestedFieldIds, {
         top: batchSize,
         skip,
         sortBy
@@ -376,7 +387,7 @@ async function fetchQuickbaseReportPageOnly(
     };
   }
 
-  const pageResult = await fetchQuickbaseTablePage(quickbase, table.id, requestedFieldIds, {
+  const pageResult = await fetchQuickbaseTablePage(tableQuickbase, getQuickbaseTableId(table), requestedFieldIds, {
     top: pageSize,
     skip: startIndex,
     where,
@@ -405,7 +416,7 @@ async function executeQuickbaseReportPage(
   extraFilters: FilterDefinition[],
   options: ExecuteReportOptions
 ): Promise<ReportRunResult> {
-  const quickbase = studioStore.getDocument().quickbase;
+  const tableQuickbase = getQuickbaseConfigForTable(table);
   const { page, pageSize, includeRows, startIndex, endIndexExclusive } = normalizePageOptions(options);
   const filterTree = getCombinedFilterTree(report, extraFilters);
   const filters = extractFlatPushdownFilters(filterTree);
@@ -419,7 +430,7 @@ async function executeQuickbaseReportPage(
 
   if (!filterTree || (filters.length && isPushdownSafeTree(filterTree))) {
     const pageResult = includeRows
-      ? await fetchQuickbaseTablePage(quickbase, table.id, requestedFieldIds, {
+      ? await fetchQuickbaseTablePage(tableQuickbase, getQuickbaseTableId(table), requestedFieldIds, {
           top: pageSize,
           skip: startIndex,
           where,
@@ -433,7 +444,7 @@ async function executeQuickbaseReportPage(
     let scannedRows = 0;
     const chartGroups = new Map<string, number[]>();
     while (true) {
-      const batch = await fetchQuickbaseTablePage(quickbase, table.id, requestedFieldIds, {
+      const batch = await fetchQuickbaseTablePage(tableQuickbase, getQuickbaseTableId(table), requestedFieldIds, {
         top: batchSize,
         skip: scanSkip,
         where,
@@ -473,7 +484,7 @@ async function executeQuickbaseReportPage(
   const chartGroups = new Map<string, number[]>();
   const summaryAccumulator = createMetricAccumulator(metricSet);
   while (true) {
-    const batch = await fetchQuickbaseTablePage(quickbase, table.id, requestedFieldIds, {
+    const batch = await fetchQuickbaseTablePage(tableQuickbase, getQuickbaseTableId(table), requestedFieldIds, {
       top: batchSize,
       skip,
       where,
@@ -587,7 +598,7 @@ export async function fetchReportExportBundle(
     throw new Error("Table not found for report " + report.id + ".");
   }
 
-  const quickbase = studioStore.getDocument().quickbase;
+  const quickbase = getQuickbaseConfigForTable(table);
   if (shouldUseLiveQuickbase(table.id, options.forceLive) && quickbase.realmHostname && quickbase.userToken && quickbase.appId) {
     const filterTree = getCombinedFilterTree(report, extraFilters);
     const filters = extractFlatPushdownFilters(filterTree);
@@ -607,7 +618,7 @@ export async function fetchReportExportBundle(
     let expectedTotal = 0;
 
     while (true) {
-      const batch = await fetchQuickbaseTablePage(quickbase, table.id, requestedFieldIds, {
+      const batch = await fetchQuickbaseTablePage(quickbase, getQuickbaseTableId(table), requestedFieldIds, {
         top: batchSize,
         skip,
         where,

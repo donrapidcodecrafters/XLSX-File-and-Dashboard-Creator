@@ -1,6 +1,8 @@
 import {
   type FilterDefinition,
   DashboardDefinition,
+  type QuickbaseAppProfile,
+  type QuickbaseConnectionConfig,
   ReportDefinition,
   ReportViewDefinition,
   SeedBundle,
@@ -36,6 +38,80 @@ function buildReportView(overrides: Partial<ReportViewDefinition> = {}): ReportV
     calendarDateField: "",
     kanbanField: "",
     titleFieldId: "",
+    ...overrides
+  };
+}
+
+function buildRefreshSchedule() {
+  return {
+    enabled: false,
+    cadence: "daily" as const,
+    timeOfDay: "02:00",
+    dayOfWeek: 1,
+    dayOfMonth: 1,
+    timeZone: "America/Denver"
+  };
+}
+
+function buildRefreshStatus() {
+  return {
+    running: false,
+    activeJobId: "",
+    progress: 0,
+    message: "",
+    estimatedSecondsRemaining: undefined,
+    lastStartedAt: "",
+    lastCompletedAt: "",
+    lastSuccessAt: "",
+    lastError: "",
+    nextRunAt: "",
+    cachedTableIds: [],
+    cachedRowCount: 0
+  };
+}
+
+function buildDefaultQuickbaseConfig(): QuickbaseConnectionConfig {
+  return {
+    realmHostname: "cadencec.quickbase.com",
+    userToken: "cazjr3_rnua_0_c5r36vs4exw6v2fi93pdn9gfng",
+    appToken: "",
+    appId: "bva8ar4ad",
+    apiBaseUrl: "https://api.quickbase.com/v1",
+    objectTableId: "bvysukdeq",
+    objectKeyFieldId: "12",
+    objectTypeFieldId: "6",
+    objectNameFieldId: "7",
+    objectConfigFieldId: "8",
+    objectOwnerFieldId: "",
+    objectUpdatedAtFieldId: "",
+    objectUpdatedByFieldId: "",
+    settingsTableId: "bvysupuj7",
+    settingsUserFieldId: "6",
+    settingsObjectFieldId: "7",
+    settingsObjectKeyFieldId: "10",
+    settingsJsonFieldId: "",
+    settingsUpdatedByFieldId: "",
+    versionTableId: "bvysvpq8m",
+    versionObjectFieldId: "6",
+    versionObjectKeyFieldId: "10",
+    versionSnapshotFieldId: "7",
+    versionChangedAtFieldId: "8",
+    versionChangedByFieldId: "",
+    versionUpdatedByFieldId: ""
+  };
+}
+
+function buildQuickbaseProfile(overrides: Partial<QuickbaseAppProfile> = {}): QuickbaseAppProfile {
+  return {
+    id: "app-bva8ar4ad",
+    label: "Cadence app",
+    quickbase: buildDefaultQuickbaseConfig(),
+    refreshSource: {
+      tableIds: [],
+      reportIds: {}
+    },
+    refreshSchedule: buildRefreshSchedule(),
+    refreshStatus: buildRefreshStatus(),
     ...overrides
   };
 }
@@ -278,6 +354,8 @@ export function buildStudioDocument(): StudioDocument {
   const bundle = buildSeedBundle();
   const dashboard = bundle.objects["dashboard-executive-pulse"];
   const groupedTaskReport = bundle.objects["report-task-pipeline"];
+  const defaultQuickbase = buildDefaultQuickbaseConfig();
+  const defaultProfile = buildQuickbaseProfile({ quickbase: defaultQuickbase });
 
   return {
     bundle,
@@ -288,34 +366,9 @@ export function buildStudioDocument(): StudioDocument {
       navigationLabel: "Reports and Dashboards",
       homeLabel: "Workspace"
     },
-    quickbase: {
-      realmHostname: "cadencec.quickbase.com",
-      userToken: "cazjr3_rnua_0_c5r36vs4exw6v2fi93pdn9gfng",
-      appToken: "",
-      appId: "bva8ar4ad",
-      apiBaseUrl: "https://api.quickbase.com/v1",
-      objectTableId: "bvysukdeq",
-      objectKeyFieldId: "3",
-      objectTypeFieldId: "6",
-      objectNameFieldId: "7",
-      objectConfigFieldId: "8",
-      objectOwnerFieldId: "",
-      objectUpdatedAtFieldId: "",
-      objectUpdatedByFieldId: "",
-      settingsTableId: "bvysupuj7",
-      settingsUserFieldId: "6",
-      settingsObjectFieldId: "7",
-      settingsObjectKeyFieldId: "3",
-      settingsJsonFieldId: "",
-      settingsUpdatedByFieldId: "",
-      versionTableId: "bvysvpq8m",
-      versionObjectFieldId: "6",
-      versionObjectKeyFieldId: "3",
-      versionSnapshotFieldId: "7",
-      versionChangedAtFieldId: "8",
-      versionChangedByFieldId: "",
-      versionUpdatedByFieldId: ""
-    },
+    quickbase: defaultQuickbase,
+    quickbaseProfiles: [defaultProfile],
+    activeQuickbaseProfileId: defaultProfile.id,
     templates: {
       layouts: dashboard ? [{
         id: "template-layout-executive",
@@ -349,23 +402,9 @@ export function buildStudioDocument(): StudioDocument {
       providerMode: "api",
       lastSavedAt: "",
       lastLoadedAt: "",
-      refreshSchedule: {
-        enabled: false,
-        cadence: "daily",
-        timeOfDay: "02:00",
-        dayOfWeek: 1,
-        dayOfMonth: 1,
-        timeZone: "America/Denver"
-      },
-    refreshStatus: {
-      running: false,
-      activeJobId: "",
-      progress: 0,
-      message: "",
-      estimatedSecondsRemaining: undefined,
-      lastStartedAt: "",
-      lastCompletedAt: "",
-      lastSuccessAt: "",
+      refreshSchedule: buildRefreshSchedule(),
+      refreshStatus: {
+        ...buildRefreshStatus(),
         lastError: "",
         nextRunAt: "",
         cachedTableIds: [],
@@ -423,9 +462,42 @@ function mergeQuickbaseDefaults(defaults: StudioDocument["quickbase"], source?: 
   };
 }
 
+function mergeQuickbaseProfile(defaults: QuickbaseAppProfile, source?: Partial<QuickbaseAppProfile>): QuickbaseAppProfile {
+  const current = source || {};
+  return {
+    ...defaults,
+    ...current,
+    label: String(current.label || defaults.label),
+    quickbase: mergeQuickbaseDefaults(defaults.quickbase, current.quickbase),
+    refreshSource: {
+      tableIds: Array.isArray(current.refreshSource?.tableIds) ? current.refreshSource.tableIds.map(String) : defaults.refreshSource.tableIds,
+      reportIds: Object.fromEntries(
+        Object.entries(current.refreshSource?.reportIds || defaults.refreshSource.reportIds).map(([key, value]) => [String(key), String(value || "")])
+      )
+    },
+    refreshSchedule: {
+      ...defaults.refreshSchedule,
+      ...(current.refreshSchedule || {})
+    },
+    refreshStatus: {
+      ...defaults.refreshStatus,
+      ...(current.refreshStatus || {})
+    }
+  };
+}
+
 export function normalizeStudioDocument(input: Partial<StudioDocument> | null | undefined): StudioDocument {
   const defaults = buildStudioDocument();
   const source = input || {};
+  const normalizedProfiles = (source.quickbaseProfiles?.length ? source.quickbaseProfiles : defaults.quickbaseProfiles)
+    .map((profile, index) => mergeQuickbaseProfile(defaults.quickbaseProfiles[0], {
+      ...profile,
+      id: String(profile.id || `app-profile-${index + 1}`)
+    }));
+  const activeQuickbaseProfileId = normalizedProfiles.some((profile) => profile.id === source.activeQuickbaseProfileId)
+    ? String(source.activeQuickbaseProfileId)
+    : normalizedProfiles[0]?.id || "";
+  const activeProfile = normalizedProfiles.find((profile) => profile.id === activeQuickbaseProfileId);
   const normalizedObjects = Object.fromEntries(
     Object.entries(source.bundle?.objects || defaults.bundle.objects).map(([id, object]) => {
       if (object.type === "report") {
@@ -452,7 +524,12 @@ export function normalizeStudioDocument(input: Partial<StudioDocument> | null | 
         ...defaults.bundle.app,
         ...(source.bundle?.app || {})
       },
-      tables: source.bundle?.tables || defaults.bundle.tables,
+      tables: (source.bundle?.tables || defaults.bundle.tables).map((table) => ({
+        ...table,
+        quickbaseProfileId: table.quickbaseProfileId || "",
+        quickbaseTableId: table.quickbaseTableId || "",
+        quickbaseAppId: table.quickbaseAppId || ""
+      })),
       data: source.bundle?.data || defaults.bundle.data,
       objects: normalizedObjects,
       order: source.bundle?.order || defaults.bundle.order
@@ -461,7 +538,9 @@ export function normalizeStudioDocument(input: Partial<StudioDocument> | null | 
       ...defaults.branding,
       ...(source.branding || {})
     },
-    quickbase: mergeQuickbaseDefaults(defaults.quickbase, source.quickbase),
+    quickbaseProfiles: normalizedProfiles,
+    activeQuickbaseProfileId,
+    quickbase: mergeQuickbaseDefaults(defaults.quickbase, activeProfile?.quickbase || source.quickbase),
     templates: {
       layouts: source.templates?.layouts || defaults.templates.layouts,
       yaml: source.templates?.yaml || defaults.templates.yaml,

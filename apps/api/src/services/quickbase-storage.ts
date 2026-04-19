@@ -380,6 +380,39 @@ async function quickbaseQueryRecordsXml(
   return { data: records } satisfies QuickbaseQueryResult;
 }
 
+async function quickbaseQueryRecordsBySavedReportXml(
+  config: StudioDocument["quickbase"],
+  tableId: string,
+  reportId: string,
+  options: { top?: number; skip?: number } = {}
+): Promise<QuickbaseQueryResult> {
+  const optionParts = ["num-" + Math.max(1, Number(options.top) || 200)];
+  if (Number(options.skip) > 0) optionParts.push("skp-" + Number(options.skip));
+  const api = await quickbaseXmlRequest(
+    config,
+    tableId,
+    "API_DoQuery",
+    [
+      `<qid>${escapeXml(String(reportId))}</qid>`,
+      "<clist>a</clist>",
+      `<options>${escapeXml(optionParts.join("."))}</options>`,
+      "<fmt>structured</fmt>"
+    ].join("")
+  );
+
+  const records = asArray(api?.records?.record).map((record) => {
+    const row: Record<string, { value: unknown }> = {};
+    asArray(record?.f).forEach((field: any) => {
+      const fieldId = String(field?.id ?? "").trim();
+      if (!fieldId) return;
+      row[fieldId] = { value: textValue(field) };
+    });
+    return row;
+  });
+
+  return { data: records } satisfies QuickbaseQueryResult;
+}
+
 async function quickbaseQueryRecordsRest(
   config: StudioDocument["quickbase"],
   tableId: string,
@@ -501,6 +534,34 @@ export async function fetchQuickbaseTableRows(
 ): Promise<DataRow[]> {
   const response = await fetchQuickbaseTablePage(config, tableId, fieldIds, options);
   return response.rows;
+}
+
+export async function fetchQuickbaseRowsBySavedReport(
+  config: StudioDocument["quickbase"],
+  tableId: string,
+  reportId: string,
+  options: { top?: number; skip?: number } = {}
+): Promise<DataRow[]> {
+  if (!hasQuickbaseConnection(config) || !tableId || !reportId) {
+    return [];
+  }
+  const response = await quickbaseQueryRecordsBySavedReportXml(config, tableId, reportId, {
+    top: Math.max(1, Math.min(Number(options.top) || 1000, 1000)),
+    skip: Math.max(0, Number(options.skip) || 0)
+  }).catch((error) => {
+    const message = error instanceof Error ? error.message : "Quickbase saved report query failed.";
+    throw new Error(`Quickbase saved report ${reportId} failed for table ${tableId}. ${message}`);
+  });
+
+  return response.data.map((row) => {
+    const data: DataRow = {
+      __recordId: String(qbFieldValue(row, "3") || "")
+    };
+    Object.keys(row).forEach((fieldId) => {
+      data[fieldId] = qbFieldValue(row, fieldId);
+    });
+    return data;
+  });
 }
 
 async function quickbaseWriteRecordsXml(
@@ -847,6 +908,10 @@ export async function hydrateStudioDocumentFromQuickbase(document: StudioDocumen
   const next = normalizeStudioDocument({
     ...base,
     quickbase: resolvedConfig,
+    quickbaseProfiles: Array.isArray(storedUserSettings?.quickbaseProfiles)
+      ? storedUserSettings.quickbaseProfiles
+      : base.quickbaseProfiles,
+    activeQuickbaseProfileId: String(storedUserSettings?.activeQuickbaseProfileId || base.activeQuickbaseProfileId || ""),
     bundle: {
       ...base.bundle,
       tables: loadedTables,
@@ -986,6 +1051,8 @@ async function syncSettingsRecords(document: StudioDocument, user: QuickbaseUser
       branding: document.branding,
       favorites: document.favorites,
       recent: document.recent,
+      quickbaseProfiles: document.quickbaseProfiles,
+      activeQuickbaseProfileId: document.activeQuickbaseProfileId,
       sync: {
         refreshSchedule: document.sync.refreshSchedule
       },

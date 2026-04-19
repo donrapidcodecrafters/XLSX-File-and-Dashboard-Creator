@@ -58,6 +58,9 @@ export interface TableDefinition {
   id: string;
   name: string;
   description: string;
+  quickbaseProfileId?: string;
+  quickbaseTableId?: string;
+  quickbaseAppId?: string;
   fields: FieldDefinition[];
 }
 
@@ -225,6 +228,47 @@ export interface RefreshStatus {
   cachedRowCount: number;
 }
 
+export interface QuickbaseConnectionConfig {
+  realmHostname: string;
+  userToken: string;
+  appToken: string;
+  appId: string;
+  apiBaseUrl: string;
+  objectTableId: string;
+  objectKeyFieldId: string;
+  objectTypeFieldId: string;
+  objectNameFieldId: string;
+  objectConfigFieldId: string;
+  objectOwnerFieldId: string;
+  objectUpdatedAtFieldId: string;
+  objectUpdatedByFieldId: string;
+  settingsTableId: string;
+  settingsUserFieldId: string;
+  settingsObjectFieldId: string;
+  settingsObjectKeyFieldId: string;
+  settingsJsonFieldId: string;
+  settingsUpdatedByFieldId: string;
+  versionTableId: string;
+  versionObjectFieldId: string;
+  versionObjectKeyFieldId: string;
+  versionSnapshotFieldId: string;
+  versionChangedAtFieldId: string;
+  versionChangedByFieldId: string;
+  versionUpdatedByFieldId: string;
+}
+
+export interface QuickbaseAppProfile {
+  id: string;
+  label: string;
+  quickbase: QuickbaseConnectionConfig;
+  refreshSource: {
+    tableIds: string[];
+    reportIds: Record<string, string>;
+  };
+  refreshSchedule: RefreshScheduleConfig;
+  refreshStatus: RefreshStatus;
+}
+
 export interface RefreshJobStatus {
   id: string;
   status: "queued" | "running" | "complete" | "failed";
@@ -346,34 +390,9 @@ export interface StudioDocument {
     navigationLabel: string;
     homeLabel: string;
   };
-  quickbase: {
-    realmHostname: string;
-    userToken: string;
-    appToken: string;
-    appId: string;
-    apiBaseUrl: string;
-    objectTableId: string;
-    objectKeyFieldId: string;
-    objectTypeFieldId: string;
-    objectNameFieldId: string;
-    objectConfigFieldId: string;
-    objectOwnerFieldId: string;
-    objectUpdatedAtFieldId: string;
-    objectUpdatedByFieldId: string;
-    settingsTableId: string;
-    settingsUserFieldId: string;
-    settingsObjectFieldId: string;
-    settingsObjectKeyFieldId: string;
-    settingsJsonFieldId: string;
-    settingsUpdatedByFieldId: string;
-    versionTableId: string;
-    versionObjectFieldId: string;
-    versionObjectKeyFieldId: string;
-    versionSnapshotFieldId: string;
-    versionChangedAtFieldId: string;
-    versionChangedByFieldId: string;
-    versionUpdatedByFieldId: string;
-  };
+  quickbase: QuickbaseConnectionConfig;
+  quickbaseProfiles: QuickbaseAppProfile[];
+  activeQuickbaseProfileId: string;
   templates: {
     layouts: StudioTemplateRecord[];
     yaml: StudioTemplateRecord[];

@@ -69,12 +69,14 @@ export async function registerStudioRoutes(app: FastifyInstance) {
     }
   });
 
-  app.post("/api/studio/refresh/start", async (_request, reply) => {
+  app.post("/api/studio/refresh/start", async (request, reply) => {
     try {
+      const body = (request.body as { profileId?: string } | undefined) || {};
+      const currentProfileId = body.profileId || studioStore.getDocument().activeQuickbaseProfileId || "";
       const job = refreshJobStore.createJob("manual", async ({ update }) => {
         const result = await refreshAllCachedDataWithProgress("manual", (progress, message, extras) => {
           update(progress, message, extras);
-        });
+        }, currentProfileId);
         return {
           tableCount: result.tableCount,
           rowCount: result.rowCount
@@ -86,6 +88,14 @@ export async function registerStudioRoutes(app: FastifyInstance) {
       current.sync.refreshStatus.progress = Math.max(current.sync.refreshStatus.progress || 0, 1);
       current.sync.refreshStatus.message = current.sync.refreshStatus.message || "Starting refresh";
       current.sync.refreshStatus.lastError = "";
+      const profile = current.quickbaseProfiles.find((item) => item.id === currentProfileId);
+      if (profile) {
+        profile.refreshStatus.running = true;
+        profile.refreshStatus.activeJobId = job.id;
+        profile.refreshStatus.progress = Math.max(profile.refreshStatus.progress || 0, 1);
+        profile.refreshStatus.message = profile.refreshStatus.message || "Starting refresh";
+        profile.refreshStatus.lastError = "";
+      }
       studioStore.saveDocument(current, { markSavedAt: false });
       return { job };
     } catch (error) {
