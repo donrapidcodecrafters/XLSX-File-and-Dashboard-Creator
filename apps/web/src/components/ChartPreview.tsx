@@ -79,15 +79,9 @@ function buildAxisTicks(max: number, desired = 4) {
   return ticks.length ? ticks : [0, axisMax];
 }
 
-function xLabelStep(length: number, compact: boolean) {
-  const target = compact ? 6 : 8;
-  return Math.max(1, Math.ceil(length / target));
-}
-
-function xTickLabel(label: string, index: number, length: number, compact: boolean) {
-  const step = xLabelStep(length, compact);
+function xTickLabel(label: string, _index: number, length: number, compact: boolean) {
   const maxLength = compact ? 8 : length >= 10 ? 10 : length >= 7 ? 12 : 16;
-  return index % step === 0 || index === length - 1 ? cap(label, maxLength) : "";
+  return cap(label, maxLength);
 }
 
 function axisMaxFor(values: number[], compact: boolean) {
