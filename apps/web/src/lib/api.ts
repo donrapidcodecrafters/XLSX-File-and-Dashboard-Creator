@@ -6,7 +6,6 @@ import type {
   StudioObject,
   TableDefinition
 } from "@studio/shared";
-import { getHostedContext } from "./embed";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "http://localhost:3001").replace(/\/$/, "");
 
@@ -24,7 +23,7 @@ function parseDownloadFilename(contentDisposition: string | null, fallback: stri
   return plainMatch?.[1] || fallback;
 }
 
-async function downloadExportBlob(url: string, fallbackFilename: string) {
+async function downloadExportBlob(url: string, fallbackFilename: string, popupWindow?: Window | null) {
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error("Download failed with status " + response.status);
@@ -32,6 +31,11 @@ async function downloadExportBlob(url: string, fallbackFilename: string) {
   const blob = await response.blob();
   const filename = parseDownloadFilename(response.headers.get("content-disposition"), fallbackFilename);
   const objectUrl = URL.createObjectURL(blob);
+  if (popupWindow && !popupWindow.closed) {
+    popupWindow.location.href = objectUrl;
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    return;
+  }
   const anchor = document.createElement("a");
   anchor.href = objectUrl;
   anchor.download = filename;
@@ -216,11 +220,10 @@ export function fetchExportJobStatus(id: string) {
   return request<{ job: ExportJobStatus }>("/api/exports/jobs/" + encodeURIComponent(id));
 }
 
-export function downloadExportJob(id: string) {
+export function downloadExportJob(id: string, options: { directDownload?: boolean; popupWindow?: Window | null } = {}) {
   const downloadUrl = API_BASE + "/api/exports/jobs/" + encodeURIComponent(id) + "/download";
-  const hosted = getHostedContext();
-  if (hosted.embed) {
-    void downloadExportBlob(downloadUrl, `export-${id}.xlsx`);
+  if (options.directDownload) {
+    void downloadExportBlob(downloadUrl, `export-${id}.xlsx`, options.popupWindow);
     return;
   }
   ensureDownloadFrame().src = downloadUrl;

@@ -521,35 +521,8 @@ export async function streamDashboardWorkbook(
   });
   onProgress?.(74, "Writing dashboard overview");
 
-  const widgets = rendered.tabs.flatMap((tab) => tab.widgets.map((widget) => ({ tab, widget })));
   const detailSheetNames: Record<string, string> = {};
   const tabSheetNamesById: Record<string, string> = {};
-
-  for (const [widgetIndex, { tab, widget }] of widgets.entries()) {
-    const exportResult = exportResultsByReportId[widget.report.id] || widget.result;
-    const table = tablesById[widget.report.sourceTableId];
-    if (!table) continue;
-    const displayChart = widgetShowsChart(widget.widget, widget.report);
-    const displaySummary = widget.widget.showSummary;
-    const displayDetails = widgetShowsDetails(widget.widget, widget.report);
-    if (!displayChart && !displaySummary && !displayDetails) {
-      continue;
-    }
-    if (!displayDetails) {
-      continue;
-    }
-
-    const dataSheet = workbook.addWorksheet(safeSheetName(`${tab.name} ${widget.report.name} Data`, usedNames));
-    detailSheetNames[widget.widgetId] = dataSheet.name;
-    const totalWidgets = Math.max(widgets.length, 1);
-    const widgetStart = 76 + Math.round((20 * widgetIndex) / totalWidgets);
-    const widgetEnd = 76 + Math.round((20 * (widgetIndex + 1)) / totalWidgets);
-    writeDataSheet(dataSheet, widget.report, table, exportResult, onProgress, {
-      start: widgetStart,
-      end: Math.max(widgetStart + 1, widgetEnd),
-      label: `Writing ${widget.report.name}`
-    });
-  }
 
   rendered.tabs.forEach((tab) => {
     const tabSheet = workbook.addWorksheet(safeSheetName(tab.name, usedNames));

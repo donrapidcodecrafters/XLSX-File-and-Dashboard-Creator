@@ -59,6 +59,7 @@ export function ReportView({
   const totalPages = result?.totalPages || 1;
   const [exportJob, setExportJob] = useState<ExportJobStatus | null>(null);
   const [downloadedJobId, setDownloadedJobId] = useState("");
+  const [exportPopup, setExportPopup] = useState<Window | null>(null);
   const chartFieldId = getChartFieldId(report);
   const quickbaseFilterTree = buildQuickbaseReportFilterTree(report);
 
@@ -74,11 +75,19 @@ export function ReportView({
 
   useEffect(() => {
     if (!exportJob || exportJob.status !== "complete" || downloadedJobId === exportJob.id) return;
-    downloadExportJob(exportJob.id);
+    downloadExportJob(exportJob.id, { directDownload: hosted.embed, popupWindow: exportPopup });
     setDownloadedJobId(exportJob.id);
-  }, [downloadedJobId, exportJob]);
+    setExportPopup(null);
+  }, [downloadedJobId, exportJob, exportPopup, hosted.embed]);
 
   async function beginExport() {
+    if (hosted.embed) {
+      const popup = window.open("", "_blank");
+      if (popup && !popup.closed) {
+        popup.document.write("<title>Preparing export</title><p style=\"font-family: sans-serif; padding: 16px;\">Preparing your export…</p>");
+      }
+      setExportPopup(popup);
+    }
     const response = await startReportExportJob({ reportId: report.id });
     setExportJob(response.job);
     setDownloadedJobId("");
