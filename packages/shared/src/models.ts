@@ -200,6 +200,7 @@ export interface SummaryDatum {
 
 export interface ChartDatum {
   label: string;
+  rawLabel?: string;
   value: number;
 }
 

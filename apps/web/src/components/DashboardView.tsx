@@ -5,10 +5,12 @@ import { downloadExportJob, fetchExportJobStatus, renderDashboard, runReportPage
 import { LinkToolbar } from "./LinkToolbar";
 import { ChartPreview } from "./ChartPreview";
 import { buildObjectUrl, getHostedContext } from "../lib/embed";
+import { buildQuickbaseChartDatumUrl, buildQuickbaseRecordEditUrl, type QuickbaseTableLinkContext } from "../lib/quickbaseLinks";
 
 interface DashboardViewProps {
   dashboard: DashboardDefinition;
   tables?: TableDefinition[];
+  getQuickbaseLinkContext?: (tableId: string) => QuickbaseTableLinkContext | null;
   refreshNonce?: number;
   onRefresh?: () => void;
   forceLive?: boolean;
@@ -28,8 +30,12 @@ function widgetShowsChart(widget: DashboardRunResult["tabs"][number]["widgets"][
 }
 
 function getFieldLabel(tables: TableDefinition[] | undefined, report: DashboardRunResult["tabs"][number]["widgets"][number]["report"], fieldId: string) {
-  const table = tables?.find((item) => item.id === report.sourceTableId);
+  const table = tables?.find((item) => item.id === report.sourceTableId || item.quickbaseTableId === report.sourceTableId);
   return table ? getReportFieldLabel(report, table, fieldId) : fieldId;
+}
+
+function getChartFieldId(report: DashboardRunResult["tabs"][number]["widgets"][number]["report"]) {
+  return report.view.chartFieldId || report.groups[0]?.fieldId || report.selectedFieldIds[0] || "";
 }
 
 function getWidgetLayoutStyle(layout: { w: number; h: number }) {
@@ -47,7 +53,15 @@ function formatFreshnessTimestamp(value?: string) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
-export function DashboardView({ dashboard, tables, refreshNonce = 0, onRefresh, forceLive = false, openLinksInNewTab = false }: DashboardViewProps) {
+export function DashboardView({
+  dashboard,
+  tables,
+  getQuickbaseLinkContext,
+  refreshNonce = 0,
+  onRefresh,
+  forceLive = false,
+  openLinksInNewTab = false
+}: DashboardViewProps) {
   const hosted = getHostedContext();
   const fullScreenUrl = buildObjectUrl("dashboard", dashboard.id, { viewer: true });
   const defaults = useMemo(
@@ -250,7 +264,9 @@ export function DashboardView({ dashboard, tables, refreshNonce = 0, onRefresh, 
               const pageLoading = widgetPageLoading[widget.widgetId];
               const summaryData = pagedResult.summary.length ? pagedResult.summary : widget.result.summary;
               const chartData = pagedResult.chartData.length ? pagedResult.chartData : widget.result.chartData;
-              const widgetTable = tables?.find((item) => item.id === widget.report.sourceTableId);
+              const widgetTable = tables?.find((item) => item.id === widget.report.sourceTableId || item.quickbaseTableId === widget.report.sourceTableId);
+              const quickbaseLinkContext = getQuickbaseLinkContext?.(widget.report.sourceTableId) || null;
+              const chartFieldId = getChartFieldId(widget.report);
               return (
                 <article className="widget-card dashboard-layout-item" key={widget.widgetId} style={getWidgetLayoutStyle(widget.widget.layout)}>
                 <div className="widget-head">
@@ -280,6 +296,8 @@ export function DashboardView({ dashboard, tables, refreshNonce = 0, onRefresh, 
                       compact
                       showLegend={widget.report.view.chartShowLegend}
                       showValues={widget.report.view.chartShowValues}
+                      openLinksInNewTab={openLinksInNewTab}
+                      getDatumHref={(datum) => buildQuickbaseChartDatumUrl(quickbaseLinkContext, widgetTable, chartFieldId, datum)}
                     />
                   </div>
                 ) : null}
@@ -293,6 +311,7 @@ export function DashboardView({ dashboard, tables, refreshNonce = 0, onRefresh, 
                     <table>
                       <thead>
                         <tr>
+                          {quickbaseLinkContext ? <th className="table-action-col">Quickbase</th> : null}
                           {widget.report.selectedFieldIds.slice(0, 6).map((fieldId) => (
                             <th key={fieldId}>{getFieldLabel(tables, widget.report, fieldId)}</th>
                           ))}
@@ -301,6 +320,20 @@ export function DashboardView({ dashboard, tables, refreshNonce = 0, onRefresh, 
                       <tbody>
                         {pagedResult.rows.map((row, index) => (
                           <tr key={index}>
+                            {quickbaseLinkContext ? (
+                              <td className="table-action-cell">
+                                {String(row.__recordId || "").trim() ? (
+                                  <a
+                                    className="ghost-button table-edit-link"
+                                    href={buildQuickbaseRecordEditUrl(quickbaseLinkContext, String(row.__recordId || ""))}
+                                    target={openLinksInNewTab ? "_blank" : undefined}
+                                    rel={openLinksInNewTab ? "noreferrer" : undefined}
+                                  >
+                                    Edit
+                                  </a>
+                                ) : null}
+                              </td>
+                            ) : null}
                             {widget.report.selectedFieldIds.slice(0, 6).map((fieldId) => (
                               <td key={fieldId}>{widgetTable ? formatReportCellValue(widget.report, widgetTable, fieldId, row[fieldId]) : String(row[fieldId] ?? "")}</td>
                             ))}

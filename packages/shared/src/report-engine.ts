@@ -285,6 +285,7 @@ function chartRows(rows: DataRow[], report: ReportDefinition): ChartDatum[] {
   const sorted = sortChartData(
     Array.from(groups.entries()).map(([label, values]) => ({
       label: getChartLabel(report, label),
+      rawLabel: label,
       value: aggregateValues(values, aggregation)
     })),
     report.view.chartSort || "value-desc"
@@ -315,6 +316,7 @@ export function runReport(
   const warnings = report.selectedFieldIds.length ? [] : ["This report has no selected fields."];
   const titleField = report.view.titleFieldId || report.selectedFieldIds[0] || "";
   const normalizedRows = projected.map((row) => ({
+    ...(row.__recordId ? { __recordId: row.__recordId } : {}),
     ...(titleField ? { __title: row[titleField] ?? "" } : {}),
     ...row
   }));

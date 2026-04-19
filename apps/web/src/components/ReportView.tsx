@@ -5,10 +5,12 @@ import { LinkToolbar } from "./LinkToolbar";
 import { ChartPreview } from "./ChartPreview";
 import { downloadExportJob, fetchExportJobStatus, startReportExportJob } from "../lib/api";
 import { buildObjectUrl, getHostedContext } from "../lib/embed";
+import { buildQuickbaseChartDatumUrl, buildQuickbaseRecordEditUrl, type QuickbaseTableLinkContext } from "../lib/quickbaseLinks";
 
 interface ReportViewProps {
   report: ReportDefinition;
   table?: TableDefinition;
+  quickbaseLinkContext?: QuickbaseTableLinkContext | null;
   result?: ReportRunResult;
   loading: boolean;
   currentPage: number;
@@ -37,12 +39,27 @@ function formatFreshnessTimestamp(value?: string) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
-export function ReportView({ report, table, result, loading, currentPage, onPageChange, onRefresh, openLinksInNewTab = false }: ReportViewProps) {
+function getChartFieldId(report: ReportDefinition) {
+  return report.view.chartFieldId || report.groups[0]?.fieldId || report.selectedFieldIds[0] || "";
+}
+
+export function ReportView({
+  report,
+  table,
+  quickbaseLinkContext = null,
+  result,
+  loading,
+  currentPage,
+  onPageChange,
+  onRefresh,
+  openLinksInNewTab = false
+}: ReportViewProps) {
   const hosted = getHostedContext();
   const fullScreenUrl = buildObjectUrl("report", report.id, { viewer: true });
   const totalPages = result?.totalPages || 1;
   const [exportJob, setExportJob] = useState<ExportJobStatus | null>(null);
   const [downloadedJobId, setDownloadedJobId] = useState("");
+  const chartFieldId = getChartFieldId(report);
 
   useEffect(() => {
     if (!exportJob || exportJob.status === "complete" || exportJob.status === "failed") return;
@@ -157,6 +174,8 @@ export function ReportView({ report, table, result, loading, currentPage, onPage
               yAxisLabel={report.view.chartYAxisLabel}
               showLegend={report.view.chartShowLegend}
               showValues={report.view.chartShowValues}
+              openLinksInNewTab={openLinksInNewTab}
+              getDatumHref={(datum) => buildQuickbaseChartDatumUrl(quickbaseLinkContext, table, chartFieldId, datum)}
             />
           )}
         </div>
@@ -180,6 +199,7 @@ export function ReportView({ report, table, result, loading, currentPage, onPage
               <table>
                 <thead>
                   <tr>
+                    {quickbaseLinkContext ? <th className="table-action-col">Quickbase</th> : null}
                     {report.selectedFieldIds.map((fieldId) => (
                       <th key={fieldId}>{table ? getReportFieldLabel(report, table, fieldId) : fieldId}</th>
                     ))}
@@ -188,6 +208,20 @@ export function ReportView({ report, table, result, loading, currentPage, onPage
                 <tbody>
                   {(result?.rows || []).map((row, index) => (
                     <tr key={index}>
+                      {quickbaseLinkContext ? (
+                        <td className="table-action-cell">
+                          {String(row.__recordId || "").trim() ? (
+                            <a
+                              className="ghost-button table-edit-link"
+                              href={buildQuickbaseRecordEditUrl(quickbaseLinkContext, String(row.__recordId || ""))}
+                              target={openLinksInNewTab ? "_blank" : undefined}
+                              rel={openLinksInNewTab ? "noreferrer" : undefined}
+                            >
+                              Edit
+                            </a>
+                          ) : null}
+                        </td>
+                      ) : null}
                       {report.selectedFieldIds.map((fieldId) => (
                         <td key={fieldId}>{table ? formatReportCellValue(report, table, fieldId, row[fieldId]) : String(row[fieldId] ?? "")}</td>
                       ))}

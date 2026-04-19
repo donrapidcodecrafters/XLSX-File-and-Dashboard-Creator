@@ -738,6 +738,23 @@ input {
   flex-wrap: wrap;
 }
 
+.chart-link-reset {
+  color: inherit;
+  text-decoration: none;
+}
+
+.chart-row-link {
+  display: block;
+}
+
+.chart-badge-link {
+  cursor: pointer;
+}
+
+.chart-linkable {
+  cursor: pointer;
+}
+
 .badge-dot {
   width: 10px;
   height: 10px;
@@ -788,6 +805,11 @@ input {
   overflow: hidden;
 }
 
+.stacked-segment-link {
+  display: block;
+  height: 100%;
+}
+
 .donut-shell {
   display: grid;
   place-items: center;
@@ -830,6 +852,16 @@ input {
   display: block;
   font-size: 24px;
   color: var(--text);
+}
+
+.table-action-col,
+.table-action-cell {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.table-edit-link {
+  padding: 6px 10px;
 }
 
 .vertical-chart {

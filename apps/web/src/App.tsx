@@ -6,17 +6,35 @@ import { ReportView } from "./components/ReportView";
 import { StudioPage } from "./components/StudioPage";
 import { fetchCatalog, fetchObject, fetchTables, runReport, runReportPage } from "./lib/api";
 import { getHostedContext } from "./lib/embed";
+import type { QuickbaseTableLinkContext } from "./lib/quickbaseLinks";
 import { fetchStudioDocument, fetchStudioRefreshJob, startStudioObjectRefresh, startStudioRefresh } from "./lib/studioApi";
 
 function typeLabel(type: "report" | "dashboard") {
   return type === "report" ? "Report" : "Dashboard";
 }
 
+function resolveTableDefinition(tables: TableDefinition[], tableId: string) {
+  return tables.find((item) => item.id === tableId || item.quickbaseTableId === tableId);
+}
+
+function getQuickbaseLinkContextForTable(table: TableDefinition | undefined, studioDocument: StudioDocument | null): QuickbaseTableLinkContext | null {
+  if (!table || !studioDocument) return null;
+  const profile = studioDocument.quickbaseProfiles.find((item) => item.id === table.quickbaseProfileId);
+  const quickbase = profile?.quickbase || studioDocument.quickbase;
+  const realmHostname = String(quickbase.realmHostname || "").trim();
+  const tableId = String(table.quickbaseTableId || table.id || "").trim();
+  if (!realmHostname || !tableId) return null;
+  return {
+    realmHostname,
+    tableId
+  };
+}
+
 function getProfileIdsForObject(object: StudioObject | null, tables: TableDefinition[], studioDocument: StudioDocument | null) {
   if (!object || !studioDocument) return [] as string[];
   const ids = new Set<string>();
   if (object.type === "report") {
-    const table = tables.find((item) => item.id === object.sourceTableId);
+    const table = resolveTableDefinition(tables, object.sourceTableId);
     if (table?.quickbaseProfileId) ids.add(table.quickbaseProfileId);
     return Array.from(ids);
   }
@@ -26,7 +44,7 @@ function getProfileIdsForObject(object: StudioObject | null, tables: TableDefini
         ? widget.snapshot
         : studioDocument.bundle.objects[widget.reportId];
       if (report?.type !== "report") return;
-      const table = tables.find((item) => item.id === report.sourceTableId);
+      const table = resolveTableDefinition(tables, report.sourceTableId);
       if (table?.quickbaseProfileId) ids.add(table.quickbaseProfileId);
     });
   });
@@ -167,7 +185,8 @@ function ObjectPage({ tables, platformName, studioDocument, openLinksInNewTab = 
   if (!object) return <div className="empty-page">That report or dashboard could not be found.</div>;
 
   if (object.type === "report") {
-    const table = tables.find((item) => item.id === object.sourceTableId);
+    const table = resolveTableDefinition(tables, object.sourceTableId);
+    const quickbaseLinkContext = getQuickbaseLinkContextForTable(table, studioDocument);
     return (
       <>
         {liveModeEnabled ? (
@@ -194,6 +213,7 @@ function ObjectPage({ tables, platformName, studioDocument, openLinksInNewTab = 
         <ReportView
           report={object as ReportDefinition}
           table={table}
+          quickbaseLinkContext={quickbaseLinkContext}
           result={result}
           loading={loading}
           currentPage={page}
@@ -231,6 +251,7 @@ function ObjectPage({ tables, platformName, studioDocument, openLinksInNewTab = 
       <DashboardView
         dashboard={object}
         tables={tables}
+        getQuickbaseLinkContext={(tableId) => getQuickbaseLinkContextForTable(resolveTableDefinition(tables, tableId), studioDocument)}
         refreshNonce={refreshNonce}
         onRefresh={() => { void startObjectRefresh(); }}
         openLinksInNewTab={openLinksInNewTab}

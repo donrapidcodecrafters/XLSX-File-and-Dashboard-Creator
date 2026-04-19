@@ -22,6 +22,8 @@ interface ChartPreviewProps {
   compact?: boolean;
   showLegend?: boolean;
   showValues?: boolean;
+  getDatumHref?: (datum: ChartDatum) => string;
+  openLinksInNewTab?: boolean;
 }
 
 function cap(value: string, max = 16) {
@@ -119,16 +121,34 @@ function renderAxisLegend(
   items: ChartDatum[],
   compact: boolean,
   showLegend: boolean,
-  showValues: boolean
+  showValues: boolean,
+  getDatumHref?: (datum: ChartDatum) => string,
+  openLinksInNewTab = false
 ) {
   if (!showLegend) return null;
   return (
     <div className="badge-row">
       {items.map((item, index) => (
-        <span className="badge" key={item.label}>
-          <span className="badge-dot" style={{ background: getColor(index) }} />
-          {cap(item.label, compact ? 12 : 18)}{showValues ? ` · ${item.value}` : ""}
-        </span>
+        (() => {
+          const href = getDatumHref?.(item) || "";
+          const content = (
+            <span className={`badge${href ? " chart-badge-link" : ""}`} key={item.label}>
+              <span className="badge-dot" style={{ background: getColor(index) }} />
+              {cap(item.label, compact ? 12 : 18)}{showValues ? ` · ${item.value}` : ""}
+            </span>
+          );
+          return href ? (
+            <a
+              key={item.label}
+              className="chart-link-reset"
+              href={href}
+              target={openLinksInNewTab ? "_blank" : undefined}
+              rel={openLinksInNewTab ? "noreferrer" : undefined}
+            >
+              {content}
+            </a>
+          ) : content;
+        })()
       ))}
     </div>
   );
@@ -141,6 +161,36 @@ function shouldRenderLegendStrip(chartType: ChartType, compact: boolean) {
   return chartType === "pie" || chartType === "donut" || chartType === "heatmap" || chartType === "funnel";
 }
 
+function polarToCartesian(cx: number, cy: number, radius: number, angleInDegrees: number) {
+  const angleInRadians = ((angleInDegrees - 90) * Math.PI) / 180;
+  return {
+    x: cx + radius * Math.cos(angleInRadians),
+    y: cy + radius * Math.sin(angleInRadians)
+  };
+}
+
+function describePieSlicePath(cx: number, cy: number, radius: number, startAngle: number, endAngle: number) {
+  const start = polarToCartesian(cx, cy, radius, endAngle);
+  const end = polarToCartesian(cx, cy, radius, startAngle);
+  const largeArcFlag = endAngle - startAngle <= 180 ? "0" : "1";
+  return `M ${cx} ${cy} L ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArcFlag} 0 ${end.x} ${end.y} Z`;
+}
+
+function describeDonutSlicePath(cx: number, cy: number, outerRadius: number, innerRadius: number, startAngle: number, endAngle: number) {
+  const outerStart = polarToCartesian(cx, cy, outerRadius, endAngle);
+  const outerEnd = polarToCartesian(cx, cy, outerRadius, startAngle);
+  const innerStart = polarToCartesian(cx, cy, innerRadius, startAngle);
+  const innerEnd = polarToCartesian(cx, cy, innerRadius, endAngle);
+  const largeArcFlag = endAngle - startAngle <= 180 ? "0" : "1";
+  return [
+    `M ${outerStart.x} ${outerStart.y}`,
+    `A ${outerRadius} ${outerRadius} 0 ${largeArcFlag} 0 ${outerEnd.x} ${outerEnd.y}`,
+    `L ${innerStart.x} ${innerStart.y}`,
+    `A ${innerRadius} ${innerRadius} 0 ${largeArcFlag} 1 ${innerEnd.x} ${innerEnd.y}`,
+    "Z"
+  ].join(" ");
+}
+
 export function ChartPreview({
   chartType,
   data,
@@ -151,7 +201,9 @@ export function ChartPreview({
   yAxisLabel = "",
   compact = false,
   showLegend = true,
-  showValues = true
+  showValues = true,
+  getDatumHref,
+  openLinksInNewTab = false
 }: ChartPreviewProps) {
   if (!data.length) {
     return <div className="chart-empty">No chart data available.</div>;
@@ -165,23 +217,46 @@ export function ChartPreview({
     ? "horizontal"
     : (normalizedChartType === "column" || normalizedChartType === "stacked-column" ? "vertical" : chartOrientation);
   const axisDriven = ["bar", "column", "stacked-bar", "stacked-column", "line", "area", "waterfall", "scatter"].includes(normalizedChartType);
+  const anchorTarget = openLinksInNewTab ? "_blank" : undefined;
+  const anchorRel = openLinksInNewTab ? "noreferrer" : undefined;
 
   if (normalizedChartType === "donut" || normalizedChartType === "pie") {
+    const cx = 100;
+    const cy = 100;
+    const outerRadius = 82;
+    const innerRadius = normalizedChartType === "donut" ? 44 : 0;
     let offset = 0;
-    const stops = items
-      .map((item, index) => {
-        const start = (offset / total) * 360;
-        offset += item.value;
-        const end = (offset / total) * 360;
-        return `${getColor(index)} ${start}deg ${end}deg`;
-      })
-      .join(", ");
+    const slices = items.map((item, index) => {
+      const startAngle = (offset / total) * 360;
+      offset += item.value;
+      const endAngle = (offset / total) * 360;
+      return {
+        item,
+        index,
+        path: normalizedChartType === "donut"
+          ? describeDonutSlicePath(cx, cy, outerRadius, innerRadius, startAngle, endAngle)
+          : describePieSlicePath(cx, cy, outerRadius, startAngle, endAngle)
+      };
+    });
 
     return (
       <div className="chart-shell">
         {renderTitle(title)}
         <div className="donut-shell">
-          <div className={`donut ${normalizedChartType === "pie" ? "pie-chart" : ""}`} style={{ background: `conic-gradient(${stops})` }}>
+          <div className={`donut ${normalizedChartType === "pie" ? "pie-chart" : ""}`}>
+            <svg viewBox="0 0 200 200" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+              {slices.map(({ item, index, path }) => {
+                const href = getDatumHref?.(item) || "";
+                const content = <path d={path} fill={getColor(index)} className={href ? "chart-linkable" : undefined} />;
+                return href ? (
+                  <a key={item.label} href={href} target={anchorTarget} rel={anchorRel}>
+                    {content}
+                  </a>
+                ) : (
+                  <g key={item.label}>{content}</g>
+                );
+              })}
+            </svg>
             {normalizedChartType === "donut" ? (
               <div className="donut-center">
                 <div>
@@ -192,7 +267,7 @@ export function ChartPreview({
             ) : null}
           </div>
         </div>
-        {renderAxisLegend(items, compact, showLegend, showValues)}
+        {renderAxisLegend(items, compact, showLegend, showValues, getDatumHref, openLinksInNewTab)}
       </div>
     );
   }
@@ -241,8 +316,9 @@ export function ChartPreview({
               const x = leftPad + step * index + (step - barWidth) / 2;
               const height = Math.max(14, (item.value / axisMax) * plotHeight);
               const y = topPad + plotHeight - height;
-              return (
-                <g key={`${item.label}-${index}`}>
+              const href = getDatumHref?.(item) || "";
+              const content = (
+                <g key={`${item.label}-${index}`} className={href ? "chart-linkable" : undefined}>
                   <rect x={x} y={y} width={barWidth} height={height} rx="10" fill={getColor(index)} fillOpacity="0.9" />
                   {showValues && (displayStep === 1 || index % displayStep === 0 || index === 0 || index === items.length - 1) ? (
                     <text x={x + barWidth / 2} y={y - 8} textAnchor="middle" className="chart-svg-value">
@@ -259,6 +335,13 @@ export function ChartPreview({
                     {xTickLabel(item.label, index, items.length, compact)}
                   </text>
                 </g>
+              );
+              return (
+                href ? (
+                  <a key={`${item.label}-${index}`} href={href} target={anchorTarget} rel={anchorRel}>
+                    {content}
+                  </a>
+                ) : content
               );
             })}
             {xAxisLabel ? (
@@ -316,8 +399,9 @@ export function ChartPreview({
             {items.map((item, index) => {
               const y = topPad + rowHeight * index + (rowHeight - barHeight) / 2;
               const width = Math.max(12, (item.value / axisMax) * plotWidth);
-              return (
-                <g key={`${item.label}-${index}`}>
+              const href = getDatumHref?.(item) || "";
+              const content = (
+                <g key={`${item.label}-${index}`} className={href ? "chart-linkable" : undefined}>
                   <text x={leftPad - 12} y={y + barHeight / 2 + 4} textAnchor="end" className="chart-svg-label">{cap(item.label, compact ? 12 : 18)}</text>
                   <rect x={leftPad} y={y} width={width} height={barHeight} rx="10" fill={getColor(index)} fillOpacity="0.9" />
                   {showValues && (displayStep === 1 || index % displayStep === 0 || index === 0 || index === items.length - 1) ? (
@@ -326,6 +410,13 @@ export function ChartPreview({
                     </text>
                   ) : null}
                 </g>
+              );
+              return (
+                href ? (
+                  <a key={`${item.label}-${index}`} href={href} target={anchorTarget} rel={anchorRel}>
+                    {content}
+                  </a>
+                ) : content
               );
             })}
             {xAxisLabel ? (
@@ -372,9 +463,15 @@ export function ChartPreview({
                 <line x1="20" y1="200" x2="380" y2="200" className="chart-axis-svg-line" />
                 {normalizedChartType === "area" ? <polygon points={areaPoints} /> : null}
                 <polyline points={polyline} />
-                {points.map((point, index) => (
-                  <circle key={`${point.item.label}-${index}`} cx={point.x} cy={point.y} r="5" fill={getColor(index)} />
-                ))}
+                {points.map((point, index) => {
+                  const href = getDatumHref?.(point.item) || "";
+                  const content = <circle key={`${point.item.label}-${index}`} cx={point.x} cy={point.y} r="5" fill={getColor(index)} className={href ? "chart-linkable" : undefined} />;
+                  return href ? (
+                    <a key={`${point.item.label}-${index}`} href={href} target={anchorTarget} rel={anchorRel}>
+                      {content}
+                    </a>
+                  ) : content;
+                })}
               </svg>
             </div>
             <div className="chart-x-axis-labels" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
@@ -387,7 +484,7 @@ export function ChartPreview({
             {xAxisLabel ? <div className="chart-axis-title chart-axis-title-bottom">{xAxisLabel}</div> : null}
           </div>
         </div>
-        {shouldRenderLegendStrip(normalizedChartType, compact) ? renderAxisLegend(items, compact, showLegend, showValues) : null}
+        {shouldRenderLegendStrip(normalizedChartType, compact) ? renderAxisLegend(items, compact, showLegend, showValues, getDatumHref, openLinksInNewTab) : null}
       </div>
     );
   }
@@ -422,7 +519,15 @@ export function ChartPreview({
           <polyline points={polyline} />
           {points.map((point, index) => (
             <g key={`${point.item.label}-${index}`}>
-              <circle cx={point.x} cy={point.y} r="5" fill={getColor(index)} />
+              {(() => {
+                const href = getDatumHref?.(point.item) || "";
+                const content = <circle cx={point.x} cy={point.y} r="5" fill={getColor(index)} className={href ? "chart-linkable" : undefined} />;
+                return href ? (
+                  <a href={href} target={anchorTarget} rel={anchorRel}>
+                    {content}
+                  </a>
+                ) : content;
+              })()}
               {showLegend ? <text x={point.labelX} y={point.labelY} textAnchor="middle">{cap(point.item.label, compact ? 8 : 12)}</text> : null}
             </g>
           ))}
@@ -462,8 +567,9 @@ export function ChartPreview({
         {points.map((item, index) => {
           const startPercent = (item.start / maxTotal) * 100;
           const widthPercent = Math.max(8, (item.value / maxTotal) * 100);
-          return (
-            <div className="waterfall-row" key={item.label}>
+          const href = getDatumHref?.(item) || "";
+          const content = (
+            <div className={`waterfall-row${href ? " chart-linkable" : ""}`} key={item.label}>
               {showLegend ? <div className="chart-label">{cap(item.label, compact ? 12 : 18)}</div> : null}
               <div className="waterfall-track">
                 <div className="waterfall-bar" style={{ marginLeft: `${startPercent}%`, width: `${widthPercent}%`, background: getColor(index) }} />
@@ -471,6 +577,11 @@ export function ChartPreview({
               {showValues ? <div className="chart-value">{formatAxisValue(item.value, decimalPlaces)}</div> : null}
             </div>
           );
+          return href ? (
+            <a key={item.label} className="chart-link-reset chart-row-link" href={href} target={anchorTarget} rel={anchorRel}>
+              {content}
+            </a>
+          ) : content;
         })}
       </div>
     );
@@ -487,15 +598,23 @@ export function ChartPreview({
           </div>
         ) : null}
         <div className="stacked-track">
-          {items.map((item, index) => (
-            <div
-              className="stacked-segment"
-              key={item.label}
-              style={{ width: `${(item.value / total) * 100}%`, background: getColor(index) }}
-            />
-          ))}
+          {items.map((item, index) => {
+            const href = getDatumHref?.(item) || "";
+            const content = (
+              <div
+                className={`stacked-segment${href ? " chart-linkable" : ""}`}
+                key={item.label}
+                style={{ width: `${(item.value / total) * 100}%`, background: getColor(index) }}
+              />
+            );
+            return href ? (
+              <a key={item.label} className="chart-link-reset stacked-segment-link" href={href} target={anchorTarget} rel={anchorRel}>
+                {content}
+              </a>
+            ) : content;
+          })}
         </div>
-        {shouldRenderLegendStrip(normalizedChartType, compact) ? renderAxisLegend(items, compact, showLegend, showValues) : null}
+        {shouldRenderLegendStrip(normalizedChartType, compact) ? renderAxisLegend(items, compact, showLegend, showValues, getDatumHref, openLinksInNewTab) : null}
       </div>
     );
   }
@@ -504,15 +623,23 @@ export function ChartPreview({
     return (
       <div className="funnel-chart">
         {renderTitle(title)}
-        {items.map((item, index) => (
-          <div
-            className="funnel-step"
-            key={item.label}
-            style={{ width: `${Math.max(34, (item.value / max) * 100)}%`, background: getColor(index) }}
-          >
-            {cap(item.label, compact ? 12 : 18)}{showValues ? ` · ${formatAxisValue(item.value, decimalPlaces)}` : ""}
-          </div>
-        ))}
+        {items.map((item, index) => {
+          const href = getDatumHref?.(item) || "";
+          const content = (
+            <div
+              className={`funnel-step${href ? " chart-linkable" : ""}`}
+              key={item.label}
+              style={{ width: `${Math.max(34, (item.value / max) * 100)}%`, background: getColor(index) }}
+            >
+              {cap(item.label, compact ? 12 : 18)}{showValues ? ` · ${formatAxisValue(item.value, decimalPlaces)}` : ""}
+            </div>
+          );
+          return href ? (
+            <a key={item.label} className="chart-link-reset chart-row-link" href={href} target={anchorTarget} rel={anchorRel}>
+              {content}
+            </a>
+          ) : content;
+        })}
       </div>
     );
   }
@@ -521,16 +648,24 @@ export function ChartPreview({
     return (
       <div className="heat-grid">
         {renderTitle(title)}
-        {items.map((item) => (
-          <div
-            className="heat-cell"
-            key={item.label}
-            style={{ background: `rgba(13, 124, 102, ${0.22 + (item.value / max) * 0.68})` }}
-          >
-            {showValues ? <strong>{formatAxisValue(item.value, decimalPlaces)}</strong> : null}
-            {showLegend ? <span>{cap(item.label, compact ? 10 : 16)}</span> : null}
-          </div>
-        ))}
+        {items.map((item) => {
+          const href = getDatumHref?.(item) || "";
+          const content = (
+            <div
+              className={`heat-cell${href ? " chart-linkable" : ""}`}
+              key={item.label}
+              style={{ background: `rgba(13, 124, 102, ${0.22 + (item.value / max) * 0.68})` }}
+            >
+              {showValues ? <strong>{formatAxisValue(item.value, decimalPlaces)}</strong> : null}
+              {showLegend ? <span>{cap(item.label, compact ? 10 : 16)}</span> : null}
+            </div>
+          );
+          return href ? (
+            <a key={item.label} className="chart-link-reset" href={href} target={anchorTarget} rel={anchorRel}>
+              {content}
+            </a>
+          ) : content;
+        })}
       </div>
     );
   }
@@ -563,9 +698,25 @@ export function ChartPreview({
                 })}
                 <line x1="24" y1="16" x2="24" y2="196" className="chart-axis-svg-line" />
                 <line x1="24" y1="196" x2="380" y2="196" className="chart-axis-svg-line" />
-                {points.map((point, index) => (
-                  <circle key={point.item.label} cx={point.x} cy={point.y} r={point.r} fill={getColor(index)} fillOpacity={chartType === "bubble" ? 0.75 : 1} />
-                ))}
+                {points.map((point, index) => {
+                  const href = getDatumHref?.(point.item) || "";
+                  const content = (
+                    <circle
+                      key={point.item.label}
+                      cx={point.x}
+                      cy={point.y}
+                      r={point.r}
+                      fill={getColor(index)}
+                      fillOpacity={chartType === "bubble" ? 0.75 : 1}
+                      className={href ? "chart-linkable" : undefined}
+                    />
+                  );
+                  return href ? (
+                    <a key={point.item.label} href={href} target={anchorTarget} rel={anchorRel}>
+                      {content}
+                    </a>
+                  ) : content;
+                })}
               </svg>
             </div>
             <div className="chart-x-axis-labels" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
@@ -578,7 +729,7 @@ export function ChartPreview({
             {xAxisLabel ? <div className="chart-axis-title chart-axis-title-bottom">{xAxisLabel}</div> : null}
           </div>
         </div>
-        {renderAxisLegend(items, compact, showLegend, showValues)}
+        {renderAxisLegend(items, compact, showLegend, showValues, getDatumHref, openLinksInNewTab)}
       </div>
     );
   }
@@ -592,15 +743,23 @@ export function ChartPreview({
           {xAxisLabel ? <span className="chart-axis-label">{xAxisLabel}</span> : null}
         </div>
       ) : null}
-      {items.map((item, index) => (
-        <div className="chart-row" key={item.label}>
-          {showLegend ? <div className="chart-label">{cap(item.label, compact ? 12 : 18)}</div> : null}
-          <div className="chart-track">
-            <div className="chart-fill" style={{ width: `${Math.max(6, (item.value / max) * 100)}%`, background: `linear-gradient(90deg, ${getColor(index)}, ${getColor(index)}dd)` }} />
+      {items.map((item, index) => {
+        const href = getDatumHref?.(item) || "";
+        const content = (
+          <div className={`chart-row${href ? " chart-linkable" : ""}`} key={item.label}>
+            {showLegend ? <div className="chart-label">{cap(item.label, compact ? 12 : 18)}</div> : null}
+            <div className="chart-track">
+              <div className="chart-fill" style={{ width: `${Math.max(6, (item.value / max) * 100)}%`, background: `linear-gradient(90deg, ${getColor(index)}, ${getColor(index)}dd)` }} />
+            </div>
+            {showValues ? <div className="chart-value">{formatAxisValue(item.value, decimalPlaces)}</div> : null}
           </div>
-          {showValues ? <div className="chart-value">{formatAxisValue(item.value, decimalPlaces)}</div> : null}
-        </div>
-      ))}
+        );
+        return href ? (
+          <a key={item.label} className="chart-link-reset chart-row-link" href={href} target={anchorTarget} rel={anchorRel}>
+            {content}
+          </a>
+        ) : content;
+      })}
     </div>
   );
 }

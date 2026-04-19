@@ -303,6 +303,7 @@ function projectRows(report: ReportDefinition, rows: DataRow[]) {
       next[fieldId] = row[fieldId] ?? "";
     }
     return {
+      ...(row.__recordId ? { __recordId: row.__recordId } : {}),
       ...(titleField ? { __title: next[titleField] ?? "" } : {}),
       ...next
     };
@@ -322,6 +323,7 @@ function buildChartResult(chartGroups: Map<string, number[]>, report: ReportDefi
   const aggregation = report.view.chartAggregation || "count";
   const rows = Array.from(chartGroups.entries()).map(([label, values]) => ({
     label: getChartLabel(report, label),
+    rawLabel: label,
     value: aggregateChartValues(values, aggregation)
   }));
   const sort = report.view.chartSort || "value-desc";
