@@ -5,6 +5,7 @@ import { registerCatalogRoutes } from "./routes/catalog.js";
 import { registerQuickbaseRoutes } from "./routes/quickbase.js";
 import { registerRenderRoutes } from "./routes/render.js";
 import { registerStudioRoutes } from "./routes/studio.js";
+import { startRefreshScheduler } from "./services/refresh-cache.js";
 
 const app = Fastify({
   logger: true
@@ -19,6 +20,7 @@ await registerCatalogRoutes(app);
 await registerQuickbaseRoutes(app);
 await registerRenderRoutes(app);
 await registerStudioRoutes(app);
+startRefreshScheduler(app.log);
 
 const port = Number(process.env.PORT || 3001);
 const host = process.env.HOST || "0.0.0.0";

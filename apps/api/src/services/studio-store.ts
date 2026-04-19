@@ -74,9 +74,11 @@ export class StudioStore {
     return this.document.bundle;
   }
 
-  saveDocument(document: StudioDocument) {
+  saveDocument(document: StudioDocument, options: { markSavedAt?: boolean } = {}) {
     this.document = normalizeStudioDocument(clone(document));
-    this.document.sync.lastSavedAt = new Date().toISOString();
+    if (options.markSavedAt !== false) {
+      this.document.sync.lastSavedAt = new Date().toISOString();
+    }
     this.lastHydratedAt = Date.now();
     this.persist(this.document);
     return this.getDocument();

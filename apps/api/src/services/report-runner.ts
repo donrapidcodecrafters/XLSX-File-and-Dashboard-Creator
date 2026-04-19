@@ -16,6 +16,7 @@ import {
   type DataRow,
   type FilterDefinition,
   type FilterGroupDefinition,
+  type DataFreshnessInfo,
   type ReportDefinition,
   type ReportRunResult,
   type SummaryDatum,
@@ -38,10 +39,12 @@ interface ExecuteReportOptions {
   page?: number;
   pageSize?: number;
   includeRows?: boolean;
+  forceLive?: boolean;
 }
 
 interface ExecuteDashboardOptions {
   activeTabId?: string;
+  forceLive?: boolean;
 }
 
 interface ExportProgressCallback {
@@ -50,6 +53,32 @@ interface ExportProgressCallback {
 
 const DATE_TOKENS = new Set(["CURRENT_MONTH", "LAST_30_DAYS", "CURRENT_YEAR"]);
 const cache = new ExecutionCache<ReportRunResult>(20_000);
+
+function freshness(source: DataFreshnessInfo["source"]): DataFreshnessInfo {
+  return {
+    source,
+    fetchedAt: new Date().toISOString()
+  };
+}
+
+function getCachedFreshness(tableId: string): DataFreshnessInfo | null {
+  const document = studioStore.getDocument();
+  const status = document.sync.refreshStatus;
+  if (!status.cachedTableIds.includes(tableId) || !status.lastSuccessAt) {
+    return null;
+  }
+  return {
+    source: "scheduled-cache",
+    fetchedAt: status.lastSuccessAt
+  };
+}
+
+function shouldUseLiveQuickbase(tableId: string, forceLive = false) {
+  if (forceLive) return true;
+  const quickbase = studioStore.getDocument().quickbase;
+  if (!quickbase.realmHostname || !quickbase.userToken || !quickbase.appId) return false;
+  return !getCachedFreshness(tableId);
+}
 
 function asNumber(value: unknown): number {
   const numeric = Number(value);
@@ -366,7 +395,8 @@ async function fetchQuickbaseReportPageOnly(
     page,
     pageSize,
     totalPages: Math.max(1, Math.ceil(totalRows / pageSize)),
-    hasNextPage: page * pageSize < totalRows
+    hasNextPage: page * pageSize < totalRows,
+    freshness: freshness("quickbase-live")
   };
 }
 
@@ -432,7 +462,8 @@ async function executeQuickbaseReportPage(
       page,
       pageSize,
       totalPages: Math.max(1, Math.ceil(totalRows / pageSize)),
-      hasNextPage: includeRows ? page * pageSize < totalRows : false
+      hasNextPage: includeRows ? page * pageSize < totalRows : false,
+      freshness: freshness("quickbase-live")
     };
   }
 
@@ -476,7 +507,8 @@ async function executeQuickbaseReportPage(
     page,
     pageSize,
     totalPages: Math.max(1, Math.ceil(totalRows / pageSize)),
-    hasNextPage: includeRows ? page * pageSize < totalRows : false
+    hasNextPage: includeRows ? page * pageSize < totalRows : false,
+    freshness: freshness("quickbase-live")
   };
 }
 
@@ -486,19 +518,20 @@ export async function executeReportPage(report: ReportDefinition, extraFilters: 
     throw new Error("Table not found for report " + report.id + ".");
   }
 
-  const quickbase = studioStore.getDocument().quickbase;
-  if (quickbase.realmHostname && quickbase.userToken && quickbase.appId) {
+  if (shouldUseLiveQuickbase(table.id, options.forceLive)) {
     return executeQuickbaseReportPage(report, table, extraFilters, options).catch(async () => {
       const rows = objectStore.getRows(table.id);
       const full = runReport(report, table, rows, extraFilters);
       const { page, pageSize, startIndex, endIndexExclusive } = normalizePageOptions(options);
+      const cachedFreshness = getCachedFreshness(table.id);
       return {
         ...full,
         rows: full.rows.slice(startIndex, endIndexExclusive),
         page,
         pageSize,
         totalPages: Math.max(1, Math.ceil(full.totalRows / pageSize)),
-        hasNextPage: page * pageSize < full.totalRows
+        hasNextPage: page * pageSize < full.totalRows,
+        freshness: cachedFreshness || freshness("local-fallback")
       };
     });
   }
@@ -506,13 +539,15 @@ export async function executeReportPage(report: ReportDefinition, extraFilters: 
   const rows = objectStore.getRows(table.id);
   const full = runReport(report, table, rows, extraFilters);
   const { page, pageSize, startIndex, endIndexExclusive } = normalizePageOptions(options);
+  const cachedFreshness = getCachedFreshness(table.id);
   return {
     ...full,
     rows: full.rows.slice(startIndex, endIndexExclusive),
     page,
     pageSize,
     totalPages: Math.max(1, Math.ceil(full.totalRows / pageSize)),
-    hasNextPage: page * pageSize < full.totalRows
+    hasNextPage: page * pageSize < full.totalRows,
+    freshness: cachedFreshness || freshness("local-fallback")
   };
 }
 
@@ -522,13 +557,13 @@ export async function fetchReportPage(report: ReportDefinition, extraFilters: Fi
     throw new Error("Table not found for report " + report.id + ".");
   }
 
-  const quickbase = studioStore.getDocument().quickbase;
-  if (quickbase.realmHostname && quickbase.userToken && quickbase.appId) {
+  if (shouldUseLiveQuickbase(table.id, options.forceLive)) {
     return fetchQuickbaseReportPageOnly(report, table, extraFilters, options);
   }
 
   const full = runReport(report, table, objectStore.getRows(table.id), extraFilters);
   const { page, pageSize, startIndex, endIndexExclusive } = normalizePageOptions(options);
+  const cachedFreshness = getCachedFreshness(table.id);
   return {
     ...full,
     rows: full.rows.slice(startIndex, endIndexExclusive),
@@ -537,7 +572,8 @@ export async function fetchReportPage(report: ReportDefinition, extraFilters: Fi
     page,
     pageSize,
     totalPages: Math.max(1, Math.ceil(full.totalRows / pageSize)),
-    hasNextPage: page * pageSize < full.totalRows
+    hasNextPage: page * pageSize < full.totalRows,
+    freshness: cachedFreshness || freshness("local-fallback")
   };
 }
 
@@ -605,7 +641,10 @@ export async function fetchReportExportBundle(
   }
 
   onProgress?.(68, "Preparing export data");
-  return runReport(report, table, objectStore.getRows(table.id), extraFilters);
+  return {
+    ...runReport(report, table, objectStore.getRows(table.id), extraFilters),
+    freshness: getCachedFreshness(table.id) || freshness("local-fallback")
+  };
 }
 
 export async function fetchAllReportRowsForExport(report: ReportDefinition, extraFilters: FilterDefinition[] = []): Promise<DataRow[]> {
@@ -621,14 +660,14 @@ export async function executeReport(report: ReportDefinition, extraFilters: Filt
   if (!reportNeedsAggregates(report)) {
     return fetchReportPage(report, extraFilters, options);
   }
-  const quickbase = studioStore.getDocument().quickbase;
-  if (quickbase.realmHostname && quickbase.userToken && quickbase.appId) {
+  if (shouldUseLiveQuickbase(table.id, options.forceLive)) {
     return executeQuickbaseReportPage(report, table, extraFilters, options);
   }
 
   const key = cacheKey(report, extraFilters, options);
   return cache.getOrCreate(key, async () => {
     const rows = objectStore.getRows(table.id);
+    const cachedFreshness = getCachedFreshness(table.id);
     if (rows.length <= 1500) {
       const full = runReport(report, table, rows, extraFilters);
       const { page, pageSize, startIndex, endIndexExclusive } = normalizePageOptions(options);
@@ -638,7 +677,8 @@ export async function executeReport(report: ReportDefinition, extraFilters: Filt
         page,
         pageSize,
         totalPages: Math.max(1, Math.ceil(full.totalRows / pageSize)),
-        hasNextPage: page * pageSize < full.totalRows
+        hasNextPage: page * pageSize < full.totalRows,
+        freshness: cachedFreshness || freshness("local-fallback")
       };
     }
 
@@ -650,7 +690,8 @@ export async function executeReport(report: ReportDefinition, extraFilters: Filt
       page,
       pageSize,
       totalPages: Math.max(1, Math.ceil(full.totalRows / pageSize)),
-      hasNextPage: page * pageSize < full.totalRows
+      hasNextPage: page * pageSize < full.totalRows,
+      freshness: cachedFreshness || freshness("local-fallback")
     };
   });
 }
@@ -710,8 +751,8 @@ export async function executeDashboard(
         let pending = executionCache.get(executionKey);
         if (!pending) {
           pending = widgetNeedsAggregates(report, widget)
-            ? executeReport(report, extraFilters, { page: 1, pageSize: 100, includeRows: widgetNeedsRows(report, widget) })
-            : fetchReportPage(report, extraFilters, { page: 1, pageSize: 100 });
+            ? executeReport(report, extraFilters, { page: 1, pageSize: 100, includeRows: widgetNeedsRows(report, widget), forceLive: options.forceLive })
+            : fetchReportPage(report, extraFilters, { page: 1, pageSize: 100, forceLive: options.forceLive });
           executionCache.set(executionKey, pending);
         }
         const result = await pending;
@@ -725,5 +766,14 @@ export async function executeDashboard(
     )
   );
 
-  return buildDashboardResult(dashboard, widgetResults);
+  const built = buildDashboardResult(dashboard, widgetResults);
+  const dashboardSource = widgetResults.every((widget) => widget.result.freshness?.source === "quickbase-live")
+    ? "quickbase-live"
+    : widgetResults.every((widget) => widget.result.freshness?.source === "scheduled-cache")
+      ? "scheduled-cache"
+      : "local-fallback";
+  return {
+    ...built,
+    freshness: freshness(dashboardSource)
+  };
 }

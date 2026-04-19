@@ -868,6 +868,11 @@ export async function hydrateStudioDocumentFromQuickbase(document: StudioDocumen
     recent: Array.isArray(storedUserSettings?.recent) ? storedUserSettings.recent.map(String) : base.recent,
     sync: {
       ...base.sync,
+      ...(storedUserSettings?.sync || {}),
+      refreshSchedule: {
+        ...base.sync.refreshSchedule,
+        ...(storedUserSettings?.sync?.refreshSchedule || {})
+      },
       lastLoadedAt: new Date().toISOString()
     }
   });
@@ -981,6 +986,9 @@ async function syncSettingsRecords(document: StudioDocument, user: QuickbaseUser
       branding: document.branding,
       favorites: document.favorites,
       recent: document.recent,
+      sync: {
+        refreshSchedule: document.sync.refreshSchedule
+      },
       updatedAt: new Date().toISOString(),
       updatedBy: userValue
     }));

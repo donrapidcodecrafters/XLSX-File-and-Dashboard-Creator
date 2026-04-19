@@ -77,6 +77,12 @@ export function restoreStudioVersion(objectId: string, versionId: string) {
   });
 }
 
+export function runStudioRefresh() {
+  return request<{ ok: boolean; tableCount: number; rowCount: number; document: StudioDocument }>("/api/studio/refresh/run", {
+    method: "POST"
+  });
+}
+
 export function fetchQuickbaseSchema(config: StudioDocument["quickbase"]) {
   return request<{ schema: QuickbaseAppSchema }>("/api/quickbase/schema", {
     method: "POST",

@@ -42,6 +42,7 @@ export type ChartAggregation = "count" | "sum" | "avg" | "min" | "max";
 export type ChartSortMode = "value-desc" | "value-asc" | "label-asc" | "label-desc";
 export type ChartOrientation = "vertical" | "horizontal";
 export type RuntimeFilterMode = "global" | "selected";
+export type RefreshCadence = "daily" | "weekly" | "monthly";
 
 export type DataValue = string | number | boolean | null | string[];
 export type DataRow = Record<string, DataValue>;
@@ -195,6 +196,31 @@ export interface ChartDatum {
   value: number;
 }
 
+export interface DataFreshnessInfo {
+  source: "quickbase-live" | "scheduled-cache" | "local-fallback";
+  fetchedAt: string;
+}
+
+export interface RefreshScheduleConfig {
+  enabled: boolean;
+  cadence: RefreshCadence;
+  timeOfDay: string;
+  dayOfWeek: number;
+  dayOfMonth: number;
+  timeZone: string;
+}
+
+export interface RefreshStatus {
+  running: boolean;
+  lastStartedAt: string;
+  lastCompletedAt: string;
+  lastSuccessAt: string;
+  lastError: string;
+  nextRunAt: string;
+  cachedTableIds: string[];
+  cachedRowCount: number;
+}
+
 export interface ReportRunResult {
   reportId: string;
   tableId: string;
@@ -207,6 +233,7 @@ export interface ReportRunResult {
   pageSize?: number;
   totalPages?: number;
   hasNextPage?: boolean;
+  freshness?: DataFreshnessInfo;
 }
 
 export interface DashboardWidgetResult {
@@ -223,6 +250,7 @@ export interface DashboardRunResult {
     name: string;
     widgets: DashboardWidgetResult[];
   }>;
+  freshness?: DataFreshnessInfo;
 }
 
 export interface CatalogSummaryItem {
@@ -337,5 +365,7 @@ export interface StudioDocument {
     providerMode: "local" | "api";
     lastSavedAt: string;
     lastLoadedAt: string;
+    refreshSchedule: RefreshScheduleConfig;
+    refreshStatus: RefreshStatus;
   };
 }

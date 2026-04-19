@@ -32,6 +32,8 @@ function ObjectPage({ tables, platformName }: { tables: TableDefinition[]; platf
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
+  const [refreshNonce, setRefreshNonce] = useState(0);
+  const [forceLive, setForceLive] = useState(false);
   const pageSize = 100;
 
   useEffect(() => {
@@ -39,6 +41,8 @@ function ObjectPage({ tables, platformName }: { tables: TableDefinition[]; platf
     let active = true;
     setLoading(true);
     setPage(1);
+    setRefreshNonce(0);
+    setForceLive(false);
     fetchObject(params.objectId)
       .then((response) => {
         if (!active) return;
@@ -63,7 +67,9 @@ function ObjectPage({ tables, platformName }: { tables: TableDefinition[]; platf
     if (!object || object.type !== "report") return;
     let active = true;
     setLoading(true);
-    const fetcher = page === 1 ? runReport(object.id) : runReportPage(object.id, page, pageSize);
+    const fetcher = page === 1
+      ? runReport(object.id, [], { forceLive })
+      : runReportPage(object.id, page, pageSize, [], { forceLive });
     fetcher
       .then((reportResult) => {
         if (!active) return;
@@ -85,7 +91,7 @@ function ObjectPage({ tables, platformName }: { tables: TableDefinition[]; platf
     return () => {
       active = false;
     };
-  }, [object?.id, object?.type, page]);
+  }, [forceLive, object?.id, object?.type, page, refreshNonce]);
 
   if (!params.objectId) return null;
   if (!object && loading) return <div className="empty-page">Loading report or dashboard…</div>;
@@ -93,10 +99,34 @@ function ObjectPage({ tables, platformName }: { tables: TableDefinition[]; platf
 
   if (object.type === "report") {
     const table = tables.find((item) => item.id === object.sourceTableId);
-    return <ReportView report={object as ReportDefinition} table={table} result={result} loading={loading} currentPage={page} onPageChange={setPage} />;
+    return (
+      <ReportView
+        report={object as ReportDefinition}
+        table={table}
+        result={result}
+        loading={loading}
+        currentPage={page}
+        onPageChange={setPage}
+        onRefresh={() => {
+          setForceLive(true);
+          setRefreshNonce((current) => current + 1);
+        }}
+      />
+    );
   }
 
-  return <DashboardView dashboard={object} tables={tables} />;
+  return (
+    <DashboardView
+      dashboard={object}
+      tables={tables}
+      refreshNonce={refreshNonce}
+      forceLive={forceLive}
+      onRefresh={() => {
+        setForceLive(true);
+        setRefreshNonce((current) => current + 1);
+      }}
+    />
+  );
 }
 
 function ViewerPage({ objects }: { objects: CatalogSummaryItem[] }) {

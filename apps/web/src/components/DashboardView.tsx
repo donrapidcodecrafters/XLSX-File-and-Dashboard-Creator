@@ -9,6 +9,9 @@ import { buildObjectUrl, getHostedContext } from "../lib/embed";
 interface DashboardViewProps {
   dashboard: DashboardDefinition;
   tables?: TableDefinition[];
+  refreshNonce?: number;
+  onRefresh?: () => void;
+  forceLive?: boolean;
 }
 
 function resolveWidgetDisplayMode(widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], reportMode: string) {
@@ -37,7 +40,13 @@ function getWidgetLayoutStyle(layout: { w: number; h: number }) {
   };
 }
 
-export function DashboardView({ dashboard, tables }: DashboardViewProps) {
+function formatFreshnessTimestamp(value?: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
+export function DashboardView({ dashboard, tables, refreshNonce = 0, onRefresh, forceLive = false }: DashboardViewProps) {
   const hosted = getHostedContext();
   const fullScreenUrl = buildObjectUrl("dashboard", dashboard.id, { viewer: true });
   const defaults = useMemo(
@@ -57,6 +66,12 @@ export function DashboardView({ dashboard, tables }: DashboardViewProps) {
   const [widgetPageResults, setWidgetPageResults] = useState<Record<string, ReportRunResult>>({});
   const [widgetPageLoading, setWidgetPageLoading] = useState<Record<string, boolean>>({});
 
+  function freshnessLabel() {
+    if (result?.freshness?.source === "quickbase-live") return "Live Quickbase data";
+    if (result?.freshness?.source === "scheduled-cache") return "Scheduled refresh cache";
+    return "Local fallback data";
+  }
+
   useEffect(() => {
     setRuntimeFilters(defaults);
   }, [defaults]);
@@ -74,7 +89,7 @@ export function DashboardView({ dashboard, tables }: DashboardViewProps) {
   useEffect(() => {
     let active = true;
     setLoading(true);
-    renderDashboard(dashboard.id, runtimeFilters, activeTabId || dashboard.tabs[0]?.id || "")
+    renderDashboard(dashboard.id, runtimeFilters, activeTabId || dashboard.tabs[0]?.id || "", { forceLive })
       .then((next) => {
         if (active) setResult(next);
       })
@@ -84,7 +99,7 @@ export function DashboardView({ dashboard, tables }: DashboardViewProps) {
     return () => {
       active = false;
     };
-  }, [activeTabId, dashboard.id, dashboard.tabs, runtimeFilters]);
+  }, [activeTabId, dashboard.id, dashboard.tabs, forceLive, refreshNonce, runtimeFilters]);
 
   useEffect(() => {
     if (!exportJob || exportJob.status === "complete" || exportJob.status === "failed") return;
@@ -116,7 +131,7 @@ export function DashboardView({ dashboard, tables }: DashboardViewProps) {
     setWidgetPageLoading((current) => ({ ...current, [widget.widgetId]: true }));
     try {
       const filters = buildDashboardFilters(dashboard, widget.report.id, runtimeFilters);
-      const next = await runReportPage(widget.report.id, page, 100, filters);
+      const next = await runReportPage(widget.report.id, page, 100, filters, { forceLive });
       setWidgetPages((current) => ({ ...current, [widget.widgetId]: page }));
       setWidgetPageResults((current) => ({ ...current, [widget.widgetId]: next }));
     } finally {
@@ -148,10 +163,22 @@ export function DashboardView({ dashboard, tables }: DashboardViewProps) {
                 ? `Exporting ${exportJob.progress}%`
                 : "Download xlsx"}
             </button>
+            {onRefresh ? (
+              <button className="ghost-button" onClick={onRefresh} disabled={loading}>
+                {loading ? "Refreshing…" : "Refresh live data"}
+              </button>
+            ) : null}
           </div>
           {hosted.embed ? null : <LinkToolbar type="dashboard" id={dashboard.id} />}
         </div>
       </div>
+
+      {result?.freshness ? (
+        <div className={`sync-status ${result.freshness.source === "quickbase-live" || result.freshness.source === "scheduled-cache" ? "sync-status-ok" : "sync-status-warn"}`}>
+          <strong>{freshnessLabel()}</strong>
+          <span>Fetched {formatFreshnessTimestamp(result.freshness.fetchedAt)}</span>
+        </div>
+      ) : null}
 
       {exportJob ? (
         <div className={`sync-status ${exportJob.status === "failed" ? "sync-status-warn" : exportJob.status === "complete" ? "sync-status-ok" : ""}`}>

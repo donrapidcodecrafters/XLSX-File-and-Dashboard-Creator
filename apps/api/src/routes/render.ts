@@ -50,11 +50,13 @@ export async function registerRenderRoutes(app: FastifyInstance) {
       filters?: Array<{ fieldId: string; operator?: string; value: string }>;
       page?: number;
       pageSize?: number;
+      forceLive?: boolean;
     } | undefined) || {};
     const extraFilters = normalizeClientFilters(body.filters || []);
     return executeReport(report, extraFilters, {
       page: body.page || 1,
-      pageSize: body.pageSize || 100
+      pageSize: body.pageSize || 100,
+      forceLive: body.forceLive === true
     });
   });
 
@@ -70,11 +72,13 @@ export async function registerRenderRoutes(app: FastifyInstance) {
       filters?: Array<{ fieldId: string; operator?: string; value: string }>;
       page?: number;
       pageSize?: number;
+      forceLive?: boolean;
     } | undefined) || {};
     const extraFilters = normalizeClientFilters(body.filters || []);
     return fetchReportPage(report, extraFilters, {
       page: body.page || 1,
-      pageSize: body.pageSize || 100
+      pageSize: body.pageSize || 100,
+      forceLive: body.forceLive === true
     });
   });
 
@@ -234,10 +238,11 @@ export async function registerRenderRoutes(app: FastifyInstance) {
   app.post("/api/dashboards/:id/render", async (request, reply) => {
     await studioStore.hydrateFromQuickbase();
     const { id } = request.params as { id: string };
-    const body = (request.body as { runtimeFilters?: Record<string, string>; activeTabId?: string } | undefined) || {};
+    const body = (request.body as { runtimeFilters?: Record<string, string>; activeTabId?: string; forceLive?: boolean } | undefined) || {};
     try {
       return await executeDashboard(id, body.runtimeFilters || {}, {
-        activeTabId: body.activeTabId || ""
+        activeTabId: body.activeTabId || "",
+        forceLive: body.forceLive === true
       });
     } catch (error) {
       reply.code(404);

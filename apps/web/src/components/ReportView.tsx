@@ -13,13 +13,20 @@ interface ReportViewProps {
   loading: boolean;
   currentPage: number;
   onPageChange: (page: number) => void;
+  onRefresh: () => void;
 }
 
 function reportShowsChart(report: ReportDefinition) {
   return report.view.mode === "chart" || (report.view.mode === "table" && report.view.showChartInTable);
 }
 
-export function ReportView({ report, table, result, loading, currentPage, onPageChange }: ReportViewProps) {
+function formatFreshnessTimestamp(value?: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
+export function ReportView({ report, table, result, loading, currentPage, onPageChange, onRefresh }: ReportViewProps) {
   const hosted = getHostedContext();
   const fullScreenUrl = buildObjectUrl("report", report.id, { viewer: true });
   const totalPages = result?.totalPages || 1;
@@ -48,6 +55,12 @@ export function ReportView({ report, table, result, loading, currentPage, onPage
     setDownloadedJobId("");
   }
 
+  function freshnessLabel() {
+    if (result?.freshness?.source === "quickbase-live") return "Live Quickbase data";
+    if (result?.freshness?.source === "scheduled-cache") return "Scheduled refresh cache";
+    return "Local fallback data";
+  }
+
   return (
     <section className="surface stack">
       <div className="hero">
@@ -72,10 +85,20 @@ export function ReportView({ report, table, result, loading, currentPage, onPage
                 ? `Exporting ${exportJob.progress}%`
                 : "Download xlsx"}
             </button>
+            <button className="ghost-button" onClick={onRefresh} disabled={loading}>
+              {loading ? "Refreshing…" : "Refresh live data"}
+            </button>
           </div>
           {hosted.embed ? null : <LinkToolbar type="report" id={report.id} />}
         </div>
       </div>
+
+      {result?.freshness ? (
+        <div className={`sync-status ${result.freshness.source === "quickbase-live" || result.freshness.source === "scheduled-cache" ? "sync-status-ok" : "sync-status-warn"}`}>
+          <strong>{freshnessLabel()}</strong>
+          <span>Fetched {formatFreshnessTimestamp(result.freshness.fetchedAt)}</span>
+        </div>
+      ) : null}
 
       {exportJob ? (
         <div className={`sync-status ${exportJob.status === "failed" ? "sync-status-warn" : exportJob.status === "complete" ? "sync-status-ok" : ""}`}>

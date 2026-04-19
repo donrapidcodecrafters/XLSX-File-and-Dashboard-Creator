@@ -45,6 +45,7 @@ import {
   type QuickbaseSyncResult,
   fetchStudioVersions,
   restoreStudioVersion,
+  runStudioRefresh,
   saveStudioDocument
 } from "../lib/studioApi";
 import { downloadExportJob, fetchExportJobStatus, startDashboardExportJob, startReportExportJob } from "../lib/api";
@@ -104,6 +105,15 @@ const FILTER_OPERATOR_OPTIONS: Array<{ value: FilterOperator; label: string }> =
   { value: "gte", label: "Greater than or equal" },
   { value: "lt", label: "Less than" },
   { value: "lte", label: "Less than or equal" }
+];
+const WEEKDAY_OPTIONS = [
+  { value: 0, label: "Sunday" },
+  { value: 1, label: "Monday" },
+  { value: 2, label: "Tuesday" },
+  { value: 3, label: "Wednesday" },
+  { value: 4, label: "Thursday" },
+  { value: 5, label: "Friday" },
+  { value: 6, label: "Saturday" }
 ];
 
 type DrawerKind = null | "settings" | "share" | "templates" | "export" | "versions";
@@ -946,6 +956,7 @@ export function StudioPage() {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [quickbaseSchema, setQuickbaseSchema] = useState<QuickbaseAppSchema | null>(null);
   const [quickbaseSchemaLoading, setQuickbaseSchemaLoading] = useState(false);
+  const [refreshingCache, setRefreshingCache] = useState(false);
   const [lastQuickbaseSync, setLastQuickbaseSync] = useState<QuickbaseSyncResult | null>(null);
   const [liveReportResult, setLiveReportResult] = useState<ReportRunResult | null>(null);
   const [liveReportLoading, setLiveReportLoading] = useState(false);
@@ -1588,6 +1599,12 @@ export function StudioPage() {
     });
   }
 
+  function updateRefreshScheduleField<K extends keyof StudioDocument["sync"]["refreshSchedule"]>(field: K, value: StudioDocument["sync"]["refreshSchedule"][K]) {
+    applyDocumentUpdate((draft) => {
+      draft.sync.refreshSchedule[field] = value;
+    });
+  }
+
   function autoDetectQuickbaseMappings() {
     if (!quickbaseSchema) return;
     const detected = detectQuickbaseStorageConfig(quickbaseSchema);
@@ -1621,6 +1638,22 @@ export function StudioPage() {
       pushToast("Snapshot created.");
     } catch (error) {
       pushToast(error instanceof Error ? error.message : "Snapshot failed.", "danger");
+    }
+  }
+
+  async function refreshAllNow() {
+    setRefreshingCache(true);
+    try {
+      const saved = await saveStudioDocument(documentState);
+      setDocumentState(normalizeStudioDocument(saved.document));
+      setLastQuickbaseSync(saved.sync || null);
+      const response = await runStudioRefresh();
+      setDocumentState(normalizeStudioDocument(response.document));
+      pushToast(`Refreshed ${response.tableCount} tables and cached ${response.rowCount.toLocaleString()} rows.`, "ok");
+    } catch (error) {
+      pushToast(error instanceof Error ? error.message : "Refresh failed.", "danger");
+    } finally {
+      setRefreshingCache(false);
     }
   }
 
@@ -2318,6 +2351,9 @@ export function StudioPage() {
                   <div className="summary-card"><strong>{documentState.sync.providerMode === "api" ? "Connected" : "Local draft"}</strong><span>Connection</span></div>
                   <div className="summary-card"><strong>{documentState.sync.lastLoadedAt ? new Date(documentState.sync.lastLoadedAt).toLocaleTimeString() : "n/a"}</strong><span>Last load</span></div>
                   <div className="summary-card"><strong>{documentState.sync.lastSavedAt ? new Date(documentState.sync.lastSavedAt).toLocaleTimeString() : "n/a"}</strong><span>Last save</span></div>
+                  <div className="summary-card"><strong>{documentState.sync.refreshStatus.lastSuccessAt ? new Date(documentState.sync.refreshStatus.lastSuccessAt).toLocaleString() : "Not refreshed"}</strong><span>Last refresh</span></div>
+                  <div className="summary-card"><strong>{documentState.sync.refreshStatus.nextRunAt ? new Date(documentState.sync.refreshStatus.nextRunAt).toLocaleString() : "Not scheduled"}</strong><span>Next scheduled run</span></div>
+                  <div className="summary-card"><strong>{documentState.sync.refreshStatus.cachedRowCount.toLocaleString()}</strong><span>Cached rows</span></div>
                 </div>
                 <label className="field">
                   <span>Platform name</span>
@@ -2331,6 +2367,62 @@ export function StudioPage() {
                   <span>Home label</span>
                   <input value={documentState.branding.homeLabel} onChange={(event) => applyDocumentUpdate((draft) => { draft.branding.homeLabel = event.target.value; })} />
                 </label>
+                <div className="card">
+                  <div className="card-head">
+                    <strong>Schedule refresh</strong>
+                    <span className="micro">Reports and dashboards will load from these refreshed table snapshots by default. Full-screen Refresh live data still bypasses the cache.</span>
+                  </div>
+                  <label className="field">
+                    <span>Enable scheduled refresh</span>
+                    <select value={documentState.sync.refreshSchedule.enabled ? "enabled" : "disabled"} onChange={(event) => updateRefreshScheduleField("enabled", event.target.value === "enabled")}>
+                      <option value="disabled">Disabled</option>
+                      <option value="enabled">Enabled</option>
+                    </select>
+                  </label>
+                  <div className="filter-grid compact-grid">
+                    <label className="field">
+                      <span>Cadence</span>
+                      <select value={documentState.sync.refreshSchedule.cadence} onChange={(event) => updateRefreshScheduleField("cadence", event.target.value as StudioDocument["sync"]["refreshSchedule"]["cadence"])}>
+                        <option value="daily">Nightly / daily</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly">Monthly</option>
+                      </select>
+                    </label>
+                    <label className="field">
+                      <span>Time</span>
+                      <input type="time" value={documentState.sync.refreshSchedule.timeOfDay} onChange={(event) => updateRefreshScheduleField("timeOfDay", event.target.value)} />
+                    </label>
+                  </div>
+                  {documentState.sync.refreshSchedule.cadence === "weekly" ? (
+                    <label className="field">
+                      <span>Day of week</span>
+                      <select value={String(documentState.sync.refreshSchedule.dayOfWeek)} onChange={(event) => updateRefreshScheduleField("dayOfWeek", Number(event.target.value))}>
+                        {WEEKDAY_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+                  {documentState.sync.refreshSchedule.cadence === "monthly" ? (
+                    <label className="field">
+                      <span>Day of month</span>
+                      <input type="number" min={1} max={31} value={documentState.sync.refreshSchedule.dayOfMonth} onChange={(event) => updateRefreshScheduleField("dayOfMonth", Math.max(1, Math.min(31, Number(event.target.value) || 1)))} />
+                    </label>
+                  ) : null}
+                  <label className="field">
+                    <span>Timezone</span>
+                    <input value={documentState.sync.refreshSchedule.timeZone} onChange={(event) => updateRefreshScheduleField("timeZone", event.target.value)} placeholder="America/Denver" />
+                  </label>
+                  <div className="studio-actions">
+                    <button onClick={() => { void refreshAllNow(); }} disabled={refreshingCache}>
+                      {refreshingCache ? "Refreshing all reports…" : "Refresh all now"}
+                    </button>
+                  </div>
+                  <div className={`sync-status ${documentState.sync.refreshStatus.lastError ? "sync-status-warn" : "sync-status-ok"}`}>
+                    <strong>{documentState.sync.refreshStatus.running ? "Refresh in progress" : documentState.sync.refreshStatus.lastSuccessAt ? "Refresh cache ready" : "No refresh cache yet"}</strong>
+                    <span>{documentState.sync.refreshStatus.lastError || `Cached tables: ${documentState.sync.refreshStatus.cachedTableIds.join(", ") || "none"}`}</span>
+                  </div>
+                </div>
                 <div className="card">
                   <div className="card-head">
                     <strong>Quickbase Connection</strong>

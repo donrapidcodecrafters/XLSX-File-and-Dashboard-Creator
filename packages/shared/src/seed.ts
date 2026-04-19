@@ -348,7 +348,25 @@ export function buildStudioDocument(): StudioDocument {
     sync: {
       providerMode: "api",
       lastSavedAt: "",
-      lastLoadedAt: ""
+      lastLoadedAt: "",
+      refreshSchedule: {
+        enabled: false,
+        cadence: "daily",
+        timeOfDay: "02:00",
+        dayOfWeek: 1,
+        dayOfMonth: 1,
+        timeZone: "America/Denver"
+      },
+      refreshStatus: {
+        running: false,
+        lastStartedAt: "",
+        lastCompletedAt: "",
+        lastSuccessAt: "",
+        lastError: "",
+        nextRunAt: "",
+        cachedTableIds: [],
+        cachedRowCount: 0
+      }
     }
   };
 }
@@ -451,7 +469,15 @@ export function normalizeStudioDocument(input: Partial<StudioDocument> | null | 
     recent: source.recent || defaults.recent,
     sync: {
       ...defaults.sync,
-      ...(source.sync || {})
+      ...(source.sync || {}),
+      refreshSchedule: {
+        ...defaults.sync.refreshSchedule,
+        ...(source.sync?.refreshSchedule || {})
+      },
+      refreshStatus: {
+        ...defaults.sync.refreshStatus,
+        ...(source.sync?.refreshStatus || {})
+      }
     }
   };
 }
