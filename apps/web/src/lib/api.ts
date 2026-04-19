@@ -10,6 +10,37 @@ import { getHostedContext } from "./embed";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "http://localhost:3001").replace(/\/$/, "");
 
+function parseDownloadFilename(contentDisposition: string | null, fallback: string) {
+  if (!contentDisposition) return fallback;
+  const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch {
+      return utf8Match[1];
+    }
+  }
+  const plainMatch = contentDisposition.match(/filename=\"?([^\";]+)\"?/i);
+  return plainMatch?.[1] || fallback;
+}
+
+async function downloadExportBlob(url: string, fallbackFilename: string) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error("Download failed with status " + response.status);
+  }
+  const blob = await response.blob();
+  const filename = parseDownloadFilename(response.headers.get("content-disposition"), fallbackFilename);
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+}
+
 function ensureDownloadFrame() {
   const existing = document.getElementById("studio-download-frame") as HTMLIFrameElement | null;
   if (existing) return existing;
@@ -189,13 +220,7 @@ export function downloadExportJob(id: string) {
   const downloadUrl = API_BASE + "/api/exports/jobs/" + encodeURIComponent(id) + "/download";
   const hosted = getHostedContext();
   if (hosted.embed) {
-    const anchor = document.createElement("a");
-    anchor.href = downloadUrl;
-    anchor.target = "_blank";
-    anchor.rel = "noreferrer";
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
+    void downloadExportBlob(downloadUrl, `export-${id}.xlsx`);
     return;
   }
   ensureDownloadFrame().src = downloadUrl;
