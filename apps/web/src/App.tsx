@@ -143,12 +143,15 @@ function getProfileIdsForCatalogItem(item: CatalogSummaryItem, studioDocument: S
 function HomePage({
   objects,
   studioDocument,
+  refreshAllSignal = 0,
   openLinksInNewTab = false
 }: {
   objects: CatalogSummaryItem[];
   studioDocument: StudioDocument | null;
+  refreshAllSignal?: number;
   openLinksInNewTab?: boolean;
 }) {
+  const [refreshJob, setRefreshJob] = useState<any>(null);
   const catalogLookup = useMemo(() => buildCatalogItemLookup(objects, studioDocument), [objects, studioDocument]);
   const rankedObjects = [...objects].sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime());
   const reports = rankedObjects.filter((object) => object.type === "report");
@@ -184,8 +187,48 @@ function HomePage({
   const totalCachedRows = appProfiles.reduce((sum, profile) => sum + (profile.refreshStatus.cachedRowCount || 0), 0);
   const healthTone = totalCachedRows > 0 ? "Up to date" : "Needs refresh";
 
+  useEffect(() => {
+    if (!refreshJob || refreshJob.status === "complete" || refreshJob.status === "failed") return;
+    const handle = window.setInterval(() => {
+      fetchStudioRefreshJob(refreshJob.id)
+        .then((response) => {
+          setRefreshJob(response.job);
+          if (response.job.status === "complete" || response.job.status === "failed") {
+            window.location.reload();
+          }
+        })
+        .catch(() => undefined);
+    }, 1000);
+    return () => window.clearInterval(handle);
+  }, [refreshJob]);
+
+  useEffect(() => {
+    if (!refreshAllSignal) return;
+    void startFullRefresh();
+  }, [refreshAllSignal]);
+
+  async function startFullRefresh() {
+    const response = await startStudioRefresh();
+    setRefreshJob(response.job);
+  }
+
   return (
     <section className="surface home-page">
+      {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" ? (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(12,22,18,0.58)", zIndex: 9999, display: "grid", placeItems: "center", padding: "24px" }}>
+          <div style={{ width: "min(560px, 100%)", background: "#fff", borderRadius: "20px", padding: "24px", boxShadow: "0 24px 64px rgba(0,0,0,0.24)" }}>
+            <strong style={{ display: "block", fontSize: "1.1rem", marginBottom: "8px" }}>Refreshing all reports and dashboards</strong>
+            <div style={{ marginBottom: "10px", color: "#41554a" }}>{refreshJob.message}</div>
+            <div style={{ height: "12px", background: "#e5ece8", borderRadius: "999px", overflow: "hidden", marginBottom: "10px" }}>
+              <div style={{ height: "100%", width: `${refreshJob.progress || 0}%`, background: "#0d7c66" }} />
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.95rem", color: "#41554a" }}>
+              <span>{refreshJob.progress || 0}% complete</span>
+              <span>{typeof refreshJob.estimatedSecondsRemaining === "number" ? `~${refreshJob.estimatedSecondsRemaining}s remaining` : "Estimating time…"}</span>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div className="home-shell">
         <section className="home-hero-panel">
           <div className="home-hero-copy">
@@ -194,6 +237,7 @@ function HomePage({
             <p>Everything important in one place: refresh health, connected apps, recent activity, favorites, and fast access to the reports and dashboards people use every day.</p>
           </div>
           <div className="home-hero-actions">
+            <button className="ghost-button" onClick={() => { void startFullRefresh(); }}>Refresh all</button>
             <Link className="ghost-button" to="/viewer">Browse reports and dashboards</Link>
             <Link className="ghost-button" to="/studio">Open building area</Link>
           </div>
@@ -663,6 +707,7 @@ export function App() {
   const [studioSettingsSignal, setStudioSettingsSignal] = useState(0);
   const [studioRefreshSignal, setStudioRefreshSignal] = useState(0);
   const [viewerRefreshSignal, setViewerRefreshSignal] = useState(0);
+  const [homeRefreshSignal, setHomeRefreshSignal] = useState(0);
   const homeRoute = location.pathname === "/";
   const studioRoute = location.pathname.startsWith("/studio");
   const viewerRoute = location.pathname === "/viewer";
@@ -714,6 +759,9 @@ export function App() {
                 <button className="ghost-button topbar-action" onClick={() => setStudioSettingsSignal((value) => value + 1)}>Settings</button>
               </>
             ) : null}
+            {homeRoute ? (
+              <button className="ghost-button topbar-action" onClick={() => setHomeRefreshSignal((value) => value + 1)}>Refresh all</button>
+            ) : null}
             {viewerRoute ? (
               <button className="ghost-button topbar-action" onClick={() => setViewerRefreshSignal((value) => value + 1)}>Refresh all</button>
             ) : null}
@@ -744,7 +792,7 @@ export function App() {
 
         <main className={`content ${readerRoute ? "reader-content" : ""}`}>
           <Routes>
-            <Route path="/" element={<HomePage objects={objects} studioDocument={studioDocument} openLinksInNewTab={openLinksInNewTab} />} />
+            <Route path="/" element={<HomePage objects={objects} studioDocument={studioDocument} refreshAllSignal={homeRefreshSignal} openLinksInNewTab={openLinksInNewTab} />} />
             <Route path="/viewer" element={<ViewerPage objects={objects} refreshAllSignal={viewerRefreshSignal} openLinksInNewTab={openLinksInNewTab} />} />
             <Route path="/studio" element={<StudioPage openSettingsSignal={studioSettingsSignal} refreshAllSignal={studioRefreshSignal} />} />
             <Route path="/studio/:objectId" element={<StudioPage openSettingsSignal={studioSettingsSignal} refreshAllSignal={studioRefreshSignal} />} />
