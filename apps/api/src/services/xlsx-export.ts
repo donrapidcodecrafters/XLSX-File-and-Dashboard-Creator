@@ -148,15 +148,60 @@ function chartDataset(data: ChartDatum[], report: ReportDefinition) {
   };
 }
 
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function getChartImageSizing(report: ReportDefinition, chartData: ChartDatum[]) {
+  const labels = chartData.map((item) => String(item.label || ""));
+  const maxLabelLength = labels.reduce((max, label) => Math.max(max, label.length), 0);
+  const count = Math.max(chartData.length, 1);
+  const horizontal = report.view.chartType === "horizontal-bar"
+    || report.view.chartType === "horizontal-stacked-bar"
+    || (report.view.chartType === "bar" && report.view.chartOrientation === "horizontal");
+  if (horizontal) {
+    const renderWidth = clamp(1500 + Math.max(0, maxLabelLength - 16) * 10, 1500, 2600);
+    const renderHeight = clamp(720 + count * 28, 720, 3200);
+    return {
+      renderWidth,
+      renderHeight,
+      embedWidth: clamp(Math.round(renderWidth * 0.78), 980, 1700),
+      embedHeight: clamp(Math.round(renderHeight * 0.72), 520, 2200)
+    };
+  }
+  const renderWidth = clamp(1200 + count * 65 + Math.max(0, maxLabelLength - 12) * 18, 1200, 3200);
+  const renderHeight = clamp(820 + Math.max(0, maxLabelLength - 18) * 12, 820, 1700);
+  return {
+    renderWidth,
+    renderHeight,
+    embedWidth: clamp(Math.round(renderWidth * 0.76), 900, 2000),
+    embedHeight: clamp(Math.round(renderHeight * 0.74), 560, 1200)
+  };
+}
+
 async function renderChartImage(report: ReportDefinition, subtitle: string, chartData: ChartDatum[], summary: SummaryDatum[]) {
   if (!chartData.length) return null;
   const chartType = quickChartType(report.view.chartType);
+  const sizing = getChartImageSizing(report, chartData);
+  const horizontal = report.view.chartType === "horizontal-bar"
+    || report.view.chartType === "horizontal-stacked-bar"
+    || (report.view.chartType === "bar" && report.view.chartOrientation === "horizontal");
+  const categoryAxisKey = horizontal ? "y" : "x";
+  const valueAxisKey = horizontal ? "x" : "y";
   const config = {
     type: chartType,
-    data: chartDataset(chartData.slice(0, 16), report),
+    data: chartDataset(chartData, report),
     options: {
       responsive: false,
       animation: false,
+      layout: {
+        padding: {
+          bottom: horizontal ? 18 : Math.min(220, 42 + Math.max(0, Math.max(...chartData.map((item) => String(item.label || "").length), 0) - 10) * 8),
+          left: horizontal ? Math.min(260, 70 + Math.max(...chartData.map((item) => String(item.label || "").length), 0) * 5) : 28,
+          right: 24,
+          top: 24
+        }
+      },
       plugins: {
         legend: { display: report.view.chartShowLegend !== false },
         title: {
@@ -169,16 +214,21 @@ async function renderChartImage(report: ReportDefinition, subtitle: string, char
         }
       },
       scales: chartType === "pie" || chartType === "doughnut" || chartType === "radar" ? undefined : {
-        x: {
+        [categoryAxisKey]: {
+          ticks: {
+            autoSkip: false,
+            maxRotation: horizontal ? 0 : 60,
+            minRotation: horizontal ? 0 : 45
+          },
           title: {
-            display: Boolean(report.view.chartXAxisLabel),
-            text: report.view.chartXAxisLabel
+            display: Boolean(horizontal ? report.view.chartYAxisLabel : report.view.chartXAxisLabel),
+            text: horizontal ? report.view.chartYAxisLabel : report.view.chartXAxisLabel
           }
         },
-        y: {
+        [valueAxisKey]: {
           title: {
-            display: Boolean(report.view.chartYAxisLabel),
-            text: report.view.chartYAxisLabel
+            display: Boolean(horizontal ? report.view.chartXAxisLabel : report.view.chartYAxisLabel),
+            text: horizontal ? report.view.chartXAxisLabel : report.view.chartYAxisLabel
           }
         }
       }
@@ -188,8 +238,8 @@ async function renderChartImage(report: ReportDefinition, subtitle: string, char
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      width: 1200,
-      height: 720,
+      width: sizing.renderWidth,
+      height: sizing.renderHeight,
       backgroundColor: "white",
       devicePixelRatio: 2,
       format: "png",
@@ -197,7 +247,11 @@ async function renderChartImage(report: ReportDefinition, subtitle: string, char
     })
   });
   if (!response.ok) return null;
-  return Buffer.from(await response.arrayBuffer()).toString("base64");
+  return {
+    base64: Buffer.from(await response.arrayBuffer()).toString("base64"),
+    width: sizing.embedWidth,
+    height: sizing.embedHeight
+  };
 }
 
 async function addChartImage(
@@ -209,8 +263,8 @@ async function addChartImage(
 ) {
   const image = await renderChartImage(report, subtitle, result.chartData, result.summary);
   if (!image) return false;
-  const imageId = workbook.addImage({ base64: image, extension: "png" });
-  sheet.addImage(imageId, { tl: { col: 3, row: 1 }, ext: { width: 760, height: 460 } });
+  const imageId = workbook.addImage({ base64: image.base64, extension: "png" });
+  sheet.addImage(imageId, { tl: { col: 3, row: 1 }, ext: { width: image.width, height: image.height } });
   return true;
 }
 
@@ -356,12 +410,12 @@ async function writeDashboardTabSheet(
     if (widgetShowsChart(widget.widget, widget.report)) {
       const image = await renderChartImage(widget.report, tab.name, exportResult.chartData, exportResult.summary);
       if (image) {
-        const imageId = workbook.addImage({ base64: image, extension: "png" });
+        const imageId = workbook.addImage({ base64: image.base64, extension: "png" });
         sheet.addImage(imageId, {
           tl: { col: startCol - 1 + 0.1, row: contentRow - 1 + 0.1 },
           ext: {
-            width: Math.max(260, (endCol - startCol + 1) * 90),
-            height: 220
+            width: Math.max(Math.max(260, (endCol - startCol + 1) * 90), Math.min(image.width, (endCol - startCol + 1) * 150)),
+            height: Math.max(220, Math.min(image.height, 520))
           }
         });
         contentRow += 12;
