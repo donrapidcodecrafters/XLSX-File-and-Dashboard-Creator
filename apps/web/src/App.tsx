@@ -13,6 +13,32 @@ function typeLabel(type: "report" | "dashboard") {
   return type === "report" ? "Report" : "Dashboard";
 }
 
+function reportResultNeedsAutoRefresh(result: any) {
+  if (!result) return false;
+  const fallback = result.freshness?.source === "local-fallback";
+  const noRows = Number(result.totalRows || 0) === 0;
+  const noSummary = !Array.isArray(result.summary) || result.summary.length === 0;
+  const noChart = !Array.isArray(result.chartData) || result.chartData.length === 0;
+  return fallback && noRows && noSummary && noChart;
+}
+
+function dashboardResultNeedsAutoRefresh(result: any) {
+  if (!result) return false;
+  if (result.freshness?.source !== "local-fallback") return false;
+  const widgets = Array.isArray(result.tabs)
+    ? result.tabs.flatMap((tab: any) => Array.isArray(tab.widgets) ? tab.widgets : [])
+    : [];
+  if (!widgets.length) return true;
+  return widgets.every((widget: any) => {
+    const widgetResult = widget?.result;
+    if (!widgetResult) return true;
+    const noRows = Number(widgetResult.totalRows || 0) === 0;
+    const noSummary = !Array.isArray(widgetResult.summary) || widgetResult.summary.length === 0;
+    const noChart = !Array.isArray(widgetResult.chartData) || widgetResult.chartData.length === 0;
+    return noRows && noSummary && noChart;
+  });
+}
+
 function resolveTableDefinition(tables: TableDefinition[], tableId: string) {
   return tables.find((item) => item.id === tableId || item.quickbaseTableId === tableId);
 }
@@ -250,6 +276,7 @@ function ObjectPage({ tables, platformName, studioDocument, openLinksInNewTab = 
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [refreshJob, setRefreshJob] = useState<any>(null);
   const [autoRefreshForId, setAutoRefreshForId] = useState("");
+  const [fallbackRefreshAttemptForId, setFallbackRefreshAttemptForId] = useState("");
   const pageSize = 100;
   const liveModeProfileIds = useMemo(() => getProfileIdsForObject(object, tables, studioDocument), [object, studioDocument, tables]);
   const liveModeEnabled = useMemo(
@@ -276,6 +303,7 @@ function ObjectPage({ tables, platformName, studioDocument, openLinksInNewTab = 
     setRefreshNonce(0);
     setRefreshJob(null);
     setAutoRefreshForId("");
+    setFallbackRefreshAttemptForId("");
     fetchObject(params.objectId)
       .then((response) => {
         if (!active) return;
@@ -355,6 +383,18 @@ function ObjectPage({ tables, platformName, studioDocument, openLinksInNewTab = 
     setAutoRefreshForId(object.id);
     void startObjectRefresh();
   }, [autoRefreshForId, liveModeEnabled, object, refreshJob?.status]);
+
+  useEffect(() => {
+    if (!object || !result || loading) return;
+    if (refreshJob?.status === "queued" || refreshJob?.status === "running") return;
+    if (fallbackRefreshAttemptForId === `${object.id}:${refreshNonce}`) return;
+    const shouldRefresh = object.type === "report"
+      ? reportResultNeedsAutoRefresh(result)
+      : dashboardResultNeedsAutoRefresh(result);
+    if (!shouldRefresh) return;
+    setFallbackRefreshAttemptForId(`${object.id}:${refreshNonce}`);
+    void startObjectRefresh();
+  }, [fallbackRefreshAttemptForId, loading, object, refreshJob?.status, refreshNonce, result]);
 
   if (!params.objectId) return null;
   if (!object && loading) return <div className="empty-page">Loading report or dashboard…</div>;
