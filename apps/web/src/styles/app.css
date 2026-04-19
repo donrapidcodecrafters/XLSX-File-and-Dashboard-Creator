@@ -1177,6 +1177,50 @@ th {
   gap: 12px;
 }
 
+.home-app-browser {
+  display: grid;
+  gap: 14px;
+}
+
+.home-app-browse-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 20px;
+  background: rgba(247, 248, 243, 0.95);
+  border: 1px solid var(--line);
+}
+
+.home-app-browse-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.home-app-browse-links {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.home-app-browse-link {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(23, 49, 38, 0.08);
+  transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+}
+
+.home-app-browse-link:hover,
+.home-app-browse-link:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 24px rgba(22, 39, 31, 0.08);
+  border-color: rgba(13, 124, 102, 0.2);
+}
+
 .home-object-grid {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }

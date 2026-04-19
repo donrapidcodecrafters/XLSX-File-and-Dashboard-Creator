@@ -133,6 +133,13 @@ function buildCatalogItemLookup(objects: CatalogSummaryItem[], studioDocument: S
   return map;
 }
 
+function getProfileIdsForCatalogItem(item: CatalogSummaryItem, studioDocument: StudioDocument | null) {
+  if (!studioDocument) return [] as string[];
+  const object = studioDocument.bundle.objects[item.id];
+  if (!object) return [] as string[];
+  return getProfileIdsForObject(object, studioDocument.bundle.tables || [], studioDocument);
+}
+
 function HomePage({
   objects,
   studioDocument,
@@ -154,6 +161,23 @@ function HomePage({
     .map((id) => catalogLookup.get(id))
     .filter((item): item is CatalogSummaryItem => Boolean(item))
     .slice(0, 6) || [];
+  const appBrowseGroups = useMemo(() => {
+    const profiles = studioDocument?.quickbaseProfiles || [];
+    const grouped = profiles.map((profile) => ({
+      id: profile.id,
+      label: profile.label || "Quickbase app",
+      items: rankedObjects.filter((item) => getProfileIdsForCatalogItem(item, studioDocument).includes(profile.id)).slice(0, 8)
+    })).filter((group) => group.items.length > 0);
+    const unassigned = rankedObjects.filter((item) => getProfileIdsForCatalogItem(item, studioDocument).length === 0).slice(0, 8);
+    if (unassigned.length) {
+      grouped.push({
+        id: "general",
+        label: "General",
+        items: unassigned
+      });
+    }
+    return grouped;
+  }, [rankedObjects, studioDocument]);
   const recentOrLatest = recentObjects.length ? recentObjects : rankedObjects.slice(0, 6);
   const favoritesOrFeatured = favoriteObjects.length ? favoriteObjects : [...dashboards, ...reports].slice(0, 6);
   const appProfiles = studioDocument?.quickbaseProfiles || [];
@@ -228,6 +252,39 @@ function HomePage({
                   </Link>
                 )) : (
                   <div className="empty-page">No favorites or featured content are available yet.</div>
+                )}
+              </div>
+            </div>
+
+            <div className="card home-section-card">
+              <div className="card-head">
+                <strong>Browse by App</strong>
+                <span className="micro">Open reports and dashboards grouped by connected Quickbase app</span>
+              </div>
+              <div className="home-app-browser">
+                {appBrowseGroups.length ? appBrowseGroups.map((group) => (
+                  <div className="home-app-browse-card" key={group.id}>
+                    <div className="home-app-browse-head">
+                      <strong>{group.label}</strong>
+                      <span className="micro">{group.items.length} item{group.items.length === 1 ? "" : "s"}</span>
+                    </div>
+                    <div className="home-app-browse-links">
+                      {group.items.map((object) => (
+                        <Link
+                          key={object.id}
+                          className="home-app-browse-link"
+                          to={`/${object.type}/${object.id}`}
+                          target={openLinksInNewTab ? "_blank" : undefined}
+                          rel={openLinksInNewTab ? "noreferrer" : undefined}
+                        >
+                          <span className="badge">{typeLabel(object.type)}</span>
+                          <strong>{object.name}</strong>
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                )) : (
+                  <div className="empty-page">No app-based report or dashboard groups are available yet.</div>
                 )}
               </div>
             </div>
