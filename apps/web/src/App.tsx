@@ -152,6 +152,7 @@ function HomePage({
   openLinksInNewTab?: boolean;
 }) {
   const [refreshJob, setRefreshJob] = useState<any>(null);
+  const [autoRefreshAttempted, setAutoRefreshAttempted] = useState(false);
   const catalogLookup = useMemo(() => buildCatalogItemLookup(objects, studioDocument), [objects, studioDocument]);
   const rankedObjects = [...objects].sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime());
   const reports = rankedObjects.filter((object) => object.type === "report");
@@ -185,6 +186,14 @@ function HomePage({
   const favoritesOrFeatured = favoriteObjects.length ? favoriteObjects : [...dashboards, ...reports].slice(0, 6);
   const appProfiles = studioDocument?.quickbaseProfiles || [];
   const totalCachedRows = appProfiles.reduce((sum, profile) => sum + (profile.refreshStatus.cachedRowCount || 0), 0);
+  const hasConfiguredRefreshSources = appProfiles.some((profile) =>
+    Array.isArray(profile.refreshSource.tableIds) &&
+    profile.refreshSource.tableIds.some((tableId) => {
+      const key = String(tableId || "").trim();
+      if (!key) return false;
+      return Boolean(profile.refreshSource.reportIds?.[key]);
+    })
+  );
   const healthTone = totalCachedRows > 0 ? "Up to date" : "Needs refresh";
 
   useEffect(() => {
@@ -206,6 +215,23 @@ function HomePage({
     if (!refreshAllSignal) return;
     void startFullRefresh();
   }, [refreshAllSignal]);
+
+  useEffect(() => {
+    if (autoRefreshAttempted) return;
+    if (!studioDocument) return;
+    if (!hasConfiguredRefreshSources) return;
+    if (totalCachedRows > 0) return;
+    if (refreshJob?.status === "queued" || refreshJob?.status === "running") return;
+    if (studioDocument.sync.refreshStatus.running) return;
+    setAutoRefreshAttempted(true);
+    void startFullRefresh();
+  }, [
+    autoRefreshAttempted,
+    hasConfiguredRefreshSources,
+    refreshJob?.status,
+    studioDocument,
+    totalCachedRows
+  ]);
 
   async function startFullRefresh() {
     const response = await startStudioRefresh();
@@ -351,7 +377,9 @@ function HomePage({
                 </div>
                 <div className="home-status-item">
                   <strong>Current refresh message</strong>
-                  <span>{studioDocument?.sync.refreshStatus.message || "No refresh has run yet."}</span>
+                  <span>{totalCachedRows === 0 && hasConfiguredRefreshSources
+                    ? "No saved rows were available, so the platform is refreshing everything now."
+                    : studioDocument?.sync.refreshStatus.message || "No refresh has run yet."}</span>
                 </div>
                 <div className="home-status-item">
                   <strong>Favorites saved</strong>
