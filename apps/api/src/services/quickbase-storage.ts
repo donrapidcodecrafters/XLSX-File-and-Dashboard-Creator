@@ -1098,7 +1098,7 @@ function convertQuickbaseSchemaToTables(
   appId = ""
 ): TableDefinition[] {
   return schema.tables.map((table) => ({
-    id: table.id,
+    id: profileId ? `${profileId}:${table.id}` : table.id,
     name: table.name,
     description: table.description || "Quickbase table",
     quickbaseProfileId: profileId,
