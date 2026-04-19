@@ -236,6 +236,38 @@ type TableRefreshProgress = {
   message: string;
 };
 
+function persistRefreshProgress(
+  document: StudioDocument,
+  progress: number,
+  message: string,
+  profileIds: string[],
+  extras?: { estimatedSecondsRemaining?: number; rowCount?: number; tableIds?: string[] }
+) {
+  document.sync.refreshStatus.progress = progress;
+  document.sync.refreshStatus.message = message;
+  document.sync.refreshStatus.estimatedSecondsRemaining = extras?.estimatedSecondsRemaining;
+  if (extras?.tableIds) {
+    document.sync.refreshStatus.cachedTableIds = extras.tableIds;
+  }
+  if (typeof extras?.rowCount === "number") {
+    document.sync.refreshStatus.cachedRowCount = extras.rowCount;
+  }
+  profileIds.forEach((profileId) => {
+    syncProfileRefreshStatus(document, profileId, (status) => {
+      status.progress = progress;
+      status.message = message;
+      status.estimatedSecondsRemaining = extras?.estimatedSecondsRemaining;
+      if (extras?.tableIds) {
+        status.cachedTableIds = extras.tableIds.filter((tableId) => getTable(document, tableId)?.quickbaseProfileId === profileId);
+      }
+      if (typeof extras?.rowCount === "number") {
+        status.cachedRowCount = status.cachedTableIds.reduce((sum, tableId) => sum + (document.bundle.data[tableId]?.length || 0), 0);
+      }
+    });
+  });
+  studioStore.flushCurrent({ markSavedAt: false });
+}
+
 async function fetchAllTableRows(
   document: StudioDocument,
   table: TableDefinition,
@@ -264,6 +296,7 @@ async function fetchAllTableRows(
         Object.assign(existing, row);
         merged.set(recordId, existing);
       });
+      document.bundle.data[table.id] = Array.from(merged.values());
       onProgress?.({
         loadedRows: merged.size,
         fetchedPages,
@@ -297,6 +330,7 @@ async function fetchAllTableRows(
         Object.assign(existing, row);
         merged.set(recordId, existing);
       });
+      document.bundle.data[table.id] = Array.from(merged.values());
       fetchedPages += 1;
       onProgress?.({
         loadedRows: merged.size,
@@ -351,7 +385,7 @@ export async function refreshAllCachedData(reason: "manual" | "scheduled" = "man
   updateRefreshScheduleMetadata(startDocument);
   updateLegacyActiveQuickbase(startDocument);
   startDocument.sync.refreshStatus.running = true;
-  startDocument.sync.refreshStatus.activeJobId = "";
+  startDocument.sync.refreshStatus.activeJobId = startDocument.sync.refreshStatus.activeJobId || "";
   startDocument.sync.refreshStatus.progress = 1;
   startDocument.sync.refreshStatus.message = "Preparing refresh";
   startDocument.sync.refreshStatus.estimatedSecondsRemaining = undefined;
@@ -449,7 +483,7 @@ export async function refreshAllCachedDataWithProgress(
   updateRefreshScheduleMetadata(startDocument);
   updateLegacyActiveQuickbase(startDocument);
   startDocument.sync.refreshStatus.running = true;
-  startDocument.sync.refreshStatus.activeJobId = "";
+  startDocument.sync.refreshStatus.activeJobId = startDocument.sync.refreshStatus.activeJobId || "";
   startDocument.sync.refreshStatus.progress = 1;
   startDocument.sync.refreshStatus.message = "Preparing refresh";
   startDocument.sync.refreshStatus.estimatedSecondsRemaining = undefined;
@@ -467,11 +501,17 @@ export async function refreshAllCachedDataWithProgress(
     let totalRows = 0;
     const totalTables = Math.max(tableIds.length, 1);
     const startedAt = Date.now();
+    const profilesToTrack = profileId ? [profileId] : nextDocument.quickbaseProfiles.map((profile) => profile.id);
     const updateDocumentProgress = (
       progress: number,
       message: string,
       extras?: { tableCount?: number; rowCount?: number; estimatedSecondsRemaining?: number }
     ) => {
+      persistRefreshProgress(nextDocument, progress, message, profilesToTrack, {
+        estimatedSecondsRemaining: extras?.estimatedSecondsRemaining,
+        rowCount: extras?.rowCount,
+        tableIds
+      });
       onProgress?.(progress, message, extras);
     };
 
@@ -590,7 +630,7 @@ export async function refreshObjectCachedDataWithProgress(
   updateRefreshScheduleMetadata(startDocument);
   updateLegacyActiveQuickbase(startDocument);
   startDocument.sync.refreshStatus.running = true;
-  startDocument.sync.refreshStatus.activeJobId = "";
+  startDocument.sync.refreshStatus.activeJobId = startDocument.sync.refreshStatus.activeJobId || "";
   startDocument.sync.refreshStatus.progress = 1;
   startDocument.sync.refreshStatus.message = "Preparing object refresh";
   startDocument.sync.refreshStatus.estimatedSecondsRemaining = undefined;
@@ -606,12 +646,21 @@ export async function refreshObjectCachedDataWithProgress(
     const totalTables = Math.max(tableIds.length, 1);
     const startedAt = Date.now();
     let totalRows = 0;
+    const profilesToTrack = affectedProfiles;
 
     const updateDocumentProgress = (
       progress: number,
       message: string,
       extras?: { tableCount?: number; rowCount?: number; estimatedSecondsRemaining?: number }
     ) => {
+      persistRefreshProgress(nextDocument, progress, message, profilesToTrack, {
+        estimatedSecondsRemaining: extras?.estimatedSecondsRemaining,
+        rowCount: extras?.rowCount,
+        tableIds: Array.from(new Set([
+          ...(nextDocument.sync.refreshStatus.cachedTableIds || []),
+          ...tableIds
+        ]))
+      });
       onProgress?.(progress, message, extras);
     };
 
