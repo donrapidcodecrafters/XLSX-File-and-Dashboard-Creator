@@ -4,6 +4,8 @@ import { buildStudioDocument, normalizeStudioDocument, type StudioDocument, type
 import { hydrateStudioDocumentFromQuickbase } from "./quickbase-storage.js";
 
 const STORAGE_PATH = resolve(process.cwd(), ".data/studio-document.json");
+const HYDRATE_TTL_MS = 60_000;
+const HYDRATE_TIMEOUT_MS = 8_000;
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -12,9 +14,11 @@ function clone<T>(value: T): T {
 export class StudioStore {
   private document: StudioDocument;
   private hydratePromise: Promise<StudioDocument> | null = null;
+  private lastHydratedAt = 0;
 
   constructor() {
     this.document = this.load();
+    this.lastHydratedAt = Date.parse(this.document.sync?.lastLoadedAt || "") || 0;
   }
 
   private load(): StudioDocument {
@@ -37,20 +41,32 @@ export class StudioStore {
     return clone(this.document);
   }
 
-  async hydrateFromQuickbase() {
+  async hydrateFromQuickbase(force = false) {
+    if (!force && this.lastHydratedAt && Date.now() - this.lastHydratedAt < HYDRATE_TTL_MS) {
+      return this.getDocument();
+    }
     if (this.hydratePromise) {
       return this.hydratePromise;
     }
-    this.hydratePromise = hydrateStudioDocumentFromQuickbase(this.document)
+    let expired = false;
+    const hydrateTask = hydrateStudioDocumentFromQuickbase(this.document)
       .then((document) => {
+        if (expired) return this.getDocument();
         this.document = normalizeStudioDocument(clone(document));
+        this.lastHydratedAt = Date.now();
         this.persist(this.document);
         return this.getDocument();
       })
-      .catch(() => this.getDocument())
-      .finally(() => {
-        this.hydratePromise = null;
-      });
+      .catch(() => this.getDocument());
+    const timeoutTask = new Promise<StudioDocument>((resolve) => {
+      setTimeout(() => {
+        expired = true;
+        resolve(this.getDocument());
+      }, HYDRATE_TIMEOUT_MS);
+    });
+    this.hydratePromise = Promise.race([hydrateTask, timeoutTask]).finally(() => {
+      this.hydratePromise = null;
+    });
     return this.hydratePromise;
   }
 
@@ -61,6 +77,7 @@ export class StudioStore {
   saveDocument(document: StudioDocument) {
     this.document = normalizeStudioDocument(clone(document));
     this.document.sync.lastSavedAt = new Date().toISOString();
+    this.lastHydratedAt = Date.now();
     this.persist(this.document);
     return this.getDocument();
   }
