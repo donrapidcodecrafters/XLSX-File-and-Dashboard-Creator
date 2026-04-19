@@ -140,20 +140,6 @@ export async function registerStudioRoutes(app: FastifyInstance) {
           rowCount: result.rowCount
         };
       });
-      const current = studioStore.getLiveDocument();
-      current.sync.refreshStatus.running = true;
-      current.sync.refreshStatus.activeJobId = job.id;
-      current.sync.refreshStatus.progress = Math.max(current.sync.refreshStatus.progress || 0, 1);
-      current.sync.refreshStatus.message = current.sync.refreshStatus.message || "Starting refresh";
-      current.sync.refreshStatus.lastError = "";
-      current.quickbaseProfiles.forEach((profile) => {
-        profile.refreshStatus.running = true;
-        profile.refreshStatus.activeJobId = job.id;
-        profile.refreshStatus.progress = Math.max(profile.refreshStatus.progress || 0, 1);
-        profile.refreshStatus.message = profile.refreshStatus.message || "Starting refresh";
-        profile.refreshStatus.lastError = "";
-      });
-      studioStore.saveDocument(current, { markSavedAt: false });
       return { job };
     } catch (error) {
       reply.code(500);
@@ -176,13 +162,6 @@ export async function registerStudioRoutes(app: FastifyInstance) {
           rowCount: result.rowCount
         };
       });
-      const current = studioStore.getLiveDocument();
-      current.sync.refreshStatus.running = true;
-      current.sync.refreshStatus.activeJobId = job.id;
-      current.sync.refreshStatus.progress = Math.max(current.sync.refreshStatus.progress || 0, 1);
-      current.sync.refreshStatus.message = "Starting object refresh";
-      current.sync.refreshStatus.lastError = "";
-      studioStore.saveDocument(current, { markSavedAt: false });
       return { job };
     } catch (error) {
       reply.code(500);

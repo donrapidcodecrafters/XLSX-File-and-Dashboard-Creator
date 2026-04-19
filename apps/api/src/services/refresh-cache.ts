@@ -813,21 +813,6 @@ export function startRefreshScheduler(logger?: FastifyBaseLogger) {
         const job = refreshJobStore.createJob("scheduled", async ({ jobId, update }) => {
           await refreshAllCachedDataWithProgress("scheduled", (progress, message, extras) => update(progress, message, extras), profile.id, jobId);
         });
-        const current = studioStore.getLiveDocument();
-        current.sync.refreshStatus.running = true;
-        current.sync.refreshStatus.activeJobId = job.id;
-        current.sync.refreshStatus.progress = Math.max(current.sync.refreshStatus.progress || 0, 1);
-        current.sync.refreshStatus.message = current.sync.refreshStatus.message || "Starting refresh";
-        current.sync.refreshStatus.lastError = "";
-        syncProfileRefreshStatus(current, profile.id, (status) => {
-          status.running = true;
-          status.activeJobId = job.id;
-          status.progress = Math.max(status.progress || 0, 1);
-          status.message = status.message || "Starting refresh";
-          status.lastError = "";
-        });
-        updateLegacyActiveQuickbase(current);
-        studioStore.flushCurrent({ markSavedAt: false });
         logger?.info({ profileId: profile.id }, "Scheduled app refresh queued");
       } catch (error) {
         logger?.error(error, "Scheduled refresh failed");
