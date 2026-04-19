@@ -39,6 +39,10 @@ interface ExecuteReportOptions {
   pageSize?: number;
 }
 
+interface ExecuteDashboardOptions {
+  activeTabId?: string;
+}
+
 interface ExportProgressCallback {
   (progress: number, message: string): void;
 }
@@ -607,21 +611,61 @@ export async function executeReport(report: ReportDefinition, extraFilters: Filt
   });
 }
 
-export async function executeDashboard(dashboardId: string, runtimeValues: Record<string, string>): Promise<DashboardRunResult> {
+function resolveDashboardWidgetDisplayMode(report: ReportDefinition, widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"]) {
+  if (widget.displayMode !== "inherit") return widget.displayMode;
+  if (report.view.mode === "summary") return "summary";
+  if (report.view.mode === "chart") return "chart";
+  return "table";
+}
+
+function widgetNeedsAggregates(report: ReportDefinition, widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"]) {
+  const displayMode = resolveDashboardWidgetDisplayMode(report, widget);
+  const needsChart = displayMode === "chart" || (displayMode === "table" && report.view.showChartInTable);
+  return widget.showSummary || displayMode === "summary" || needsChart;
+}
+
+function buildDashboardExecutionKey(report: ReportDefinition, widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], extraFilters: FilterDefinition[]) {
+  return JSON.stringify({
+    reportId: report.id,
+    updatedAt: report.updatedAt,
+    heavy: widgetNeedsAggregates(report, widget),
+    filters: extraFilters
+      .filter((filter) => Boolean(filter.value))
+      .map((filter) => [filter.fieldId, filter.operator, filter.value])
+  });
+}
+
+export async function executeDashboard(
+  dashboardId: string,
+  runtimeValues: Record<string, string>,
+  options: ExecuteDashboardOptions = {}
+): Promise<DashboardRunResult> {
   const dashboard = objectStore.getDashboard(dashboardId);
   if (!dashboard) {
     throw new Error("Dashboard not found.");
   }
 
+  const tabsToRender = options.activeTabId
+    ? dashboard.tabs.filter((tab) => tab.id === options.activeTabId)
+    : dashboard.tabs;
+  const executionCache = new Map<string, Promise<ReportRunResult>>();
   const widgetResults = await Promise.all(
-    dashboard.tabs.flatMap((tab) =>
+    tabsToRender.flatMap((tab) =>
       tab.widgets.map(async (widget) => {
         const report = objectStore.resolveWidgetReport(widget);
         if (!report) {
           throw new Error("Widget report not found for " + widget.id + ".");
         }
         const extraFilters = buildDashboardFilters(dashboard, report.id, runtimeValues);
-        const result = await executeReport(report, extraFilters, { page: 1, pageSize: 100 });
+        const executionKey = buildDashboardExecutionKey(report, widget, extraFilters);
+        let pending = executionCache.get(executionKey);
+        if (!pending) {
+          pending = widgetNeedsAggregates(report, widget)
+            ? executeReport(report, extraFilters, { page: 1, pageSize: 100 })
+            : fetchReportPage(report, extraFilters, { page: 1, pageSize: 100 });
+          executionCache.set(executionKey, pending);
+        }
+        const result = await pending;
         return {
           widgetId: widget.id,
           widget,

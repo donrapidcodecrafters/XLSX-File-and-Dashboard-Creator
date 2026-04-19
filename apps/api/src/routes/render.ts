@@ -205,9 +205,11 @@ export async function registerRenderRoutes(app: FastifyInstance) {
   app.post("/api/dashboards/:id/render", async (request, reply) => {
     await studioStore.hydrateFromQuickbase();
     const { id } = request.params as { id: string };
-    const body = (request.body as { runtimeFilters?: Record<string, string> } | undefined) || {};
+    const body = (request.body as { runtimeFilters?: Record<string, string>; activeTabId?: string } | undefined) || {};
     try {
-      return await executeDashboard(id, body.runtimeFilters || {});
+      return await executeDashboard(id, body.runtimeFilters || {}, {
+        activeTabId: body.activeTabId || ""
+      });
     } catch (error) {
       reply.code(404);
       return {

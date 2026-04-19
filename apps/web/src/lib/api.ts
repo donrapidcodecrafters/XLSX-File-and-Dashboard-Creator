@@ -120,10 +120,10 @@ export async function fetchAllReportRows(
   return rows;
 }
 
-export function renderDashboard(id: string, runtimeFilters: Record<string, string>) {
+export function renderDashboard(id: string, runtimeFilters: Record<string, string>, activeTabId = "") {
   return request<DashboardRunResult>("/api/dashboards/" + encodeURIComponent(id) + "/render", {
     method: "POST",
-    body: JSON.stringify({ runtimeFilters })
+    body: JSON.stringify({ runtimeFilters, activeTabId })
   });
 }
 

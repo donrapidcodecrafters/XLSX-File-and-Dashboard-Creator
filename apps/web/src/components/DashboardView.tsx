@@ -74,7 +74,7 @@ export function DashboardView({ dashboard, tables }: DashboardViewProps) {
   useEffect(() => {
     let active = true;
     setLoading(true);
-    renderDashboard(dashboard.id, runtimeFilters)
+    renderDashboard(dashboard.id, runtimeFilters, activeTabId || dashboard.tabs[0]?.id || "")
       .then((next) => {
         if (active) setResult(next);
       })
@@ -84,7 +84,7 @@ export function DashboardView({ dashboard, tables }: DashboardViewProps) {
     return () => {
       active = false;
     };
-  }, [dashboard.id, runtimeFilters]);
+  }, [activeTabId, dashboard.id, dashboard.tabs, runtimeFilters]);
 
   useEffect(() => {
     if (!exportJob || exportJob.status === "complete" || exportJob.status === "failed") return;
