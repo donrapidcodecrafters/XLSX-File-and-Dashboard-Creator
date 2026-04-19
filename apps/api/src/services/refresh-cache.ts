@@ -810,11 +810,9 @@ export function startRefreshScheduler(logger?: FastifyBaseLogger) {
       }
       try {
         logger?.info({ profileId: profile.id }, "Starting scheduled app refresh");
-        let scheduledJobId = "";
-        const job = refreshJobStore.createJob("scheduled", async ({ update }) => {
-          await refreshAllCachedDataWithProgress("scheduled", (progress, message, extras) => update(progress, message, extras), profile.id, scheduledJobId);
+        const job = refreshJobStore.createJob("scheduled", async ({ jobId, update }) => {
+          await refreshAllCachedDataWithProgress("scheduled", (progress, message, extras) => update(progress, message, extras), profile.id, jobId);
         });
-        scheduledJobId = job.id;
         const current = studioStore.getLiveDocument();
         current.sync.refreshStatus.running = true;
         current.sync.refreshStatus.activeJobId = job.id;
