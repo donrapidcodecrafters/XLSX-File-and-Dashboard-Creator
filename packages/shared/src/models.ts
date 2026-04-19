@@ -140,6 +140,7 @@ export interface BaseStudioObject {
 export interface ReportDefinition extends BaseStudioObject {
   type: "report";
   sourceTableId: string;
+  sourceReportOverrides?: Record<string, string>;
   selectedFieldIds: string[];
   filters: FilterDefinition[];
   filterTree?: FilterGroupDefinition;
@@ -184,6 +185,7 @@ export interface DashboardDefinition extends BaseStudioObject {
   type: "dashboard";
   tabs: DashboardTabDefinition[];
   runtimeFilters: RuntimeFilterDefinition[];
+  sourceReportOverrides?: Record<string, string>;
 }
 
 export type StudioObject = ReportDefinition | DashboardDefinition;

@@ -99,6 +99,40 @@ function getSavedReportIdForTable(document: StudioDocument, table: TableDefiniti
   return String(profile?.refreshSource?.reportIds?.[tableKey] || "");
 }
 
+function getObjectOverrideReportIdForTable(document: StudioDocument, objectId: string, table: TableDefinition) {
+  const object = document.bundle.objects[objectId];
+  if (!object) return "";
+  const tableKeys = [getQuickbaseTableId(table), table.id].filter(Boolean);
+  const readOverride = (overrides?: Record<string, string>) => {
+    for (const key of tableKeys) {
+      const value = String(overrides?.[key] || "").trim();
+      if (value) return value;
+    }
+    return "";
+  };
+
+  if (object.type === "report") {
+    return readOverride(object.sourceReportOverrides);
+  }
+
+  const dashboardOverride = readOverride(object.sourceReportOverrides);
+  if (dashboardOverride) return dashboardOverride;
+
+  for (const tab of object.tabs) {
+    for (const widget of tab.widgets) {
+      const report = widget.mode === "copied" && widget.snapshot
+        ? widget.snapshot
+        : document.bundle.objects[widget.reportId];
+      if (report?.type !== "report") continue;
+      if (report.sourceTableId !== table.id && report.sourceTableId !== table.quickbaseTableId) continue;
+      const reportOverride = readOverride(report.sourceReportOverrides);
+      if (reportOverride) return reportOverride;
+    }
+  }
+
+  return "";
+}
+
 function getProfilesForTableIds(document: StudioDocument, tableIds: string[]) {
   return Array.from(new Set(
     tableIds
@@ -205,10 +239,11 @@ type TableRefreshProgress = {
 async function fetchAllTableRows(
   document: StudioDocument,
   table: TableDefinition,
-  onProgress?: (progress: TableRefreshProgress) => void
+  onProgress?: (progress: TableRefreshProgress) => void,
+  options: { objectId?: string } = {}
 ) {
   const quickbase = getQuickbaseConfigForTable(document, table);
-  const savedReportId = getSavedReportIdForTable(document, table);
+  const savedReportId = (options.objectId ? getObjectOverrideReportIdForTable(document, options.objectId, table) : "") || getSavedReportIdForTable(document, table);
   if (savedReportId) {
     const pageSize = 250;
     let skip = 0;
@@ -605,7 +640,7 @@ export async function refreshObjectCachedDataWithProgress(
             rowCount: totalRows + loadedRows
           }
         );
-      });
+      }, { objectId });
       nextDocument.bundle.data[tableId] = rows;
       totalRows += rows.length;
       const completedTables = index + 1;

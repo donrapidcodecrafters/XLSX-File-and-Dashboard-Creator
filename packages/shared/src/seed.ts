@@ -129,6 +129,7 @@ function createReport(input: Partial<ReportDefinition> & Pick<ReportDefinition, 
     tags: input.tags || [],
     updatedAt: input.updatedAt || timestamp(),
     sourceTableId: input.sourceTableId,
+    sourceReportOverrides: input.sourceReportOverrides || {},
     selectedFieldIds: input.selectedFieldIds,
     filters,
     filterTree: input.filterTree || createFilterGroup("and", filters),
@@ -165,7 +166,8 @@ function createDashboard(input: Partial<DashboardDefinition> & Pick<DashboardDef
     tags: input.tags || [],
     updatedAt: input.updatedAt || timestamp(),
     tabs: input.tabs,
-    runtimeFilters: input.runtimeFilters || []
+    runtimeFilters: input.runtimeFilters || [],
+    sourceReportOverrides: input.sourceReportOverrides || {}
   };
 }
 
@@ -507,13 +509,21 @@ export function normalizeStudioDocument(input: Partial<StudioDocument> | null | 
         const filters = object.filters || [];
         return [id, {
           ...object,
+          sourceReportOverrides: Object.fromEntries(
+            Object.entries(object.sourceReportOverrides || {}).map(([key, value]) => [String(key), String(value || "")])
+          ),
           filters,
           filterTree: object.filterTree || createFilterGroup("and", filters as FilterDefinition[]),
           view: buildReportView(object.view || {}),
           displayLabels: { fields: displayLabels.fields || {}, chartValues: displayLabels.chartValues || {} }
         }];
       }
-      return [id, object];
+      return [id, {
+        ...object,
+        sourceReportOverrides: Object.fromEntries(
+          Object.entries(object.sourceReportOverrides || {}).map(([key, value]) => [String(key), String(value || "")])
+        )
+      }];
     })
   );
   return {

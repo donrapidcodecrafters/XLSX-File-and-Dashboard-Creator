@@ -165,6 +165,7 @@ interface CreateObjectDraft {
   name: string;
   description: string;
   tableId: string;
+  sourceReportOverrides: Record<string, string>;
   selectedFieldIds: string[];
   filterTree: FilterGroupDefinition;
   sorts: ReportDefinition["sorts"];
@@ -180,6 +181,7 @@ function buildDraftFromReport(report: ReportDefinition, table?: TableDefinition 
     name: report.name,
     description: report.description,
     tableId: sourceTableId,
+    sourceReportOverrides: clone(report.sourceReportOverrides || {}),
     selectedFieldIds: clone(report.selectedFieldIds || []),
     filterTree: clone(report.filterTree || createFilterGroup("and", clone(report.filters || []))),
     sorts: clone(report.sorts || []),
@@ -444,6 +446,7 @@ function buildCreateDraft(table?: TableDefinition | null, type: CreateModalType 
     name: type === "report" ? "New Report" : "New Dashboard",
     description: "",
     tableId: table?.id || "",
+    sourceReportOverrides: {},
     selectedFieldIds: table?.fields.slice(0, 6).map((field) => field.id) || [],
     filterTree: createFilterGroup("and", []),
     sorts: [],
@@ -1187,6 +1190,22 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
   const activeReport = hasActiveObject && activeObject.type === "report" ? activeObject : null;
   const activeDashboard = hasActiveObject && activeObject.type === "dashboard" ? activeObject : null;
   const activeTable = activeReport ? bundle.tables.find((table) => table.id === activeReport.sourceTableId) || null : null;
+  const activeDashboardRefreshTables = useMemo(() => {
+    if (!activeDashboard) return [] as TableDefinition[];
+    const seen = new Set<string>();
+    const tables: TableDefinition[] = [];
+    activeDashboard.tabs.forEach((tab) => {
+      tab.widgets.forEach((widget) => {
+        const report = widget.mode === "copied" && widget.snapshot ? widget.snapshot : (bundle.objects[widget.reportId] as ReportDefinition | undefined);
+        if (!report) return;
+        const table = bundle.tables.find((item) => item.id === report.sourceTableId);
+        if (!table || seen.has(table.id)) return;
+        seen.add(table.id);
+        tables.push(table);
+      });
+    });
+    return tables;
+  }, [activeDashboard, bundle.objects, bundle.tables]);
   const createDraftTable = bundle.tables.find((table) => table.id === createDraft.tableId) || bundle.tables[0] || null;
   const validation = hasActiveObject ? validationMessages(activeObject, activeTable) : [];
   const visibleCreateFields = useMemo(() => {
@@ -1207,6 +1226,7 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
       tags: [],
       updatedAt: new Date().toISOString(),
       sourceTableId: createDraft.tableId,
+      sourceReportOverrides: createDraft.sourceReportOverrides,
       selectedFieldIds: createDraft.selectedFieldIds,
       filters: flattenFilterTree(createDraft.filterTree),
       filterTree: clone(createDraft.filterTree),
@@ -1575,6 +1595,7 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
     setCreateDraft((current) => ({
       ...current,
       tableId: table.id,
+      sourceReportOverrides: {},
       selectedFieldIds: table.fields.slice(0, 6).map((field) => field.id),
       filterTree: createFilterGroup("and", []),
       sorts: [],
@@ -1617,9 +1638,10 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
         folder: "Custom",
         category: "Dashboard",
         tags: [],
-        updatedAt: new Date().toISOString(),
-        runtimeFilters: [],
-        tabs: [{ id: uid("tab"), name: "Overview", widgets: [] }]
+      updatedAt: new Date().toISOString(),
+      runtimeFilters: [],
+      sourceReportOverrides: {},
+      tabs: [{ id: uid("tab"), name: "Overview", widgets: [] }]
       };
       applyDocumentUpdate((draft) => {
         draft.bundle.objects[dashboard.id] = dashboard;
@@ -1651,6 +1673,7 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
       tags: existingReport?.tags || [],
       updatedAt: new Date().toISOString(),
       sourceTableId: table.id,
+      sourceReportOverrides: clone(createDraft.sourceReportOverrides),
       selectedFieldIds: createDraft.selectedFieldIds,
       filters: flattenFilterTree(createDraft.filterTree),
       filterTree: clone(createDraft.filterTree),
@@ -2696,6 +2719,34 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
                   ))}
                 </div>
                 <button onClick={() => updateObject({ ...activeDashboard, tabs: [...activeDashboard.tabs, { id: uid("tab"), name: `Tab ${activeDashboard.tabs.length + 1}`, widgets: [] }] })}>Add tab</button>
+                {activeDashboardRefreshTables.length ? (
+                  <div className="card">
+                    <div className="card-head">
+                      <strong>Source report overrides</strong>
+                      <span className="micro">Optional dashboard-only Quickbase source reports. Leave blank to use each app default.</span>
+                    </div>
+                    <div className="stack-compact">
+                      {activeDashboardRefreshTables.map((table) => {
+                        const tableKey = table.quickbaseTableId || table.id;
+                        return (
+                          <label className="field" key={table.id}>
+                            <span>{table.name}</span>
+                            <input
+                              value={activeDashboard.sourceReportOverrides?.[tableKey] || ""}
+                              onChange={(event) => updateObject({
+                                ...activeDashboard,
+                                sourceReportOverrides: event.target.value.trim()
+                                  ? { ...(activeDashboard.sourceReportOverrides || {}), [tableKey]: event.target.value.trim() }
+                                  : Object.fromEntries(Object.entries(activeDashboard.sourceReportOverrides || {}).filter(([key]) => key !== tableKey))
+                              })}
+                              placeholder="Optional Quickbase report ID for this dashboard"
+                            />
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
               </>
             ) : null}
             {dashboardInspectorTab === "filters" ? (
@@ -2782,6 +2833,24 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
                       <select value={createDraft.tableId} onChange={(event) => updateCreateDraftTable(event.target.value)}>
                         {bundle.tables.map((table) => <option key={table.id} value={table.id}>{table.name}</option>)}
                       </select>
+                    </label>
+                    <label className="field">
+                      <span>Source report override</span>
+                      <input
+                        value={createDraft.sourceReportOverrides[createDraftTable.quickbaseTableId || createDraftTable.id] || ""}
+                        onChange={(event) => {
+                          const tableKey = createDraftTable.quickbaseTableId || createDraftTable.id;
+                          const value = event.target.value.trim();
+                          setCreateDraft((current) => ({
+                            ...current,
+                            sourceReportOverrides: value
+                              ? { ...current.sourceReportOverrides, [tableKey]: value }
+                              : Object.fromEntries(Object.entries(current.sourceReportOverrides).filter(([key]) => key !== tableKey))
+                          }));
+                        }}
+                        placeholder="Optional Quickbase report ID for this report only"
+                      />
+                      <span className="micro">Optional. Leave blank to use the app default from Settings during refresh.</span>
                     </label>
                   </div>
 
