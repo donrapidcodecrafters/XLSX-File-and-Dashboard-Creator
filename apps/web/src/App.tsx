@@ -438,10 +438,18 @@ function ObjectPage({
   const [fallbackRefreshAttemptForId, setFallbackRefreshAttemptForId] = useState("");
   const pageSize = 100;
   const liveModeProfileIds = useMemo(() => getProfileIdsForObject(object, tables, studioDocument), [object, studioDocument, tables]);
+  const relatedProfiles = useMemo(
+    () => liveModeProfileIds.map((profileId) => studioDocument?.quickbaseProfiles.find((profile) => profile.id === profileId)).filter(Boolean),
+    [liveModeProfileIds, studioDocument]
+  );
   const liveModeEnabled = useMemo(
     () => liveModeProfileIds.some((profileId) => studioDocument?.quickbaseProfiles.find((profile) => profile.id === profileId)?.liveMode === true),
     [liveModeProfileIds, studioDocument]
   );
+  const zeroSavedRowsForObject = useMemo(() => {
+    if (!relatedProfiles.length) return false;
+    return relatedProfiles.every((profile) => (profile?.refreshStatus.cachedRowCount || 0) === 0);
+  }, [relatedProfiles]);
 
   async function reloadObject(targetObjectId = params.objectId) {
     if (!targetObjectId) return;
@@ -537,12 +545,13 @@ function ObjectPage({
   }
 
   useEffect(() => {
-    if (!object || !liveModeEnabled || autoRefreshForId === object.id || refreshJob?.status === "queued" || refreshJob?.status === "running") {
+    if (!object || autoRefreshForId === object.id || refreshJob?.status === "queued" || refreshJob?.status === "running") {
       return;
     }
+    if (!liveModeEnabled && !zeroSavedRowsForObject) return;
     setAutoRefreshForId(object.id);
     void startObjectRefresh();
-  }, [autoRefreshForId, liveModeEnabled, object, refreshJob?.status]);
+  }, [autoRefreshForId, liveModeEnabled, object, refreshJob?.status, zeroSavedRowsForObject]);
 
   useEffect(() => {
     if (!object || !result || loading) return;
