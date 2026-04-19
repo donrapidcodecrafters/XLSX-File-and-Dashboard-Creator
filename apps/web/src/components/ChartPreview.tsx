@@ -80,7 +80,7 @@ function buildAxisTicks(max: number, desired = 4) {
 }
 
 function xLabelStep(length: number, compact: boolean) {
-  const target = compact ? 4 : 8;
+  const target = compact ? 6 : 8;
   return Math.max(1, Math.ceil(length / target));
 }
 
@@ -163,7 +163,7 @@ export function ChartPreview({
     return <div className="chart-empty">No chart data available.</div>;
   }
 
-  const items = compact ? data.slice(0, 6) : data;
+  const items = data;
   const max = Math.max(...items.map((item) => item.value), 1);
   const total = items.reduce((sum, item) => sum + item.value, 0) || 1;
   const normalizedChartType = normalizeChartType(chartType, chartOrientation);
