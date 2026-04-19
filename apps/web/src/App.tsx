@@ -15,16 +15,14 @@ function typeLabel(type: "report" | "dashboard") {
 
 function reportResultNeedsAutoRefresh(result: any) {
   if (!result) return false;
-  const fallback = result.freshness?.source === "local-fallback";
   const noRows = Number(result.totalRows || 0) === 0;
   const noSummary = !Array.isArray(result.summary) || result.summary.length === 0;
   const noChart = !Array.isArray(result.chartData) || result.chartData.length === 0;
-  return fallback && noRows && noSummary && noChart;
+  return noRows && noSummary && noChart;
 }
 
 function dashboardResultNeedsAutoRefresh(result: any) {
   if (!result) return false;
-  if (result.freshness?.source !== "local-fallback") return false;
   const widgets = Array.isArray(result.tabs)
     ? result.tabs.flatMap((tab: any) => Array.isArray(tab.widgets) ? tab.widgets : [])
     : [];
