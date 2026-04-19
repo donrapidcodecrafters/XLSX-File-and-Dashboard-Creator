@@ -6,7 +6,7 @@ import { ReportView } from "./components/ReportView";
 import { StudioPage } from "./components/StudioPage";
 import { fetchCatalog, fetchObject, fetchTables, runReport, runReportPage } from "./lib/api";
 import { getHostedContext } from "./lib/embed";
-import { fetchStudioDocument, fetchStudioRefreshJob, startStudioRefresh } from "./lib/studioApi";
+import { fetchStudioDocument, fetchStudioRefreshJob, startStudioObjectRefresh, startStudioRefresh } from "./lib/studioApi";
 
 function typeLabel(type: "report" | "dashboard") {
   return type === "report" ? "Report" : "Dashboard";
@@ -108,8 +108,9 @@ function ObjectPage({ tables, platformName }: { tables: TableDefinition[]; platf
     return () => window.clearInterval(handle);
   }, [refreshJob]);
 
-  async function startRefresh() {
-    const response = await startStudioRefresh();
+  async function startObjectRefresh() {
+    if (!object) return;
+    const response = await startStudioObjectRefresh(object.id);
     setRefreshJob(response.job);
   }
 
@@ -124,7 +125,7 @@ function ObjectPage({ tables, platformName }: { tables: TableDefinition[]; platf
         {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" ? (
           <div style={{ position: "fixed", inset: 0, background: "rgba(12,22,18,0.58)", zIndex: 9999, display: "grid", placeItems: "center", padding: "24px" }}>
             <div style={{ width: "min(560px, 100%)", background: "#fff", borderRadius: "20px", padding: "24px", boxShadow: "0 24px 64px rgba(0,0,0,0.24)" }}>
-              <strong style={{ display: "block", fontSize: "1.1rem", marginBottom: "8px" }}>Refreshing all reports and dashboards</strong>
+              <strong style={{ display: "block", fontSize: "1.1rem", marginBottom: "8px" }}>Refreshing this report</strong>
               <div style={{ marginBottom: "10px", color: "#41554a" }}>{refreshJob.message}</div>
               <div style={{ height: "12px", background: "#e5ece8", borderRadius: "999px", overflow: "hidden", marginBottom: "10px" }}>
                 <div style={{ height: "100%", width: `${refreshJob.progress || 0}%`, background: "#0d7c66" }} />
@@ -143,7 +144,7 @@ function ObjectPage({ tables, platformName }: { tables: TableDefinition[]; platf
           loading={loading}
           currentPage={page}
           onPageChange={setPage}
-          onRefresh={() => { void startRefresh(); }}
+          onRefresh={() => { void startObjectRefresh(); }}
         />
       </>
     );
@@ -154,7 +155,7 @@ function ObjectPage({ tables, platformName }: { tables: TableDefinition[]; platf
       {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" ? (
         <div style={{ position: "fixed", inset: 0, background: "rgba(12,22,18,0.58)", zIndex: 9999, display: "grid", placeItems: "center", padding: "24px" }}>
           <div style={{ width: "min(560px, 100%)", background: "#fff", borderRadius: "20px", padding: "24px", boxShadow: "0 24px 64px rgba(0,0,0,0.24)" }}>
-            <strong style={{ display: "block", fontSize: "1.1rem", marginBottom: "8px" }}>Refreshing all reports and dashboards</strong>
+            <strong style={{ display: "block", fontSize: "1.1rem", marginBottom: "8px" }}>Refreshing this dashboard</strong>
             <div style={{ marginBottom: "10px", color: "#41554a" }}>{refreshJob.message}</div>
             <div style={{ height: "12px", background: "#e5ece8", borderRadius: "999px", overflow: "hidden", marginBottom: "10px" }}>
               <div style={{ height: "100%", width: `${refreshJob.progress || 0}%`, background: "#0d7c66" }} />
@@ -170,7 +171,7 @@ function ObjectPage({ tables, platformName }: { tables: TableDefinition[]; platf
         dashboard={object}
         tables={tables}
         refreshNonce={refreshNonce}
-        onRefresh={() => { void startRefresh(); }}
+        onRefresh={() => { void startObjectRefresh(); }}
       />
     </>
   );
@@ -178,6 +179,7 @@ function ObjectPage({ tables, platformName }: { tables: TableDefinition[]; platf
 
 function ViewerPage({ objects }: { objects: CatalogSummaryItem[] }) {
   const [query, setQuery] = useState("");
+  const [refreshJob, setRefreshJob] = useState<any>(null);
   const filtered = useMemo(() => {
     const text = query.trim().toLowerCase();
     if (!text) return objects;
@@ -186,8 +188,43 @@ function ViewerPage({ objects }: { objects: CatalogSummaryItem[] }) {
     );
   }, [objects, query]);
 
+  useEffect(() => {
+    if (!refreshJob || refreshJob.status === "complete" || refreshJob.status === "failed") return;
+    const handle = window.setInterval(() => {
+      fetchStudioRefreshJob(refreshJob.id)
+        .then((response) => {
+          setRefreshJob(response.job);
+          if (response.job.status === "complete" || response.job.status === "failed") {
+            window.location.reload();
+          }
+        })
+        .catch(() => undefined);
+    }, 1000);
+    return () => window.clearInterval(handle);
+  }, [refreshJob]);
+
+  async function startFullRefresh() {
+    const response = await startStudioRefresh();
+    setRefreshJob(response.job);
+  }
+
   return (
     <section className="surface stack viewer-page">
+      {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" ? (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(12,22,18,0.58)", zIndex: 9999, display: "grid", placeItems: "center", padding: "24px" }}>
+          <div style={{ width: "min(560px, 100%)", background: "#fff", borderRadius: "20px", padding: "24px", boxShadow: "0 24px 64px rgba(0,0,0,0.24)" }}>
+            <strong style={{ display: "block", fontSize: "1.1rem", marginBottom: "8px" }}>Refreshing all reports and dashboards</strong>
+            <div style={{ marginBottom: "10px", color: "#41554a" }}>{refreshJob.message}</div>
+            <div style={{ height: "12px", background: "#e5ece8", borderRadius: "999px", overflow: "hidden", marginBottom: "10px" }}>
+              <div style={{ height: "100%", width: `${refreshJob.progress || 0}%`, background: "#0d7c66" }} />
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.95rem", color: "#41554a" }}>
+              <span>{refreshJob.progress || 0}% complete</span>
+              <span>{typeof refreshJob.estimatedSecondsRemaining === "number" ? `~${refreshJob.estimatedSecondsRemaining}s remaining` : "Estimating time…"}</span>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div className="hero viewer-hero">
         <div>
           <span className="badge brand">Viewing</span>
@@ -195,6 +232,9 @@ function ViewerPage({ objects }: { objects: CatalogSummaryItem[] }) {
           <p>Choose any saved report or dashboard to open it full screen with its live filters and navigation controls.</p>
         </div>
         <div className="link-toolbar viewer-actions">
+          <button className="ghost-button" onClick={() => { void startFullRefresh(); }} disabled={refreshJob?.status === "queued" || refreshJob?.status === "running"}>
+            {refreshJob?.status === "queued" || refreshJob?.status === "running" ? "Refreshing all…" : "Refresh all cached data"}
+          </button>
           <Link className="ghost-button" to="/studio">Open building area</Link>
         </div>
       </div>

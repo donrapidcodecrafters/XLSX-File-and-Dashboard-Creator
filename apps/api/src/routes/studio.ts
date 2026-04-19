@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { StudioDocument } from "@studio/shared";
 import { studioStore } from "../services/studio-store.js";
 import { syncStudioDocumentToQuickbase } from "../services/quickbase-storage.js";
-import { refreshAllCachedDataWithProgress, updateRefreshScheduleMetadata } from "../services/refresh-cache.js";
+import { refreshAllCachedDataWithProgress, refreshObjectCachedDataWithProgress, updateRefreshScheduleMetadata } from "../services/refresh-cache.js";
 import { refreshJobStore } from "../services/refresh-jobs.js";
 
 export async function registerStudioRoutes(app: FastifyInstance) {
@@ -71,12 +71,10 @@ export async function registerStudioRoutes(app: FastifyInstance) {
 
   app.post("/api/studio/refresh/start", async (request, reply) => {
     try {
-      const body = (request.body as { profileId?: string } | undefined) || {};
-      const currentProfileId = body.profileId || studioStore.getDocument().activeQuickbaseProfileId || "";
       const job = refreshJobStore.createJob("manual", async ({ update }) => {
         const result = await refreshAllCachedDataWithProgress("manual", (progress, message, extras) => {
           update(progress, message, extras);
-        }, currentProfileId);
+        });
         return {
           tableCount: result.tableCount,
           rowCount: result.rowCount
@@ -88,14 +86,13 @@ export async function registerStudioRoutes(app: FastifyInstance) {
       current.sync.refreshStatus.progress = Math.max(current.sync.refreshStatus.progress || 0, 1);
       current.sync.refreshStatus.message = current.sync.refreshStatus.message || "Starting refresh";
       current.sync.refreshStatus.lastError = "";
-      const profile = current.quickbaseProfiles.find((item) => item.id === currentProfileId);
-      if (profile) {
+      current.quickbaseProfiles.forEach((profile) => {
         profile.refreshStatus.running = true;
         profile.refreshStatus.activeJobId = job.id;
         profile.refreshStatus.progress = Math.max(profile.refreshStatus.progress || 0, 1);
         profile.refreshStatus.message = profile.refreshStatus.message || "Starting refresh";
         profile.refreshStatus.lastError = "";
-      }
+      });
       studioStore.saveDocument(current, { markSavedAt: false });
       return { job };
     } catch (error) {
@@ -103,6 +100,35 @@ export async function registerStudioRoutes(app: FastifyInstance) {
       return {
         ok: false,
         message: error instanceof Error ? error.message : "Scheduled refresh failed."
+      };
+    }
+  });
+
+  app.post("/api/studio/objects/:id/refresh/start", async (request, reply) => {
+    try {
+      const { id } = request.params as { id: string };
+      const job = refreshJobStore.createJob("manual", async ({ update }) => {
+        const result = await refreshObjectCachedDataWithProgress(id, (progress, message, extras) => {
+          update(progress, message, extras);
+        });
+        return {
+          tableCount: result.tableCount,
+          rowCount: result.rowCount
+        };
+      });
+      const current = studioStore.getDocument();
+      current.sync.refreshStatus.running = true;
+      current.sync.refreshStatus.activeJobId = job.id;
+      current.sync.refreshStatus.progress = Math.max(current.sync.refreshStatus.progress || 0, 1);
+      current.sync.refreshStatus.message = "Starting object refresh";
+      current.sync.refreshStatus.lastError = "";
+      studioStore.saveDocument(current, { markSavedAt: false });
+      return { job };
+    } catch (error) {
+      reply.code(500);
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : "Object refresh failed."
       };
     }
   });

@@ -63,14 +63,25 @@ function freshness(source: DataFreshnessInfo["source"]): DataFreshnessInfo {
 
 function getCachedFreshness(tableId: string): DataFreshnessInfo | null {
   const document = studioStore.getDocument();
-  const status = document.sync.refreshStatus;
-  if (!status.cachedTableIds.includes(tableId) || !status.lastSuccessAt) {
-    return null;
+  const table = objectStore.getTable(tableId);
+  const profileId = table?.quickbaseProfileId || "";
+  if (profileId) {
+    const profileStatus = document.quickbaseProfiles.find((item) => item.id === profileId)?.refreshStatus;
+    if (profileStatus?.cachedTableIds.includes(tableId) && profileStatus.lastSuccessAt) {
+      return {
+        source: "scheduled-cache",
+        fetchedAt: profileStatus.lastSuccessAt
+      };
+    }
   }
-  return {
-    source: "scheduled-cache",
-    fetchedAt: status.lastSuccessAt
-  };
+  const status = document.sync.refreshStatus;
+  if (status.cachedTableIds.includes(tableId) && status.lastSuccessAt) {
+    return {
+      source: "scheduled-cache",
+      fetchedAt: status.lastSuccessAt
+    };
+  }
+  return null;
 }
 
 function shouldUseLiveQuickbase(tableId: string, forceLive = false) {

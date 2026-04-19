@@ -1710,10 +1710,6 @@ export function StudioPage() {
 
   function updateRefreshScheduleField<K extends keyof StudioDocument["sync"]["refreshSchedule"]>(field: K, value: StudioDocument["sync"]["refreshSchedule"][K]) {
     applyDocumentUpdate((draft) => {
-      const profile = draft.quickbaseProfiles.find((item) => item.id === draft.activeQuickbaseProfileId);
-      if (profile) {
-        profile.refreshSchedule[field] = value;
-      }
       draft.sync.refreshSchedule[field] = value;
     });
   }
@@ -1758,14 +1754,32 @@ export function StudioPage() {
     return `Enter a Quickbase report ID for each selected table${labels ? `: ${labels}` : "."}`;
   }
 
+  function getFullRefreshValidation(document: StudioDocument) {
+    if (!document.quickbaseProfiles.length) return "Add a Quickbase app profile first.";
+    let selectedCount = 0;
+    for (const profile of document.quickbaseProfiles) {
+      const selectedTableIds = profile.refreshSource.tableIds || [];
+      selectedCount += selectedTableIds.length;
+      const missing = selectedTableIds.filter((tableId) => !String(profile.refreshSource.reportIds?.[tableId] || "").trim());
+      if (!missing.length) continue;
+      const labels = getTablesForQuickbaseProfile(document, profile.id)
+        .filter((table) => missing.includes(table.quickbaseTableId || table.id))
+        .map((table) => table.name)
+        .join(", ");
+      return `Enter a Quickbase report ID for each selected table in ${profile.label || profile.quickbase.appId || "this app"}${labels ? `: ${labels}` : "."}`;
+    }
+    if (selectedCount < 1) {
+      return "Select at least one Quickbase table and enter its report ID in any app profile.";
+    }
+    return null;
+  }
+
   function setActiveQuickbaseProfile(profileId: string) {
     applyDocumentUpdate((draft) => {
       const profile = draft.quickbaseProfiles.find((item) => item.id === profileId);
       if (!profile) return;
       draft.activeQuickbaseProfileId = profileId;
       draft.quickbase = clone(profile.quickbase);
-      draft.sync.refreshSchedule = clone(profile.refreshSchedule);
-      draft.sync.refreshStatus = clone(profile.refreshStatus);
     });
   }
 
@@ -1775,8 +1789,6 @@ export function StudioPage() {
       draft.quickbaseProfiles.push(profile);
       draft.activeQuickbaseProfileId = profile.id;
       draft.quickbase = clone(profile.quickbase);
-      draft.sync.refreshSchedule = clone(profile.refreshSchedule);
-      draft.sync.refreshStatus = clone(profile.refreshStatus);
     });
     setQuickbaseSchema(null);
     pushToast("Added a new Quickbase app profile.");
@@ -1798,8 +1810,6 @@ export function StudioPage() {
         draft.activeQuickbaseProfileId = nextProfile?.id || "";
         if (nextProfile) {
           draft.quickbase = clone(nextProfile.quickbase);
-          draft.sync.refreshSchedule = clone(nextProfile.refreshSchedule);
-          draft.sync.refreshStatus = clone(nextProfile.refreshStatus);
         }
       }
     });
@@ -1886,8 +1896,18 @@ export function StudioPage() {
     return () => window.clearInterval(handle);
   }, [refreshJob]);
 
+  useEffect(() => {
+    if (!refreshJob) return;
+    if (refreshJob.status === "complete") {
+      setRefreshingCache(false);
+      void reloadRemote();
+    } else if (refreshJob.status === "failed") {
+      setRefreshingCache(false);
+    }
+  }, [refreshJob]);
+
   async function refreshAllNow() {
-    const refreshValidation = getActiveProfileRefreshValidation(documentState, true);
+    const refreshValidation = getFullRefreshValidation(documentState);
     if (refreshValidation) {
       pushToast(refreshValidation, "warn");
       return;
@@ -1897,7 +1917,7 @@ export function StudioPage() {
       const saved = await saveStudioDocument(documentState);
       setDocumentState(normalizeStudioDocument(saved.document));
       setLastQuickbaseSync(saved.sync || null);
-      const response = await startStudioRefresh(activeQuickbaseProfile?.id);
+      const response = await startStudioRefresh();
       setRefreshJob(response.job);
     } catch (error) {
       pushToast(error instanceof Error ? error.message : "Refresh failed.", "danger");
@@ -2161,6 +2181,9 @@ export function StudioPage() {
             <button onClick={redo} disabled={!future.length}>Redo</button>
             <button onClick={() => setDrawer("share")}>Share</button>
             <button onClick={() => setDrawer("settings")}>Settings</button>
+            <button onClick={() => { void refreshAllNow(); }} disabled={refreshingCache}>
+              {refreshingCache ? "Refreshing all…" : "Refresh all"}
+            </button>
             <button onClick={() => setDrawer("export")}>Export</button>
             <button onClick={openVersions}>History</button>
           </div>
@@ -2615,9 +2638,9 @@ export function StudioPage() {
                   <div className="summary-card"><strong>{documentState.sync.providerMode === "api" ? "Connected" : "Local draft"}</strong><span>Connection</span></div>
                   <div className="summary-card"><strong>{documentState.sync.lastLoadedAt ? new Date(documentState.sync.lastLoadedAt).toLocaleTimeString() : "n/a"}</strong><span>Last load</span></div>
                   <div className="summary-card"><strong>{documentState.sync.lastSavedAt ? new Date(documentState.sync.lastSavedAt).toLocaleTimeString() : "n/a"}</strong><span>Last save</span></div>
-                  <div className="summary-card"><strong>{activeQuickbaseProfile?.refreshStatus.lastSuccessAt ? new Date(activeQuickbaseProfile.refreshStatus.lastSuccessAt).toLocaleString() : "Not refreshed"}</strong><span>Last app refresh</span></div>
-                  <div className="summary-card"><strong>{activeQuickbaseProfile?.refreshStatus.nextRunAt ? new Date(activeQuickbaseProfile.refreshStatus.nextRunAt).toLocaleString() : "Not scheduled"}</strong><span>Next app refresh</span></div>
-                  <div className="summary-card"><strong>{(activeQuickbaseProfile?.refreshStatus.cachedRowCount || 0).toLocaleString()}</strong><span>Cached rows for app</span></div>
+                  <div className="summary-card"><strong>{documentState.sync.refreshStatus.lastSuccessAt ? new Date(documentState.sync.refreshStatus.lastSuccessAt).toLocaleString() : "Not refreshed"}</strong><span>Last full refresh</span></div>
+                  <div className="summary-card"><strong>{documentState.sync.refreshStatus.nextRunAt ? new Date(documentState.sync.refreshStatus.nextRunAt).toLocaleString() : "Not scheduled"}</strong><span>Next full refresh</span></div>
+                  <div className="summary-card"><strong>{(documentState.sync.refreshStatus.cachedRowCount || 0).toLocaleString()}</strong><span>Cached rows</span></div>
                 </div>
                 <label className="field">
                   <span>Platform name</span>
@@ -2634,7 +2657,7 @@ export function StudioPage() {
                 <div className="card">
                   <div className="card-head">
                     <strong>Quickbase app profiles</strong>
-                    <span className="micro">Connect several Quickbase apps in the same realm and keep their DBIDs, FIDs, and refresh schedules separate.</span>
+                    <span className="micro">Connect several Quickbase apps in the same realm and keep their DBIDs, FIDs, and refresh source reports separate.</span>
                   </div>
                   <label className="field">
                     <span>Active app profile</span>
@@ -2657,12 +2680,12 @@ export function StudioPage() {
                 </div>
                 <div className="card">
                   <div className="card-head">
-                    <strong>Schedule refresh for this app</strong>
-                    <span className="micro">Reports and dashboards will load from refreshed table snapshots for the selected app. Full-screen Refresh live data still bypasses the cache.</span>
+                    <strong>Schedule full app refresh</strong>
+                    <span className="micro">This schedule always refreshes all configured app profiles. Individual report and dashboard pages still have object-scoped refresh.</span>
                   </div>
                   <label className="field">
                     <span>Enable scheduled refresh</span>
-                    <select value={activeQuickbaseProfile?.refreshSchedule.enabled ? "enabled" : "disabled"} onChange={(event) => updateRefreshScheduleField("enabled", event.target.value === "enabled")}>
+                    <select value={documentState.sync.refreshSchedule.enabled ? "enabled" : "disabled"} onChange={(event) => updateRefreshScheduleField("enabled", event.target.value === "enabled")}>
                       <option value="disabled">Disabled</option>
                       <option value="enabled">Enabled</option>
                     </select>
@@ -2670,7 +2693,7 @@ export function StudioPage() {
                   <div className="filter-grid compact-grid">
                     <label className="field">
                       <span>Cadence</span>
-                      <select value={activeQuickbaseProfile?.refreshSchedule.cadence || "daily"} onChange={(event) => updateRefreshScheduleField("cadence", event.target.value as StudioDocument["sync"]["refreshSchedule"]["cadence"])}>
+                      <select value={documentState.sync.refreshSchedule.cadence || "daily"} onChange={(event) => updateRefreshScheduleField("cadence", event.target.value as StudioDocument["sync"]["refreshSchedule"]["cadence"])}>
                         <option value="daily">Nightly / daily</option>
                         <option value="weekly">Weekly</option>
                         <option value="monthly">Monthly</option>
@@ -2678,28 +2701,28 @@ export function StudioPage() {
                     </label>
                     <label className="field">
                       <span>Time</span>
-                      <input type="time" value={activeQuickbaseProfile?.refreshSchedule.timeOfDay || "02:00"} onChange={(event) => updateRefreshScheduleField("timeOfDay", event.target.value)} />
+                      <input type="time" value={documentState.sync.refreshSchedule.timeOfDay || "02:00"} onChange={(event) => updateRefreshScheduleField("timeOfDay", event.target.value)} />
                     </label>
                   </div>
-                  {activeQuickbaseProfile?.refreshSchedule.cadence === "weekly" ? (
+                  {documentState.sync.refreshSchedule.cadence === "weekly" ? (
                     <label className="field">
                       <span>Day of week</span>
-                      <select value={String(activeQuickbaseProfile?.refreshSchedule.dayOfWeek || 0)} onChange={(event) => updateRefreshScheduleField("dayOfWeek", Number(event.target.value))}>
+                      <select value={String(documentState.sync.refreshSchedule.dayOfWeek || 0)} onChange={(event) => updateRefreshScheduleField("dayOfWeek", Number(event.target.value))}>
                         {WEEKDAY_OPTIONS.map((option) => (
                           <option key={option.value} value={option.value}>{option.label}</option>
                         ))}
                       </select>
                     </label>
                   ) : null}
-                  {activeQuickbaseProfile?.refreshSchedule.cadence === "monthly" ? (
+                  {documentState.sync.refreshSchedule.cadence === "monthly" ? (
                     <label className="field">
                       <span>Day of month</span>
-                      <input type="number" min={1} max={31} value={activeQuickbaseProfile?.refreshSchedule.dayOfMonth || 1} onChange={(event) => updateRefreshScheduleField("dayOfMonth", Math.max(1, Math.min(31, Number(event.target.value) || 1)))} />
+                      <input type="number" min={1} max={31} value={documentState.sync.refreshSchedule.dayOfMonth || 1} onChange={(event) => updateRefreshScheduleField("dayOfMonth", Math.max(1, Math.min(31, Number(event.target.value) || 1)))} />
                     </label>
                   ) : null}
                   <label className="field">
                     <span>Timezone</span>
-                    <select value={activeQuickbaseProfile?.refreshSchedule.timeZone || "America/Denver"} onChange={(event) => updateRefreshScheduleField("timeZone", event.target.value)}>
+                    <select value={documentState.sync.refreshSchedule.timeZone || "America/Denver"} onChange={(event) => updateRefreshScheduleField("timeZone", event.target.value)}>
                       {TIMEZONE_OPTIONS.map((timeZone) => (
                         <option key={timeZone} value={timeZone}>{timeZone}</option>
                       ))}
@@ -2744,7 +2767,7 @@ export function StudioPage() {
                       </div>
                     ) : null}
                     <div className="micro">
-                      Requirement: every selected table must have a report ID, and at least one table/report ID pair is required before saving or refreshing.
+                      Requirement: every selected table must have a report ID. Full app refresh requires at least one table/report ID pair somewhere in the configured app profiles.
                     </div>
                   </div>
                   <div className="studio-actions">
@@ -2756,7 +2779,7 @@ export function StudioPage() {
                     </button>
                   </div>
                   <div className="micro">
-                    Scheduled refresh for the selected app profile is saved with the same settings JSON as the rest of this workspace.
+                    Scheduled full refresh is saved with the same system settings JSON as the rest of this workspace.
                   </div>
                   <div className={`sync-status ${activeQuickbaseProfile?.refreshStatus.lastError ? "sync-status-warn" : "sync-status-ok"}`}>
                     <strong>{activeQuickbaseProfile?.refreshStatus.running ? "Refresh in progress" : activeQuickbaseProfile?.refreshStatus.lastSuccessAt ? "Refresh cache ready" : "No refresh cache yet"}</strong>
