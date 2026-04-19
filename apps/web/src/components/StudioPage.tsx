@@ -2450,9 +2450,15 @@ export function StudioPage() {
                     <input value={documentState.sync.refreshSchedule.timeZone} onChange={(event) => updateRefreshScheduleField("timeZone", event.target.value)} placeholder="America/Denver" />
                   </label>
                   <div className="studio-actions">
+                    <button onClick={saveRemote} disabled={savingRemote || refreshingCache}>
+                      {savingRemote ? "Saving schedule…" : "Save schedule settings"}
+                    </button>
                     <button onClick={() => { void refreshAllNow(); }} disabled={refreshingCache}>
                       {refreshingCache ? "Refreshing all reports…" : "Refresh all now"}
                     </button>
+                  </div>
+                  <div className="micro">
+                    Scheduled refresh settings are saved with the same settings JSON as the rest of this workspace.
                   </div>
                   <div className={`sync-status ${documentState.sync.refreshStatus.lastError ? "sync-status-warn" : "sync-status-ok"}`}>
                     <strong>{documentState.sync.refreshStatus.running ? "Refresh in progress" : documentState.sync.refreshStatus.lastSuccessAt ? "Refresh cache ready" : "No refresh cache yet"}</strong>

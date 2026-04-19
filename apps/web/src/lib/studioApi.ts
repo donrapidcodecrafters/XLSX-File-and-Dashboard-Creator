@@ -34,11 +34,13 @@ export interface QuickbaseAppSchema {
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "http://localhost:3001").replace(/\/$/, "");
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const hasJsonBody = typeof init?.body === "string" && init.body.length > 0;
+  const mergedHeaders = {
+    ...(hasJsonBody ? { "Content-Type": "application/json" } : {}),
+    ...(init?.headers || {})
+  };
   const response = await fetch(API_BASE + path, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers || {})
-    },
+    headers: mergedHeaders,
     ...init
   });
   const text = await response.text();
