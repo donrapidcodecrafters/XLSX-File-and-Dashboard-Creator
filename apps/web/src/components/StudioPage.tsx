@@ -1270,6 +1270,11 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
       setLiveReportLoading(false);
       return;
     }
+    if ((bundle.data[activeReport.sourceTableId]?.length || 0) > 0) {
+      setLiveReportResult(null);
+      setLiveReportLoading(false);
+      return;
+    }
     const quickbaseConfig = getQuickbaseConfigForTable(documentState, activeTable);
     if (!quickbaseConfig.realmHostname || !quickbaseConfig.userToken || !quickbaseConfig.appId) {
       setLiveReportResult(null);
@@ -1304,6 +1309,7 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
     activeReport?.id,
     activeReport?.updatedAt,
     activeTable?.id,
+    bundle.data,
     documentState.activeQuickbaseProfileId,
     documentState.quickbaseProfiles,
     documentState.quickbase.appId,
@@ -1385,7 +1391,8 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
     if (!activeReport || !activeTable) return null;
     return runReport(activeReport, activeTable, bundle.data[activeReport.sourceTableId] || []);
   }, [activeReport, activeTable, bundle.data]);
-  const reportResult = liveReportResult || localReportResult;
+  const hasCachedRowsForActiveReport = Boolean(activeReport && (bundle.data[activeReport.sourceTableId]?.length || 0) > 0);
+  const reportResult = hasCachedRowsForActiveReport ? localReportResult : (liveReportResult || localReportResult);
 
   const dashboardResult = useMemo(() => {
     if (!activeDashboard) return null;

@@ -195,7 +195,7 @@ async function fetchAllTableRows(document: StudioDocument, table: TableDefinitio
   const quickbase = getQuickbaseConfigForTable(document, table);
   const savedReportId = getSavedReportIdForTable(document, table);
   if (savedReportId) {
-    const pageSize = 250;
+    const pageSize = 1000;
     let skip = 0;
     const merged = new Map<string, DataRow>();
     while (true) {

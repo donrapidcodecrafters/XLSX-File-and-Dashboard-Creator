@@ -494,7 +494,7 @@ async function quickbaseRunReportRest(
   reportId: string,
   options: { top?: number; skip?: number } = {}
 ): Promise<QuickbaseQueryResult> {
-  const top = Math.max(1, Math.min(Number(options.top) || 250, 250));
+  const top = Math.max(1, Math.min(Number(options.top) || 1000, 1000));
   const skip = Math.max(0, Number(options.skip) || 0);
   const query = new URLSearchParams({
     tableId: String(tableId),
@@ -641,19 +641,26 @@ export async function fetchQuickbaseRowsBySavedReport(
   const fetchSavedReport = async () => {
     if (usingDirectQuickbaseApi(config)) {
       try {
-        return await quickbaseRunReportRest(config, tableId, reportId, {
-          top: Math.max(1, Math.min(Number(options.top) || 250, 250)),
+        const restResponse = await quickbaseRunReportRest(config, tableId, reportId, {
+          top: Math.max(1, Math.min(Number(options.top) || 1000, 1000)),
+          skip: Math.max(0, Number(options.skip) || 0)
+        });
+        if ((restResponse.data?.length || 0) > 0 || Math.max(0, Number(options.skip) || 0) > 0) {
+          return restResponse;
+        }
+        return quickbaseQueryRecordsBySavedReportXml(config, tableId, reportId, {
+          top: Math.max(1, Math.min(Number(options.top) || 1000, 1000)),
           skip: Math.max(0, Number(options.skip) || 0)
         });
       } catch {
         return quickbaseQueryRecordsBySavedReportXml(config, tableId, reportId, {
-          top: Math.max(1, Math.min(Number(options.top) || 250, 250)),
+          top: Math.max(1, Math.min(Number(options.top) || 1000, 1000)),
           skip: Math.max(0, Number(options.skip) || 0)
         });
       }
     }
     return quickbaseQueryRecordsBySavedReportXml(config, tableId, reportId, {
-      top: Math.max(1, Math.min(Number(options.top) || 250, 250)),
+      top: Math.max(1, Math.min(Number(options.top) || 1000, 1000)),
       skip: Math.max(0, Number(options.skip) || 0)
     });
   };

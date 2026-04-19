@@ -242,7 +242,7 @@ export async function registerQuickbaseRoutes(app: FastifyInstance) {
         versionChangedAtFieldId: "",
         versionChangedByFieldId: "",
         versionUpdatedByFieldId: ""
-      }, table.id, fieldIds, { top: 500 });
+      }, table.quickbaseTableId || table.id, fieldIds, { top: 1000 });
 
       return { result: runReport(report, table, rows) };
     } catch (error) {
