@@ -34,6 +34,17 @@ function loadPersistedCache(): StudioDocument["bundle"]["data"] {
   }
 }
 
+function loadPersistedDocument(): StudioDocument | null {
+  try {
+    const raw = readFileSync(STORAGE_PATH, "utf8");
+    const document = normalizeStudioDocument(JSON.parse(raw) as StudioDocument);
+    document.bundle.data = loadPersistedCache();
+    return document;
+  } catch {
+    return null;
+  }
+}
+
 export class StudioStore {
   private document: StudioDocument;
   private hydratePromise: Promise<StudioDocument> | null = null;
@@ -45,16 +56,11 @@ export class StudioStore {
   }
 
   private load(): StudioDocument {
-    try {
-      const raw = readFileSync(STORAGE_PATH, "utf8");
-      const document = normalizeStudioDocument(JSON.parse(raw) as StudioDocument);
-      document.bundle.data = loadPersistedCache();
-      return document;
-    } catch {
-      const seed = buildStudioDocument();
-      this.persist(seed);
-      return seed;
-    }
+    const persisted = loadPersistedDocument();
+    if (persisted) return persisted;
+    const seed = buildStudioDocument();
+    this.persist(seed);
+    return seed;
   }
 
   private persist(document: StudioDocument) {
@@ -63,15 +69,25 @@ export class StudioStore {
     writeFileSync(CACHE_PATH, JSON.stringify(document.bundle.data || {}, null, 2));
   }
 
+  private reloadFromDisk() {
+    const persisted = loadPersistedDocument();
+    if (!persisted) return;
+    this.document = persisted;
+    this.lastHydratedAt = Date.parse(this.document.sync?.lastLoadedAt || "") || this.lastHydratedAt;
+  }
+
   getDocument(includeData = false): StudioDocument {
+    this.reloadFromDisk();
     return clone(includeData ? this.document : stripCachedRows(this.document));
   }
 
   getLiveDocument(): StudioDocument {
+    this.reloadFromDisk();
     return this.document;
   }
 
   async hydrateFromQuickbase(force = false) {
+    this.reloadFromDisk();
     if (!force && this.lastHydratedAt && Date.now() - this.lastHydratedAt < HYDRATE_TTL_MS) {
       return this.getDocument();
     }
@@ -101,6 +117,7 @@ export class StudioStore {
   }
 
   getBundle() {
+    this.reloadFromDisk();
     return this.document.bundle;
   }
 
