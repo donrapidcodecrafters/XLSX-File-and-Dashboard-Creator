@@ -260,6 +260,7 @@ export interface QuickbaseConnectionConfig {
 export interface QuickbaseAppProfile {
   id: string;
   label: string;
+  liveMode: boolean;
   quickbase: QuickbaseConnectionConfig;
   refreshSource: {
     tableIds: string[];

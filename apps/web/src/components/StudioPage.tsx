@@ -211,6 +211,7 @@ function createQuickbaseProfile(overrides: Partial<QuickbaseAppProfile> = {}): Q
     ...overrides,
     id: overrides.id || uid("app"),
     label: overrides.label || "Quickbase app",
+    liveMode: overrides.liveMode === true,
     quickbase: {
       ...firstProfile.quickbase,
       ...(overrides.quickbase || {})
@@ -1710,6 +1711,10 @@ export function StudioPage() {
 
   function updateRefreshScheduleField<K extends keyof StudioDocument["sync"]["refreshSchedule"]>(field: K, value: StudioDocument["sync"]["refreshSchedule"][K]) {
     applyDocumentUpdate((draft) => {
+      const profile = draft.quickbaseProfiles.find((item) => item.id === draft.activeQuickbaseProfileId);
+      if (profile) {
+        profile.refreshSchedule[field] = value;
+      }
       draft.sync.refreshSchedule[field] = value;
     });
   }
@@ -1780,6 +1785,8 @@ export function StudioPage() {
       if (!profile) return;
       draft.activeQuickbaseProfileId = profileId;
       draft.quickbase = clone(profile.quickbase);
+      draft.sync.refreshSchedule = clone(profile.refreshSchedule);
+      draft.sync.refreshStatus = clone(profile.refreshStatus);
     });
   }
 
@@ -1789,6 +1796,8 @@ export function StudioPage() {
       draft.quickbaseProfiles.push(profile);
       draft.activeQuickbaseProfileId = profile.id;
       draft.quickbase = clone(profile.quickbase);
+      draft.sync.refreshSchedule = clone(profile.refreshSchedule);
+      draft.sync.refreshStatus = clone(profile.refreshStatus);
     });
     setQuickbaseSchema(null);
     pushToast("Added a new Quickbase app profile.");
@@ -1810,6 +1819,8 @@ export function StudioPage() {
         draft.activeQuickbaseProfileId = nextProfile?.id || "";
         if (nextProfile) {
           draft.quickbase = clone(nextProfile.quickbase);
+          draft.sync.refreshSchedule = clone(nextProfile.refreshSchedule);
+          draft.sync.refreshStatus = clone(nextProfile.refreshStatus);
         }
       }
     });
@@ -1830,6 +1841,14 @@ export function StudioPage() {
           name: value.trim() ? `${value} · ${rawName}` : rawName
         };
       });
+    });
+  }
+
+  function updateQuickbaseProfileLiveMode(enabled: boolean) {
+    applyDocumentUpdate((draft) => {
+      const profile = draft.quickbaseProfiles.find((item) => item.id === draft.activeQuickbaseProfileId);
+      if (!profile) return;
+      profile.liveMode = enabled;
     });
   }
 
@@ -2109,41 +2128,6 @@ export function StudioPage() {
 
         <div className="surface stack">
           <div className="card-head">
-            <strong>Platform Settings</strong>
-            <button onClick={() => setDrawer("settings")}>Open</button>
-          </div>
-          <div className="micro">
-            Set your platform name, Quickbase realm, app ID, table IDs, and field IDs here.
-          </div>
-          <div className="summary-grid">
-            <div className="summary-card">
-              <strong>{activeQuickbaseConfig.realmHostname || "Not set"}</strong>
-              <span>Realm</span>
-            </div>
-            <div className="summary-card">
-              <strong>{activeQuickbaseConfig.appId || "Not set"}</strong>
-              <span>App ID</span>
-            </div>
-          </div>
-          <div className="studio-actions">
-              <button onClick={() => { void loadQuickbaseMetadata(); }} disabled={quickbaseSchemaLoading}>
-              {quickbaseSchemaLoading ? "Loading Quickbase schema…" : "Load table and field IDs"}
-            </button>
-            <button onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save to server"}</button>
-          </div>
-          {quickbaseSchema ? (
-            <div className="card">
-              <div className="card-head">
-                <strong>{quickbaseSchema.name}</strong>
-                <span className="micro">{quickbaseSchema.tables.length} tables</span>
-              </div>
-              <div className="micro">{quickbaseSchema.description || "Quickbase schema loaded."}</div>
-            </div>
-          ) : null}
-        </div>
-
-        <div className="surface stack">
-          <div className="card-head">
             <strong>Templates</strong>
             <button onClick={() => setDrawer("templates")}>Manage</button>
           </div>
@@ -2180,7 +2164,7 @@ export function StudioPage() {
             <button onClick={undo} disabled={!history.length}>Undo</button>
             <button onClick={redo} disabled={!future.length}>Redo</button>
             <button onClick={() => setDrawer("share")}>Share</button>
-            <button onClick={() => setDrawer("settings")}>Settings</button>
+            <button onClick={() => setDrawer("settings")}>⚙ Settings</button>
             <button onClick={() => { void refreshAllNow(); }} disabled={refreshingCache}>
               {refreshingCache ? "Refreshing all…" : "Refresh all"}
             </button>
@@ -2657,7 +2641,7 @@ export function StudioPage() {
                 <div className="card">
                   <div className="card-head">
                     <strong>Quickbase app profiles</strong>
-                    <span className="micro">Connect several Quickbase apps in the same realm and keep their DBIDs, FIDs, and refresh source reports separate.</span>
+                    <span className="micro">Connect several Quickbase apps in the same realm and keep their DBIDs, FIDs, schedules, and refresh source reports separate.</span>
                   </div>
                   <label className="field">
                     <span>Active app profile</span>
@@ -2671,6 +2655,17 @@ export function StudioPage() {
                     <span>Profile label</span>
                     <input value={activeQuickbaseProfile?.label || ""} onChange={(event) => updateQuickbaseProfileLabel(event.target.value)} placeholder="Claims app" />
                   </label>
+                  <label className="toggle-row">
+                    <input
+                      type="checkbox"
+                      checked={activeQuickbaseProfile?.liveMode === true}
+                      onChange={(event) => updateQuickbaseProfileLiveMode(event.target.checked)}
+                    />
+                    Live mode for this app
+                  </label>
+                  <div className="micro">
+                    Warning: live mode refreshes the specific report or dashboard automatically when it opens in viewing or embed mode, and it can take significantly longer to load.
+                  </div>
                   <div className="studio-actions">
                     <button onClick={addQuickbaseProfile}>Add app profile</button>
                     <button onClick={() => activeQuickbaseProfile ? removeQuickbaseProfile(activeQuickbaseProfile.id) : undefined} disabled={documentState.quickbaseProfiles.length <= 1}>
@@ -2680,8 +2675,50 @@ export function StudioPage() {
                 </div>
                 <div className="card">
                   <div className="card-head">
+                    <strong>Quickbase connection for this app</strong>
+                    <span className="micro">Load the app schema first, then choose the refresh-source tables and report IDs for this app.</span>
+                  </div>
+                  <label className="field">
+                    <span>Realm hostname</span>
+                    <input value={activeQuickbaseConfig.realmHostname} onChange={(event) => updateQuickbaseField("realmHostname", event.target.value)} placeholder="yourrealm.quickbase.com" />
+                  </label>
+                  <label className="field">
+                    <span>User token</span>
+                    <input value={activeQuickbaseConfig.userToken} onChange={(event) => updateQuickbaseField("userToken", event.target.value)} placeholder="QB-USER-TOKEN ..." />
+                  </label>
+                  <label className="field">
+                    <span>App token</span>
+                    <input value={activeQuickbaseConfig.appToken} onChange={(event) => updateQuickbaseField("appToken", event.target.value)} placeholder="Optional app token" />
+                  </label>
+                  <label className="field">
+                    <span>App ID</span>
+                    <input value={activeQuickbaseConfig.appId} onChange={(event) => updateQuickbaseField("appId", event.target.value)} placeholder="App DBID" />
+                  </label>
+                  <label className="field">
+                    <span>API base URL</span>
+                    <input value={activeQuickbaseConfig.apiBaseUrl} onChange={(event) => updateQuickbaseField("apiBaseUrl", event.target.value)} placeholder="https://api.quickbase.com/v1" />
+                  </label>
+                  <div className="studio-actions">
+                    <button onClick={() => { void loadQuickbaseMetadata(); }} disabled={quickbaseSchemaLoading}>
+                      {quickbaseSchemaLoading ? "Loading tables and fields…" : "Load tables and fields"}
+                    </button>
+                    {quickbaseSchema ? <button onClick={autoDetectQuickbaseMappings}>Auto-detect storage fields</button> : null}
+                    <button onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save settings"}</button>
+                  </div>
+                  {quickbaseSchema ? (
+                    <div className="card">
+                      <div className="card-head">
+                        <strong>{quickbaseSchema.name}</strong>
+                        <span className="micro">{quickbaseSchema.tables.length} tables loaded</span>
+                      </div>
+                      <div className="micro">{quickbaseSchema.description || "Quickbase schema loaded for this app profile."}</div>
+                    </div>
+                  ) : null}
+                </div>
+                <div className="card">
+                  <div className="card-head">
                     <strong>Schedule full app refresh</strong>
-                    <span className="micro">This schedule always refreshes all configured app profiles. Individual report and dashboard pages still have object-scoped refresh.</span>
+                    <span className="micro">This schedule applies to the active app profile and refreshes all selected refresh-source tables for that app. Individual report and dashboard pages still have object-scoped refresh.</span>
                   </div>
                   <label className="field">
                     <span>Enable scheduled refresh</span>
@@ -2733,19 +2770,35 @@ export function StudioPage() {
                       <strong>Refresh source reports</strong>
                       <span className="micro">Choose the Quickbase tables this app profile should refresh from cache, then enter the full-source report ID for each selected table.</span>
                     </div>
-                    <label className="field">
+                    <div className="field">
                       <span>Tables to refresh</span>
-                      <select
-                        multiple
-                        size={Math.min(8, Math.max(4, activeProfileTables.length || 4))}
-                        value={activeQuickbaseProfile?.refreshSource.tableIds || []}
-                        onChange={(event) => updateRefreshSourceTables(Array.from(event.target.selectedOptions).map((option) => option.value))}
-                      >
-                        {activeProfileTables.map((table) => (
-                          <option key={table.id} value={table.quickbaseTableId || table.id}>{table.name}</option>
-                        ))}
-                      </select>
-                    </label>
+                      <div className="picker-list modal-picker-list">
+                        {activeProfileTables.map((table) => {
+                          const tableId = table.quickbaseTableId || table.id;
+                          const selected = (activeQuickbaseProfile?.refreshSource.tableIds || []).includes(tableId);
+                          return (
+                            <label className="picker-row" key={table.id}>
+                              <input
+                                type="checkbox"
+                                checked={selected}
+                                onChange={(event) => {
+                                  const current = new Set(activeQuickbaseProfile?.refreshSource.tableIds || []);
+                                  if (event.target.checked) {
+                                    current.add(tableId);
+                                  } else {
+                                    current.delete(tableId);
+                                  }
+                                  updateRefreshSourceTables(Array.from(current));
+                                }}
+                              />
+                              <span>{table.name}</span>
+                              <em>{tableId}</em>
+                            </label>
+                          );
+                        })}
+                        {!activeProfileTables.length ? <div className="empty-hint">Load tables and fields for this app first.</div> : null}
+                      </div>
+                    </div>
                     <div className="micro">
                       Create one Quickbase source report per selected table that returns every record and every field needed by this platform. Then enter that report ID here, for example `125`.
                     </div>
@@ -2772,51 +2825,21 @@ export function StudioPage() {
                   </div>
                   <div className="studio-actions">
                     <button onClick={saveRemote} disabled={savingRemote || refreshingCache}>
-                      {savingRemote ? "Saving schedule…" : "Save schedule settings"}
+                      {savingRemote ? "Saving settings…" : "Save schedule settings"}
                     </button>
                     <button onClick={() => { void refreshAllNow(); }} disabled={refreshingCache}>
                       {refreshingCache ? "Refreshing all reports…" : "Refresh all now"}
                     </button>
                   </div>
                   <div className="micro">
-                    Scheduled full refresh is saved with the same system settings JSON as the rest of this workspace.
+                    This app schedule is saved with the rest of the system settings JSON in Quickbase.
                   </div>
                   <div className={`sync-status ${activeQuickbaseProfile?.refreshStatus.lastError ? "sync-status-warn" : "sync-status-ok"}`}>
                     <strong>{activeQuickbaseProfile?.refreshStatus.running ? "Refresh in progress" : activeQuickbaseProfile?.refreshStatus.lastSuccessAt ? "Refresh cache ready" : "No refresh cache yet"}</strong>
                     <span>{activeQuickbaseProfile?.refreshStatus.lastError || `Cached tables: ${activeQuickbaseProfile?.refreshStatus.cachedTableIds.join(", ") || "none"}`}</span>
                   </div>
                 </div>
-                <div className="card">
-                  <div className="card-head">
-                    <strong>Quickbase Connection</strong>
-                    <span className="micro">Enter the values needed for your live setup.</span>
-                  </div>
-                  <label className="field">
-                    <span>Realm hostname</span>
-                    <input value={activeQuickbaseConfig.realmHostname} onChange={(event) => updateQuickbaseField("realmHostname", event.target.value)} placeholder="yourrealm.quickbase.com" />
-                  </label>
-                  <label className="field">
-                    <span>User token</span>
-                    <input value={activeQuickbaseConfig.userToken} onChange={(event) => updateQuickbaseField("userToken", event.target.value)} placeholder="QB-USER-TOKEN ..." />
-                  </label>
-                  <label className="field">
-                    <span>App token</span>
-                    <input value={activeQuickbaseConfig.appToken} onChange={(event) => updateQuickbaseField("appToken", event.target.value)} placeholder="Optional app token" />
-                  </label>
-                  <label className="field">
-                    <span>App ID</span>
-                    <input value={activeQuickbaseConfig.appId} onChange={(event) => updateQuickbaseField("appId", event.target.value)} placeholder="App DBID" />
-                  </label>
-                  <label className="field">
-                    <span>API base URL</span>
-                    <input value={activeQuickbaseConfig.apiBaseUrl} onChange={(event) => updateQuickbaseField("apiBaseUrl", event.target.value)} placeholder="https://api.quickbase.com/v1" />
-                  </label>
-                </div>
                 <div className="studio-actions">
-                  <button onClick={() => { void loadQuickbaseMetadata(); }} disabled={quickbaseSchemaLoading}>
-                    {quickbaseSchemaLoading ? "Loading Quickbase schema…" : "Load table and field IDs"}
-                  </button>
-                  {quickbaseSchema ? <button onClick={autoDetectQuickbaseMappings}>Auto-detect storage fields</button> : null}
                   <button onClick={reloadRemote}>Load from server</button>
                   <button onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save to Quickbase and server"}</button>
                 </div>
@@ -2827,15 +2850,6 @@ export function StudioPage() {
                     <span>
                       {lastQuickbaseSync.savedObjects} saved reports or dashboards · {lastQuickbaseSync.savedSettings} user settings rows · {lastQuickbaseSync.savedVersions} version rows
                     </span>
-                  </div>
-                ) : null}
-                {quickbaseSchema ? (
-                  <div className="card">
-                    <div className="card-head">
-                      <strong>{quickbaseSchema.name}</strong>
-                      <span className="micro">{quickbaseSchema.tables.length} tables loaded</span>
-                    </div>
-                    <div className="micro">The schema is loaded for reference and auto-detection, but the storage setup below uses direct DBID and FID inputs like the original single-page builder.</div>
                   </div>
                 ) : null}
                 <div className="card">

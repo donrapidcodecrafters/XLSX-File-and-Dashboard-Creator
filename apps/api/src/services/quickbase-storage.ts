@@ -413,6 +413,20 @@ async function quickbaseQueryRecordsBySavedReportXml(
   return { data: records } satisfies QuickbaseQueryResult;
 }
 
+async function quickbaseRunReportRest(
+  config: StudioDocument["quickbase"],
+  reportId: string,
+  options: { top?: number; skip?: number } = {}
+): Promise<QuickbaseQueryResult> {
+  return quickbaseRestRequest(config, `/reports/${encodeURIComponent(reportId)}/run`, {
+    method: "POST",
+    body: {
+      skip: Math.max(0, Number(options.skip) || 0),
+      top: Math.max(1, Math.min(Number(options.top) || 1000, 1000))
+    }
+  }) as Promise<QuickbaseQueryResult>;
+}
+
 async function quickbaseQueryRecordsRest(
   config: StudioDocument["quickbase"],
   tableId: string,
@@ -545,10 +559,26 @@ export async function fetchQuickbaseRowsBySavedReport(
   if (!hasQuickbaseConnection(config) || !tableId || !reportId) {
     return [];
   }
-  const response = await quickbaseQueryRecordsBySavedReportXml(config, tableId, reportId, {
-    top: Math.max(1, Math.min(Number(options.top) || 1000, 1000)),
-    skip: Math.max(0, Number(options.skip) || 0)
-  }).catch((error) => {
+  const fetchSavedReport = async () => {
+    if (usingDirectQuickbaseApi(config)) {
+      try {
+        return await quickbaseRunReportRest(config, reportId, {
+          top: Math.max(1, Math.min(Number(options.top) || 1000, 1000)),
+          skip: Math.max(0, Number(options.skip) || 0)
+        });
+      } catch {
+        return quickbaseQueryRecordsBySavedReportXml(config, tableId, reportId, {
+          top: Math.max(1, Math.min(Number(options.top) || 1000, 1000)),
+          skip: Math.max(0, Number(options.skip) || 0)
+        });
+      }
+    }
+    return quickbaseQueryRecordsBySavedReportXml(config, tableId, reportId, {
+      top: Math.max(1, Math.min(Number(options.top) || 1000, 1000)),
+      skip: Math.max(0, Number(options.skip) || 0)
+    });
+  };
+  const response = await fetchSavedReport().catch((error) => {
     const message = error instanceof Error ? error.message : "Quickbase saved report query failed.";
     throw new Error(`Quickbase saved report ${reportId} failed for table ${tableId}. ${message}`);
   });
@@ -868,11 +898,18 @@ function mapQuickbaseFieldType(fieldType: string, baseType: string): FieldType {
   return "text";
 }
 
-function convertQuickbaseSchemaToTables(schema: Awaited<ReturnType<typeof loadQuickbaseSchema>>): TableDefinition[] {
+function convertQuickbaseSchemaToTables(
+  schema: Awaited<ReturnType<typeof loadQuickbaseSchema>>,
+  profileId = "",
+  appId = ""
+): TableDefinition[] {
   return schema.tables.map((table) => ({
     id: table.id,
     name: table.name,
     description: table.description || "Quickbase table",
+    quickbaseProfileId: profileId,
+    quickbaseTableId: table.id,
+    quickbaseAppId: appId,
     fields: table.fields.map((field) => ({
       id: field.fid,
       label: field.label,
@@ -888,34 +925,58 @@ export async function hydrateStudioDocumentFromQuickbase(document: StudioDocumen
   }
 
   const { config: resolvedConfig, bootstrapRows } = await resolveStoredQuickbaseConfig(base.quickbase);
-  const [user, storedObjects, loadedSchema] = await Promise.all([
+  const [user, storedObjects] = await Promise.all([
     quickbaseFetchCurrentUser(resolvedConfig),
-    loadStoredObjects(resolvedConfig).catch(() => []),
-    getOrCreateCacheValue(
-      schemaCache,
-      `${quickbaseConfigCacheKey(resolvedConfig)}::schema`,
-      async () => loadQuickbaseSchema({
-        realmHostname: resolvedConfig.realmHostname,
-        userToken: resolvedConfig.userToken,
-        appToken: resolvedConfig.appToken,
-        appId: resolvedConfig.appId
-      }).catch(() => null)
-    )
+    loadStoredObjects(resolvedConfig).catch(() => [])
   ]);
   const storedUserSettings = loadUserSettingsFromRows(bootstrapRows, resolvedConfig, user);
-  const loadedTables = loadedSchema ? convertQuickbaseSchemaToTables(loadedSchema) : base.bundle.tables;
+  const profileSeed = Array.isArray(storedUserSettings?.quickbaseProfiles) && storedUserSettings.quickbaseProfiles.length
+    ? storedUserSettings.quickbaseProfiles
+    : base.quickbaseProfiles;
+  const activeQuickbaseProfileId = String(storedUserSettings?.activeQuickbaseProfileId || base.activeQuickbaseProfileId || "");
+  const normalizedProfiles = normalizeStudioDocument({
+    ...base,
+    quickbaseProfiles: profileSeed,
+    activeQuickbaseProfileId
+  }).quickbaseProfiles.map((profile) => ({
+    ...profile,
+    quickbase: mergeQuickbaseConfig({
+      ...profile.quickbase,
+      realmHostname: profile.quickbase.realmHostname || resolvedConfig.realmHostname,
+      userToken: profile.quickbase.userToken || resolvedConfig.userToken,
+      appToken: profile.quickbase.appToken || resolvedConfig.appToken,
+      apiBaseUrl: profile.quickbase.apiBaseUrl || resolvedConfig.apiBaseUrl
+    }, null)
+  }));
+
+  const loadedTablesByProfile = await Promise.all(
+    normalizedProfiles.map(async (profile) => {
+      if (!hasQuickbaseConnection(profile.quickbase)) return [] as TableDefinition[];
+      const loadedSchema = await getOrCreateCacheValue(
+        schemaCache,
+        `${quickbaseConfigCacheKey(profile.quickbase)}::schema`,
+        async () => loadQuickbaseSchema({
+          realmHostname: profile.quickbase.realmHostname,
+          userToken: profile.quickbase.userToken,
+          appToken: profile.quickbase.appToken,
+          appId: profile.quickbase.appId
+        }).catch(() => null)
+      );
+      return loadedSchema ? convertQuickbaseSchemaToTables(loadedSchema, profile.id, profile.quickbase.appId) : [];
+    })
+  );
+  const loadedTables = loadedTablesByProfile.flat();
+  const nextTables = loadedTables.length ? loadedTables : base.bundle.tables;
 
   const next = normalizeStudioDocument({
     ...base,
     quickbase: resolvedConfig,
-    quickbaseProfiles: Array.isArray(storedUserSettings?.quickbaseProfiles)
-      ? storedUserSettings.quickbaseProfiles
-      : base.quickbaseProfiles,
-    activeQuickbaseProfileId: String(storedUserSettings?.activeQuickbaseProfileId || base.activeQuickbaseProfileId || ""),
+    quickbaseProfiles: normalizedProfiles,
+    activeQuickbaseProfileId,
     bundle: {
       ...base.bundle,
-      tables: loadedTables,
-      data: Object.fromEntries(loadedTables.map((table) => [table.id, base.bundle.data[table.id] || []])),
+      tables: nextTables,
+      data: Object.fromEntries(nextTables.map((table) => [table.id, base.bundle.data[table.id] || []])),
       ...(storedObjects.length ? {
         objects: Object.fromEntries(storedObjects.map((object) => [object.id, object])),
         order: storedObjects

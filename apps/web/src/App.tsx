@@ -12,6 +12,27 @@ function typeLabel(type: "report" | "dashboard") {
   return type === "report" ? "Report" : "Dashboard";
 }
 
+function getProfileIdsForObject(object: StudioObject | null, tables: TableDefinition[], studioDocument: StudioDocument | null) {
+  if (!object || !studioDocument) return [] as string[];
+  const ids = new Set<string>();
+  if (object.type === "report") {
+    const table = tables.find((item) => item.id === object.sourceTableId);
+    if (table?.quickbaseProfileId) ids.add(table.quickbaseProfileId);
+    return Array.from(ids);
+  }
+  object.tabs.forEach((tab) => {
+    tab.widgets.forEach((widget) => {
+      const report = widget.mode === "copied" && widget.snapshot
+        ? widget.snapshot
+        : studioDocument.bundle.objects[widget.reportId];
+      if (report?.type !== "report") return;
+      const table = tables.find((item) => item.id === report.sourceTableId);
+      if (table?.quickbaseProfileId) ids.add(table.quickbaseProfileId);
+    });
+  });
+  return Array.from(ids);
+}
+
 function useCatalog() {
   const [objects, setObjects] = useState<CatalogSummaryItem[]>([]);
   const [tables, setTables] = useState<TableDefinition[]>([]);
@@ -26,7 +47,7 @@ function useCatalog() {
   return { objects, tables, studioDocument };
 }
 
-function ObjectPage({ tables, platformName }: { tables: TableDefinition[]; platformName: string }) {
+function ObjectPage({ tables, platformName, studioDocument }: { tables: TableDefinition[]; platformName: string; studioDocument: StudioDocument | null }) {
   const params = useParams();
   const [object, setObject] = useState<StudioObject | null>(null);
   const [result, setResult] = useState<any>(null);
@@ -34,7 +55,13 @@ function ObjectPage({ tables, platformName }: { tables: TableDefinition[]; platf
   const [page, setPage] = useState(1);
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [refreshJob, setRefreshJob] = useState<any>(null);
+  const [autoRefreshForId, setAutoRefreshForId] = useState("");
   const pageSize = 100;
+  const liveModeProfileIds = useMemo(() => getProfileIdsForObject(object, tables, studioDocument), [object, studioDocument, tables]);
+  const liveModeEnabled = useMemo(
+    () => liveModeProfileIds.some((profileId) => studioDocument?.quickbaseProfiles.find((profile) => profile.id === profileId)?.liveMode === true),
+    [liveModeProfileIds, studioDocument]
+  );
 
   useEffect(() => {
     if (!params.objectId) return;
@@ -43,6 +70,7 @@ function ObjectPage({ tables, platformName }: { tables: TableDefinition[]; platf
     setPage(1);
     setRefreshNonce(0);
     setRefreshJob(null);
+    setAutoRefreshForId("");
     fetchObject(params.objectId)
       .then((response) => {
         if (!active) return;
@@ -114,6 +142,14 @@ function ObjectPage({ tables, platformName }: { tables: TableDefinition[]; platf
     setRefreshJob(response.job);
   }
 
+  useEffect(() => {
+    if (!object || !liveModeEnabled || autoRefreshForId === object.id || refreshJob?.status === "queued" || refreshJob?.status === "running") {
+      return;
+    }
+    setAutoRefreshForId(object.id);
+    void startObjectRefresh();
+  }, [autoRefreshForId, liveModeEnabled, object, refreshJob?.status]);
+
   if (!params.objectId) return null;
   if (!object && loading) return <div className="empty-page">Loading report or dashboard…</div>;
   if (!object) return <div className="empty-page">That report or dashboard could not be found.</div>;
@@ -122,6 +158,12 @@ function ObjectPage({ tables, platformName }: { tables: TableDefinition[]; platf
     const table = tables.find((item) => item.id === object.sourceTableId);
     return (
       <>
+        {liveModeEnabled ? (
+          <div className="sync-status sync-status-warn">
+            <strong>Live mode enabled</strong>
+            <span>Opening this report triggers a live object refresh first, so loading can take significantly longer.</span>
+          </div>
+        ) : null}
         {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" ? (
           <div style={{ position: "fixed", inset: 0, background: "rgba(12,22,18,0.58)", zIndex: 9999, display: "grid", placeItems: "center", padding: "24px" }}>
             <div style={{ width: "min(560px, 100%)", background: "#fff", borderRadius: "20px", padding: "24px", boxShadow: "0 24px 64px rgba(0,0,0,0.24)" }}>
@@ -152,6 +194,12 @@ function ObjectPage({ tables, platformName }: { tables: TableDefinition[]; platf
 
   return (
     <>
+      {liveModeEnabled ? (
+        <div className="sync-status sync-status-warn">
+          <strong>Live mode enabled</strong>
+          <span>Opening this dashboard triggers a live object refresh first, so loading can take significantly longer.</span>
+        </div>
+      ) : null}
       {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" ? (
         <div style={{ position: "fixed", inset: 0, background: "rgba(12,22,18,0.58)", zIndex: 9999, display: "grid", placeItems: "center", padding: "24px" }}>
           <div style={{ width: "min(560px, 100%)", background: "#fff", borderRadius: "20px", padding: "24px", boxShadow: "0 24px 64px rgba(0,0,0,0.24)" }}>
@@ -328,7 +376,7 @@ export function App() {
             <Route path="/viewer" element={<ViewerPage objects={objects} />} />
             <Route path="/studio" element={<StudioPage />} />
             <Route path="/studio/:objectId" element={<StudioPage />} />
-            <Route path="/:type/:objectId" element={<ObjectPage tables={tables} platformName={platformName} />} />
+            <Route path="/:type/:objectId" element={<ObjectPage tables={tables} platformName={platformName} studioDocument={studioDocument} />} />
             <Route path="*" element={<Navigate to="/viewer" replace />} />
           </Routes>
         </main>

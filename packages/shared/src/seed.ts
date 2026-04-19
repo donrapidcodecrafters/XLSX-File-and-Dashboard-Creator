@@ -105,6 +105,7 @@ function buildQuickbaseProfile(overrides: Partial<QuickbaseAppProfile> = {}): Qu
   return {
     id: "app-bva8ar4ad",
     label: "Cadence app",
+    liveMode: false,
     quickbase: buildDefaultQuickbaseConfig(),
     refreshSource: {
       tableIds: [],
@@ -468,6 +469,7 @@ function mergeQuickbaseProfile(defaults: QuickbaseAppProfile, source?: Partial<Q
     ...defaults,
     ...current,
     label: String(current.label || defaults.label),
+    liveMode: current.liveMode === true,
     quickbase: mergeQuickbaseDefaults(defaults.quickbase, current.quickbase),
     refreshSource: {
       tableIds: Array.isArray(current.refreshSource?.tableIds) ? current.refreshSource.tableIds.map(String) : defaults.refreshSource.tableIds,
