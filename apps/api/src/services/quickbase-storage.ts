@@ -1275,10 +1275,16 @@ export async function hydrateStudioDocumentFromQuickbase(document: StudioDocumen
         ...base.sync.refreshSchedule,
         ...(storedUserSettings?.sync?.refreshSchedule || {})
       },
+      refreshStatus: base.sync.refreshStatus,
       lastLoadedAt: new Date().toISOString()
     },
     versions: Object.keys(mergedVersions).length ? mergedVersions : base.versions
   });
+
+  next.quickbaseProfiles = next.quickbaseProfiles.map((profile) => ({
+    ...profile,
+    refreshStatus: base.quickbaseProfiles.find((item) => item.id === profile.id)?.refreshStatus || profile.refreshStatus
+  }));
 
   return next;
 }

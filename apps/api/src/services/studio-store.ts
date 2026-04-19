@@ -11,6 +11,16 @@ function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+function stripCachedRows(document: StudioDocument): StudioDocument {
+  return {
+    ...document,
+    bundle: {
+      ...document.bundle,
+      data: {}
+    }
+  };
+}
+
 export class StudioStore {
   private document: StudioDocument;
   private hydratePromise: Promise<StudioDocument> | null = null;
@@ -34,11 +44,15 @@ export class StudioStore {
 
   private persist(document: StudioDocument) {
     mkdirSync(dirname(STORAGE_PATH), { recursive: true });
-    writeFileSync(STORAGE_PATH, JSON.stringify(document, null, 2));
+    writeFileSync(STORAGE_PATH, JSON.stringify(stripCachedRows(document), null, 2));
   }
 
-  getDocument(): StudioDocument {
-    return clone(this.document);
+  getDocument(includeData = false): StudioDocument {
+    return clone(includeData ? this.document : stripCachedRows(this.document));
+  }
+
+  getLiveDocument(): StudioDocument {
+    return this.document;
   }
 
   async hydrateFromQuickbase(force = false) {
@@ -52,7 +66,7 @@ export class StudioStore {
     const hydrateTask = hydrateStudioDocumentFromQuickbase(this.document)
       .then((document) => {
         if (expired) return this.getDocument();
-        this.document = normalizeStudioDocument(clone(document));
+        this.document = document;
         this.lastHydratedAt = Date.now();
         this.persist(this.document);
         return this.getDocument();
@@ -76,6 +90,15 @@ export class StudioStore {
 
   saveDocument(document: StudioDocument, options: { markSavedAt?: boolean } = {}) {
     this.document = normalizeStudioDocument(clone(document));
+    if (options.markSavedAt !== false) {
+      this.document.sync.lastSavedAt = new Date().toISOString();
+    }
+    this.lastHydratedAt = Date.now();
+    this.persist(this.document);
+    return this.getDocument();
+  }
+
+  flushCurrent(options: { markSavedAt?: boolean } = {}) {
     if (options.markSavedAt !== false) {
       this.document.sync.lastSavedAt = new Date().toISOString();
     }

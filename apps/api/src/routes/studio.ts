@@ -13,13 +13,24 @@ export async function registerStudioRoutes(app: FastifyInstance) {
     return { document };
   });
 
+  app.get("/api/studio/cache/summary", async () => {
+    const document = studioStore.getLiveDocument();
+    return {
+      refreshStatus: document.sync.refreshStatus,
+      tables: Object.entries(document.bundle.data || {}).map(([tableId, rows]) => ({
+        tableId,
+        rowCount: Array.isArray(rows) ? rows.length : 0
+      }))
+    };
+  });
+
   app.put("/api/studio/document", async (request, reply) => {
     const body = request.body as { document?: StudioDocument } | undefined;
     if (!body?.document) {
       reply.code(400);
       return { message: "Document payload is required." };
     }
-    const current = studioStore.getDocument();
+    const current = studioStore.getLiveDocument();
     const mergedDocument: StudioDocument = {
       ...body.document,
       bundle: {
@@ -101,7 +112,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
           rowCount: result.rowCount
         };
       });
-      const current = studioStore.getDocument();
+      const current = studioStore.getLiveDocument();
       current.sync.refreshStatus.running = true;
       current.sync.refreshStatus.activeJobId = job.id;
       current.sync.refreshStatus.progress = Math.max(current.sync.refreshStatus.progress || 0, 1);
@@ -137,7 +148,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
           rowCount: result.rowCount
         };
       });
-      const current = studioStore.getDocument();
+      const current = studioStore.getLiveDocument();
       current.sync.refreshStatus.running = true;
       current.sync.refreshStatus.activeJobId = job.id;
       current.sync.refreshStatus.progress = Math.max(current.sync.refreshStatus.progress || 0, 1);
@@ -158,7 +169,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string };
     let job = refreshJobStore.getJob(id);
     if (!job) {
-      const document = studioStore.getDocument();
+      const document = studioStore.getLiveDocument();
       const status = document.sync.refreshStatus;
       if (status.activeJobId === id || (status.running && !status.activeJobId)) {
         job = {

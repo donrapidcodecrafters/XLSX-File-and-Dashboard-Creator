@@ -22,7 +22,15 @@ export class ObjectStore {
   }
 
   getRows(tableId: string) {
-    return studioStore.getBundle().data[tableId] || [];
+    const bundle = studioStore.getBundle();
+    if (bundle.data[tableId]) {
+      return bundle.data[tableId];
+    }
+    const table = this.getTable(tableId);
+    if (!table) {
+      return [];
+    }
+    return bundle.data[table.id] || bundle.data[table.quickbaseTableId || ""] || [];
   }
 
   listCatalog(): CatalogSummaryItem[] {
