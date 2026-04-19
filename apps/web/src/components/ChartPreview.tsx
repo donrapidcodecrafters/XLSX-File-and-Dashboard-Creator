@@ -282,7 +282,8 @@ export function ChartPreview({
     const { ticks, axisMax } = axisMaxFor(items.map((item) => item.value), compact);
     const chartWidth = 760;
     const chartHeight = Math.max(220, 84 + items.length * 44);
-    const leftPad = Math.min(220, Math.max(132, items.reduce((max, item) => Math.max(max, cap(item.label, compact ? 12 : 18).length), 1) * 8 + 36));
+    const labelPad = Math.min(220, Math.max(132, items.reduce((max, item) => Math.max(max, cap(item.label, compact ? 12 : 18).length), 1) * 8 + 36));
+    const leftPad = labelPad + (yAxisLabel ? 26 : 0);
     const rightPad = showValues ? axisTickTextWidth([axisMax], decimalPlaces, compact) : 28;
     const topPad = 20;
     const bottomPad = xAxisLabel ? 54 : 36;
@@ -305,6 +306,17 @@ export function ChartPreview({
                 </g>
               );
             })}
+            {yAxisLabel ? (
+              <text
+                x={18}
+                y={topPad + plotHeight / 2}
+                transform={`rotate(-90 18 ${topPad + plotHeight / 2})`}
+                textAnchor="middle"
+                className="chart-svg-axis-title"
+              >
+                {yAxisLabel}
+              </text>
+            ) : null}
             <line x1={leftPad} y1={topPad} x2={leftPad} y2={topPad + plotHeight} className="chart-axis-svg-line" />
             <line x1={leftPad} y1={topPad + plotHeight} x2={chartWidth - rightPad} y2={topPad + plotHeight} className="chart-axis-svg-line" />
             {items.map((item, index) => {

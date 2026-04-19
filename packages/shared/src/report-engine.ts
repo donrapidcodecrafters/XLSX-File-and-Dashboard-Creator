@@ -136,6 +136,15 @@ function asNumber(value: unknown): number {
   return Number.isFinite(numeric) ? numeric : 0;
 }
 
+function normalizedFilterText(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function looksNumeric(value: unknown): boolean {
+  if (value === null || value === undefined || String(value).trim() === "") return false;
+  return Number.isFinite(Number(value));
+}
+
 function parseDateValue(value: unknown): Date | null {
   if (!value) return null;
   const date = new Date(String(value));
@@ -164,6 +173,8 @@ export function matchesFilter(row: DataRow, filter: FilterDefinition): boolean {
   const raw = row[filter.fieldId];
   const expected = String(filter.value ?? "");
   const candidates = asArray(raw).map((value) => String(value ?? ""));
+  const normalizedCandidates = asArray(raw).map((value) => normalizedFilterText(value));
+  const normalizedExpected = normalizedFilterText(expected);
   const isBlank = candidates.length === 0 || candidates.every((value) => !String(value).trim());
   if (filter.operator === "blank") return isBlank;
   if (filter.operator === "not-blank") return !isBlank;
@@ -172,17 +183,22 @@ export function matchesFilter(row: DataRow, filter: FilterDefinition): boolean {
     return matchesDateToken(raw, expected);
   }
   if (filter.operator === "contains") {
-    return candidates.some((value) => value.toLowerCase().includes(expected.toLowerCase()));
+    return normalizedCandidates.some((value) => value.includes(normalizedExpected));
   }
   if (filter.operator === "not-contains") {
-    return candidates.every((value) => !value.toLowerCase().includes(expected.toLowerCase()));
+    return normalizedCandidates.every((value) => !value.includes(normalizedExpected));
   }
   if (filter.operator === "gt") return asNumber(raw) > asNumber(expected);
   if (filter.operator === "gte") return asNumber(raw) >= asNumber(expected);
   if (filter.operator === "lt") return asNumber(raw) < asNumber(expected);
   if (filter.operator === "lte") return asNumber(raw) <= asNumber(expected);
-  if (filter.operator === "not-equals") return candidates.every((value) => value !== expected);
-  return candidates.some((value) => value === expected);
+  if (looksNumeric(raw) && looksNumeric(expected)) {
+    const numericExpected = asNumber(expected);
+    if (filter.operator === "not-equals") return asArray(raw).every((value) => asNumber(value) !== numericExpected);
+    return asArray(raw).some((value) => asNumber(value) === numericExpected);
+  }
+  if (filter.operator === "not-equals") return normalizedCandidates.every((value) => value !== normalizedExpected);
+  return normalizedCandidates.some((value) => value === normalizedExpected);
 }
 
 export function matchesFilterNode(row: DataRow, node: FilterNodeDefinition): boolean {
