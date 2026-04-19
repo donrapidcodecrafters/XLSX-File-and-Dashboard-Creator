@@ -265,7 +265,7 @@ function persistRefreshProgress(
       }
     });
   });
-  studioStore.flushCurrent({ markSavedAt: false });
+  studioStore.flushDocument(document, { markSavedAt: false });
 }
 
 async function fetchAllTableRows(
@@ -391,7 +391,7 @@ export async function refreshAllCachedData(reason: "manual" | "scheduled" = "man
   startDocument.sync.refreshStatus.estimatedSecondsRemaining = undefined;
   startDocument.sync.refreshStatus.lastStartedAt = new Date().toISOString();
   startDocument.sync.refreshStatus.lastError = "";
-  studioStore.flushCurrent({ markSavedAt: false });
+  studioStore.flushDocument(startDocument, { markSavedAt: false });
 
   try {
     const latest = studioStore.getLiveDocument();
@@ -437,7 +437,7 @@ export async function refreshAllCachedData(reason: "manual" | "scheduled" = "man
     });
     updateRefreshScheduleMetadata(nextDocument);
     updateLegacyActiveQuickbase(nextDocument);
-    studioStore.flushCurrent({ markSavedAt: false });
+    studioStore.flushDocument(nextDocument, { markSavedAt: false });
     return {
       ok: true,
       reason,
@@ -468,7 +468,7 @@ export async function refreshAllCachedData(reason: "manual" | "scheduled" = "man
     });
     updateRefreshScheduleMetadata(failed);
     updateLegacyActiveQuickbase(failed);
-    studioStore.flushCurrent({ markSavedAt: false });
+    studioStore.flushDocument(failed, { markSavedAt: false });
     throw error;
   }
 }
@@ -502,7 +502,7 @@ export async function refreshAllCachedDataWithProgress(
     profile.refreshStatus.lastStartedAt = startDocument.sync.refreshStatus.lastStartedAt;
     profile.refreshStatus.lastError = "";
   });
-  studioStore.flushCurrent({ markSavedAt: false });
+  studioStore.flushDocument(startDocument, { markSavedAt: false });
 
   try {
     const latest = studioStore.getLiveDocument();
@@ -597,7 +597,7 @@ export async function refreshAllCachedDataWithProgress(
     });
     updateRefreshScheduleMetadata(nextDocument);
     updateLegacyActiveQuickbase(nextDocument);
-    studioStore.flushCurrent({ markSavedAt: false });
+    studioStore.flushDocument(nextDocument, { markSavedAt: false });
     onProgress?.(100, "Refresh complete", { tableCount: tableIds.length, rowCount: totalRows });
     return {
       ok: true,
@@ -629,7 +629,7 @@ export async function refreshAllCachedDataWithProgress(
     });
     updateRefreshScheduleMetadata(failed);
     updateLegacyActiveQuickbase(failed);
-    studioStore.flushCurrent({ markSavedAt: false });
+    studioStore.flushDocument(failed, { markSavedAt: false });
     throw error;
   }
 }
@@ -663,7 +663,7 @@ export async function refreshObjectCachedDataWithProgress(
       status.lastError = "";
     });
   });
-  studioStore.flushCurrent({ markSavedAt: false });
+  studioStore.flushDocument(startDocument, { markSavedAt: false });
 
   try {
     const latest = studioStore.getLiveDocument();
@@ -763,7 +763,7 @@ export async function refreshObjectCachedDataWithProgress(
 
     updateRefreshScheduleMetadata(nextDocument);
     updateLegacyActiveQuickbase(nextDocument);
-    studioStore.flushCurrent({ markSavedAt: false });
+    studioStore.flushDocument(nextDocument, { markSavedAt: false });
     onProgress?.(100, "Object refresh complete", { tableCount: tableIds.length, rowCount: totalRows });
     return {
       ok: true,
@@ -782,7 +782,7 @@ export async function refreshObjectCachedDataWithProgress(
     failed.sync.refreshStatus.lastError = error instanceof Error ? error.message : "Object refresh failed.";
     updateRefreshScheduleMetadata(failed);
     updateLegacyActiveQuickbase(failed);
-    studioStore.flushCurrent({ markSavedAt: false });
+    studioStore.flushDocument(failed, { markSavedAt: false });
     throw error;
   }
 }
@@ -797,7 +797,7 @@ export function startRefreshScheduler(logger?: FastifyBaseLogger) {
     const document = studioStore.getLiveDocument();
     updateRefreshScheduleMetadata(document);
     updateLegacyActiveQuickbase(document);
-    studioStore.flushCurrent({ markSavedAt: false });
+    studioStore.flushDocument(document, { markSavedAt: false });
     const now = new Date();
     for (const profile of document.quickbaseProfiles || []) {
       const schedule = profile.refreshSchedule;

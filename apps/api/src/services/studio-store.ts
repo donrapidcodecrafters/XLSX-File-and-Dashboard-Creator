@@ -140,6 +140,16 @@ export class StudioStore {
     return this.getDocument();
   }
 
+  flushDocument(document: StudioDocument, options: { markSavedAt?: boolean } = {}) {
+    this.document = document;
+    if (options.markSavedAt !== false) {
+      this.document.sync.lastSavedAt = new Date().toISOString();
+    }
+    this.lastHydratedAt = Date.now();
+    this.persist(this.document);
+    return this.getDocument();
+  }
+
   snapshotObject(objectId: string, label = "Manual snapshot") {
     const object = this.document.bundle.objects[objectId];
     if (!object) {
