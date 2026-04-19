@@ -157,6 +157,10 @@ input {
   min-width: 0;
 }
 
+.topbar-action {
+  min-height: 38px;
+}
+
 .topbar-nav {
   display: inline-grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1598,6 +1602,7 @@ th {
   inset: 0;
   display: grid;
   place-items: center;
+  overflow: auto;
   padding: 18px;
   background: rgba(19, 30, 25, 0.34);
   backdrop-filter: blur(5px);
@@ -1614,6 +1619,10 @@ th {
   border-radius: 26px;
   background: rgba(255, 255, 255, 0.97);
   box-shadow: 0 32px 90px rgba(0, 0, 0, 0.18);
+}
+
+.studio-settings-modal {
+  width: min(1180px, calc(100vw - 36px));
 }
 
 .modal-actions {

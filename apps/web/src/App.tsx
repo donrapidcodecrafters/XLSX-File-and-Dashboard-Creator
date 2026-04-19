@@ -225,7 +225,7 @@ function ObjectPage({ tables, platformName, studioDocument }: { tables: TableDef
   );
 }
 
-function ViewerPage({ objects }: { objects: CatalogSummaryItem[] }) {
+function ViewerPage({ objects, refreshAllSignal = 0 }: { objects: CatalogSummaryItem[]; refreshAllSignal?: number }) {
   const [query, setQuery] = useState("");
   const [refreshJob, setRefreshJob] = useState<any>(null);
   const filtered = useMemo(() => {
@@ -250,6 +250,11 @@ function ViewerPage({ objects }: { objects: CatalogSummaryItem[] }) {
     }, 1000);
     return () => window.clearInterval(handle);
   }, [refreshJob]);
+
+  useEffect(() => {
+    if (!refreshAllSignal) return;
+    void startFullRefresh();
+  }, [refreshAllSignal]);
 
   async function startFullRefresh() {
     const response = await startStudioRefresh();
@@ -280,9 +285,6 @@ function ViewerPage({ objects }: { objects: CatalogSummaryItem[] }) {
           <p>Choose any saved report or dashboard to open it full screen with its live filters and navigation controls.</p>
         </div>
         <div className="link-toolbar viewer-actions">
-          <button className="ghost-button" onClick={() => { void startFullRefresh(); }} disabled={refreshJob?.status === "queued" || refreshJob?.status === "running"}>
-            {refreshJob?.status === "queued" || refreshJob?.status === "running" ? "Refreshing all…" : "Refresh all cached data"}
-          </button>
           <Link className="ghost-button" to="/studio">Open building area</Link>
         </div>
       </div>
@@ -311,6 +313,9 @@ export function App() {
   const { objects, tables, studioDocument } = useCatalog();
   const location = useLocation();
   const hosted = useMemo(() => getHostedContext(), [location.key]);
+  const [studioSettingsSignal, setStudioSettingsSignal] = useState(0);
+  const [studioRefreshSignal, setStudioRefreshSignal] = useState(0);
+  const [viewerRefreshSignal, setViewerRefreshSignal] = useState(0);
   const studioRoute = location.pathname.startsWith("/studio");
   const viewerRoute = location.pathname === "/viewer";
   const readerRoute = /^\/(report|dashboard)\//.test(location.pathname);
@@ -345,6 +350,15 @@ export function App() {
               <NavLink className={({ isActive }) => `topbar-tab${isActive ? " active" : ""}`} to="/studio">Building</NavLink>
               <NavLink className={({ isActive }) => `topbar-tab${isActive ? " active" : ""}`} to="/viewer">Viewing</NavLink>
             </div>
+            {studioRoute ? (
+              <>
+                <button className="ghost-button topbar-action" onClick={() => setStudioRefreshSignal((value) => value + 1)}>Refresh all</button>
+                <button className="ghost-button topbar-action" onClick={() => setStudioSettingsSignal((value) => value + 1)}>Settings</button>
+              </>
+            ) : null}
+            {viewerRoute ? (
+              <button className="ghost-button topbar-action" onClick={() => setViewerRefreshSignal((value) => value + 1)}>Refresh all</button>
+            ) : null}
             <span className="badge">{hosted.mode === "viewer" ? "Full-screen view" : navLabel}</span>
             <span className="badge brand">{objects.length} saved views</span>
           </div>
@@ -373,9 +387,9 @@ export function App() {
         <main className={`content ${readerRoute ? "reader-content" : ""}`}>
           <Routes>
             <Route path="/" element={<Navigate to="/viewer" replace />} />
-            <Route path="/viewer" element={<ViewerPage objects={objects} />} />
-            <Route path="/studio" element={<StudioPage />} />
-            <Route path="/studio/:objectId" element={<StudioPage />} />
+            <Route path="/viewer" element={<ViewerPage objects={objects} refreshAllSignal={viewerRefreshSignal} />} />
+            <Route path="/studio" element={<StudioPage openSettingsSignal={studioSettingsSignal} refreshAllSignal={studioRefreshSignal} />} />
+            <Route path="/studio/:objectId" element={<StudioPage openSettingsSignal={studioSettingsSignal} refreshAllSignal={studioRefreshSignal} />} />
             <Route path="/:type/:objectId" element={<ObjectPage tables={tables} platformName={platformName} studioDocument={studioDocument} />} />
             <Route path="*" element={<Navigate to="/viewer" replace />} />
           </Routes>

@@ -1012,7 +1012,7 @@ function ReportFiltersAndSortsEditor({
   );
 }
 
-export function StudioPage() {
+export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { openSettingsSignal?: number; refreshAllSignal?: number }) {
   const navigate = useNavigate();
   const params = useParams();
   const importInputRef = useRef<HTMLInputElement | null>(null);
@@ -1925,6 +1925,16 @@ export function StudioPage() {
     }
   }, [refreshJob]);
 
+  useEffect(() => {
+    if (!openSettingsSignal) return;
+    setDrawer("settings");
+  }, [openSettingsSignal]);
+
+  useEffect(() => {
+    if (!refreshAllSignal) return;
+    void refreshAllNow();
+  }, [refreshAllSignal]);
+
   async function refreshAllNow() {
     const refreshValidation = getFullRefreshValidation(documentState);
     if (refreshValidation) {
@@ -2164,10 +2174,6 @@ export function StudioPage() {
             <button onClick={undo} disabled={!history.length}>Undo</button>
             <button onClick={redo} disabled={!future.length}>Redo</button>
             <button onClick={() => setDrawer("share")}>Share</button>
-            <button onClick={() => setDrawer("settings")}>⚙ Settings</button>
-            <button onClick={() => { void refreshAllNow(); }} disabled={refreshingCache}>
-              {refreshingCache ? "Refreshing all…" : "Refresh all"}
-            </button>
             <button onClick={() => setDrawer("export")}>Export</button>
             <button onClick={openVersions}>History</button>
           </div>
@@ -2609,8 +2615,8 @@ export function StudioPage() {
       ) : null}
 
       {drawer ? (
-        <div className="studio-drawer-backdrop" onClick={() => setDrawer(null)}>
-          <section className="studio-drawer" onClick={(event) => event.stopPropagation()}>
+        <div className={drawer === "settings" ? "studio-modal-backdrop" : "studio-drawer-backdrop"} onClick={() => setDrawer(null)}>
+          <section className={drawer === "settings" ? "studio-modal studio-settings-modal" : "studio-drawer"} onClick={(event) => event.stopPropagation()}>
             <div className="card-head">
               <strong>{drawer === "settings" ? "System Settings" : drawer === "share" ? "Share" : drawer === "templates" ? "Templates" : drawer === "export" ? "Export" : "History"}</strong>
               <button onClick={() => setDrawer(null)}>Close</button>
@@ -2622,9 +2628,9 @@ export function StudioPage() {
                   <div className="summary-card"><strong>{documentState.sync.providerMode === "api" ? "Connected" : "Local draft"}</strong><span>Connection</span></div>
                   <div className="summary-card"><strong>{documentState.sync.lastLoadedAt ? new Date(documentState.sync.lastLoadedAt).toLocaleTimeString() : "n/a"}</strong><span>Last load</span></div>
                   <div className="summary-card"><strong>{documentState.sync.lastSavedAt ? new Date(documentState.sync.lastSavedAt).toLocaleTimeString() : "n/a"}</strong><span>Last save</span></div>
-                  <div className="summary-card"><strong>{documentState.sync.refreshStatus.lastSuccessAt ? new Date(documentState.sync.refreshStatus.lastSuccessAt).toLocaleString() : "Not refreshed"}</strong><span>Last full refresh</span></div>
-                  <div className="summary-card"><strong>{documentState.sync.refreshStatus.nextRunAt ? new Date(documentState.sync.refreshStatus.nextRunAt).toLocaleString() : "Not scheduled"}</strong><span>Next full refresh</span></div>
-                  <div className="summary-card"><strong>{(documentState.sync.refreshStatus.cachedRowCount || 0).toLocaleString()}</strong><span>Cached rows</span></div>
+                  <div className="summary-card"><strong>{activeQuickbaseProfile?.refreshStatus.lastSuccessAt ? new Date(activeQuickbaseProfile.refreshStatus.lastSuccessAt).toLocaleString() : "Not refreshed"}</strong><span>Last app refresh</span></div>
+                  <div className="summary-card"><strong>{activeQuickbaseProfile?.refreshStatus.nextRunAt ? new Date(activeQuickbaseProfile.refreshStatus.nextRunAt).toLocaleString() : "Not scheduled"}</strong><span>Next app refresh</span></div>
+                  <div className="summary-card"><strong>{(activeQuickbaseProfile?.refreshStatus.cachedRowCount || 0).toLocaleString()}</strong><span>Cached rows for app</span></div>
                 </div>
                 <label className="field">
                   <span>Platform name</span>
@@ -2717,12 +2723,12 @@ export function StudioPage() {
                 </div>
                 <div className="card">
                   <div className="card-head">
-                    <strong>Schedule full app refresh</strong>
+                    <strong>Schedule refresh for this app</strong>
                     <span className="micro">This schedule applies to the active app profile and refreshes all selected refresh-source tables for that app. Individual report and dashboard pages still have object-scoped refresh.</span>
                   </div>
                   <label className="field">
                     <span>Enable scheduled refresh</span>
-                    <select value={documentState.sync.refreshSchedule.enabled ? "enabled" : "disabled"} onChange={(event) => updateRefreshScheduleField("enabled", event.target.value === "enabled")}>
+                    <select value={activeQuickbaseProfile?.refreshSchedule.enabled ? "enabled" : "disabled"} onChange={(event) => updateRefreshScheduleField("enabled", event.target.value === "enabled")}>
                       <option value="disabled">Disabled</option>
                       <option value="enabled">Enabled</option>
                     </select>
@@ -2730,7 +2736,7 @@ export function StudioPage() {
                   <div className="filter-grid compact-grid">
                     <label className="field">
                       <span>Cadence</span>
-                      <select value={documentState.sync.refreshSchedule.cadence || "daily"} onChange={(event) => updateRefreshScheduleField("cadence", event.target.value as StudioDocument["sync"]["refreshSchedule"]["cadence"])}>
+                      <select value={activeQuickbaseProfile?.refreshSchedule.cadence || "daily"} onChange={(event) => updateRefreshScheduleField("cadence", event.target.value as StudioDocument["sync"]["refreshSchedule"]["cadence"])}>
                         <option value="daily">Nightly / daily</option>
                         <option value="weekly">Weekly</option>
                         <option value="monthly">Monthly</option>
@@ -2738,28 +2744,28 @@ export function StudioPage() {
                     </label>
                     <label className="field">
                       <span>Time</span>
-                      <input type="time" value={documentState.sync.refreshSchedule.timeOfDay || "02:00"} onChange={(event) => updateRefreshScheduleField("timeOfDay", event.target.value)} />
+                      <input type="time" value={activeQuickbaseProfile?.refreshSchedule.timeOfDay || "02:00"} onChange={(event) => updateRefreshScheduleField("timeOfDay", event.target.value)} />
                     </label>
                   </div>
-                  {documentState.sync.refreshSchedule.cadence === "weekly" ? (
+                  {activeQuickbaseProfile?.refreshSchedule.cadence === "weekly" ? (
                     <label className="field">
                       <span>Day of week</span>
-                      <select value={String(documentState.sync.refreshSchedule.dayOfWeek || 0)} onChange={(event) => updateRefreshScheduleField("dayOfWeek", Number(event.target.value))}>
+                      <select value={String(activeQuickbaseProfile?.refreshSchedule.dayOfWeek || 0)} onChange={(event) => updateRefreshScheduleField("dayOfWeek", Number(event.target.value))}>
                         {WEEKDAY_OPTIONS.map((option) => (
                           <option key={option.value} value={option.value}>{option.label}</option>
                         ))}
                       </select>
                     </label>
                   ) : null}
-                  {documentState.sync.refreshSchedule.cadence === "monthly" ? (
+                  {activeQuickbaseProfile?.refreshSchedule.cadence === "monthly" ? (
                     <label className="field">
                       <span>Day of month</span>
-                      <input type="number" min={1} max={31} value={documentState.sync.refreshSchedule.dayOfMonth || 1} onChange={(event) => updateRefreshScheduleField("dayOfMonth", Math.max(1, Math.min(31, Number(event.target.value) || 1)))} />
+                      <input type="number" min={1} max={31} value={activeQuickbaseProfile?.refreshSchedule.dayOfMonth || 1} onChange={(event) => updateRefreshScheduleField("dayOfMonth", Math.max(1, Math.min(31, Number(event.target.value) || 1)))} />
                     </label>
                   ) : null}
                   <label className="field">
                     <span>Timezone</span>
-                    <select value={documentState.sync.refreshSchedule.timeZone || "America/Denver"} onChange={(event) => updateRefreshScheduleField("timeZone", event.target.value)}>
+                    <select value={activeQuickbaseProfile?.refreshSchedule.timeZone || "America/Denver"} onChange={(event) => updateRefreshScheduleField("timeZone", event.target.value)}>
                       {TIMEZONE_OPTIONS.map((timeZone) => (
                         <option key={timeZone} value={timeZone}>{timeZone}</option>
                       ))}
@@ -2820,7 +2826,7 @@ export function StudioPage() {
                       </div>
                     ) : null}
                     <div className="micro">
-                      Requirement: every selected table must have a report ID. Full app refresh requires at least one table/report ID pair somewhere in the configured app profiles.
+                      Requirement: every selected table must have a report ID. Scheduled refresh for this app uses all of the selected table/report ID pairs.
                     </div>
                   </div>
                   <div className="studio-actions">

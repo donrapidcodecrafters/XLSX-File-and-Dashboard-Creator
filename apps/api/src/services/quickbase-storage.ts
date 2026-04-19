@@ -225,9 +225,11 @@ async function quickbaseRestRequest(
   const baseUrl = String(config.apiBaseUrl || "https://api.quickbase.com/v1").trim().replace(/\/$/, "");
   const url = /^https?:\/\//i.test(path) ? path : `${baseUrl}${path}`;
   const headers: Record<string, string> = {
-    Accept: "application/json",
-    "Content-Type": "application/json"
+    Accept: "application/json"
   };
+  if (options.body !== undefined) {
+    headers["Content-Type"] = "application/json";
+  }
   if (config.realmHostname) headers["QB-Realm-Hostname"] = normalizeHostname(config.realmHostname);
   if (config.userToken) headers.Authorization = `QB-USER-TOKEN ${config.userToken}`;
   if (config.appId) headers["X-Quickbase-App-Id"] = config.appId;
@@ -415,15 +417,19 @@ async function quickbaseQueryRecordsBySavedReportXml(
 
 async function quickbaseRunReportRest(
   config: StudioDocument["quickbase"],
+  tableId: string,
   reportId: string,
   options: { top?: number; skip?: number } = {}
 ): Promise<QuickbaseQueryResult> {
-  return quickbaseRestRequest(config, `/reports/${encodeURIComponent(reportId)}/run`, {
-    method: "POST",
-    body: {
-      skip: Math.max(0, Number(options.skip) || 0),
-      top: Math.max(1, Math.min(Number(options.top) || 1000, 1000))
-    }
+  const top = Math.max(1, Math.min(Number(options.top) || 250, 250));
+  const skip = Math.max(0, Number(options.skip) || 0);
+  const query = new URLSearchParams({
+    tableId: String(tableId),
+    skip: String(skip),
+    top: String(top)
+  });
+  return quickbaseRestRequest(config, `/reports/${encodeURIComponent(reportId)}/run?${query.toString()}`, {
+    method: "POST"
   }) as Promise<QuickbaseQueryResult>;
 }
 
@@ -562,19 +568,19 @@ export async function fetchQuickbaseRowsBySavedReport(
   const fetchSavedReport = async () => {
     if (usingDirectQuickbaseApi(config)) {
       try {
-        return await quickbaseRunReportRest(config, reportId, {
-          top: Math.max(1, Math.min(Number(options.top) || 1000, 1000)),
+        return await quickbaseRunReportRest(config, tableId, reportId, {
+          top: Math.max(1, Math.min(Number(options.top) || 250, 250)),
           skip: Math.max(0, Number(options.skip) || 0)
         });
       } catch {
         return quickbaseQueryRecordsBySavedReportXml(config, tableId, reportId, {
-          top: Math.max(1, Math.min(Number(options.top) || 1000, 1000)),
+          top: Math.max(1, Math.min(Number(options.top) || 250, 250)),
           skip: Math.max(0, Number(options.skip) || 0)
         });
       }
     }
     return quickbaseQueryRecordsBySavedReportXml(config, tableId, reportId, {
-      top: Math.max(1, Math.min(Number(options.top) || 1000, 1000)),
+      top: Math.max(1, Math.min(Number(options.top) || 250, 250)),
       skip: Math.max(0, Number(options.skip) || 0)
     });
   };

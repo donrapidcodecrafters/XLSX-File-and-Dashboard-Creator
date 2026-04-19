@@ -239,15 +239,20 @@ async function fetchAllTableRows(document: StudioDocument, table: TableDefinitio
 }
 
 export function updateRefreshScheduleMetadata(document: StudioDocument) {
-  const nextRunAt = computeNextRunAt(document.sync.refreshSchedule);
+  const nextRuns: string[] = [];
   document.quickbaseProfiles = (document.quickbaseProfiles || []).map((profile) => ({
     ...profile,
     refreshStatus: {
       ...profile.refreshStatus,
-      nextRunAt
+      nextRunAt: computeNextRunAt(profile.refreshSchedule)
     }
   }));
-  document.sync.refreshStatus.nextRunAt = nextRunAt;
+  document.quickbaseProfiles.forEach((profile) => {
+    if (profile.refreshStatus.nextRunAt) {
+      nextRuns.push(profile.refreshStatus.nextRunAt);
+    }
+  });
+  document.sync.refreshStatus.nextRunAt = nextRuns.sort()[0] || "";
 }
 
 function syncProfileRefreshStatus(
@@ -264,12 +269,13 @@ export function updateLegacyActiveQuickbase(document: StudioDocument) {
   const active = document.quickbaseProfiles.find((profile) => profile.id === document.activeQuickbaseProfileId);
   if (active) {
     document.quickbase = active.quickbase;
+    document.sync.refreshSchedule = active.refreshSchedule;
   }
 }
 
-export async function refreshAllCachedData(reason: "manual" | "scheduled" = "manual") {
+export async function refreshAllCachedData(reason: "manual" | "scheduled" = "manual", profileId = "") {
   const hydrated = await studioStore.hydrateFromQuickbase(true);
-  const startDocument = JSON.parse(JSON.stringify(hydrated)) as StudioDocument;
+  const startDocument = hydrated;
   updateRefreshScheduleMetadata(startDocument);
   updateLegacyActiveQuickbase(startDocument);
   startDocument.sync.refreshStatus.running = true;
@@ -283,9 +289,11 @@ export async function refreshAllCachedData(reason: "manual" | "scheduled" = "man
 
   try {
     const latest = studioStore.getDocument();
-    const profileTableIds = latest.quickbaseProfiles.flatMap((profile) => getRefreshTableIdsForProfile(latest, profile.id));
+    const profileTableIds = profileId
+      ? getRefreshTableIdsForProfile(latest, profileId)
+      : latest.quickbaseProfiles.flatMap((profile) => getRefreshTableIdsForProfile(latest, profile.id));
     const tableIds = Array.from(new Set((profileTableIds.length ? profileTableIds : getUsedTableIds(latest)).filter(Boolean)));
-    const nextDocument = JSON.parse(JSON.stringify(latest)) as StudioDocument;
+    const nextDocument = latest;
     let totalRows = 0;
     for (const tableId of tableIds) {
       const table = getTable(nextDocument, tableId);
@@ -304,7 +312,10 @@ export async function refreshAllCachedData(reason: "manual" | "scheduled" = "man
     nextDocument.sync.refreshStatus.lastError = "";
     nextDocument.sync.refreshStatus.cachedTableIds = tableIds;
     nextDocument.sync.refreshStatus.cachedRowCount = totalRows;
-    nextDocument.quickbaseProfiles.forEach((profile) => {
+    const profilesToUpdate = profileId
+      ? nextDocument.quickbaseProfiles.filter((profile) => profile.id === profileId)
+      : nextDocument.quickbaseProfiles;
+    profilesToUpdate.forEach((profile) => {
       syncProfileRefreshStatus(nextDocument, profile.id, (status) => {
         status.running = false;
         status.activeJobId = "";
@@ -336,7 +347,10 @@ export async function refreshAllCachedData(reason: "manual" | "scheduled" = "man
     failed.sync.refreshStatus.estimatedSecondsRemaining = undefined;
     failed.sync.refreshStatus.lastCompletedAt = new Date().toISOString();
     failed.sync.refreshStatus.lastError = error instanceof Error ? error.message : "Refresh failed.";
-    failed.quickbaseProfiles.forEach((profile) => {
+    const failedProfilesToUpdate = profileId
+      ? failed.quickbaseProfiles.filter((profile) => profile.id === profileId)
+      : failed.quickbaseProfiles;
+    failedProfilesToUpdate.forEach((profile) => {
       syncProfileRefreshStatus(failed, profile.id, (status) => {
         status.running = false;
         status.activeJobId = "";
@@ -355,10 +369,11 @@ export async function refreshAllCachedData(reason: "manual" | "scheduled" = "man
 
 export async function refreshAllCachedDataWithProgress(
   reason: "manual" | "scheduled" = "manual",
-  onProgress?: (progress: number, message: string, extras?: { tableCount?: number; rowCount?: number; estimatedSecondsRemaining?: number }) => void
+  onProgress?: (progress: number, message: string, extras?: { tableCount?: number; rowCount?: number; estimatedSecondsRemaining?: number }) => void,
+  profileId = ""
 ) {
   const hydrated = await studioStore.hydrateFromQuickbase(true);
-  const startDocument = JSON.parse(JSON.stringify(hydrated)) as StudioDocument;
+  const startDocument = hydrated;
   updateRefreshScheduleMetadata(startDocument);
   updateLegacyActiveQuickbase(startDocument);
   startDocument.sync.refreshStatus.running = true;
@@ -372,9 +387,11 @@ export async function refreshAllCachedDataWithProgress(
 
   try {
     const latest = studioStore.getDocument();
-    const profileTableIds = latest.quickbaseProfiles.flatMap((profile) => getRefreshTableIdsForProfile(latest, profile.id));
+    const profileTableIds = profileId
+      ? getRefreshTableIdsForProfile(latest, profileId)
+      : latest.quickbaseProfiles.flatMap((profile) => getRefreshTableIdsForProfile(latest, profile.id));
     const tableIds = Array.from(new Set((profileTableIds.length ? profileTableIds : getUsedTableIds(latest)).filter(Boolean)));
-    const nextDocument = JSON.parse(JSON.stringify(latest)) as StudioDocument;
+    const nextDocument = latest;
     let totalRows = 0;
     const totalTables = Math.max(tableIds.length, 1);
     const startedAt = Date.now();
@@ -383,21 +400,6 @@ export async function refreshAllCachedDataWithProgress(
       message: string,
       extras?: { tableCount?: number; rowCount?: number; estimatedSecondsRemaining?: number }
     ) => {
-      const current = studioStore.getDocument();
-      current.sync.refreshStatus.running = true;
-      current.sync.refreshStatus.progress = progress;
-      current.sync.refreshStatus.message = message;
-      current.sync.refreshStatus.estimatedSecondsRemaining = extras?.estimatedSecondsRemaining;
-      current.quickbaseProfiles.forEach((profile) => {
-        syncProfileRefreshStatus(current, profile.id, (status) => {
-          status.running = true;
-          status.progress = progress;
-          status.message = message;
-          status.estimatedSecondsRemaining = extras?.estimatedSecondsRemaining;
-        });
-      });
-      updateLegacyActiveQuickbase(current);
-      studioStore.saveDocument(current, { markSavedAt: false });
       onProgress?.(progress, message, extras);
     };
 
@@ -440,7 +442,10 @@ export async function refreshAllCachedDataWithProgress(
     nextDocument.sync.refreshStatus.lastError = "";
     nextDocument.sync.refreshStatus.cachedTableIds = tableIds;
     nextDocument.sync.refreshStatus.cachedRowCount = totalRows;
-    nextDocument.quickbaseProfiles.forEach((profile) => {
+    const profilesToUpdate = profileId
+      ? nextDocument.quickbaseProfiles.filter((profile) => profile.id === profileId)
+      : nextDocument.quickbaseProfiles;
+    profilesToUpdate.forEach((profile) => {
       syncProfileRefreshStatus(nextDocument, profile.id, (status) => {
         status.running = false;
         status.activeJobId = "";
@@ -473,7 +478,10 @@ export async function refreshAllCachedDataWithProgress(
     failed.sync.refreshStatus.estimatedSecondsRemaining = undefined;
     failed.sync.refreshStatus.lastCompletedAt = new Date().toISOString();
     failed.sync.refreshStatus.lastError = error instanceof Error ? error.message : "Refresh failed.";
-    failed.quickbaseProfiles.forEach((profile) => {
+    const failedProfilesToUpdate = profileId
+      ? failed.quickbaseProfiles.filter((profile) => profile.id === profileId)
+      : failed.quickbaseProfiles;
+    failedProfilesToUpdate.forEach((profile) => {
       syncProfileRefreshStatus(failed, profile.id, (status) => {
         status.running = false;
         status.activeJobId = "";
@@ -495,7 +503,7 @@ export async function refreshObjectCachedDataWithProgress(
   onProgress?: (progress: number, message: string, extras?: { tableCount?: number; rowCount?: number; estimatedSecondsRemaining?: number }) => void
 ) {
   const hydrated = await studioStore.hydrateFromQuickbase(true);
-  const startDocument = JSON.parse(JSON.stringify(hydrated)) as StudioDocument;
+  const startDocument = hydrated;
   updateRefreshScheduleMetadata(startDocument);
   updateLegacyActiveQuickbase(startDocument);
   startDocument.sync.refreshStatus.running = true;
@@ -511,7 +519,7 @@ export async function refreshObjectCachedDataWithProgress(
     const latest = studioStore.getDocument();
     const tableIds = getObjectTableIds(latest, objectId);
     const affectedProfiles = getProfilesForTableIds(latest, tableIds);
-    const nextDocument = JSON.parse(JSON.stringify(latest)) as StudioDocument;
+    const nextDocument = latest;
     const totalTables = Math.max(tableIds.length, 1);
     const startedAt = Date.now();
     let totalRows = 0;
@@ -521,21 +529,6 @@ export async function refreshObjectCachedDataWithProgress(
       message: string,
       extras?: { tableCount?: number; rowCount?: number; estimatedSecondsRemaining?: number }
     ) => {
-      const current = studioStore.getDocument();
-      current.sync.refreshStatus.running = true;
-      current.sync.refreshStatus.progress = progress;
-      current.sync.refreshStatus.message = message;
-      current.sync.refreshStatus.estimatedSecondsRemaining = extras?.estimatedSecondsRemaining;
-      affectedProfiles.forEach((profileId) => {
-        syncProfileRefreshStatus(current, profileId, (status) => {
-          status.running = true;
-          status.progress = progress;
-          status.message = message;
-          status.estimatedSecondsRemaining = extras?.estimatedSecondsRemaining;
-        });
-      });
-      updateLegacyActiveQuickbase(current);
-      studioStore.saveDocument(current, { markSavedAt: false });
       onProgress?.(progress, message, extras);
     };
 
@@ -635,26 +628,26 @@ export function startRefreshScheduler(logger?: FastifyBaseLogger) {
     updateLegacyActiveQuickbase(document);
     studioStore.saveDocument(document, { markSavedAt: false });
     const now = new Date();
-    const schedule = document.sync.refreshSchedule;
-    if (!schedule.enabled || document.sync.refreshStatus.running || !isScheduleDue(schedule, document.sync.refreshStatus.nextRunAt, now)) {
-      return;
-    }
-    const lastSuccessAt = document.sync.refreshStatus.lastSuccessAt ? new Date(document.sync.refreshStatus.lastSuccessAt) : null;
-    if (lastSuccessAt && scheduleWindowKey(schedule, lastSuccessAt) === scheduleWindowKey(schedule, now)) {
-      return;
-    }
-    try {
-      logger?.info("Starting scheduled full refresh");
-      const job = refreshJobStore.createJob("scheduled", async ({ update }) => {
-        await refreshAllCachedDataWithProgress("scheduled", (progress, message, extras) => update(progress, message, extras));
-      });
-      const current = studioStore.getDocument();
-      current.sync.refreshStatus.running = true;
-      current.sync.refreshStatus.activeJobId = job.id;
-      current.sync.refreshStatus.progress = Math.max(current.sync.refreshStatus.progress || 0, 1);
-      current.sync.refreshStatus.message = current.sync.refreshStatus.message || "Starting refresh";
-      current.sync.refreshStatus.lastError = "";
-      current.quickbaseProfiles.forEach((profile) => {
+    for (const profile of document.quickbaseProfiles || []) {
+      const schedule = profile.refreshSchedule;
+      if (!schedule.enabled || document.sync.refreshStatus.running || profile.refreshStatus.running || !isScheduleDue(schedule, profile.refreshStatus.nextRunAt, now)) {
+        continue;
+      }
+      const lastSuccessAt = profile.refreshStatus.lastSuccessAt ? new Date(profile.refreshStatus.lastSuccessAt) : null;
+      if (lastSuccessAt && scheduleWindowKey(schedule, lastSuccessAt) === scheduleWindowKey(schedule, now)) {
+        continue;
+      }
+      try {
+        logger?.info({ profileId: profile.id }, "Starting scheduled app refresh");
+        const job = refreshJobStore.createJob("scheduled", async ({ update }) => {
+          await refreshAllCachedDataWithProgress("scheduled", (progress, message, extras) => update(progress, message, extras), profile.id);
+        });
+        const current = studioStore.getDocument();
+        current.sync.refreshStatus.running = true;
+        current.sync.refreshStatus.activeJobId = job.id;
+        current.sync.refreshStatus.progress = Math.max(current.sync.refreshStatus.progress || 0, 1);
+        current.sync.refreshStatus.message = current.sync.refreshStatus.message || "Starting refresh";
+        current.sync.refreshStatus.lastError = "";
         syncProfileRefreshStatus(current, profile.id, (status) => {
           status.running = true;
           status.activeJobId = job.id;
@@ -662,12 +655,13 @@ export function startRefreshScheduler(logger?: FastifyBaseLogger) {
           status.message = status.message || "Starting refresh";
           status.lastError = "";
         });
-      });
-      updateLegacyActiveQuickbase(current);
-      studioStore.saveDocument(current, { markSavedAt: false });
-      logger?.info("Scheduled full refresh queued");
-    } catch (error) {
-      logger?.error(error, "Scheduled refresh failed");
+        updateLegacyActiveQuickbase(current);
+        studioStore.saveDocument(current, { markSavedAt: false });
+        logger?.info({ profileId: profile.id }, "Scheduled app refresh queued");
+      } catch (error) {
+        logger?.error(error, "Scheduled refresh failed");
+      }
+      break;
     }
   }, REFRESH_CHECK_INTERVAL_MS).unref();
 }
