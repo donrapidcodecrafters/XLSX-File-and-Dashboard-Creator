@@ -6,6 +6,7 @@ import type {
   StudioObject,
   TableDefinition
 } from "@studio/shared";
+import { getHostedContext } from "./embed";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "http://localhost:3001").replace(/\/$/, "");
 
@@ -185,5 +186,17 @@ export function fetchExportJobStatus(id: string) {
 }
 
 export function downloadExportJob(id: string) {
-  ensureDownloadFrame().src = API_BASE + "/api/exports/jobs/" + encodeURIComponent(id) + "/download";
+  const downloadUrl = API_BASE + "/api/exports/jobs/" + encodeURIComponent(id) + "/download";
+  const hosted = getHostedContext();
+  if (hosted.embed) {
+    const anchor = document.createElement("a");
+    anchor.href = downloadUrl;
+    anchor.target = "_blank";
+    anchor.rel = "noreferrer";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    return;
+  }
+  ensureDownloadFrame().src = downloadUrl;
 }
