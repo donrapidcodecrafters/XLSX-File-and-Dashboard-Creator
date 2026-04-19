@@ -26,7 +26,7 @@ function useCatalog() {
   return { objects, tables, studioDocument };
 }
 
-function ObjectPage({ tables }: { tables: TableDefinition[] }) {
+function ObjectPage({ tables, platformName }: { tables: TableDefinition[]; platformName: string }) {
   const params = useParams();
   const [object, setObject] = useState<StudioObject | null>(null);
   const [result, setResult] = useState<any>(null);
@@ -55,9 +55,9 @@ function ObjectPage({ tables }: { tables: TableDefinition[] }) {
 
   useEffect(() => {
     if (object) {
-      document.title = object.name + " · Reporting Portal";
+      document.title = object.name + " · " + platformName;
     }
-  }, [object]);
+  }, [object, platformName]);
 
   useEffect(() => {
     if (!object || object.type !== "report") return;
@@ -154,6 +154,19 @@ export function App() {
   const readerFullScreen = readerRoute || hosted.mode === "viewer" || hosted.embed;
   const hideSidebar = hosted.embed || studioRoute || readerRoute || viewerRoute;
 
+  useEffect(() => {
+    if (readerRoute) return;
+    if (studioRoute) {
+      document.title = `${platformName} · Building`;
+      return;
+    }
+    if (viewerRoute || location.pathname === "/") {
+      document.title = `${platformName} · Viewing`;
+      return;
+    }
+    document.title = platformName;
+  }, [location.pathname, platformName, readerRoute, studioRoute, viewerRoute]);
+
   return (
     <div className={`app-shell ${hosted.embed ? "embed-shell" : ""} ${readerFullScreen ? "reader-shell" : ""}`}>
       {hosted.embed || readerRoute ? null : (
@@ -198,7 +211,7 @@ export function App() {
             <Route path="/viewer" element={<ViewerPage objects={objects} />} />
             <Route path="/studio" element={<StudioPage />} />
             <Route path="/studio/:objectId" element={<StudioPage />} />
-            <Route path="/:type/:objectId" element={<ObjectPage tables={tables} />} />
+            <Route path="/:type/:objectId" element={<ObjectPage tables={tables} platformName={platformName} />} />
             <Route path="*" element={<Navigate to="/viewer" replace />} />
           </Routes>
         </main>
