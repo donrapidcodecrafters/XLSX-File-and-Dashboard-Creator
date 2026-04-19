@@ -88,7 +88,7 @@ function useCatalog() {
     fetchStudioDocument().then((response) => setStudioDocument(normalizeStudioDocument(response.document))).catch(() => undefined);
   }, []);
 
-  function markObjectAsRecent(objectId: string) {
+  const markObjectAsRecent = useCallback((objectId: string) => {
     setStudioDocument((current) => {
       if (!current || !objectId) return current;
       return {
@@ -96,7 +96,7 @@ function useCatalog() {
         recent: [objectId, ...(current.recent || []).filter((item) => item !== objectId)].slice(0, 10)
       };
     });
-  }
+  }, []);
 
   useEffect(() => {
     void reloadCatalog();
