@@ -271,6 +271,10 @@ function updateFilterGroupNode(
   nodeId: string,
   updater: (node: FilterNodeDefinition, parent: FilterGroupDefinition) => FilterNodeDefinition | null
 ): FilterGroupDefinition {
+  if (group.id === nodeId) {
+    const updated = updater(group, group);
+    return (updated && isFilterGroupNode(updated) ? updated : group);
+  }
   return {
     ...group,
     conditions: group.conditions.flatMap((condition) => {
@@ -2211,12 +2215,23 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
               </div>
               <label className="field">
                 <span>Search</span>
-                <input value={libraryQuery} onChange={(event) => setLibraryQuery(event.target.value)} placeholder="Search reports, dashboards, fields, tags" />
+                <input
+                  id="studio-library-search-empty"
+                  name="studioLibrarySearchEmpty"
+                  value={libraryQuery}
+                  onChange={(event) => setLibraryQuery(event.target.value)}
+                  placeholder="Search reports, dashboards, fields, tags"
+                />
               </label>
               <div className="filter-grid compact-grid">
                 <label className="field">
                   <span>Type</span>
-                  <select value={libraryFilter} onChange={(event) => setLibraryFilter(event.target.value as LibraryFilter)}>
+                  <select
+                    id="studio-library-type-empty"
+                    name="studioLibraryTypeEmpty"
+                    value={libraryFilter}
+                    onChange={(event) => setLibraryFilter(event.target.value as LibraryFilter)}
+                  >
                     <option value="all">All</option>
                     <option value="report">Reports</option>
                     <option value="dashboard">Dashboards</option>
@@ -2339,12 +2354,23 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
           </div>
           <label className="field">
             <span>Search</span>
-            <input value={libraryQuery} onChange={(event) => setLibraryQuery(event.target.value)} placeholder="Search reports, dashboards, fields, tags" />
+            <input
+              id="studio-library-search"
+              name="studioLibrarySearch"
+              value={libraryQuery}
+              onChange={(event) => setLibraryQuery(event.target.value)}
+              placeholder="Search reports, dashboards, fields, tags"
+            />
           </label>
           <div className="filter-grid compact-grid">
             <label className="field">
               <span>Type</span>
-              <select value={libraryFilter} onChange={(event) => setLibraryFilter(event.target.value as LibraryFilter)}>
+              <select
+                id="studio-library-type"
+                name="studioLibraryType"
+                value={libraryFilter}
+                onChange={(event) => setLibraryFilter(event.target.value as LibraryFilter)}
+              >
                 <option value="all">All</option>
                 <option value="report">Reports</option>
                 <option value="dashboard">Dashboards</option>
@@ -2472,7 +2498,13 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
                 <div className="filter-grid compact-grid">
                   <label className="field">
                     <span>Card search</span>
-                    <input value={widgetSearch} onChange={(event) => setWidgetSearch(event.target.value)} placeholder="Find cards or reports" />
+                    <input
+                      id="studio-widget-search"
+                      name="studioWidgetSearch"
+                      value={widgetSearch}
+                      onChange={(event) => setWidgetSearch(event.target.value)}
+                      placeholder="Find cards or reports"
+                    />
                   </label>
                 </div>
             <div className="studio-tab-strip">
@@ -2953,7 +2985,6 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
                       {quickbaseSchemaLoading ? "Loading tables and fields…" : "Load tables and fields"}
                     </button>
                     {quickbaseSchema ? <button onClick={autoDetectQuickbaseMappings}>Auto-detect storage fields</button> : null}
-                    <button onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save settings"}</button>
                   </div>
                   <div className="micro">
                     Tip: use <strong>Find apps</strong> to see the Quickbase apps you can access in this realm, then pick the one you want instead of typing the App ID manually.
