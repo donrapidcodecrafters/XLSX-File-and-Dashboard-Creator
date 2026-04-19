@@ -919,8 +919,26 @@ function FilterGroupEditor({
               <option value="or">Any condition (OR)</option>
             </select>
           </label>
-          <button type="button" onClick={() => onChange(addFilterRuleToGroup(group, group.id, table.fields[0]?.id || ""))}>Add rule</button>
-          <button type="button" onClick={() => onChange(addFilterGroupToGroup(group, group.id))}>Add group</button>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onChange(addFilterRuleToGroup(group, group.id, table.fields[0]?.id || ""));
+            }}
+          >
+            Add filter
+          </button>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onChange(addFilterGroupToGroup(group, group.id));
+            }}
+          >
+            Add group
+          </button>
           {canRemove && onRemove ? <button type="button" onClick={onRemove}>Remove group</button> : null}
         </div>
       </div>
@@ -992,7 +1010,16 @@ function ReportFiltersAndSortsEditor({
       <div className="card">
         <div className="card-head">
           <strong>Sorting</strong>
-          <button onClick={() => onChangeSorts([...sorts, { id: uid("sort"), fieldId: table.fields[0]?.id || "", direction: "asc" }])}>Add sort</button>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onChangeSorts([...sorts, { id: uid("sort"), fieldId: table.fields[0]?.id || "", direction: "asc" }]);
+            }}
+          >
+            Add sort
+          </button>
         </div>
         <div className="stack-compact">
           {sorts.length ? sorts.map((sort) => (
@@ -1005,7 +1032,16 @@ function ReportFiltersAndSortsEditor({
                 <option value="desc">Descending</option>
               </select>
               <div />
-              <button onClick={() => onChangeSorts(sorts.filter((item) => item.id !== sort.id))}>Remove</button>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onChangeSorts(sorts.filter((item) => item.id !== sort.id));
+                }}
+              >
+                Remove
+              </button>
             </div>
           )) : <div className="empty-hint">No sorting yet.</div>}
         </div>
@@ -2129,7 +2165,128 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
   }
 
   if (!activeObject) {
-    return <div className="empty-page">No saved reports or dashboards are available yet.</div>;
+    return (
+      <>
+        {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" ? (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(12,22,18,0.58)", zIndex: 9999, display: "grid", placeItems: "center", padding: "24px" }}>
+            <div style={{ width: "min(560px, 100%)", background: "#fff", borderRadius: "20px", padding: "24px", boxShadow: "0 24px 64px rgba(0,0,0,0.24)" }}>
+              <strong style={{ display: "block", fontSize: "1.1rem", marginBottom: "8px" }}>Refreshing all reports and dashboards</strong>
+              <div style={{ marginBottom: "10px", color: "#41554a" }}>{refreshJob.message}</div>
+              <div style={{ height: "12px", background: "#e5ece8", borderRadius: "999px", overflow: "hidden", marginBottom: "10px" }}>
+                <div style={{ height: "100%", width: `${refreshJob.progress || 0}%`, background: "#0d7c66" }} />
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.95rem", color: "#41554a" }}>
+                <span>{refreshJob.progress || 0}% complete</span>
+                <span>{typeof refreshJob.estimatedSecondsRemaining === "number" ? `~${refreshJob.estimatedSecondsRemaining}s remaining` : "Estimating time…"}</span>
+              </div>
+            </div>
+          </div>
+        ) : null}
+        <section className="studio-page studio-page-empty">
+          <aside className="studio-library">
+            <div className="surface stack">
+              <div className="studio-section-head">
+                <div>
+                  <div className="eyebrow">{documentState.branding.homeLabel}</div>
+                  <h2>{documentState.branding.navigationLabel}</h2>
+                </div>
+                <div className="studio-actions">
+                  <button onClick={() => openCreateModal("report")}>New report</button>
+                  <button onClick={() => openCreateModal("dashboard")}>New dashboard</button>
+                </div>
+              </div>
+              <label className="field">
+                <span>Search</span>
+                <input value={libraryQuery} onChange={(event) => setLibraryQuery(event.target.value)} placeholder="Search reports, dashboards, fields, tags" />
+              </label>
+              <div className="filter-grid compact-grid">
+                <label className="field">
+                  <span>Type</span>
+                  <select value={libraryFilter} onChange={(event) => setLibraryFilter(event.target.value as LibraryFilter)}>
+                    <option value="all">All</option>
+                    <option value="report">Reports</option>
+                    <option value="dashboard">Dashboards</option>
+                  </select>
+                </label>
+                <label className="toggle-row"><input type="checkbox" checked={favoritesOnly} onChange={(event) => setFavoritesOnly(event.target.checked)} /> Favorites</label>
+                <label className="toggle-row"><input type="checkbox" checked={recentOnly} onChange={(event) => setRecentOnly(event.target.checked)} /> Recent</label>
+              </div>
+              <div className="nav-list">
+                {filteredObjects.length ? filteredObjects.map((object) => (
+                  <Link key={object.id} className="nav-card" to={`/studio/${object.id}`}>
+                    <span className="badge">{typeLabel(object.type)}</span>
+                    <strong>{object.name}</strong>
+                    <span className="micro">{object.folder} · {object.category}</span>
+                  </Link>
+                )) : <div className="empty-hint">No reports or dashboards are saved yet. Create one to get started.</div>}
+              </div>
+            </div>
+
+            <div className="surface stack">
+              <div className="card-head">
+                <strong>Templates</strong>
+                <button onClick={() => setDrawer("templates")}>Manage</button>
+              </div>
+              <div className="template-list">
+                {[...documentState.templates.layouts, ...documentState.templates.yaml].slice(0, 4).map((template) => (
+                  <button className="template-card-button" key={template.id} onClick={() => applyTemplate(template)}>
+                    <strong>{template.name}</strong>
+                    <span>{template.type}</span>
+                  </button>
+                ))}
+              </div>
+              <button onClick={() => importInputRef.current?.click()}>Import JSON</button>
+              <input ref={importInputRef} hidden type="file" accept="application/json" onChange={handleImportJson} />
+            </div>
+          </aside>
+
+          <div className="studio-canvas">
+            <div className="hero studio-hero">
+              <div>
+                <span className="badge brand">Workspace</span>
+                <h1>No reports or dashboards yet</h1>
+                <p>Create a report or dashboard, import an existing setup, or apply a template. You should always be able to build from an empty workspace.</p>
+                <div className="micro-row">
+                  <span>{loadingRemote ? "Loading saved workspace…" : "Workspace ready"}</span>
+                  <span>{documentState.sync.lastSavedAt ? `Last saved ${new Date(documentState.sync.lastSavedAt).toLocaleString()}` : "Not saved yet"}</span>
+                </div>
+              </div>
+              <div className="link-toolbar">
+                <button onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save"}</button>
+                <button onClick={() => openCreateModal("report")}>Create report</button>
+                <button onClick={() => openCreateModal("dashboard")}>Create dashboard</button>
+                <button onClick={() => setDrawer("templates")}>Use template</button>
+              </div>
+            </div>
+
+            <section className="surface stack">
+              <div className="card-head">
+                <strong>Start here</strong>
+                <span className="micro">Nothing is blocked just because the workspace is empty.</span>
+              </div>
+              <div className="summary-grid">
+                <button className="template-card-button" onClick={() => openCreateModal("report")}>
+                  <strong>Create a report</strong>
+                  <span>Choose a table, fields, filters, and view.</span>
+                </button>
+                <button className="template-card-button" onClick={() => openCreateModal("dashboard")}>
+                  <strong>Create a dashboard</strong>
+                  <span>Start a blank dashboard and add report widgets.</span>
+                </button>
+                <button className="template-card-button" onClick={() => setDrawer("templates")}>
+                  <strong>Use a template</strong>
+                  <span>Apply a saved layout or report template.</span>
+                </button>
+                <button className="template-card-button" onClick={() => importInputRef.current?.click()}>
+                  <strong>Import JSON</strong>
+                  <span>Load a saved workspace file.</span>
+                </button>
+              </div>
+            </section>
+          </div>
+        </section>
+      </>
+    );
   }
 
   const defaultUrl = `${window.location.origin}${import.meta.env.BASE_URL}#/${activeObject.type}/${activeObject.id}`;
