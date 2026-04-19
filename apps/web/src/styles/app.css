@@ -1456,6 +1456,37 @@ th {
   color: var(--text-soft);
 }
 
+.view-layout-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.builder-subsection {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(23, 49, 38, 0.08);
+  border-radius: 18px;
+  background: rgba(248, 249, 245, 0.78);
+}
+
+.builder-subsection-head {
+  display: grid;
+  gap: 4px;
+}
+
+.builder-subsection-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px 14px;
+  align-items: start;
+}
+
+.builder-subsection-toggle {
+  min-height: 40px;
+  align-self: end;
+}
+
 .studio-card-grid,
 .kanban-board {
   display: grid;

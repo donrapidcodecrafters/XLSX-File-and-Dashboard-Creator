@@ -2825,42 +2825,86 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
                       <strong>View</strong>
                       <span className="micro">Choose how the report should render by default.</span>
                     </div>
-                    <div className="filter-grid">
-                      <label className="field"><span>Mode</span><select value={createDraft.view.mode} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, mode: event.target.value as ReportViewMode, showChartInTable: event.target.value === "table" ? current.view.showChartInTable : false } }))}>{REPORT_VIEW_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
-                      {createDraft.view.mode === "table" ? <label className="toggle-row"><input type="checkbox" checked={createDraft.view.showChartInTable} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, showChartInTable: event.target.checked } }))} /> Include chart above table</label> : null}
-                      <label className="field"><span>Record title field</span><select value={createDraft.view.titleFieldId} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, titleFieldId: event.target.value } }))}>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>
-                      <div className="micro">Used for row, card, timeline, and calendar labels. It does not control the chart heading.</div>
-                      <label className="field"><span>Decimal places</span><input type="number" min="0" max="6" value={createDraft.view.decimalPlaces} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, decimalPlaces: Math.max(0, Math.min(6, Number(event.target.value) || 0)) } }))} /></label>
+                    <div className="view-layout-grid">
+                      <section className="builder-subsection">
+                        <div className="builder-subsection-head">
+                          <strong>Basics</strong>
+                          <span className="micro">Start with the overall layout and formatting.</span>
+                        </div>
+                        <div className="builder-subsection-grid">
+                          <label className="field">
+                            <span>Mode</span>
+                            <select value={createDraft.view.mode} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, mode: event.target.value as ReportViewMode, showChartInTable: event.target.value === "table" ? current.view.showChartInTable : false } }))}>
+                              {REPORT_VIEW_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                            </select>
+                          </label>
+                          <label className="field">
+                            <span>Record title field</span>
+                            <select value={createDraft.view.titleFieldId} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, titleFieldId: event.target.value } }))}>
+                              {createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}
+                            </select>
+                          </label>
+                          <label className="field">
+                            <span>Decimal places</span>
+                            <input type="number" min="0" max="6" value={createDraft.view.decimalPlaces} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, decimalPlaces: Math.max(0, Math.min(6, Number(event.target.value) || 0)) } }))} />
+                          </label>
+                          {createDraft.view.mode === "table" ? (
+                            <label className="toggle-row builder-subsection-toggle">
+                              <input type="checkbox" checked={createDraft.view.showChartInTable} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, showChartInTable: event.target.checked } }))} />
+                              Include chart above table
+                            </label>
+                          ) : null}
+                        </div>
+                        <div className="micro">The record title field is used for row, card, timeline, and calendar labels. It does not control the chart heading.</div>
+                      </section>
+
                       {reportShowsChart({ view: createDraft.view }) ? (
-                        <>
-                          <label className="field"><span>Chart title</span><input value={createDraft.view.chartTitle} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartTitle: event.target.value } }))} placeholder="Optional custom chart title" /></label>
-                          <label className="field"><span>Chart type</span><select value={createDraft.view.chartType} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartType: event.target.value as ChartType } }))}>{CHART_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
-                          {(createDraft.view.chartType === "bar" || createDraft.view.chartType === "stacked-bar") ? (
-                            <label className="field"><span>Bar direction</span><select value={createDraft.view.chartOrientation} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartOrientation: event.target.value as "vertical" | "horizontal" } }))}><option value="vertical">Vertical</option><option value="horizontal">Horizontal</option></select></label>
-                          ) : null}
-                          <label className="field"><span>X axis field</span><select value={createDraft.view.chartFieldId} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartFieldId: event.target.value } }))}>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>
-                          <label className="field"><span>Y axis value field</span><select value={createDraft.view.chartValueFieldId} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartValueFieldId: event.target.value } }))}><option value="">Count rows</option>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>
-                          {chartUsesAxes(createDraft.view.chartType) ? (
-                            <>
-                              <label className="field"><span>X axis label</span><input value={createDraft.view.chartXAxisLabel} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartXAxisLabel: event.target.value } }))} placeholder="Optional custom x axis label" /></label>
-                              <label className="field"><span>Y axis label</span><input value={createDraft.view.chartYAxisLabel} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartYAxisLabel: event.target.value } }))} placeholder="Optional custom y axis label" /></label>
-                            </>
-                          ) : null}
-                          <label className="field"><span>Aggregation</span><select value={createDraft.view.chartAggregation} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartAggregation: event.target.value as ChartAggregation, chartValueFieldId: event.target.value === "count" ? "" : current.view.chartValueFieldId } }))}>{CHART_AGGREGATION_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
-                          <label className="field"><span>Chart sort</span><select value={createDraft.view.chartSort} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartSort: event.target.value as ChartSortMode } }))}>{CHART_SORT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-                          <label className="field"><span>Top results</span><input type="number" min="0" value={createDraft.view.chartTopN} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartTopN: Math.max(0, Number(event.target.value) || 0) } }))} /></label>
-                          <label className="toggle-row"><input type="checkbox" checked={createDraft.view.chartShowLegend} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartShowLegend: event.target.checked } }))} /> Show legend</label>
-                          <label className="toggle-row"><input type="checkbox" checked={createDraft.view.chartShowValues} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartShowValues: event.target.checked } }))} /> Show values</label>
-                        </>
+                        <section className="builder-subsection">
+                          <div className="builder-subsection-head">
+                            <strong>Chart Setup</strong>
+                            <span className="micro">Only shown when this view includes a chart.</span>
+                          </div>
+                          <div className="builder-subsection-grid">
+                            <label className="field"><span>Chart title</span><input value={createDraft.view.chartTitle} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartTitle: event.target.value } }))} placeholder="Optional custom chart title" /></label>
+                            <label className="field"><span>Chart type</span><select value={createDraft.view.chartType} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartType: event.target.value as ChartType } }))}>{CHART_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
+                            {(createDraft.view.chartType === "bar" || createDraft.view.chartType === "stacked-bar") ? (
+                              <label className="field"><span>Bar direction</span><select value={createDraft.view.chartOrientation} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartOrientation: event.target.value as "vertical" | "horizontal" } }))}><option value="vertical">Vertical</option><option value="horizontal">Horizontal</option></select></label>
+                            ) : null}
+                            <label className="field"><span>X axis field</span><select value={createDraft.view.chartFieldId} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartFieldId: event.target.value } }))}>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>
+                            <label className="field"><span>Y axis value field</span><select value={createDraft.view.chartValueFieldId} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartValueFieldId: event.target.value } }))}><option value="">Count rows</option>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>
+                            <label className="field"><span>Aggregation</span><select value={createDraft.view.chartAggregation} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartAggregation: event.target.value as ChartAggregation, chartValueFieldId: event.target.value === "count" ? "" : current.view.chartValueFieldId } }))}>{CHART_AGGREGATION_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
+                            <label className="field"><span>Chart sort</span><select value={createDraft.view.chartSort} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartSort: event.target.value as ChartSortMode } }))}>{CHART_SORT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+                            <label className="field"><span>Top results</span><input type="number" min="0" value={createDraft.view.chartTopN} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartTopN: Math.max(0, Number(event.target.value) || 0) } }))} /></label>
+                            {chartUsesAxes(createDraft.view.chartType) ? (
+                              <>
+                                <label className="field"><span>X axis label</span><input value={createDraft.view.chartXAxisLabel} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartXAxisLabel: event.target.value } }))} placeholder="Optional custom x axis label" /></label>
+                                <label className="field"><span>Y axis label</span><input value={createDraft.view.chartYAxisLabel} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartYAxisLabel: event.target.value } }))} placeholder="Optional custom y axis label" /></label>
+                              </>
+                            ) : null}
+                            <label className="toggle-row builder-subsection-toggle"><input type="checkbox" checked={createDraft.view.chartShowLegend} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartShowLegend: event.target.checked } }))} /> Show legend</label>
+                            <label className="toggle-row builder-subsection-toggle"><input type="checkbox" checked={createDraft.view.chartShowValues} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartShowValues: event.target.checked } }))} /> Show values</label>
+                          </div>
+                        </section>
                       ) : null}
-                      {createDraft.view.mode === "kanban" ? <label className="field"><span>Kanban field</span><select value={createDraft.view.kanbanField} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, kanbanField: event.target.value } }))}><option value="">Select a field</option>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label> : null}
-                      {createDraft.view.mode === "timeline" ? (
-                        <>
-                          <label className="field"><span>Timeline start</span><select value={createDraft.view.timelineDateField} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, timelineDateField: event.target.value } }))}><option value="">Select a field</option>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>
-                          <label className="field"><span>Timeline end</span><select value={createDraft.view.timelineEndField} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, timelineEndField: event.target.value } }))}><option value="">Select a field</option>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>
-                        </>
+
+                      {createDraft.view.mode === "kanban" || createDraft.view.mode === "timeline" || createDraft.view.mode === "calendar" ? (
+                        <section className="builder-subsection">
+                          <div className="builder-subsection-head">
+                            <strong>Mode-specific fields</strong>
+                            <span className="micro">Only the fields needed for the selected layout are shown here.</span>
+                          </div>
+                          <div className="builder-subsection-grid">
+                            {createDraft.view.mode === "kanban" ? <label className="field"><span>Kanban field</span><select value={createDraft.view.kanbanField} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, kanbanField: event.target.value } }))}><option value="">Select a field</option>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label> : null}
+                            {createDraft.view.mode === "timeline" ? (
+                              <>
+                                <label className="field"><span>Timeline start</span><select value={createDraft.view.timelineDateField} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, timelineDateField: event.target.value } }))}><option value="">Select a field</option>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>
+                                <label className="field"><span>Timeline end</span><select value={createDraft.view.timelineEndField} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, timelineEndField: event.target.value } }))}><option value="">Select a field</option>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>
+                              </>
+                            ) : null}
+                            {createDraft.view.mode === "calendar" ? <label className="field"><span>Calendar date</span><select value={createDraft.view.calendarDateField} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, calendarDateField: event.target.value } }))}><option value="">Select a field</option>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label> : null}
+                          </div>
+                        </section>
                       ) : null}
-                      {createDraft.view.mode === "calendar" ? <label className="field"><span>Calendar date</span><select value={createDraft.view.calendarDateField} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, calendarDateField: event.target.value } }))}><option value="">Select a field</option>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label> : null}
                     </div>
                   </div>
                 </>
