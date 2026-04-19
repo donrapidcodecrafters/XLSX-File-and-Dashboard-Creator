@@ -4,6 +4,7 @@ import { buildStudioDocument, normalizeStudioDocument, type StudioDocument, type
 import { hydrateStudioDocumentFromQuickbase } from "./quickbase-storage.js";
 
 const STORAGE_PATH = resolve(process.cwd(), ".data/studio-document.json");
+const CACHE_PATH = resolve(process.cwd(), ".data/studio-cache.json");
 const HYDRATE_TTL_MS = 60_000;
 const HYDRATE_TIMEOUT_MS = 8_000;
 
@@ -21,6 +22,18 @@ function stripCachedRows(document: StudioDocument): StudioDocument {
   };
 }
 
+function loadPersistedCache(): StudioDocument["bundle"]["data"] {
+  try {
+    const raw = readFileSync(CACHE_PATH, "utf8");
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.entries(parsed || {}).map(([tableId, rows]) => [tableId, Array.isArray(rows) ? rows : []])
+    );
+  } catch {
+    return {};
+  }
+}
+
 export class StudioStore {
   private document: StudioDocument;
   private hydratePromise: Promise<StudioDocument> | null = null;
@@ -34,7 +47,9 @@ export class StudioStore {
   private load(): StudioDocument {
     try {
       const raw = readFileSync(STORAGE_PATH, "utf8");
-      return normalizeStudioDocument(JSON.parse(raw) as StudioDocument);
+      const document = normalizeStudioDocument(JSON.parse(raw) as StudioDocument);
+      document.bundle.data = loadPersistedCache();
+      return document;
     } catch {
       const seed = buildStudioDocument();
       this.persist(seed);
@@ -45,6 +60,7 @@ export class StudioStore {
   private persist(document: StudioDocument) {
     mkdirSync(dirname(STORAGE_PATH), { recursive: true });
     writeFileSync(STORAGE_PATH, JSON.stringify(stripCachedRows(document), null, 2));
+    writeFileSync(CACHE_PATH, JSON.stringify(document.bundle.data || {}, null, 2));
   }
 
   getDocument(includeData = false): StudioDocument {

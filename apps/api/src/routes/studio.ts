@@ -7,10 +7,11 @@ import { refreshJobStore } from "../services/refresh-jobs.js";
 
 export async function registerStudioRoutes(app: FastifyInstance) {
   app.get("/api/studio/document", async () => {
-    const document = await studioStore.hydrateFromQuickbase();
+    await studioStore.hydrateFromQuickbase();
+    const document = studioStore.getLiveDocument();
     updateRefreshScheduleMetadata(document);
-    studioStore.saveDocument(document, { markSavedAt: false });
-    return { document };
+    studioStore.flushCurrent({ markSavedAt: false });
+    return { document: studioStore.getDocument() };
   });
 
   app.get("/api/studio/cache/summary", async () => {
