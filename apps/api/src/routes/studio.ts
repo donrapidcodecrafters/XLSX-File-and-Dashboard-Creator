@@ -2,7 +2,8 @@ import type { FastifyInstance } from "fastify";
 import type { StudioDocument } from "@studio/shared";
 import { studioStore } from "../services/studio-store.js";
 import { syncStudioDocumentToQuickbase } from "../services/quickbase-storage.js";
-import { refreshAllCachedData, updateRefreshScheduleMetadata } from "../services/refresh-cache.js";
+import { refreshAllCachedDataWithProgress, updateRefreshScheduleMetadata } from "../services/refresh-cache.js";
+import { refreshJobStore } from "../services/refresh-jobs.js";
 
 export async function registerStudioRoutes(app: FastifyInstance) {
   app.get("/api/studio/document", async () => {
@@ -68,15 +69,18 @@ export async function registerStudioRoutes(app: FastifyInstance) {
     }
   });
 
-  app.post("/api/studio/refresh/run", async (_request, reply) => {
+  app.post("/api/studio/refresh/start", async (_request, reply) => {
     try {
-      const result = await refreshAllCachedData("manual");
-      return {
-        ok: true,
-        tableCount: result.tableCount,
-        rowCount: result.rowCount,
-        document: result.document
-      };
+      const job = refreshJobStore.createJob("manual", async ({ update }) => {
+        const result = await refreshAllCachedDataWithProgress("manual", (progress, message, extras) => {
+          update(progress, message, extras);
+        });
+        return {
+          tableCount: result.tableCount,
+          rowCount: result.rowCount
+        };
+      });
+      return { job };
     } catch (error) {
       reply.code(500);
       return {
@@ -84,5 +88,15 @@ export async function registerStudioRoutes(app: FastifyInstance) {
         message: error instanceof Error ? error.message : "Scheduled refresh failed."
       };
     }
+  });
+
+  app.get("/api/studio/refresh/jobs/:id", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const job = refreshJobStore.getJob(id);
+    if (!job) {
+      reply.code(404);
+      return { message: "Refresh job not found." };
+    }
+    return { job };
   });
 }

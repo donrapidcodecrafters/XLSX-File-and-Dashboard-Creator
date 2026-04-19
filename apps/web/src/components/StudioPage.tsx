@@ -27,6 +27,7 @@ import {
   type ReportDefinition,
   type ReportRunResult,
   type ReportViewMode,
+  type RefreshJobStatus,
   type SeedBundle,
   type StudioDocument,
   type StudioObject,
@@ -43,9 +44,10 @@ import {
   fetchStudioDocument,
   type QuickbaseAppSchema,
   type QuickbaseSyncResult,
+  fetchStudioRefreshJob,
   fetchStudioVersions,
   restoreStudioVersion,
-  runStudioRefresh,
+  startStudioRefresh,
   saveStudioDocument
 } from "../lib/studioApi";
 import { downloadExportJob, fetchExportJobStatus, startDashboardExportJob, startReportExportJob } from "../lib/api";
@@ -957,6 +959,7 @@ export function StudioPage() {
   const [quickbaseSchema, setQuickbaseSchema] = useState<QuickbaseAppSchema | null>(null);
   const [quickbaseSchemaLoading, setQuickbaseSchemaLoading] = useState(false);
   const [refreshingCache, setRefreshingCache] = useState(false);
+  const [refreshJob, setRefreshJob] = useState<RefreshJobStatus | null>(null);
   const [lastQuickbaseSync, setLastQuickbaseSync] = useState<QuickbaseSyncResult | null>(null);
   const [liveReportResult, setLiveReportResult] = useState<ReportRunResult | null>(null);
   const [liveReportLoading, setLiveReportLoading] = useState(false);
@@ -1641,19 +1644,36 @@ export function StudioPage() {
     }
   }
 
+  useEffect(() => {
+    if (!refreshJob || refreshJob.status === "complete" || refreshJob.status === "failed") return;
+    const handle = window.setInterval(() => {
+      fetchStudioRefreshJob(refreshJob.id)
+        .then((response) => {
+          setRefreshJob(response.job);
+          if (response.job.status === "complete") {
+            setRefreshingCache(false);
+            pushToast(`Refreshed ${response.job.tableCount || 0} tables and cached ${(response.job.rowCount || 0).toLocaleString()} rows.`, "ok");
+            void reloadRemote();
+          } else if (response.job.status === "failed") {
+            setRefreshingCache(false);
+            pushToast(response.job.error || response.job.message, "danger");
+          }
+        })
+        .catch(() => undefined);
+    }, 1000);
+    return () => window.clearInterval(handle);
+  }, [refreshJob]);
+
   async function refreshAllNow() {
     setRefreshingCache(true);
     try {
       const saved = await saveStudioDocument(documentState);
       setDocumentState(normalizeStudioDocument(saved.document));
       setLastQuickbaseSync(saved.sync || null);
-      const response = await runStudioRefresh();
-      setDocumentState(normalizeStudioDocument(response.document));
-      pushToast(`Refreshed ${response.tableCount} tables and cached ${response.rowCount.toLocaleString()} rows.`, "ok");
+      const response = await startStudioRefresh();
+      setRefreshJob(response.job);
     } catch (error) {
       pushToast(error instanceof Error ? error.message : "Refresh failed.", "danger");
-    } finally {
-      setRefreshingCache(false);
     }
   }
 
@@ -1783,7 +1803,23 @@ export function StudioPage() {
   const embedUrl = `${window.location.origin}${import.meta.env.BASE_URL}?embed=1&mode=viewer#/${activeObject.type}/${activeObject.id}`;
 
   return (
-    <section className={`studio-page ${activeDashboard ? "studio-page-dashboard" : "studio-page-report"}`}>
+    <>
+      {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" ? (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(12,22,18,0.58)", zIndex: 9999, display: "grid", placeItems: "center", padding: "24px" }}>
+          <div style={{ width: "min(560px, 100%)", background: "#fff", borderRadius: "20px", padding: "24px", boxShadow: "0 24px 64px rgba(0,0,0,0.24)" }}>
+            <strong style={{ display: "block", fontSize: "1.1rem", marginBottom: "8px" }}>Refreshing all reports and dashboards</strong>
+            <div style={{ marginBottom: "10px", color: "#41554a" }}>{refreshJob.message}</div>
+            <div style={{ height: "12px", background: "#e5ece8", borderRadius: "999px", overflow: "hidden", marginBottom: "10px" }}>
+              <div style={{ height: "100%", width: `${refreshJob.progress || 0}%`, background: "#0d7c66" }} />
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.95rem", color: "#41554a" }}>
+              <span>{refreshJob.progress || 0}% complete</span>
+              <span>{typeof refreshJob.estimatedSecondsRemaining === "number" ? `~${refreshJob.estimatedSecondsRemaining}s remaining` : "Estimating time…"}</span>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      <section className={`studio-page ${activeDashboard ? "studio-page-dashboard" : "studio-page-report"}`}>
       <aside className="studio-library">
         <div className="surface stack">
           <div className="studio-section-head">
@@ -2604,6 +2640,7 @@ export function StudioPage() {
       <div className="toast-stack">
         {toasts.map((toast) => <div key={toast.id} className={`toast toast-${toast.tone}`}>{toast.message}</div>)}
       </div>
-    </section>
+      </section>
+    </>
   );
 }

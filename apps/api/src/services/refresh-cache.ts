@@ -2,6 +2,7 @@ import type { FastifyBaseLogger } from "fastify";
 import type { DataRow, RefreshScheduleConfig, ReportDefinition, StudioDocument, TableDefinition } from "@studio/shared";
 import { fetchQuickbaseTablePage } from "./quickbase-storage.js";
 import { studioStore } from "./studio-store.js";
+import { refreshJobStore } from "./refresh-jobs.js";
 
 const REFRESH_CHECK_INTERVAL_MS = 60_000;
 
@@ -198,6 +199,61 @@ export async function refreshAllCachedData(reason: "manual" | "scheduled" = "man
   }
 }
 
+export async function refreshAllCachedDataWithProgress(
+  reason: "manual" | "scheduled" = "manual",
+  onProgress?: (progress: number, message: string, extras?: { tableCount?: number; rowCount?: number }) => void
+) {
+  const hydrated = await studioStore.hydrateFromQuickbase(true);
+  const startDocument = JSON.parse(JSON.stringify(hydrated)) as StudioDocument;
+  updateRefreshScheduleMetadata(startDocument);
+  startDocument.sync.refreshStatus.running = true;
+  startDocument.sync.refreshStatus.lastStartedAt = new Date().toISOString();
+  startDocument.sync.refreshStatus.lastError = "";
+  studioStore.saveDocument(startDocument, { markSavedAt: false });
+
+  try {
+    const latest = studioStore.getDocument();
+    const tableIds = getUsedTableIds(latest);
+    const nextDocument = JSON.parse(JSON.stringify(latest)) as StudioDocument;
+    let totalRows = 0;
+    const totalTables = Math.max(tableIds.length, 1);
+    onProgress?.(4, "Preparing refresh", { tableCount: tableIds.length, rowCount: 0 });
+    for (const [index, tableId] of tableIds.entries()) {
+      const table = getTable(nextDocument, tableId);
+      if (!table) continue;
+      onProgress?.(5 + Math.round((index / totalTables) * 80), `Refreshing ${table.name}`, { tableCount: tableIds.length, rowCount: totalRows });
+      const rows = await fetchAllTableRows(nextDocument, table);
+      nextDocument.bundle.data[tableId] = rows;
+      totalRows += rows.length;
+      onProgress?.(5 + Math.round(((index + 1) / totalTables) * 80), `Refreshed ${table.name}`, { tableCount: tableIds.length, rowCount: totalRows });
+    }
+    nextDocument.sync.refreshStatus.running = false;
+    nextDocument.sync.refreshStatus.lastCompletedAt = new Date().toISOString();
+    nextDocument.sync.refreshStatus.lastSuccessAt = nextDocument.sync.refreshStatus.lastCompletedAt;
+    nextDocument.sync.refreshStatus.lastError = "";
+    nextDocument.sync.refreshStatus.cachedTableIds = tableIds;
+    nextDocument.sync.refreshStatus.cachedRowCount = totalRows;
+    updateRefreshScheduleMetadata(nextDocument);
+    studioStore.saveDocument(nextDocument, { markSavedAt: false });
+    onProgress?.(100, "Refresh complete", { tableCount: tableIds.length, rowCount: totalRows });
+    return {
+      ok: true,
+      reason,
+      tableCount: tableIds.length,
+      rowCount: totalRows,
+      document: studioStore.getDocument()
+    };
+  } catch (error) {
+    const failed = studioStore.getDocument();
+    failed.sync.refreshStatus.running = false;
+    failed.sync.refreshStatus.lastCompletedAt = new Date().toISOString();
+    failed.sync.refreshStatus.lastError = error instanceof Error ? error.message : "Refresh failed.";
+    updateRefreshScheduleMetadata(failed);
+    studioStore.saveDocument(failed, { markSavedAt: false });
+    throw error;
+  }
+}
+
 let schedulerStarted = false;
 
 export function startRefreshScheduler(logger?: FastifyBaseLogger) {
@@ -217,8 +273,10 @@ export function startRefreshScheduler(logger?: FastifyBaseLogger) {
     }
     try {
       logger?.info("Starting scheduled refresh");
-      await refreshAllCachedData("scheduled");
-      logger?.info("Scheduled refresh completed");
+      refreshJobStore.createJob("scheduled", async ({ update }) => {
+        await refreshAllCachedDataWithProgress("scheduled", (progress, message, extras) => update(progress, message, extras));
+      });
+      logger?.info("Scheduled refresh queued");
     } catch (error) {
       logger?.error(error, "Scheduled refresh failed");
     }

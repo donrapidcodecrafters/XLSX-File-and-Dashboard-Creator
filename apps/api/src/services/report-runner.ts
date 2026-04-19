@@ -74,10 +74,9 @@ function getCachedFreshness(tableId: string): DataFreshnessInfo | null {
 }
 
 function shouldUseLiveQuickbase(tableId: string, forceLive = false) {
-  if (forceLive) return true;
+  if (!forceLive) return false;
   const quickbase = studioStore.getDocument().quickbase;
-  if (!quickbase.realmHostname || !quickbase.userToken || !quickbase.appId) return false;
-  return !getCachedFreshness(tableId);
+  return Boolean(quickbase.realmHostname && quickbase.userToken && quickbase.appId && tableId);
 }
 
 function asNumber(value: unknown): number {
@@ -580,7 +579,8 @@ export async function fetchReportPage(report: ReportDefinition, extraFilters: Fi
 export async function fetchReportExportBundle(
   report: ReportDefinition,
   extraFilters: FilterDefinition[] = [],
-  onProgress?: ExportProgressCallback
+  onProgress?: ExportProgressCallback,
+  options: ExecuteReportOptions = {}
 ): Promise<ReportRunResult> {
   const table = objectStore.getTable(report.sourceTableId);
   if (!table) {
@@ -588,7 +588,7 @@ export async function fetchReportExportBundle(
   }
 
   const quickbase = studioStore.getDocument().quickbase;
-  if (quickbase.realmHostname && quickbase.userToken && quickbase.appId) {
+  if (shouldUseLiveQuickbase(table.id, options.forceLive) && quickbase.realmHostname && quickbase.userToken && quickbase.appId) {
     const filterTree = getCombinedFilterTree(report, extraFilters);
     const filters = extractFlatPushdownFilters(filterTree);
     const requestedFieldIds = collectReportFieldIds(report);

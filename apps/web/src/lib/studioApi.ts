@@ -1,4 +1,4 @@
-import type { ReportDefinition, ReportRunResult, StudioDocument, StudioVersionRecord, TableDefinition } from "@studio/shared";
+import type { RefreshJobStatus, ReportDefinition, ReportRunResult, StudioDocument, StudioVersionRecord, TableDefinition } from "@studio/shared";
 
 export interface QuickbaseSyncResult {
   enabled: boolean;
@@ -77,10 +77,14 @@ export function restoreStudioVersion(objectId: string, versionId: string) {
   });
 }
 
-export function runStudioRefresh() {
-  return request<{ ok: boolean; tableCount: number; rowCount: number; document: StudioDocument }>("/api/studio/refresh/run", {
+export function startStudioRefresh() {
+  return request<{ job: RefreshJobStatus }>("/api/studio/refresh/start", {
     method: "POST"
   });
+}
+
+export function fetchStudioRefreshJob(id: string) {
+  return request<{ job: RefreshJobStatus }>(`/api/studio/refresh/jobs/${encodeURIComponent(id)}`);
 }
 
 export function fetchQuickbaseSchema(config: StudioDocument["quickbase"]) {

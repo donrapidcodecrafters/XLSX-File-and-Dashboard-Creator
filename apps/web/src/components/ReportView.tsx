@@ -86,7 +86,7 @@ export function ReportView({ report, table, result, loading, currentPage, onPage
                 : "Download xlsx"}
             </button>
             <button className="ghost-button" onClick={onRefresh} disabled={loading}>
-              {loading ? "Refreshing…" : "Refresh live data"}
+              {loading ? "Refreshing…" : "Refresh now"}
             </button>
           </div>
           {hosted.embed ? null : <LinkToolbar type="report" id={report.id} />}

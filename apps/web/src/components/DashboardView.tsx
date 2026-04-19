@@ -165,7 +165,7 @@ export function DashboardView({ dashboard, tables, refreshNonce = 0, onRefresh, 
             </button>
             {onRefresh ? (
               <button className="ghost-button" onClick={onRefresh} disabled={loading}>
-                {loading ? "Refreshing…" : "Refresh live data"}
+                {loading ? "Refreshing…" : "Refresh now"}
               </button>
             ) : null}
           </div>
@@ -200,7 +200,7 @@ export function DashboardView({ dashboard, tables, refreshNonce = 0, onRefresh, 
         <div className="card">
           <div className="card-head">
             <strong>Filters</strong>
-            <span className="micro">Live dashboard controls</span>
+            <span className="micro">Dashboard controls applied to the most recent refresh</span>
           </div>
           <div className="filter-grid">
             {dashboard.runtimeFilters.map((filter) => (

@@ -221,6 +221,22 @@ export interface RefreshStatus {
   cachedRowCount: number;
 }
 
+export interface RefreshJobStatus {
+  id: string;
+  status: "queued" | "running" | "complete" | "failed";
+  progress: number;
+  message: string;
+  error?: string;
+  reason: "manual" | "scheduled";
+  createdAt: string;
+  updatedAt: string;
+  startedAt?: string;
+  completedAt?: string;
+  estimatedSecondsRemaining?: number;
+  tableCount?: number;
+  rowCount?: number;
+}
+
 export interface ReportRunResult {
   reportId: string;
   tableId: string;
