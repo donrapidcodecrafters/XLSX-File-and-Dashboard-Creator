@@ -1112,6 +1112,39 @@ function convertQuickbaseSchemaToTables(
   }));
 }
 
+function remapTableId(tableId: string, tables: TableDefinition[]) {
+  if (!tableId) return tableId;
+  if (tables.some((table) => table.id === tableId)) {
+    return tableId;
+  }
+  const matched = tables.find((table) => table.quickbaseTableId === tableId);
+  return matched?.id || tableId;
+}
+
+function remapObjectTableIds(object: StudioObject, tables: TableDefinition[]): StudioObject {
+  if (object.type === "report") {
+    return {
+      ...object,
+      sourceTableId: remapTableId(object.sourceTableId, tables)
+    };
+  }
+  return {
+    ...object,
+    tabs: object.tabs.map((tab) => ({
+      ...tab,
+      widgets: tab.widgets.map((widget) => ({
+        ...widget,
+        snapshot: widget.snapshot
+          ? {
+              ...widget.snapshot,
+              sourceTableId: remapTableId(widget.snapshot.sourceTableId, tables)
+            }
+          : widget.snapshot
+      }))
+    }))
+  };
+}
+
 export async function hydrateStudioDocumentFromQuickbase(document: StudioDocument): Promise<StudioDocument> {
   const base = normalizeStudioDocument(document);
   const bootstrapConfig =
@@ -1204,12 +1237,13 @@ export async function hydrateStudioDocumentFromQuickbase(document: StudioDocumen
     });
   });
   const nextTables = loadedTables.length ? loadedTables : base.bundle.tables;
+  const remappedObjects = Array.from(mergedObjects.values()).map((object) => remapObjectTableIds(object, nextTables));
   const hasStoredWorkspace = mergedObjects.size > 0 || Object.keys(mergedVersions).length > 0 || Boolean(storedUserSettings);
   const nextObjects = mergedObjects.size
-    ? Object.fromEntries(Array.from(mergedObjects.values()).map((object) => [object.id, object]))
+    ? Object.fromEntries(remappedObjects.map((object) => [object.id, object]))
     : (hasStoredWorkspace ? {} : base.bundle.objects);
   const nextOrder = mergedObjects.size
-    ? Array.from(mergedObjects.values())
+    ? remappedObjects
         .slice()
         .sort((left, right) => String(right.updatedAt || "").localeCompare(String(left.updatedAt || "")))
         .map((object) => object.id)
@@ -1223,7 +1257,7 @@ export async function hydrateStudioDocumentFromQuickbase(document: StudioDocumen
     bundle: {
       ...base.bundle,
       tables: nextTables,
-      data: Object.fromEntries(nextTables.map((table) => [table.id, base.bundle.data[table.id] || []])),
+      data: Object.fromEntries(nextTables.map((table) => [table.id, base.bundle.data[table.id] || base.bundle.data[table.quickbaseTableId || ""] || []])),
       objects: nextObjects,
       order: nextOrder
     },
