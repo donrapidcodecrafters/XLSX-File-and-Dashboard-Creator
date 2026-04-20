@@ -733,20 +733,19 @@ export function ChartPreview({
     const secondaryMax = Math.max(...secondaryItems.map((item) => item.value), 1);
     const { ticks, axisMax } = axisMaxFor([primaryMax], compact);
     const secondaryAxis = secondaryItems.length ? axisMaxFor([secondaryMax], compact) : null;
-    const reversedTicks = [...ticks].reverse();
     const yAxisWidth = axisTickTextWidth(ticks, decimalPlaces, compact);
     const secondaryAxisWidth = secondaryAxis ? axisTickTextWidth(secondaryAxis.ticks, decimalPlaces, compact) : 0;
-    const chartWidth = 400;
+    const chartWidth = 460;
     const chartHeight = 292;
-    const plotLeft = 10;
-    const plotRight = 394;
+    const plotLeft = yAxisWidth + 18;
+    const plotRight = chartWidth - (secondaryAxis ? secondaryAxisWidth + 18 : 12);
     const plotTop = 20;
     const plotBottom = 186;
     const plotWidth = plotRight - plotLeft;
     const plotHeight = plotBottom - plotTop;
     const tickLabelY = 226;
     const axisLabelY = 274;
-    const axisLayoutColumns = `${yAxisLabel ? "auto " : ""}${yAxisWidth}px minmax(0, 1fr)${secondaryAxis ? ` ${secondaryAxisWidth}px` : ""}`;
+    const axisLayoutColumns = `${yAxisLabel ? "auto " : ""}minmax(0, 1fr)${secondaryYAxisLabel ? " auto" : ""}`;
     const buildSeriesPoints = (seriesRaw: string, axis: "primary" | "secondary") => {
       const maxValue = axis === "secondary" && secondaryAxis ? secondaryAxis.axisMax : axisMax;
       return categories.map((category, index) => {
@@ -773,11 +772,6 @@ export function ChartPreview({
         {renderTitle(title)}
         <div className="axis-chart-layout" style={{ gridTemplateColumns: axisLayoutColumns }}>
           {yAxisLabel ? <div className="chart-axis-title chart-axis-title-vertical">{yAxisLabel}</div> : null}
-          <div className="chart-y-axis">
-            {reversedTicks.map((tick) => (
-              <span className="chart-y-tick" key={tick}>{formatAxisValue(tick, decimalPlaces)}</span>
-            ))}
-          </div>
           <div className="chart-plot-column">
             <div className={normalizedChartType === "area" ? "area-chart axis-chart" : "line-chart axis-chart"}>
               <svg
@@ -787,8 +781,23 @@ export function ChartPreview({
               >
                 {ticks.map((tick) => {
                   const y = plotBottom - (tick / axisMax) * plotHeight;
-                  return <line key={`line-${tick}`} x1={plotLeft} y1={y} x2={plotRight} y2={y} className="chart-grid-svg-line" />;
+                  return (
+                    <g key={`line-${tick}`}>
+                      <line x1={plotLeft} y1={y} x2={plotRight} y2={y} className="chart-grid-svg-line" />
+                      <text x={plotLeft - 10} y={y + 4} textAnchor="end" className="chart-svg-tick">
+                        {formatAxisValue(tick, decimalPlaces)}
+                      </text>
+                    </g>
+                  );
                 })}
+                {secondaryAxis ? secondaryAxis.ticks.map((tick) => {
+                  const y = plotBottom - (tick / secondaryAxis.axisMax) * plotHeight;
+                  return (
+                    <text key={`secondary-line-${tick}`} x={plotRight + 10} y={y + 4} textAnchor="start" className="chart-svg-tick">
+                      {formatAxisValue(tick, decimalPlaces)}
+                    </text>
+                  );
+                }) : null}
                 <line x1={plotLeft} y1={plotTop} x2={plotLeft} y2={plotBottom} className="chart-axis-svg-line" />
                 <line x1={plotLeft} y1={plotBottom} x2={plotRight} y2={plotBottom} className="chart-axis-svg-line" />
                 {normalizedChartType === "line-bar" ? categories.map((category, categoryIndex) => {
@@ -953,14 +962,7 @@ export function ChartPreview({
               </svg>
             </div>
           </div>
-          {secondaryAxis ? (
-            <div className="chart-y-axis">
-              {secondaryYAxisLabel ? <div className="chart-axis-title chart-axis-title-right">{secondaryYAxisLabel}</div> : null}
-              {[...secondaryAxis.ticks].reverse().map((tick) => (
-                <span className="chart-y-tick" key={`secondary-${tick}`}>{formatAxisValue(tick, decimalPlaces)}</span>
-              ))}
-            </div>
-          ) : null}
+          {secondaryYAxisLabel ? <div className="chart-axis-title chart-axis-title-right">{secondaryYAxisLabel}</div> : null}
         </div>
         {(primarySeries.length > 1 || secondarySeries.length > 0) ? renderAxisLegend([
           ...primarySeries.map((series) => ({ label: series.label, value: 0, rawLabel: series.rawSeries, rawSeries: series.rawSeries, series: series.label })),
@@ -1256,9 +1258,8 @@ export function ChartPreview({
     const xMax = Math.max(...xNumbers);
     const xRange = Math.max(1, xMax - xMin);
     const { ticks, axisMax } = axisMaxFor(items.map((item) => item.value), compact);
-    const reversedTicks = [...ticks].reverse();
     const yAxisWidth = axisTickTextWidth(ticks, decimalPlaces, compact);
-    const axisLayoutColumns = `${yAxisLabel ? "auto " : ""}${yAxisWidth}px minmax(0, 1fr)`;
+    const axisLayoutColumns = `${yAxisLabel ? "auto " : ""}minmax(0, 1fr)`;
     const points = items.map((item, index) => {
       const rawX = chartLabelNumericValue(String(item.rawLabel ?? item.label ?? ""), index);
       const x = items.length === 1 ? 200 : 30 + ((rawX - xMin) / xRange) * 340;
@@ -1278,20 +1279,20 @@ export function ChartPreview({
         {renderTitle(title)}
         <div className="axis-chart-layout" style={{ gridTemplateColumns: axisLayoutColumns }}>
           {yAxisLabel ? <div className="chart-axis-title chart-axis-title-vertical">{yAxisLabel}</div> : null}
-          <div className="chart-y-axis">
-            {reversedTicks.map((tick) => (
-              <span className="chart-y-tick" key={tick}>{formatAxisValue(tick, decimalPlaces)}</span>
-            ))}
-          </div>
           <div className="chart-plot-column">
             <div className="line-chart axis-chart">
               <svg viewBox="0 0 400 220" preserveAspectRatio="xMidYMid meet" style={{ width: "100%", height: "auto", aspectRatio: "400 / 220" }}>
                 {ticks.map((tick) => {
                   const y = 190 - (tick / axisMax) * 150;
-                  return <line key={`scatter-${tick}`} x1="24" y1={y} x2="380" y2={y} className="chart-grid-svg-line" />;
+                  return (
+                    <g key={`scatter-${tick}`}>
+                      <line x1="48" y1={y} x2="380" y2={y} className="chart-grid-svg-line" />
+                      <text x="40" y={y + 4} textAnchor="end" className="chart-svg-tick">{formatAxisValue(tick, decimalPlaces)}</text>
+                    </g>
+                  );
                 })}
-                <line x1="24" y1="16" x2="24" y2="196" className="chart-axis-svg-line" />
-                <line x1="24" y1="196" x2="380" y2="196" className="chart-axis-svg-line" />
+                <line x1="48" y1="16" x2="48" y2="196" className="chart-axis-svg-line" />
+                <line x1="48" y1="196" x2="380" y2="196" className="chart-axis-svg-line" />
                 {points.map((point, index) => {
                   const href = getDatumHref?.(point.item) || "";
                   const content = (
