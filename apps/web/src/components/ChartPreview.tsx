@@ -564,6 +564,7 @@ export function ChartPreview({
     const plotHeight = plotBottom - plotTop;
     const tickLabelY = 232;
     const axisLabelY = 274;
+    const axisLayoutColumns = `${yAxisLabel ? "auto " : ""}${yAxisWidth}px minmax(0, 1fr)${secondaryAxis ? ` ${secondaryAxisWidth}px` : ""}`;
     const buildSeriesPoints = (seriesRaw: string, axis: "primary" | "secondary") => {
       const maxValue = axis === "secondary" && secondaryAxis ? secondaryAxis.axisMax : axisMax;
       return categories.map((category, index) => {
@@ -588,7 +589,7 @@ export function ChartPreview({
     return (
       <div className="axis-chart-shell">
         {renderTitle(title)}
-        <div className="axis-chart-layout" style={{ gridTemplateColumns: `auto ${yAxisWidth}px minmax(0, 1fr)${secondaryAxis ? ` ${secondaryAxisWidth}px` : ""}` }}>
+        <div className="axis-chart-layout" style={{ gridTemplateColumns: axisLayoutColumns }}>
           {yAxisLabel ? <div className="chart-axis-title chart-axis-title-vertical">{yAxisLabel}</div> : null}
           <div className="chart-y-axis">
             {reversedTicks.map((tick) => (
@@ -951,6 +952,7 @@ export function ChartPreview({
     const { ticks, axisMax } = axisMaxFor(items.map((item) => item.value), compact);
     const reversedTicks = [...ticks].reverse();
     const yAxisWidth = axisTickTextWidth(ticks, decimalPlaces, compact);
+    const axisLayoutColumns = `${yAxisLabel ? "auto " : ""}${yAxisWidth}px minmax(0, 1fr)`;
     const points = items.map((item, index) => {
       const x = items.length === 1 ? 200 : 30 + index * (340 / Math.max(1, items.length - 1));
       const y = 190 - (item.value / axisMax) * 150;
@@ -959,7 +961,7 @@ export function ChartPreview({
     return (
       <div className="axis-chart-shell">
         {renderTitle(title)}
-        <div className="axis-chart-layout" style={{ gridTemplateColumns: `auto ${yAxisWidth}px minmax(0, 1fr)` }}>
+        <div className="axis-chart-layout" style={{ gridTemplateColumns: axisLayoutColumns }}>
           {yAxisLabel ? <div className="chart-axis-title chart-axis-title-vertical">{yAxisLabel}</div> : null}
           <div className="chart-y-axis">
             {reversedTicks.map((tick) => (
