@@ -665,6 +665,28 @@ function chartValueFieldLabel(chartType: ChartType) {
   return "Primary Y axis field";
 }
 
+function getChartFieldId(report: ReportDefinition) {
+  return report.view.chartFieldId || report.groups[0]?.fieldId || report.selectedFieldIds[0] || "";
+}
+
+function getChartAxisLabels(report: ReportDefinition, table: TableDefinition | null | undefined) {
+  const xFieldId = getChartFieldId(report);
+  return {
+    xAxisLabel: report.view.chartXAxisLabel?.trim()
+      || (xFieldId ? getFieldLabel(report, table, xFieldId) : ""),
+    yAxisLabel: report.view.chartYAxisLabel?.trim()
+      || (report.view.chartAggregation === "count"
+        ? "Rows"
+        : (report.view.chartValueFieldId ? getFieldLabel(report, table, report.view.chartValueFieldId) : "")),
+    secondaryYAxisLabel: report.view.chartSecondaryYAxisLabel?.trim()
+      || (report.view.chartUseSecondaryAxis
+        ? (report.view.chartSecondaryAggregation === "count"
+          ? "Rows"
+          : (report.view.chartSecondaryValueFieldId ? getFieldLabel(report, table, report.view.chartSecondaryValueFieldId) : ""))
+        : "")
+  };
+}
+
 function clampWidgetWidth(value: number) {
   return Math.max(1, Math.min(12, Math.round(value || 1)));
 }
@@ -804,6 +826,7 @@ function ReportPreview({
   }
 
   if (reportShowsChart(report)) {
+    const axisLabels = getChartAxisLabels(report, table);
     return (
       <div className="studio-preview-stack">
         <ChartPreview
@@ -812,8 +835,9 @@ function ReportPreview({
           title={report.view.chartTitle}
           decimalPlaces={report.view.decimalPlaces}
           chartOrientation={report.view.chartOrientation}
-          xAxisLabel={report.view.chartXAxisLabel}
-          yAxisLabel={report.view.chartYAxisLabel}
+          xAxisLabel={axisLabels.xAxisLabel}
+          yAxisLabel={axisLabels.yAxisLabel}
+          secondaryYAxisLabel={axisLabels.secondaryYAxisLabel}
           showLegend={report.view.chartShowLegend}
           showValues={report.view.chartShowValues}
         />

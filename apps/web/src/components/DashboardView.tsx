@@ -43,6 +43,27 @@ function getChartFieldId(report: DashboardRunResult["tabs"][number]["widgets"][n
   return report.view.chartFieldId || report.groups[0]?.fieldId || report.selectedFieldIds[0] || "";
 }
 
+function getChartAxisLabels(
+  tables: TableDefinition[] | undefined,
+  report: DashboardRunResult["tabs"][number]["widgets"][number]["report"]
+) {
+  const xFieldId = getChartFieldId(report);
+  return {
+    xAxisLabel: report.view.chartXAxisLabel?.trim()
+      || (xFieldId ? getFieldLabel(tables, report, xFieldId) : ""),
+    yAxisLabel: report.view.chartYAxisLabel?.trim()
+      || (report.view.chartAggregation === "count"
+        ? "Rows"
+        : (report.view.chartValueFieldId ? getFieldLabel(tables, report, report.view.chartValueFieldId) : "")),
+    secondaryYAxisLabel: report.view.chartSecondaryYAxisLabel?.trim()
+      || (report.view.chartUseSecondaryAxis
+        ? (report.view.chartSecondaryAggregation === "count"
+          ? "Rows"
+          : (report.view.chartSecondaryValueFieldId ? getFieldLabel(tables, report, report.view.chartSecondaryValueFieldId) : ""))
+        : "")
+  };
+}
+
 function getWidgetLayoutStyle(layout: { w: number; h: number }) {
   const width = Math.max(1, Math.min(12, Math.round(layout.w || 6)));
   const height = Math.max(2, Math.min(10, Math.round(layout.h || 4)));
@@ -281,6 +302,7 @@ export function DashboardView({
               const widgetTable = tables?.find((item) => item.id === widget.report.sourceTableId || item.quickbaseTableId === widget.report.sourceTableId);
               const quickbaseLinkContext = getQuickbaseLinkContext?.(widget.report.sourceTableId) || null;
               const chartFieldId = getChartFieldId(widget.report);
+              const axisLabels = getChartAxisLabels(tables, widget.report);
               const widgetQuickbaseFilterTree = buildQuickbaseReportFilterTree(
                 widget.report,
                 buildDashboardFilters(dashboard, widget.report.id, runtimeFilters)
@@ -309,9 +331,9 @@ export function DashboardView({
                       title={widget.report.view.chartTitle || widget.widget.title}
                       decimalPlaces={widget.report.view.decimalPlaces}
                       chartOrientation={widget.report.view.chartOrientation}
-                      xAxisLabel={widget.report.view.chartXAxisLabel}
-                      yAxisLabel={widget.report.view.chartYAxisLabel}
-                      secondaryYAxisLabel={widget.report.view.chartSecondaryYAxisLabel}
+                      xAxisLabel={axisLabels.xAxisLabel}
+                      yAxisLabel={axisLabels.yAxisLabel}
+                      secondaryYAxisLabel={axisLabels.secondaryYAxisLabel}
                       secondarySeriesType={widget.report.view.chartSecondarySeriesType}
                       compact
                       showLegend={widget.report.view.chartShowLegend}

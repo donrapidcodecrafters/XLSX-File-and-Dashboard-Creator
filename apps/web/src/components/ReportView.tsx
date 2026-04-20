@@ -43,6 +43,28 @@ function getChartFieldId(report: ReportDefinition) {
   return report.view.chartFieldId || report.groups[0]?.fieldId || report.selectedFieldIds[0] || "";
 }
 
+function getChartAxisLabels(report: ReportDefinition, table?: TableDefinition) {
+  const xFieldId = getChartFieldId(report);
+  return {
+    xAxisLabel: report.view.chartXAxisLabel?.trim()
+      || (xFieldId ? (table ? getReportFieldLabel(report, table, xFieldId) : xFieldId) : ""),
+    yAxisLabel: report.view.chartYAxisLabel?.trim()
+      || (report.view.chartAggregation === "count"
+        ? "Rows"
+        : (report.view.chartValueFieldId
+          ? (table ? getReportFieldLabel(report, table, report.view.chartValueFieldId) : report.view.chartValueFieldId)
+          : "")),
+    secondaryYAxisLabel: report.view.chartSecondaryYAxisLabel?.trim()
+      || (report.view.chartUseSecondaryAxis
+        ? (report.view.chartSecondaryAggregation === "count"
+          ? "Rows"
+          : (report.view.chartSecondaryValueFieldId
+            ? (table ? getReportFieldLabel(report, table, report.view.chartSecondaryValueFieldId) : report.view.chartSecondaryValueFieldId)
+            : ""))
+        : "")
+  };
+}
+
 export function ReportView({
   report,
   table,
@@ -61,6 +83,7 @@ export function ReportView({
   const [downloadedJobId, setDownloadedJobId] = useState("");
   const [exportPopup, setExportPopup] = useState<Window | null>(null);
   const chartFieldId = getChartFieldId(report);
+  const axisLabels = getChartAxisLabels(report, table);
   const quickbaseFilterTree = buildQuickbaseReportFilterTree(report);
 
   useEffect(() => {
@@ -270,9 +293,9 @@ export function ReportView({
               title={report.view.chartTitle}
               decimalPlaces={report.view.decimalPlaces}
               chartOrientation={report.view.chartOrientation}
-              xAxisLabel={report.view.chartXAxisLabel}
-              yAxisLabel={report.view.chartYAxisLabel}
-              secondaryYAxisLabel={report.view.chartSecondaryYAxisLabel}
+              xAxisLabel={axisLabels.xAxisLabel}
+              yAxisLabel={axisLabels.yAxisLabel}
+              secondaryYAxisLabel={axisLabels.secondaryYAxisLabel}
               secondarySeriesType={report.view.chartSecondarySeriesType}
               showLegend={report.view.chartShowLegend}
               showValues={report.view.chartShowValues}
