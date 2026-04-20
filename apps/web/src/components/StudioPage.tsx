@@ -671,18 +671,21 @@ function getChartFieldId(report: ReportDefinition) {
 
 function getChartAxisLabels(report: ReportDefinition, table: TableDefinition | null | undefined) {
   const xFieldId = getChartFieldId(report);
+  const primaryFieldLabel = report.view.chartValueFieldId
+    ? getFieldLabel(report, table, report.view.chartValueFieldId)
+    : "";
+  const secondaryFieldLabel = report.view.chartSecondaryValueFieldId
+    ? getFieldLabel(report, table, report.view.chartSecondaryValueFieldId)
+    : "";
   return {
     xAxisLabel: report.view.chartXAxisLabel?.trim()
       || (xFieldId ? getFieldLabel(report, table, xFieldId) : ""),
     yAxisLabel: report.view.chartYAxisLabel?.trim()
-      || (report.view.chartAggregation === "count"
-        ? "Rows"
-        : (report.view.chartValueFieldId ? getFieldLabel(report, table, report.view.chartValueFieldId) : "")),
+      || primaryFieldLabel
+      || (report.view.chartAggregation === "count" ? "Rows" : ""),
     secondaryYAxisLabel: report.view.chartSecondaryYAxisLabel?.trim()
       || (report.view.chartUseSecondaryAxis
-        ? (report.view.chartSecondaryAggregation === "count"
-          ? "Rows"
-          : (report.view.chartSecondaryValueFieldId ? getFieldLabel(report, table, report.view.chartSecondaryValueFieldId) : ""))
+        ? (secondaryFieldLabel || (report.view.chartSecondaryAggregation === "count" ? "Rows" : ""))
         : "")
   };
 }

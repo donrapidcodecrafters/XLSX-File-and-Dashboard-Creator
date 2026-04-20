@@ -66,6 +66,9 @@ function deriveCategories(data: ChartDatum[]) {
 
 function deriveSeries(data: ChartDatum[], axis: "primary" | "secondary" = "primary") {
   const filtered = data.filter((datum) => (datum.axis || "primary") === axis);
+  if (!filtered.length) {
+    return [];
+  }
   const rawSeries = Array.from(new Set(filtered.map((datum) => String(datum.rawSeries || datum.series || ""))));
   if (!rawSeries.length || (rawSeries.length === 1 && rawSeries[0] === "")) {
     return [{
@@ -139,6 +142,28 @@ function buildAxisTicks(max: number, desired = 4) {
 function xTickLabel(label: string, _index: number, length: number, compact: boolean) {
   const maxLength = compact ? 8 : length >= 10 ? 10 : length >= 7 ? 12 : 16;
   return cap(label, maxLength);
+}
+
+function formatCategoryTickLabel(label: string) {
+  const trimmed = label.trim();
+  if (!trimmed) return "Unassigned";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    const date = new Date(`${trimmed}T00:00:00`);
+    if (!Number.isNaN(date.getTime())) {
+      return new Intl.DateTimeFormat("en-US", {
+        month: "short",
+        day: "numeric"
+      }).format(date);
+    }
+  }
+  const parsed = new Date(trimmed);
+  if (!Number.isNaN(parsed.getTime()) && /T|\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+    return new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric"
+    }).format(parsed);
+  }
+  return trimmed;
 }
 
 function axisMaxFor(values: number[], compact: boolean) {
@@ -555,14 +580,14 @@ export function ChartPreview({
     const yAxisWidth = axisTickTextWidth(ticks, decimalPlaces, compact);
     const secondaryAxisWidth = secondaryAxis ? axisTickTextWidth(secondaryAxis.ticks, decimalPlaces, compact) : 0;
     const chartWidth = 400;
-    const chartHeight = 286;
-    const plotLeft = 24;
-    const plotRight = 380;
+    const chartHeight = 292;
+    const plotLeft = 10;
+    const plotRight = 394;
     const plotTop = 20;
-    const plotBottom = 184;
+    const plotBottom = 186;
     const plotWidth = plotRight - plotLeft;
     const plotHeight = plotBottom - plotTop;
-    const tickLabelY = 232;
+    const tickLabelY = 226;
     const axisLabelY = 274;
     const axisLayoutColumns = `${yAxisLabel ? "auto " : ""}${yAxisWidth}px minmax(0, 1fr)${secondaryAxis ? ` ${secondaryAxisWidth}px` : ""}`;
     const buildSeriesPoints = (seriesRaw: string, axis: "primary" | "secondary") => {
@@ -709,9 +734,9 @@ export function ChartPreview({
                 })}
                 {categories.map((item, index) => {
                   const x = categories.length === 1 ? plotLeft + plotWidth / 2 : plotLeft + index * (plotWidth / Math.max(1, categories.length - 1));
-                  const tickLabel = item.label || item.rawLabel || "Unassigned";
-                  const rotate = categories.length > 1 ? -38 : 0;
-                  const textAnchor = categories.length === 1 ? "middle" : "end";
+                  const tickLabel = formatCategoryTickLabel(item.label || item.rawLabel || "Unassigned");
+                  const rotate = categories.length >= 12 ? -30 : categories.length >= 8 ? -22 : 0;
+                  const textAnchor = rotate ? "end" : "middle";
                   return (
                     <text
                       key={`line-label-${item.rawLabel}-${index}`}

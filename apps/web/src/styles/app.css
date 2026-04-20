@@ -936,8 +936,8 @@ input {
 .area-chart svg,
 .radar-chart svg {
   width: 100%;
-  height: 220px;
-  overflow: hidden;
+  height: 244px;
+  overflow: visible;
 }
 
 .line-chart polyline,

@@ -48,18 +48,21 @@ function getChartAxisLabels(
   report: DashboardRunResult["tabs"][number]["widgets"][number]["report"]
 ) {
   const xFieldId = getChartFieldId(report);
+  const primaryFieldLabel = report.view.chartValueFieldId
+    ? getFieldLabel(tables, report, report.view.chartValueFieldId)
+    : "";
+  const secondaryFieldLabel = report.view.chartSecondaryValueFieldId
+    ? getFieldLabel(tables, report, report.view.chartSecondaryValueFieldId)
+    : "";
   return {
     xAxisLabel: report.view.chartXAxisLabel?.trim()
       || (xFieldId ? getFieldLabel(tables, report, xFieldId) : ""),
     yAxisLabel: report.view.chartYAxisLabel?.trim()
-      || (report.view.chartAggregation === "count"
-        ? "Rows"
-        : (report.view.chartValueFieldId ? getFieldLabel(tables, report, report.view.chartValueFieldId) : "")),
+      || primaryFieldLabel
+      || (report.view.chartAggregation === "count" ? "Rows" : ""),
     secondaryYAxisLabel: report.view.chartSecondaryYAxisLabel?.trim()
       || (report.view.chartUseSecondaryAxis
-        ? (report.view.chartSecondaryAggregation === "count"
-          ? "Rows"
-          : (report.view.chartSecondaryValueFieldId ? getFieldLabel(tables, report, report.view.chartSecondaryValueFieldId) : ""))
+        ? (secondaryFieldLabel || (report.view.chartSecondaryAggregation === "count" ? "Rows" : ""))
         : "")
   };
 }
