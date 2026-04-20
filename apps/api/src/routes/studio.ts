@@ -43,11 +43,14 @@ export async function registerStudioRoutes(app: FastifyInstance) {
 
   app.get("/api/studio/cache/summary", async () => {
     const document = studioStore.getLiveDocument();
+    const cacheMeta = studioStore.getAllCacheMeta();
     return {
       refreshStatus: document.sync.refreshStatus,
       tables: Object.entries(document.bundle.data || {}).map(([tableId, rows]) => ({
         tableId,
-        rowCount: Array.isArray(rows) ? rows.length : 0
+        rowCount: Array.isArray(rows) ? rows.length : 0,
+        cachedAt: cacheMeta[tableId]?.cachedAt || "",
+        expiresAt: cacheMeta[tableId]?.expiresAt || ""
       }))
     };
   });

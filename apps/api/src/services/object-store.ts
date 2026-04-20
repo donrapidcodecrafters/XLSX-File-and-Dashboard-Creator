@@ -23,14 +23,20 @@ export class ObjectStore {
 
   getRows(tableId: string) {
     const bundle = studioStore.getBundle();
-    if (bundle.data[tableId]) {
+    if (bundle.data[tableId] && studioStore.isCacheFresh(tableId)) {
       return bundle.data[tableId];
     }
     const table = this.getTable(tableId);
     if (!table) {
       return [];
     }
-    return bundle.data[table.id] || bundle.data[table.quickbaseTableId || ""] || [];
+    if (bundle.data[table.id] && studioStore.isCacheFresh(table.id)) {
+      return bundle.data[table.id];
+    }
+    if (table.quickbaseTableId && bundle.data[table.quickbaseTableId] && studioStore.isCacheFresh(table.quickbaseTableId)) {
+      return bundle.data[table.quickbaseTableId];
+    }
+    return [];
   }
 
   listCatalog(): CatalogSummaryItem[] {

@@ -64,10 +64,19 @@ function freshness(source: DataFreshnessInfo["source"]): DataFreshnessInfo {
 function getCachedFreshness(tableId: string): DataFreshnessInfo | null {
   const document = studioStore.getDocument();
   const table = objectStore.getTable(tableId);
+  const cacheKeys = Array.from(new Set([tableId, table?.id || "", table?.quickbaseTableId || ""].filter(Boolean)));
+  const freshKey = cacheKeys.find((key) => studioStore.isCacheFresh(key)) || "";
+  const directMeta = freshKey ? studioStore.getCacheMeta(freshKey) : null;
+  if (directMeta && freshKey) {
+    return {
+      source: "scheduled-cache",
+      fetchedAt: directMeta.cachedAt
+    };
+  }
   const profileId = table?.quickbaseProfileId || "";
   if (profileId) {
     const profileStatus = document.quickbaseProfiles.find((item) => item.id === profileId)?.refreshStatus;
-    if (profileStatus?.cachedTableIds.includes(tableId) && profileStatus.lastSuccessAt) {
+    if (profileStatus?.cachedTableIds.some((cachedTableId) => cacheKeys.includes(cachedTableId)) && profileStatus.lastSuccessAt && freshKey) {
       return {
         source: "scheduled-cache",
         fetchedAt: profileStatus.lastSuccessAt
@@ -75,7 +84,7 @@ function getCachedFreshness(tableId: string): DataFreshnessInfo | null {
     }
   }
   const status = document.sync.refreshStatus;
-  if (status.cachedTableIds.includes(tableId) && status.lastSuccessAt) {
+  if (status.cachedTableIds.some((cachedTableId) => cacheKeys.includes(cachedTableId)) && status.lastSuccessAt && freshKey) {
     return {
       source: "scheduled-cache",
       fetchedAt: status.lastSuccessAt

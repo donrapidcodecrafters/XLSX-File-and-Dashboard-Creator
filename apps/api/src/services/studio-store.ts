@@ -5,8 +5,16 @@ import { hydrateStudioDocumentFromQuickbase } from "./quickbase-storage.js";
 
 const STORAGE_PATH = resolve(process.cwd(), ".data/studio-document.json");
 const CACHE_PATH = resolve(process.cwd(), ".data/studio-cache.json");
+const CACHE_META_PATH = resolve(process.cwd(), ".data/studio-cache-meta.json");
 const HYDRATE_TTL_MS = 60_000;
 const HYDRATE_TIMEOUT_MS = 8_000;
+export const CACHE_RETENTION_MS = 24 * 60 * 60 * 1000;
+
+type PersistedCacheMetaEntry = {
+  cachedAt: string;
+  expiresAt: string;
+  rowCount: number;
+};
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -34,6 +42,25 @@ function loadPersistedCache(): StudioDocument["bundle"]["data"] {
   }
 }
 
+function loadPersistedCacheMeta(): Record<string, PersistedCacheMetaEntry> {
+  try {
+    const raw = readFileSync(CACHE_META_PATH, "utf8");
+    const parsed = JSON.parse(raw) as Record<string, PersistedCacheMetaEntry>;
+    return Object.fromEntries(
+      Object.entries(parsed || {}).map(([tableId, entry]) => [
+        tableId,
+        {
+          cachedAt: String(entry?.cachedAt || ""),
+          expiresAt: String(entry?.expiresAt || ""),
+          rowCount: Number(entry?.rowCount || 0)
+        }
+      ])
+    );
+  } catch {
+    return {};
+  }
+}
+
 function loadPersistedDocument(): StudioDocument | null {
   try {
     const raw = readFileSync(STORAGE_PATH, "utf8");
@@ -47,11 +74,13 @@ function loadPersistedDocument(): StudioDocument | null {
 
 export class StudioStore {
   private document: StudioDocument;
+  private cacheMeta: Record<string, PersistedCacheMetaEntry> = {};
   private hydratePromise: Promise<StudioDocument> | null = null;
   private lastHydratedAt = 0;
 
   constructor() {
     this.document = this.load();
+    this.cacheMeta = loadPersistedCacheMeta();
     this.lastHydratedAt = Date.parse(this.document.sync?.lastLoadedAt || "") || 0;
   }
 
@@ -67,13 +96,25 @@ export class StudioStore {
     mkdirSync(dirname(STORAGE_PATH), { recursive: true });
     writeFileSync(STORAGE_PATH, JSON.stringify(stripCachedRows(document), null, 2));
     writeFileSync(CACHE_PATH, JSON.stringify(document.bundle.data || {}, null, 2));
+    writeFileSync(CACHE_META_PATH, JSON.stringify(this.cacheMeta || {}, null, 2));
   }
 
   private reloadFromDisk() {
     const persisted = loadPersistedDocument();
     if (!persisted) return;
     this.document = persisted;
+    this.cacheMeta = loadPersistedCacheMeta();
     this.lastHydratedAt = Date.parse(this.document.sync?.lastLoadedAt || "") || this.lastHydratedAt;
+  }
+
+  private buildCacheMetaEntry(rowCount: number, cachedAt = new Date().toISOString()): PersistedCacheMetaEntry {
+    const base = new Date(cachedAt);
+    const safeBase = Number.isNaN(base.getTime()) ? new Date() : base;
+    return {
+      cachedAt: safeBase.toISOString(),
+      expiresAt: new Date(safeBase.getTime() + CACHE_RETENTION_MS).toISOString(),
+      rowCount
+    };
   }
 
   getDocument(includeData = false): StudioDocument {
@@ -119,6 +160,38 @@ export class StudioStore {
   getBundle() {
     this.reloadFromDisk();
     return this.document.bundle;
+  }
+
+  getCacheMeta(tableId: string): PersistedCacheMetaEntry | null {
+    this.reloadFromDisk();
+    const entry = this.cacheMeta[tableId];
+    return entry ? clone(entry) : null;
+  }
+
+  getAllCacheMeta() {
+    this.reloadFromDisk();
+    return clone(this.cacheMeta);
+  }
+
+  isCacheFresh(tableId: string) {
+    this.reloadFromDisk();
+    const entry = this.cacheMeta[tableId];
+    if (!entry) {
+      return Array.isArray(this.document.bundle.data[tableId]);
+    }
+    const expiresAt = Date.parse(entry.expiresAt || "");
+    return !Number.isNaN(expiresAt) && expiresAt > Date.now();
+  }
+
+  touchCacheEntry(tableId: string, rowCount: number, cachedAt = new Date().toISOString()) {
+    this.cacheMeta[tableId] = this.buildCacheMetaEntry(rowCount, cachedAt);
+  }
+
+  touchCacheEntriesFromDocument(document: StudioDocument, tableIds: string[], cachedAt = new Date().toISOString()) {
+    tableIds.forEach((tableId) => {
+      const rows = document.bundle.data[tableId] || [];
+      this.touchCacheEntry(tableId, rows.length, cachedAt);
+    });
   }
 
   saveDocument(document: StudioDocument, options: { markSavedAt?: boolean } = {}) {

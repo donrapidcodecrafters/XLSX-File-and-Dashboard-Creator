@@ -297,6 +297,7 @@ async function fetchAllTableRows(
         merged.set(recordId, existing);
       });
       document.bundle.data[table.id] = Array.from(merged.values());
+      studioStore.touchCacheEntry(table.id, merged.size);
       onProgress?.({
         loadedRows: merged.size,
         fetchedPages,
@@ -331,6 +332,7 @@ async function fetchAllTableRows(
         merged.set(recordId, existing);
       });
       document.bundle.data[table.id] = Array.from(merged.values());
+      studioStore.touchCacheEntry(table.id, merged.size);
       fetchedPages += 1;
       onProgress?.({
         loadedRows: merged.size,
@@ -555,6 +557,7 @@ export async function refreshAllCachedDataWithProgress(
         );
       });
       nextDocument.bundle.data[tableId] = rows;
+      studioStore.touchCacheEntry(tableId, rows.length);
       totalRows += rows.length;
       const completedTables = index + 1;
       const elapsedAfterTable = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
@@ -595,6 +598,7 @@ export async function refreshAllCachedDataWithProgress(
         status.cachedRowCount = status.cachedTableIds.reduce((sum, tableId) => sum + (nextDocument.bundle.data[tableId]?.length || 0), 0);
       });
     });
+    studioStore.touchCacheEntriesFromDocument(nextDocument, tableIds, nextDocument.sync.refreshStatus.lastSuccessAt);
     updateRefreshScheduleMetadata(nextDocument);
     updateLegacyActiveQuickbase(nextDocument);
     studioStore.flushDocument(nextDocument, { markSavedAt: false });
@@ -718,6 +722,7 @@ export async function refreshObjectCachedDataWithProgress(
         );
       }, { objectId });
       nextDocument.bundle.data[tableId] = rows;
+      studioStore.touchCacheEntry(tableId, rows.length);
       totalRows += rows.length;
       const completedTables = index + 1;
       const elapsedAfterTable = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
@@ -761,6 +766,7 @@ export async function refreshObjectCachedDataWithProgress(
       });
     });
 
+    studioStore.touchCacheEntriesFromDocument(nextDocument, tableIds, nextDocument.sync.refreshStatus.lastSuccessAt);
     updateRefreshScheduleMetadata(nextDocument);
     updateLegacyActiveQuickbase(nextDocument);
     studioStore.flushDocument(nextDocument, { markSavedAt: false });
