@@ -15,30 +15,6 @@ function typeLabel(type: "report" | "dashboard") {
   return type === "report" ? "Report" : "Dashboard";
 }
 
-function reportResultNeedsAutoRefresh(result: any) {
-  if (!result) return false;
-  const noRows = Number(result.totalRows || 0) === 0;
-  const noSummary = !Array.isArray(result.summary) || result.summary.length === 0;
-  const noChart = !Array.isArray(result.chartData) || result.chartData.length === 0;
-  return noRows && noSummary && noChart;
-}
-
-function dashboardResultNeedsAutoRefresh(result: any) {
-  if (!result) return false;
-  const widgets = Array.isArray(result.tabs)
-    ? result.tabs.flatMap((tab: any) => Array.isArray(tab.widgets) ? tab.widgets : [])
-    : [];
-  if (!widgets.length) return true;
-  return widgets.every((widget: any) => {
-    const widgetResult = widget?.result;
-    if (!widgetResult) return true;
-    const noRows = Number(widgetResult.totalRows || 0) === 0;
-    const noSummary = !Array.isArray(widgetResult.summary) || widgetResult.summary.length === 0;
-    const noChart = !Array.isArray(widgetResult.chartData) || widgetResult.chartData.length === 0;
-    return noRows && noSummary && noChart;
-  });
-}
-
 function resolveTableDefinition(tables: TableDefinition[], tableId: string) {
   return tables.find((item) => item.id === tableId || item.quickbaseTableId === tableId);
 }
@@ -164,7 +140,6 @@ function HomePage({
   openLinksInNewTab?: boolean;
 }) {
   const [refreshJob, setRefreshJob] = useState<any>(null);
-  const [autoRefreshAttempted, setAutoRefreshAttempted] = useState(false);
   const catalogLookup = useMemo(() => buildCatalogItemLookup(objects, studioDocument), [objects, studioDocument]);
   const rankedObjects = [...objects].sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime());
   const reports = rankedObjects.filter((object) => object.type === "report");
@@ -198,14 +173,6 @@ function HomePage({
   const favoritesOrFeatured = favoriteObjects.length ? favoriteObjects : [...dashboards, ...reports].slice(0, 6);
   const appProfiles = studioDocument?.quickbaseProfiles || [];
   const totalCachedRows = appProfiles.reduce((sum, profile) => sum + (profile.refreshStatus.cachedRowCount || 0), 0);
-  const hasConfiguredRefreshSources = appProfiles.some((profile) =>
-    Array.isArray(profile.refreshSource.tableIds) &&
-    profile.refreshSource.tableIds.some((tableId) => {
-      const key = String(tableId || "").trim();
-      if (!key) return false;
-      return Boolean(profile.refreshSource.reportIds?.[key]);
-    })
-  );
   const healthTone = totalCachedRows > 0 ? "Up to date" : "Needs refresh";
 
   useEffect(() => {
@@ -227,23 +194,6 @@ function HomePage({
     if (!refreshAllSignal) return;
     void startFullRefresh();
   }, [refreshAllSignal]);
-
-  useEffect(() => {
-    if (autoRefreshAttempted) return;
-    if (!studioDocument) return;
-    if (!hasConfiguredRefreshSources) return;
-    if (totalCachedRows > 0) return;
-    if (refreshJob?.status === "queued" || refreshJob?.status === "running") return;
-    if (studioDocument.sync.refreshStatus.running) return;
-    setAutoRefreshAttempted(true);
-    void startFullRefresh();
-  }, [
-    autoRefreshAttempted,
-    hasConfiguredRefreshSources,
-    refreshJob?.status,
-    studioDocument,
-    totalCachedRows
-  ]);
 
   async function startFullRefresh() {
     const response = await startStudioRefresh();
@@ -389,9 +339,7 @@ function HomePage({
                 </div>
                 <div className="home-status-item">
                   <strong>Current refresh message</strong>
-                  <span>{totalCachedRows === 0 && hasConfiguredRefreshSources
-                    ? "No saved rows were available, so the platform is refreshing everything now."
-                    : studioDocument?.sync.refreshStatus.message || "No refresh has run yet."}</span>
+                  <span>{studioDocument?.sync.refreshStatus.message || "No refresh has run yet."}</span>
                 </div>
                 <div className="home-status-item">
                   <strong>Favorites saved</strong>
@@ -448,23 +396,12 @@ function ObjectPage({
   const [page, setPage] = useState(1);
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [refreshJob, setRefreshJob] = useState<any>(null);
-  const [autoRefreshForId, setAutoRefreshForId] = useState("");
-  const [fallbackRefreshAttemptForId, setFallbackRefreshAttemptForId] = useState("");
   const pageSize = 100;
-  const liveModeProfileIds = useMemo(() => getProfileIdsForObject(object, tables, studioDocument), [object, studioDocument, tables]);
-  const relatedProfiles = useMemo(
-    () => liveModeProfileIds.map((profileId) => studioDocument?.quickbaseProfiles.find((profile) => profile.id === profileId)).filter(Boolean),
-    [liveModeProfileIds, studioDocument]
-  );
-  const globalZeroSavedRows = (studioDocument?.sync.refreshStatus.cachedRowCount || 0) === 0;
   const liveModeEnabled = useMemo(
-    () => liveModeProfileIds.some((profileId) => studioDocument?.quickbaseProfiles.find((profile) => profile.id === profileId)?.liveMode === true),
-    [liveModeProfileIds, studioDocument]
+    () => getProfileIdsForObject(object, tables, studioDocument)
+      .some((profileId) => studioDocument?.quickbaseProfiles.find((profile) => profile.id === profileId)?.liveMode === true),
+    [object, studioDocument, tables]
   );
-  const zeroSavedRowsForObject = useMemo(() => {
-    if (!relatedProfiles.length) return false;
-    return relatedProfiles.every((profile) => (profile?.refreshStatus.cachedRowCount || 0) === 0);
-  }, [relatedProfiles]);
 
   async function reloadObject(targetObjectId = params.objectId) {
     if (!targetObjectId) return;
@@ -484,8 +421,6 @@ function ObjectPage({
     setPage(1);
     setRefreshNonce(0);
     setRefreshJob(null);
-    setAutoRefreshForId("");
-    setFallbackRefreshAttemptForId("");
     fetchObject(params.objectId)
       .then((response) => {
         if (!active) return;
@@ -558,27 +493,6 @@ function ObjectPage({
     const response = await startStudioObjectRefresh(object.id);
     setRefreshJob(response.job);
   }
-
-  useEffect(() => {
-    if (!object || autoRefreshForId === object.id || refreshJob?.status === "queued" || refreshJob?.status === "running") {
-      return;
-    }
-    if (!liveModeEnabled && !zeroSavedRowsForObject && !globalZeroSavedRows) return;
-    setAutoRefreshForId(object.id);
-    void startObjectRefresh();
-  }, [autoRefreshForId, globalZeroSavedRows, liveModeEnabled, object, refreshJob?.status, zeroSavedRowsForObject]);
-
-  useEffect(() => {
-    if (!object || !result || loading) return;
-    if (refreshJob?.status === "queued" || refreshJob?.status === "running") return;
-    if (fallbackRefreshAttemptForId === `${object.id}:${refreshNonce}`) return;
-    const shouldRefresh = object.type === "report"
-      ? reportResultNeedsAutoRefresh(result)
-      : dashboardResultNeedsAutoRefresh(result);
-    if (!shouldRefresh) return;
-    setFallbackRefreshAttemptForId(`${object.id}:${refreshNonce}`);
-    void startObjectRefresh();
-  }, [fallbackRefreshAttemptForId, loading, object, refreshJob?.status, refreshNonce, result]);
 
   if (!params.objectId) return null;
   if (!object && loading) return <div className="empty-page">Loading report or dashboard…</div>;
