@@ -14,6 +14,7 @@ import {
   normalizeStudioDocument,
   runReport,
   type ChartAggregation,
+  type ChartSeriesType,
   type ChartSortMode,
   type ChartType,
   type DashboardDefinition,
@@ -95,6 +96,12 @@ const CHART_OPTIONS: ChartType[] = [
   "3d-scatter"
 ];
 const CHART_AGGREGATION_OPTIONS: ChartAggregation[] = ["count", "sum", "avg", "min", "max"];
+const CHART_SERIES_TYPE_OPTIONS: Array<{ value: ChartSeriesType; label: string }> = [
+  { value: "line", label: "Line" },
+  { value: "area", label: "Area" },
+  { value: "bar", label: "Bar" },
+  { value: "column", label: "Column" }
+];
 const CHART_SORT_OPTIONS: Array<{ value: ChartSortMode; label: string }> = [
   { value: "value-desc", label: "Value high to low" },
   { value: "value-asc", label: "Value low to high" },
@@ -112,6 +119,16 @@ const FILTER_OPERATOR_OPTIONS: Array<{ value: FilterOperator; label: string }> =
   { value: "gte", label: "Greater than or equal" },
   { value: "lt", label: "Less than" },
   { value: "lte", label: "Less than or equal" }
+];
+const DATE_FILTER_OPERATOR_OPTIONS: Array<{ value: FilterOperator; label: string }> = [
+  { value: "on", label: "On" },
+  { value: "not-equals", label: "Not on" },
+  { value: "gt", label: "After" },
+  { value: "on-or-after", label: "On or after" },
+  { value: "lt", label: "Before" },
+  { value: "on-or-before", label: "On or before" },
+  { value: "blank", label: "Is blank" },
+  { value: "not-blank", label: "Is not blank" }
 ];
 const WEEKDAY_OPTIONS = [
   { value: 0, label: "Sunday" },
@@ -477,14 +494,20 @@ function buildCreateDraft(table?: TableDefinition | null, type: CreateModalType 
       chartType: "bar",
       chartOrientation: "vertical",
       chartFieldId: firstFieldId,
+      chartSeriesFieldId: "",
       chartValueFieldId: "",
       chartAggregation: "count",
+      chartSecondaryValueFieldId: "",
+      chartSecondaryAggregation: "sum",
+      chartUseSecondaryAxis: false,
+      chartSecondarySeriesType: "line",
       chartTopN: 12,
       chartSort: "value-desc",
       chartShowLegend: true,
       chartShowValues: true,
       chartXAxisLabel: "",
       chartYAxisLabel: "",
+      chartSecondaryYAxisLabel: "",
       timelineDateField: "",
       timelineEndField: "",
       calendarDateField: "",
@@ -507,7 +530,9 @@ function collectReportFieldIds(report: ReportDefinition) {
       ...(report.sorts || []).map((item) => item.fieldId),
       ...((report.summaryMetrics || []).map((item) => item.fieldId)),
       report.view.chartFieldId,
+      report.view.chartSeriesFieldId,
       report.view.chartValueFieldId,
+      report.view.chartSecondaryValueFieldId,
       report.view.timelineDateField,
       report.view.timelineEndField,
       report.view.calendarDateField,
@@ -560,6 +585,84 @@ function chartUsesAxes(chartType: ChartType) {
     "3d-area",
     "3d-scatter"
   ].includes(chartType);
+}
+
+function chartSupportsSeries(chartType: ChartType) {
+  return [
+    "bar",
+    "horizontal-bar",
+    "column",
+    "stacked-bar",
+    "horizontal-stacked-bar",
+    "stacked-column",
+    "line",
+    "line-bar",
+    "area",
+    "spline",
+    "area-spline",
+    "streamgraph",
+    "scatter",
+    "bubble",
+    "radar",
+    "waterfall",
+    "variwide-bar",
+    "3d-bar",
+    "3d-stacked-bar",
+    "3d-area",
+    "3d-scatter"
+  ].includes(chartType);
+}
+
+function chartSupportsSecondaryAxis(chartType: ChartType) {
+  return [
+    "bar",
+    "horizontal-bar",
+    "column",
+    "stacked-bar",
+    "horizontal-stacked-bar",
+    "stacked-column",
+    "line",
+    "line-bar",
+    "area",
+    "spline",
+    "area-spline",
+    "streamgraph",
+    "scatter",
+    "bubble",
+    "variwide-bar",
+    "3d-bar",
+    "3d-stacked-bar",
+    "3d-area",
+    "3d-scatter"
+  ].includes(chartType);
+}
+
+function fieldSupportsDateOperators(field?: TableDefinition["fields"][number] | null) {
+  return field?.type === "date" || field?.type === "datetime";
+}
+
+function fieldSupportsContains(field?: TableDefinition["fields"][number] | null) {
+  return !field || ["text", "user", "multiselect"].includes(field.type);
+}
+
+function filterOperatorOptionsForField(field?: TableDefinition["fields"][number] | null) {
+  if (fieldSupportsDateOperators(field)) {
+    return DATE_FILTER_OPERATOR_OPTIONS;
+  }
+  if (field && (field.type === "number" || field.type === "currency")) {
+    return FILTER_OPERATOR_OPTIONS.filter((option) => !["contains", "not-contains"].includes(option.value));
+  }
+  if (!fieldSupportsContains(field)) {
+    return FILTER_OPERATOR_OPTIONS.filter((option) => !["contains", "not-contains"].includes(option.value));
+  }
+  return FILTER_OPERATOR_OPTIONS;
+}
+
+function chartValueFieldLabel(chartType: ChartType) {
+  if (chartType === "scatter") return "Y axis field";
+  if (chartType === "bubble") return "Y axis field";
+  if (chartType === "gauge") return "Value field";
+  return "Primary Y axis field";
 }
 
 function clampWidgetWidth(value: number) {
@@ -620,9 +723,10 @@ function downloadFile(filename: string, contents: string, type = "application/js
 function validationMessages(object: StudioObject, table?: TableDefinition | null) {
   const messages: string[] = [];
   if (object.type === "report") {
-    if (!object.selectedFieldIds.length) messages.push("Select at least one field.");
+    if (!object.selectedFieldIds.length && object.view.showDetails) messages.push("Select at least one detail field or turn off detail rows.");
     if (reportShowsChart(object) && !object.view.chartFieldId) messages.push("Choose an X axis field for the chart.");
     if (reportShowsChart(object) && object.view.chartAggregation !== "count" && !object.view.chartValueFieldId) messages.push("Choose a Y axis value field for the chart.");
+    if (reportShowsChart(object) && object.view.chartUseSecondaryAxis && object.view.chartSecondaryAggregation !== "count" && !object.view.chartSecondaryValueFieldId) messages.push("Choose a secondary Y axis field or turn off the secondary axis.");
     if (object.view.mode === "timeline" && !object.view.timelineDateField) messages.push("Choose a timeline start field.");
     if (object.view.mode === "calendar" && !object.view.calendarDateField) messages.push("Choose a calendar date field.");
     if (object.view.mode === "kanban" && !object.view.kanbanField) messages.push("Choose a kanban column field.");
@@ -1047,11 +1151,25 @@ function FilterGroupEditor({
             );
           }
           const rule = condition;
+          const field = table.fields.find((candidate) => candidate.id === rule.fieldId) || table.fields[0] || null;
+          const operatorOptions = filterOperatorOptionsForField(field);
           return (
             <div className="inline-edit-row filter-rule-row" key={rule.id}>
               <select
                 value={rule.fieldId}
-                onChange={(event) => onChange(updateFilterRuleInGroup(group, rule.id, (currentRule) => ({ ...currentRule, fieldId: event.target.value })))}
+                onChange={(event) => onChange(updateFilterRuleInGroup(group, rule.id, (currentRule) => {
+                  const nextField = table.fields.find((candidate) => candidate.id === event.target.value) || null;
+                  const nextOptions = filterOperatorOptionsForField(nextField);
+                  const nextOperator = nextOptions.some((option) => option.value === currentRule.operator)
+                    ? currentRule.operator
+                    : nextOptions[0]?.value || "equals";
+                  return {
+                    ...currentRule,
+                    fieldId: event.target.value,
+                    operator: nextOperator,
+                    value: filterNeedsValue(nextOperator) ? currentRule.value : ""
+                  };
+                }))}
               >
                 {table.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}
               </select>
@@ -1059,9 +1177,10 @@ function FilterGroupEditor({
                 value={rule.operator}
                 onChange={(event) => onChange(updateFilterRuleInGroup(group, rule.id, (currentRule) => ({ ...currentRule, operator: event.target.value as FilterOperator, value: filterNeedsValue(event.target.value as FilterOperator) ? currentRule.value : "" })))}
               >
-                {FILTER_OPERATOR_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                {operatorOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
               <input
+                type={field?.type === "date" ? "date" : field?.type === "datetime" ? "datetime-local" : field?.type === "number" || field?.type === "currency" ? "number" : "text"}
                 value={rule.value}
                 disabled={!filterNeedsValue(rule.operator)}
                 onChange={(event) => onChange(updateFilterRuleInGroup(group, rule.id, (currentRule) => ({ ...currentRule, value: event.target.value })))}
@@ -1255,7 +1374,10 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
     return createDraftTable.fields.filter((field) => `${field.label} ${field.id} ${field.type}`.toLowerCase().includes(query));
   }, [createDraftTable, createFieldQuery]);
   const createDraftPreview = useMemo(() => {
-    if (createDraft.type !== "report" || !createDraftTable || !createDraft.selectedFieldIds.length) return null;
+    if (createDraft.type !== "report" || !createDraftTable) return null;
+    const needsDetailFields = createDraft.view.showDetails;
+    const hasChartConfig = Boolean(createDraft.view.chartFieldId) && (createDraft.view.chartAggregation === "count" || Boolean(createDraft.view.chartValueFieldId));
+    if (!createDraft.selectedFieldIds.length && needsDetailFields && !hasChartConfig) return null;
     const previewReport: ReportDefinition = {
       id: editingReportId || "draft-report-preview",
       type: "report",
@@ -1649,14 +1771,20 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
         decimalPlaces: Number.isFinite(Number(current.view.decimalPlaces)) ? Math.max(0, Math.min(6, Number(current.view.decimalPlaces))) : 2,
         chartOrientation: "vertical",
         chartFieldId: table.fields[0]?.id || "",
+        chartSeriesFieldId: "",
         chartValueFieldId: "",
         chartAggregation: "count",
+        chartSecondaryValueFieldId: "",
+        chartSecondaryAggregation: "sum",
+        chartUseSecondaryAxis: false,
+        chartSecondarySeriesType: "line",
         chartTopN: current.view.chartTopN || 12,
         chartSort: current.view.chartSort || "value-desc",
         chartShowLegend: current.view.chartShowLegend ?? true,
         chartShowValues: current.view.chartShowValues ?? true,
         chartXAxisLabel: current.view.chartXAxisLabel || "",
         chartYAxisLabel: current.view.chartYAxisLabel || "",
+        chartSecondaryYAxisLabel: current.view.chartSecondaryYAxisLabel || "",
         titleFieldId: table.fields[1]?.id || table.fields[0]?.id || "",
         timelineDateField: "",
         timelineEndField: "",
@@ -1700,8 +1828,8 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
       pushToast("Load or configure a source table first.", "warn");
       return;
     }
-    if (!createDraft.selectedFieldIds.length) {
-      pushToast("Pick at least one field for the new report.", "warn");
+    if (!createDraft.selectedFieldIds.length && createDraft.view.showDetails) {
+      pushToast("Pick at least one detail field or turn off detail rows.", "warn");
       return;
     }
     const existingReport = editingReportId ? (bundle.objects[editingReportId] as ReportDefinition | undefined) : undefined;
@@ -3080,19 +3208,90 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
                           </div>
                           <div className="builder-subsection-grid">
                             <label className="field"><span>Chart title</span><input value={createDraft.view.chartTitle} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartTitle: event.target.value } }))} placeholder="Optional custom chart title" /></label>
-                            <label className="field"><span>Chart type</span><select value={createDraft.view.chartType} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartType: event.target.value as ChartType } }))}>{CHART_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
+                            <label className="field"><span>Chart type</span><select value={createDraft.view.chartType} onChange={(event) => setCreateDraft((current) => {
+                              const nextChartType = event.target.value as ChartType;
+                              const nextSupportsSecondary = chartSupportsSecondaryAxis(nextChartType);
+                              const nextSupportsSeries = chartSupportsSeries(nextChartType);
+                              return {
+                                ...current,
+                                view: {
+                                  ...current.view,
+                                  chartType: nextChartType,
+                                  chartSeriesFieldId: nextSupportsSeries ? current.view.chartSeriesFieldId : "",
+                                  chartUseSecondaryAxis: nextSupportsSecondary ? current.view.chartUseSecondaryAxis : false,
+                                  chartSecondaryValueFieldId: nextSupportsSecondary ? current.view.chartSecondaryValueFieldId : "",
+                                  chartSecondaryYAxisLabel: nextSupportsSecondary ? current.view.chartSecondaryYAxisLabel : ""
+                                }
+                              };
+                            })}>{CHART_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
                             {(createDraft.view.chartType === "bar" || createDraft.view.chartType === "stacked-bar") ? (
                               <label className="field"><span>Bar direction</span><select value={createDraft.view.chartOrientation} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartOrientation: event.target.value as "vertical" | "horizontal" } }))}><option value="vertical">Vertical</option><option value="horizontal">Horizontal</option></select></label>
                             ) : null}
                             <label className="field"><span>X axis field</span><select value={createDraft.view.chartFieldId} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartFieldId: event.target.value } }))}>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>
-                            <label className="field"><span>Y axis value field</span><select value={createDraft.view.chartValueFieldId} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartValueFieldId: event.target.value } }))}><option value="">Count rows</option>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>
-                            <label className="field"><span>Aggregation</span><select value={createDraft.view.chartAggregation} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartAggregation: event.target.value as ChartAggregation, chartValueFieldId: event.target.value === "count" ? "" : current.view.chartValueFieldId } }))}>{CHART_AGGREGATION_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
+                            {chartSupportsSeries(createDraft.view.chartType) ? (
+                              <label className="field">
+                                <span>Series field</span>
+                                <select value={createDraft.view.chartSeriesFieldId} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartSeriesFieldId: event.target.value } }))}>
+                                  <option value="">Single series</option>
+                                  {createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}
+                                </select>
+                              </label>
+                            ) : null}
+                            <label className="field"><span>{chartValueFieldLabel(createDraft.view.chartType)}</span><select value={createDraft.view.chartValueFieldId} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartValueFieldId: event.target.value } }))}><option value="">Count rows</option>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>
+                            <label className="field"><span>Primary aggregation</span><select value={createDraft.view.chartAggregation} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartAggregation: event.target.value as ChartAggregation, chartValueFieldId: event.target.value === "count" ? "" : current.view.chartValueFieldId } }))}>{CHART_AGGREGATION_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
                             <label className="field"><span>Chart sort</span><select value={createDraft.view.chartSort} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartSort: event.target.value as ChartSortMode } }))}>{CHART_SORT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
                             <label className="field"><span>Top results</span><input type="number" min="0" value={createDraft.view.chartTopN} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartTopN: Math.max(0, Number(event.target.value) || 0) } }))} /></label>
                             {chartUsesAxes(createDraft.view.chartType) ? (
                               <>
                                 <label className="field"><span>X axis label</span><input value={createDraft.view.chartXAxisLabel} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartXAxisLabel: event.target.value } }))} placeholder="Optional custom x axis label" /></label>
                                 <label className="field"><span>Y axis label</span><input value={createDraft.view.chartYAxisLabel} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartYAxisLabel: event.target.value } }))} placeholder="Optional custom y axis label" /></label>
+                              </>
+                            ) : null}
+                            {chartSupportsSecondaryAxis(createDraft.view.chartType) ? (
+                              <>
+                                <label className="toggle-row builder-subsection-toggle">
+                                  <input
+                                    type="checkbox"
+                                    checked={createDraft.view.chartUseSecondaryAxis}
+                                    onChange={(event) => setCreateDraft((current) => ({
+                                      ...current,
+                                      view: {
+                                        ...current.view,
+                                        chartUseSecondaryAxis: event.target.checked,
+                                        chartSecondaryValueFieldId: event.target.checked ? current.view.chartSecondaryValueFieldId : "",
+                                        chartSecondaryYAxisLabel: event.target.checked ? current.view.chartSecondaryYAxisLabel : ""
+                                      }
+                                    }))}
+                                  />
+                                  Use a secondary Y axis
+                                </label>
+                                {createDraft.view.chartUseSecondaryAxis ? (
+                                  <>
+                                    <label className="field">
+                                      <span>Secondary series type</span>
+                                      <select value={createDraft.view.chartSecondarySeriesType} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartSecondarySeriesType: event.target.value as ChartSeriesType } }))}>
+                                        {CHART_SERIES_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                      </select>
+                                    </label>
+                                    <label className="field">
+                                      <span>Secondary Y axis field</span>
+                                      <select value={createDraft.view.chartSecondaryValueFieldId} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartSecondaryValueFieldId: event.target.value } }))}>
+                                        <option value="">Count rows</option>
+                                        {createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}
+                                      </select>
+                                    </label>
+                                    <label className="field">
+                                      <span>Secondary aggregation</span>
+                                      <select value={createDraft.view.chartSecondaryAggregation} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartSecondaryAggregation: event.target.value as ChartAggregation, chartSecondaryValueFieldId: event.target.value === "count" ? "" : current.view.chartSecondaryValueFieldId } }))}>
+                                        {CHART_AGGREGATION_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                                      </select>
+                                    </label>
+                                    <label className="field">
+                                      <span>Secondary Y axis label</span>
+                                      <input value={createDraft.view.chartSecondaryYAxisLabel} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartSecondaryYAxisLabel: event.target.value } }))} placeholder="Optional secondary axis label" />
+                                    </label>
+                                  </>
+                                ) : null}
                               </>
                             ) : null}
                             <label className="toggle-row builder-subsection-toggle"><input type="checkbox" checked={createDraft.view.chartShowLegend} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartShowLegend: event.target.checked } }))} /> Show legend</label>

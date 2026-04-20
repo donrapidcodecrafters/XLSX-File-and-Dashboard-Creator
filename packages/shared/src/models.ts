@@ -1,6 +1,19 @@
 export type StudioObjectType = "report" | "dashboard";
 export type FieldType = "text" | "number" | "currency" | "date" | "datetime" | "user" | "multiselect";
-export type FilterOperator = "equals" | "not-equals" | "contains" | "not-contains" | "blank" | "not-blank" | "gt" | "gte" | "lt" | "lte";
+export type FilterOperator =
+  | "equals"
+  | "not-equals"
+  | "contains"
+  | "not-contains"
+  | "blank"
+  | "not-blank"
+  | "gt"
+  | "gte"
+  | "lt"
+  | "lte"
+  | "on"
+  | "on-or-after"
+  | "on-or-before";
 export type FilterJoinOperator = "and" | "or";
 export type SortDirection = "asc" | "desc";
 export type WidgetMode = "linked" | "copied";
@@ -41,6 +54,8 @@ export type ChartType =
 export type ChartAggregation = "count" | "sum" | "avg" | "min" | "max";
 export type ChartSortMode = "value-desc" | "value-asc" | "label-asc" | "label-desc";
 export type ChartOrientation = "vertical" | "horizontal";
+export type ChartAxisAssignment = "primary" | "secondary";
+export type ChartSeriesType = "line" | "area" | "bar" | "column";
 export type RuntimeFilterMode = "global" | "selected";
 export type RefreshCadence = "daily" | "weekly" | "monthly";
 
@@ -108,14 +123,20 @@ export interface ReportViewDefinition {
   chartType: ChartType;
   chartOrientation: ChartOrientation;
   chartFieldId: string;
+  chartSeriesFieldId: string;
   chartValueFieldId: string;
   chartAggregation: ChartAggregation;
+  chartSecondaryValueFieldId: string;
+  chartSecondaryAggregation: ChartAggregation;
+  chartUseSecondaryAxis: boolean;
+  chartSecondarySeriesType: ChartSeriesType;
   chartTopN: number;
   chartSort: ChartSortMode;
   chartShowLegend: boolean;
   chartShowValues: boolean;
   chartXAxisLabel: string;
   chartYAxisLabel: string;
+  chartSecondaryYAxisLabel: string;
   timelineDateField: string;
   timelineEndField: string;
   calendarDateField: string;
@@ -202,6 +223,9 @@ export interface ChartDatum {
   label: string;
   rawLabel?: string;
   value: number;
+  series?: string;
+  rawSeries?: string;
+  axis?: ChartAxisAssignment;
 }
 
 export interface DataFreshnessInfo {

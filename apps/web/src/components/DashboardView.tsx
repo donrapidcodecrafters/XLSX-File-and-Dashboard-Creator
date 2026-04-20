@@ -29,6 +29,11 @@ function widgetShowsChart(widget: DashboardRunResult["tabs"][number]["widgets"][
   return displayMode === "chart" || (displayMode === "table" && report.view.showChartInTable);
 }
 
+function widgetRenderMode(widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], report: DashboardRunResult["tabs"][number]["widgets"][number]["report"]) {
+  if (widget.displayMode !== "inherit") return widget.displayMode;
+  return report.view.mode;
+}
+
 function getFieldLabel(tables: TableDefinition[] | undefined, report: DashboardRunResult["tabs"][number]["widgets"][number]["report"], fieldId: string) {
   const table = tables?.find((item) => item.id === report.sourceTableId || item.quickbaseTableId === report.sourceTableId);
   return table ? getReportFieldLabel(report, table, fieldId) : fieldId;
@@ -306,6 +311,8 @@ export function DashboardView({
                       chartOrientation={widget.report.view.chartOrientation}
                       xAxisLabel={widget.report.view.chartXAxisLabel}
                       yAxisLabel={widget.report.view.chartYAxisLabel}
+                      secondaryYAxisLabel={widget.report.view.chartSecondaryYAxisLabel}
+                      secondarySeriesType={widget.report.view.chartSecondarySeriesType}
                       compact
                       showLegend={widget.report.view.chartShowLegend}
                       showValues={widget.report.view.chartShowValues}
@@ -314,46 +321,101 @@ export function DashboardView({
                     />
                   </div>
                 ) : null}
-                {resolveWidgetDisplayMode(widget.widget, widget.report.view.mode) === "table" || widget.widget.showDetails ? (
-                  <div className="table-shell compact-table-shell">
+                {widgetRenderMode(widget.widget, widget.report) === "table" || widgetRenderMode(widget.widget, widget.report) === "timeline" || widgetRenderMode(widget.widget, widget.report) === "calendar" || widgetRenderMode(widget.widget, widget.report) === "kanban" || widget.widget.showDetails ? (
+                  <div className="compact-table-shell">
                     <div className="widget-table-toolbar">
                       <button className="ghost-button" disabled={currentPage <= 1 || pageLoading} onClick={() => { void changeWidgetPage(widget, currentPage - 1); }}>Previous</button>
                       <span className="micro">Page {currentPage} of {totalPages} · {pagedResult.totalRows || 0} rows</span>
                       <button className="ghost-button" disabled={!pagedResult.hasNextPage || pageLoading} onClick={() => { void changeWidgetPage(widget, currentPage + 1); }}>Next</button>
                     </div>
-                    <table>
-                      <thead>
-                        <tr>
-                          {quickbaseLinkContext ? <th className="table-action-col">Quickbase</th> : null}
-                          {widget.report.selectedFieldIds.slice(0, 6).map((fieldId) => (
-                            <th key={fieldId}>{getFieldLabel(tables, widget.report, fieldId)}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {pagedResult.rows.map((row, index) => (
-                          <tr key={index}>
-                            {quickbaseLinkContext ? (
-                              <td className="table-action-cell">
-                                {String(row.__recordId || "").trim() ? (
-                                  <a
-                                    className="ghost-button table-edit-link"
-                                    href={buildQuickbaseRecordEditUrl(quickbaseLinkContext, String(row.__recordId || ""))}
-                                    target={openLinksInNewTab ? "_blank" : undefined}
-                                    rel={openLinksInNewTab ? "noreferrer" : undefined}
-                                  >
-                                    Edit
-                                  </a>
+                    {(() => {
+                      const mode = widgetRenderMode(widget.widget, widget.report);
+                      if (mode === "timeline" || mode === "calendar") {
+                        const dateFieldId = mode === "timeline" ? widget.report.view.timelineDateField : widget.report.view.calendarDateField;
+                        const titleFieldId = widget.report.view.titleFieldId || widget.report.selectedFieldIds[0] || "";
+                        return (
+                          <div className="studio-card-grid">
+                            {pagedResult.rows.map((row, index) => (
+                              <article className="studio-mini-card" key={index}>
+                                <strong>{widgetTable ? formatReportCellValue(widget.report, widgetTable, titleFieldId, row[titleFieldId]) : String(row[titleFieldId] ?? "")}</strong>
+                                <span>{widgetTable ? getReportFieldLabel(widget.report, widgetTable, dateFieldId) : "Date"}: {widgetTable ? formatReportCellValue(widget.report, widgetTable, dateFieldId, row[dateFieldId]) : String(row[dateFieldId] ?? "")}</span>
+                                {mode === "timeline" && widget.report.view.timelineEndField ? (
+                                  <span>Ends: {widgetTable ? formatReportCellValue(widget.report, widgetTable, widget.report.view.timelineEndField, row[widget.report.view.timelineEndField]) : String(row[widget.report.view.timelineEndField] ?? "")}</span>
                                 ) : null}
-                              </td>
-                            ) : null}
-                            {widget.report.selectedFieldIds.slice(0, 6).map((fieldId) => (
-                              <td key={fieldId}>{widgetTable ? formatReportCellValue(widget.report, widgetTable, fieldId, row[fieldId]) : String(row[fieldId] ?? "")}</td>
+                              </article>
                             ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                          </div>
+                        );
+                      }
+                      if (mode === "kanban") {
+                        const fieldId = widget.report.view.kanbanField || widget.report.selectedFieldIds[0] || "";
+                        const titleFieldId = widget.report.view.titleFieldId || widget.report.selectedFieldIds[0] || "";
+                        const columns = new Map<string, typeof pagedResult.rows>();
+                        pagedResult.rows.forEach((row) => {
+                          const key = widgetTable ? formatReportCellValue(widget.report, widgetTable, fieldId, row[fieldId]) : String(row[fieldId] ?? "Unassigned");
+                          columns.set(key || "Unassigned", [...(columns.get(key || "Unassigned") || []), row]);
+                        });
+                        return (
+                          <div className="kanban-board">
+                            {Array.from(columns.entries()).map(([column, columnRows]) => (
+                              <section className="kanban-column" key={column}>
+                                <div className="kanban-head">
+                                  <strong>{column}</strong>
+                                  <span>{columnRows.length}</span>
+                                </div>
+                                <div className="kanban-stack">
+                                  {columnRows.map((row, index) => (
+                                    <article className="studio-mini-card" key={index}>
+                                      <strong>{widgetTable ? formatReportCellValue(widget.report, widgetTable, titleFieldId, row[titleFieldId]) : String(row[titleFieldId] ?? "")}</strong>
+                                      {widget.report.selectedFieldIds.filter((fieldId) => fieldId !== titleFieldId).slice(0, 3).map((fieldId) => (
+                                        <span key={fieldId}>{widgetTable ? formatReportCellValue(widget.report, widgetTable, fieldId, row[fieldId]) : String(row[fieldId] ?? "")}</span>
+                                      ))}
+                                    </article>
+                                  ))}
+                                </div>
+                              </section>
+                            ))}
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="table-shell">
+                          <table>
+                            <thead>
+                              <tr>
+                                {quickbaseLinkContext ? <th className="table-action-col">Quickbase</th> : null}
+                                {widget.report.selectedFieldIds.slice(0, 6).map((fieldId) => (
+                                  <th key={fieldId}>{getFieldLabel(tables, widget.report, fieldId)}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {pagedResult.rows.map((row, index) => (
+                                <tr key={index}>
+                                  {quickbaseLinkContext ? (
+                                    <td className="table-action-cell">
+                                      {String(row.__recordId || "").trim() ? (
+                                        <a
+                                          className="ghost-button table-edit-link"
+                                          href={buildQuickbaseRecordEditUrl(quickbaseLinkContext, String(row.__recordId || ""))}
+                                          target={openLinksInNewTab ? "_blank" : undefined}
+                                          rel={openLinksInNewTab ? "noreferrer" : undefined}
+                                        >
+                                          Edit
+                                        </a>
+                                      ) : null}
+                                    </td>
+                                  ) : null}
+                                  {widget.report.selectedFieldIds.slice(0, 6).map((fieldId) => (
+                                    <td key={fieldId}>{widgetTable ? formatReportCellValue(widget.report, widgetTable, fieldId, row[fieldId]) : String(row[fieldId] ?? "")}</td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    })()}
                   </div>
                 ) : null}
                 </article>

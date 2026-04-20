@@ -136,6 +136,11 @@ function asNumber(value: unknown): number {
   return Number.isFinite(numeric) ? numeric : 0;
 }
 
+function isDateLike(value: unknown) {
+  if (value === null || value === undefined || String(value).trim() === "") return false;
+  return parseDateValue(value) !== null;
+}
+
 function normalizedFilterText(value: unknown): string {
   return String(value ?? "").trim().toLowerCase();
 }
@@ -149,6 +154,22 @@ function parseDateValue(value: unknown): Date | null {
   if (!value) return null;
   const date = new Date(String(value));
   return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function startOfUtcDay(date: Date) {
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+}
+
+function compareTemporalValues(raw: unknown, expected: unknown) {
+  const leftDate = parseDateValue(raw);
+  const rightDate = parseDateValue(expected);
+  if (leftDate && rightDate) {
+    return {
+      exact: startOfUtcDay(leftDate) - startOfUtcDay(rightDate),
+      precise: leftDate.getTime() - rightDate.getTime()
+    };
+  }
+  return null;
 }
 
 function matchesDateToken(value: unknown, token: string): boolean {
@@ -188,14 +209,28 @@ export function matchesFilter(row: DataRow, filter: FilterDefinition): boolean {
   if (filter.operator === "not-contains") {
     return normalizedCandidates.every((value) => !value.includes(normalizedExpected));
   }
-  if (filter.operator === "gt") return asNumber(raw) > asNumber(expected);
-  if (filter.operator === "gte") return asNumber(raw) >= asNumber(expected);
-  if (filter.operator === "lt") return asNumber(raw) < asNumber(expected);
-  if (filter.operator === "lte") return asNumber(raw) <= asNumber(expected);
+  const temporalComparison = compareTemporalValues(raw, expected);
+  if (filter.operator === "on") {
+    return temporalComparison ? temporalComparison.exact === 0 : normalizedCandidates.some((value) => value === normalizedExpected);
+  }
+  if (filter.operator === "on-or-after") {
+    return temporalComparison ? temporalComparison.exact >= 0 : asNumber(raw) >= asNumber(expected);
+  }
+  if (filter.operator === "on-or-before") {
+    return temporalComparison ? temporalComparison.exact <= 0 : asNumber(raw) <= asNumber(expected);
+  }
+  if (filter.operator === "gt") return temporalComparison ? temporalComparison.precise > 0 : asNumber(raw) > asNumber(expected);
+  if (filter.operator === "gte") return temporalComparison ? temporalComparison.precise >= 0 : asNumber(raw) >= asNumber(expected);
+  if (filter.operator === "lt") return temporalComparison ? temporalComparison.precise < 0 : asNumber(raw) < asNumber(expected);
+  if (filter.operator === "lte") return temporalComparison ? temporalComparison.precise <= 0 : asNumber(raw) <= asNumber(expected);
   if (looksNumeric(raw) && looksNumeric(expected)) {
     const numericExpected = asNumber(expected);
     if (filter.operator === "not-equals") return asArray(raw).every((value) => asNumber(value) !== numericExpected);
     return asArray(raw).some((value) => asNumber(value) === numericExpected);
+  }
+  if (isDateLike(raw) && isDateLike(expected)) {
+    if (filter.operator === "not-equals") return asArray(raw).every((value) => compareTemporalValues(value, expected)?.exact !== 0);
+    return asArray(raw).some((value) => compareTemporalValues(value, expected)?.exact === 0);
   }
   if (filter.operator === "not-equals") return normalizedCandidates.every((value) => value !== normalizedExpected);
   return normalizedCandidates.some((value) => value === normalizedExpected);
@@ -269,29 +304,65 @@ function sortChartData(data: ChartDatum[], sort: ChartSortMode) {
   return next.sort((left, right) => right.value - left.value);
 }
 
+function categorySortValue(entries: ChartDatum[]) {
+  return entries
+    .filter((entry) => (entry.axis || "primary") === "primary")
+    .reduce((sum, entry) => sum + entry.value, 0);
+}
+
 function chartRows(rows: DataRow[], report: ReportDefinition): ChartDatum[] {
   const fieldId = report.view.chartFieldId || report.groups[0]?.fieldId || report.selectedFieldIds[0] || "";
   if (!fieldId) return [];
+  const seriesFieldId = report.view.chartSeriesFieldId || "";
   const valueFieldId = report.view.chartValueFieldId || "";
   const aggregation = report.view.chartAggregation || "count";
-  const groups = new Map<string, number[]>();
+  const secondaryValueFieldId = report.view.chartUseSecondaryAxis ? (report.view.chartSecondaryValueFieldId || "") : "";
+  const secondaryAggregation = report.view.chartSecondaryAggregation || "sum";
+  const groups = new Map<string, { primary: number[]; secondary: number[] }>();
   for (const row of rows) {
-    const key = String(row[fieldId] ?? "Unassigned");
-    const numericValue = aggregation === "count" ? 1 : asNumber(row[valueFieldId]);
-    const existing = groups.get(key) || [];
-    existing.push(numericValue);
-    groups.set(key, existing);
+    const categoryKey = String(row[fieldId] ?? "Unassigned");
+    const seriesKey = seriesFieldId ? String(row[seriesFieldId] ?? "Unassigned") : "";
+    const key = `${categoryKey}::${seriesKey}`;
+    const current = groups.get(key) || { primary: [], secondary: [] };
+    current.primary.push(aggregation === "count" ? 1 : asNumber(row[valueFieldId]));
+    if (secondaryValueFieldId) {
+      current.secondary.push(secondaryAggregation === "count" ? 1 : asNumber(row[secondaryValueFieldId]));
+    }
+    groups.set(key, current);
   }
-  const sorted = sortChartData(
-    Array.from(groups.entries()).map(([label, values]) => ({
-      label: getChartLabel(report, label),
-      rawLabel: label,
-      value: aggregateValues(values, aggregation)
-    })),
-    report.view.chartSort || "value-desc"
-  );
+  const groupedByCategory = new Map<string, ChartDatum[]>();
+  for (const [key, values] of groups.entries()) {
+    const [rawLabel, rawSeries = ""] = key.split("::");
+    const entries = groupedByCategory.get(rawLabel) || [];
+    entries.push({
+      label: getChartLabel(report, rawLabel),
+      rawLabel,
+      value: aggregateValues(values.primary, aggregation),
+      series: rawSeries ? getChartLabel(report, rawSeries) : undefined,
+      rawSeries: rawSeries || undefined,
+      axis: "primary"
+    });
+    if (secondaryValueFieldId) {
+      entries.push({
+        label: getChartLabel(report, rawLabel),
+        rawLabel,
+        value: aggregateValues(values.secondary, secondaryAggregation),
+        series: rawSeries ? getChartLabel(report, rawSeries) : undefined,
+        rawSeries: rawSeries || undefined,
+        axis: "secondary"
+      });
+    }
+    groupedByCategory.set(rawLabel, entries);
+  }
+  const sortedCategories = Array.from(groupedByCategory.entries());
+  const sort = report.view.chartSort || "value-desc";
+  if (sort === "value-asc") sortedCategories.sort((left, right) => categorySortValue(left[1]) - categorySortValue(right[1]));
+  else if (sort === "label-asc") sortedCategories.sort((left, right) => getChartLabel(report, left[0]).localeCompare(getChartLabel(report, right[0]), undefined, { numeric: true }));
+  else if (sort === "label-desc") sortedCategories.sort((left, right) => getChartLabel(report, right[0]).localeCompare(getChartLabel(report, left[0]), undefined, { numeric: true }));
+  else sortedCategories.sort((left, right) => categorySortValue(right[1]) - categorySortValue(left[1]));
   const topN = Math.max(0, Number(report.view.chartTopN) || 0);
-  return topN ? sorted.slice(0, topN) : sorted;
+  const trimmed = topN ? sortedCategories.slice(0, topN) : sortedCategories;
+  return trimmed.flatMap(([, entries]) => entries);
 }
 
 export function runReport(
@@ -313,7 +384,7 @@ export function runReport(
   const metricSet = report.summaryMetrics.length
     ? report.summaryMetrics
     : [{ id: "default-count", fieldId: report.selectedFieldIds[0] || "recordId", op: "count" as const, label: "Rows" }];
-  const warnings = report.selectedFieldIds.length ? [] : ["This report has no selected fields."];
+  const warnings = report.selectedFieldIds.length || !report.view.showDetails ? [] : ["This report has no selected fields."];
   const titleField = report.view.titleFieldId || report.selectedFieldIds[0] || "";
   const normalizedRows = projected.map((row) => ({
     ...(row.__recordId ? { __recordId: row.__recordId } : {}),

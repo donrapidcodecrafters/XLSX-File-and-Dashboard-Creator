@@ -99,6 +99,96 @@ export function ReportView({
     return "Local fallback data";
   }
 
+  function renderDetailContent() {
+    if (!result) return null;
+    const rows = result.rows || [];
+    if (report.view.mode === "timeline" || report.view.mode === "calendar") {
+      const dateFieldId = report.view.mode === "timeline" ? report.view.timelineDateField : report.view.calendarDateField;
+      const titleFieldId = report.view.titleFieldId || report.selectedFieldIds[0] || "";
+      return (
+        <div className="studio-card-grid">
+          {rows.map((row, index) => (
+            <article className="studio-mini-card" key={index}>
+              <strong>{table ? formatReportCellValue(report, table, titleFieldId, row[titleFieldId]) : String(row[titleFieldId] ?? "")}</strong>
+              <span>{table ? getReportFieldLabel(report, table, dateFieldId) : "Date"}: {table ? formatReportCellValue(report, table, dateFieldId, row[dateFieldId]) : String(row[dateFieldId] ?? "")}</span>
+              {report.view.mode === "timeline" && report.view.timelineEndField ? (
+                <span>Ends: {table ? formatReportCellValue(report, table, report.view.timelineEndField, row[report.view.timelineEndField]) : String(row[report.view.timelineEndField] ?? "")}</span>
+              ) : null}
+            </article>
+          ))}
+        </div>
+      );
+    }
+    if (report.view.mode === "kanban") {
+      const statusFieldId = report.view.kanbanField || report.selectedFieldIds[0] || "";
+      const titleFieldId = report.view.titleFieldId || report.selectedFieldIds[0] || "";
+      const columns = new Map<string, typeof rows>();
+      rows.forEach((row) => {
+        const key = table ? formatReportCellValue(report, table, statusFieldId, row[statusFieldId]) : String(row[statusFieldId] ?? "Unassigned");
+        columns.set(key || "Unassigned", [...(columns.get(key || "Unassigned") || []), row]);
+      });
+      return (
+        <div className="kanban-board">
+          {Array.from(columns.entries()).map(([column, columnRows]) => (
+            <section className="kanban-column" key={column}>
+              <div className="kanban-head">
+                <strong>{column}</strong>
+                <span>{columnRows.length}</span>
+              </div>
+              <div className="kanban-stack">
+                {columnRows.map((row, index) => (
+                  <article className="studio-mini-card" key={index}>
+                    <strong>{table ? formatReportCellValue(report, table, titleFieldId, row[titleFieldId]) : String(row[titleFieldId] ?? "")}</strong>
+                    {report.selectedFieldIds.filter((fieldId) => fieldId !== titleFieldId).slice(0, 3).map((fieldId) => (
+                      <span key={fieldId}>{table ? formatReportCellValue(report, table, fieldId, row[fieldId]) : String(row[fieldId] ?? "")}</span>
+                    ))}
+                  </article>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      );
+    }
+    return (
+      <div className="table-shell">
+        <table>
+          <thead>
+            <tr>
+              {quickbaseLinkContext ? <th className="table-action-col">Quickbase</th> : null}
+              {report.selectedFieldIds.map((fieldId) => (
+                <th key={fieldId}>{table ? getReportFieldLabel(report, table, fieldId) : fieldId}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, index) => (
+              <tr key={index}>
+                {quickbaseLinkContext ? (
+                  <td className="table-action-cell">
+                    {String(row.__recordId || "").trim() ? (
+                      <a
+                        className="ghost-button table-edit-link"
+                        href={buildQuickbaseRecordEditUrl(quickbaseLinkContext, String(row.__recordId || ""))}
+                        target={openLinksInNewTab ? "_blank" : undefined}
+                        rel={openLinksInNewTab ? "noreferrer" : undefined}
+                      >
+                        Edit
+                      </a>
+                    ) : null}
+                  </td>
+                ) : null}
+                {report.selectedFieldIds.map((fieldId) => (
+                  <td key={fieldId}>{table ? formatReportCellValue(report, table, fieldId, row[fieldId]) : String(row[fieldId] ?? "")}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
   return (
     <section className="surface stack">
       <div className="hero">
@@ -182,6 +272,8 @@ export function ReportView({
               chartOrientation={report.view.chartOrientation}
               xAxisLabel={report.view.chartXAxisLabel}
               yAxisLabel={report.view.chartYAxisLabel}
+              secondaryYAxisLabel={report.view.chartSecondaryYAxisLabel}
+              secondarySeriesType={report.view.chartSecondarySeriesType}
               showLegend={report.view.chartShowLegend}
               showValues={report.view.chartShowValues}
               openLinksInNewTab={openLinksInNewTab}
@@ -205,41 +297,7 @@ export function ReportView({
           {loading ? (
             <div className="empty">Loading rows…</div>
           ) : (
-            <div className="table-shell">
-              <table>
-                <thead>
-                  <tr>
-                    {quickbaseLinkContext ? <th className="table-action-col">Quickbase</th> : null}
-                    {report.selectedFieldIds.map((fieldId) => (
-                      <th key={fieldId}>{table ? getReportFieldLabel(report, table, fieldId) : fieldId}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {(result?.rows || []).map((row, index) => (
-                    <tr key={index}>
-                      {quickbaseLinkContext ? (
-                        <td className="table-action-cell">
-                          {String(row.__recordId || "").trim() ? (
-                            <a
-                              className="ghost-button table-edit-link"
-                              href={buildQuickbaseRecordEditUrl(quickbaseLinkContext, String(row.__recordId || ""))}
-                              target={openLinksInNewTab ? "_blank" : undefined}
-                              rel={openLinksInNewTab ? "noreferrer" : undefined}
-                            >
-                              Edit
-                            </a>
-                          ) : null}
-                        </td>
-                      ) : null}
-                      {report.selectedFieldIds.map((fieldId) => (
-                        <td key={fieldId}>{table ? formatReportCellValue(report, table, fieldId, row[fieldId]) : String(row[fieldId] ?? "")}</td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            renderDetailContent()
           )}
         </div>
       ) : null}

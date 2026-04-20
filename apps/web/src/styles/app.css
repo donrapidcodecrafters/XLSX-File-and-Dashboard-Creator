@@ -545,6 +545,14 @@ input {
   text-align: center;
 }
 
+.chart-axis-title-right {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .axis-svg-shell {
   min-width: 0;
   overflow: hidden;

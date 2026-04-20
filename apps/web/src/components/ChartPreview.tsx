@@ -1,4 +1,4 @@
-import type { ChartDatum, ChartOrientation, ChartType } from "@studio/shared";
+import type { ChartDatum, ChartOrientation, ChartSeriesType, ChartType } from "@studio/shared";
 
 const CHART_COLORS = [
   "#0d7c66",
@@ -19,6 +19,8 @@ interface ChartPreviewProps {
   decimalPlaces?: number;
   xAxisLabel?: string;
   yAxisLabel?: string;
+  secondaryYAxisLabel?: string;
+  secondarySeriesType?: ChartSeriesType;
   compact?: boolean;
   showLegend?: boolean;
   showValues?: boolean;
@@ -34,6 +36,60 @@ function getColor(index: number) {
   return CHART_COLORS[index % CHART_COLORS.length];
 }
 
+function collapseChartData(data: ChartDatum[], axis: "primary" | "secondary" = "primary") {
+  const grouped = new Map<string, ChartDatum>();
+  data
+    .filter((datum) => (datum.axis || "primary") === axis)
+    .forEach((datum) => {
+      const key = String(datum.rawLabel ?? datum.label ?? "");
+      const current = grouped.get(key) || {
+        label: datum.label,
+        rawLabel: datum.rawLabel,
+        value: 0,
+        axis
+      };
+      current.value += datum.value;
+      grouped.set(key, current);
+    });
+  return Array.from(grouped.values());
+}
+
+function deriveCategories(data: ChartDatum[]) {
+  return Array.from(new Set(data.map((datum) => String(datum.rawLabel ?? datum.label ?? "")))).map((rawLabel) => {
+    const match = data.find((datum) => String(datum.rawLabel ?? datum.label ?? "") === rawLabel);
+    return {
+      rawLabel,
+      label: match?.label || rawLabel
+    };
+  });
+}
+
+function deriveSeries(data: ChartDatum[], axis: "primary" | "secondary" = "primary") {
+  const filtered = data.filter((datum) => (datum.axis || "primary") === axis);
+  const rawSeries = Array.from(new Set(filtered.map((datum) => String(datum.rawSeries || datum.series || ""))));
+  if (!rawSeries.length || (rawSeries.length === 1 && rawSeries[0] === "")) {
+    return [{
+      rawSeries: "",
+      label: axis === "secondary" ? "Secondary" : "Values"
+    }];
+  }
+  return rawSeries.map((rawSeries) => {
+    const match = filtered.find((datum) => String(datum.rawSeries || datum.series || "") === rawSeries);
+    return {
+      rawSeries,
+      label: match?.series || rawSeries || (axis === "secondary" ? "Secondary" : "Values")
+    };
+  });
+}
+
+function valueForCategory(data: ChartDatum[], rawLabel: string, rawSeries: string, axis: "primary" | "secondary" = "primary") {
+  return data
+    .filter((datum) => (datum.axis || "primary") === axis)
+    .filter((datum) => String(datum.rawLabel ?? datum.label ?? "") === rawLabel)
+    .filter((datum) => String(datum.rawSeries || datum.series || "") === rawSeries)
+    .reduce((sum, datum) => sum + datum.value, 0);
+}
+
 function normalizeChartType(chartType: ChartType, orientation: ChartOrientation): ChartType {
   if (chartType === "horizontal-bar") return "bar";
   if (chartType === "horizontal-stacked-bar") return "stacked-bar";
@@ -44,7 +100,6 @@ function normalizeChartType(chartType: ChartType, orientation: ChartOrientation)
   if (chartType === "3d-donut") return "donut";
   if (chartType === "3d-funnel") return "funnel";
   if (chartType === "3d-scatter") return "scatter";
-  if (chartType === "line-bar") return "line";
   if (chartType === "spline") return "line";
   if (chartType === "area-spline" || chartType === "streamgraph") return "area";
   if (chartType === "radial-bar") return "gauge";
@@ -190,6 +245,8 @@ export function ChartPreview({
   decimalPlaces = 2,
   xAxisLabel = "",
   yAxisLabel = "",
+  secondaryYAxisLabel = "",
+  secondarySeriesType = "line",
   compact = false,
   showLegend = true,
   showValues = true,
@@ -201,8 +258,13 @@ export function ChartPreview({
   }
 
   const items = data;
+  const primaryItems = collapseChartData(items, "primary");
+  const secondaryItems = collapseChartData(items, "secondary");
+  const categories = deriveCategories(items.length ? items : primaryItems);
+  const primarySeries = deriveSeries(items, "primary");
+  const secondarySeries = deriveSeries(items, "secondary");
   const max = Math.max(...items.map((item) => item.value), 1);
-  const total = items.reduce((sum, item) => sum + item.value, 0) || 1;
+  const total = primaryItems.reduce((sum, item) => sum + item.value, 0) || 1;
   const normalizedChartType = normalizeChartType(chartType, chartOrientation);
   const orientation = chartType === "horizontal-bar" || chartType === "horizontal-stacked-bar"
     ? "horizontal"
@@ -217,7 +279,7 @@ export function ChartPreview({
     const outerRadius = 82;
     const innerRadius = normalizedChartType === "donut" ? 44 : 0;
     let offset = 0;
-    const slices = items.map((item, index) => {
+    const slices = primaryItems.map((item, index) => {
       const startAngle = (offset / total) * 360;
       offset += item.value;
       const endAngle = (offset / total) * 360;
@@ -258,23 +320,32 @@ export function ChartPreview({
             ) : null}
           </div>
         </div>
-        {renderAxisLegend(items, compact, showLegend, showValues, getDatumHref, openLinksInNewTab)}
+        {renderAxisLegend(primaryItems, compact, showLegend, showValues, getDatumHref, openLinksInNewTab)}
       </div>
     );
   }
 
   if (normalizedChartType === "column" || normalizedChartType === "stacked-column" || ((normalizedChartType === "bar" || normalizedChartType === "stacked-bar") && orientation === "vertical")) {
-    const { ticks, axisMax } = axisMaxFor(items.map((item) => item.value), compact);
+    const stacked = normalizedChartType === "stacked-column" || normalizedChartType === "stacked-bar";
+    const categorySums = categories.map((category) =>
+      primarySeries.reduce((sum, series) => sum + valueForCategory(items, category.rawLabel, series.rawSeries, "primary"), 0)
+    );
+    const primaryMax = Math.max(...categorySums, ...primaryItems.map((item) => item.value), 1);
+    const { ticks, axisMax } = axisMaxFor([primaryMax], compact);
     const chartWidth = 760;
     const chartHeight = 348;
     const leftPad = axisTickTextWidth(ticks, decimalPlaces, compact);
     const rightPad = 24;
     const topPad = 24;
-    const bottomPad = columnBottomPad(items.length, compact, Boolean(xAxisLabel));
+    const bottomPad = columnBottomPad(categories.length, compact, Boolean(xAxisLabel));
     const plotWidth = chartWidth - leftPad - rightPad;
     const plotHeight = chartHeight - topPad - bottomPad;
-    const step = plotWidth / Math.max(items.length, 1);
-    const barWidth = Math.max(18, Math.min(56, step * 0.58));
+    const step = plotWidth / Math.max(categories.length, 1);
+    const seriesCount = Math.max(primarySeries.length, 1);
+    const groupWidth = Math.max(24, Math.min(88, step * 0.72));
+    const barWidth = stacked
+      ? groupWidth
+      : Math.max(12, Math.min(36, (groupWidth - Math.max(0, seriesCount - 1) * 6) / seriesCount));
     return (
       <div className="axis-chart-shell">
         {renderTitle(title)}
@@ -302,36 +373,53 @@ export function ChartPreview({
                 {yAxisLabel}
               </text>
             ) : null}
-            {items.map((item, index) => {
-              const x = leftPad + step * index + (step - barWidth) / 2;
-              const height = Math.max(14, (item.value / axisMax) * plotHeight);
-              const y = topPad + plotHeight - height;
-              const href = getDatumHref?.(item) || "";
-              const content = (
-                <g key={`${item.label}-${index}`} className={href ? "chart-linkable" : undefined}>
-                  <rect x={x} y={y} width={barWidth} height={height} rx="10" fill={getColor(index)} fillOpacity="0.9" />
-                  {showValues ? (
-                    <text x={x + barWidth / 2} y={y - 8} textAnchor="middle" className="chart-svg-value">
-                      {formatAxisValue(item.value, decimalPlaces)}
-                    </text>
-                  ) : null}
+            {categories.map((category, categoryIndex) => {
+              const groupX = leftPad + step * categoryIndex + (step - groupWidth) / 2;
+              let stackedHeight = 0;
+              return (
+                <g key={category.rawLabel}>
+                  {primarySeries.map((series, seriesIndex) => {
+                    const datum = items.find((item) =>
+                      String(item.rawLabel ?? item.label ?? "") === category.rawLabel &&
+                      String(item.rawSeries || item.series || "") === series.rawSeries &&
+                      (item.axis || "primary") === "primary"
+                    );
+                    const value = datum?.value || 0;
+                    const height = Math.max(value > 0 ? 8 : 0, (value / axisMax) * plotHeight);
+                    const x = stacked ? groupX : groupX + seriesIndex * (barWidth + 6);
+                    const y = stacked
+                      ? topPad + plotHeight - stackedHeight - height
+                      : topPad + plotHeight - height;
+                    if (stacked) {
+                      stackedHeight += height;
+                    }
+                    const href = datum ? (getDatumHref?.(datum) || "") : "";
+                    const content = (
+                      <g key={`${category.rawLabel}-${series.rawSeries || "default"}-${seriesIndex}`} className={href ? "chart-linkable" : undefined}>
+                        <rect x={x} y={y} width={barWidth} height={Math.max(height, 0)} rx="10" fill={getColor(seriesIndex)} fillOpacity="0.9" />
+                        {showValues && value > 0 ? (
+                          <text x={x + barWidth / 2} y={Math.max(topPad + 12, y - 8)} textAnchor="middle" className="chart-svg-value">
+                            {formatAxisValue(value, decimalPlaces)}
+                          </text>
+                        ) : null}
+                      </g>
+                    );
+                    return href ? (
+                      <a key={`${category.rawLabel}-${series.rawSeries || "default"}-${seriesIndex}`} href={href} target={anchorTarget} rel={anchorRel}>
+                        {content}
+                      </a>
+                    ) : content;
+                  })}
                   <text
-                    x={x + barWidth / 2}
+                    x={groupX + groupWidth / 2}
                     y={topPad + plotHeight + 16}
                     textAnchor="end"
-                    transform={`rotate(-40 ${x + barWidth / 2} ${topPad + plotHeight + 16})`}
+                    transform={`rotate(-40 ${groupX + groupWidth / 2} ${topPad + plotHeight + 16})`}
                     className="chart-svg-label"
                   >
-                    {xTickLabel(item.label, index, items.length, compact)}
+                    {xTickLabel(category.label, categoryIndex, categories.length, compact)}
                   </text>
                 </g>
-              );
-              return (
-                href ? (
-                  <a key={`${item.label}-${index}`} href={href} target={anchorTarget} rel={anchorRel}>
-                    {content}
-                  </a>
-                ) : content
               );
             })}
             {xAxisLabel ? (
@@ -341,23 +429,39 @@ export function ChartPreview({
             ) : null}
           </svg>
         </div>
+        {primarySeries.length > 1 ? renderAxisLegend(primarySeries.map((series, index) => ({
+          label: series.label,
+          value: 0,
+          rawLabel: series.rawSeries,
+          rawSeries: series.rawSeries,
+          series: series.label
+        })), compact, showLegend, false, undefined, openLinksInNewTab) : null}
       </div>
     );
   }
 
   if ((normalizedChartType === "bar" || normalizedChartType === "stacked-bar") && orientation === "horizontal") {
-    const { ticks, axisMax } = axisMaxFor(items.map((item) => item.value), compact);
+    const stacked = normalizedChartType === "stacked-bar";
+    const categorySums = categories.map((category) =>
+      primarySeries.reduce((sum, series) => sum + valueForCategory(items, category.rawLabel, series.rawSeries, "primary"), 0)
+    );
+    const primaryMax = Math.max(...categorySums, ...primaryItems.map((item) => item.value), 1);
+    const { ticks, axisMax } = axisMaxFor([primaryMax], compact);
     const chartWidth = 760;
-    const chartHeight = Math.max(220, 84 + items.length * 44);
-    const labelPad = Math.min(220, Math.max(132, items.reduce((max, item) => Math.max(max, cap(item.label, compact ? 12 : 18).length), 1) * 8 + 36));
+    const chartHeight = Math.max(220, 84 + categories.length * 44);
+    const labelPad = Math.min(220, Math.max(132, categories.reduce((max, item) => Math.max(max, cap(item.label, compact ? 12 : 18).length), 1) * 8 + 36));
     const leftPad = labelPad + (yAxisLabel ? 26 : 0);
     const rightPad = showValues ? axisTickTextWidth([axisMax], decimalPlaces, compact) : 28;
     const topPad = 20;
     const bottomPad = xAxisLabel ? 54 : 36;
     const plotWidth = chartWidth - leftPad - rightPad;
     const plotHeight = chartHeight - topPad - bottomPad;
-    const rowHeight = plotHeight / Math.max(items.length, 1);
-    const barHeight = Math.max(14, Math.min(28, rowHeight * 0.56));
+    const rowHeight = plotHeight / Math.max(categories.length, 1);
+    const seriesCount = Math.max(primarySeries.length, 1);
+    const groupHeight = Math.max(18, Math.min(34, rowHeight * 0.72));
+    const barHeight = stacked
+      ? groupHeight
+      : Math.max(10, Math.min(24, (groupHeight - Math.max(0, seriesCount - 1) * 4) / seriesCount));
     return (
       <div className="axis-chart-shell">
         {renderTitle(title)}
@@ -385,27 +489,43 @@ export function ChartPreview({
             ) : null}
             <line x1={leftPad} y1={topPad} x2={leftPad} y2={topPad + plotHeight} className="chart-axis-svg-line" />
             <line x1={leftPad} y1={topPad + plotHeight} x2={chartWidth - rightPad} y2={topPad + plotHeight} className="chart-axis-svg-line" />
-            {items.map((item, index) => {
-              const y = topPad + rowHeight * index + (rowHeight - barHeight) / 2;
-              const width = Math.max(12, (item.value / axisMax) * plotWidth);
-              const href = getDatumHref?.(item) || "";
-              const content = (
-                <g key={`${item.label}-${index}`} className={href ? "chart-linkable" : undefined}>
-                  <text x={leftPad - 12} y={y + barHeight / 2 + 4} textAnchor="end" className="chart-svg-label">{cap(item.label, compact ? 12 : 18)}</text>
-                  <rect x={leftPad} y={y} width={width} height={barHeight} rx="10" fill={getColor(index)} fillOpacity="0.9" />
-                  {showValues ? (
-                    <text x={leftPad + width + 10} y={y + barHeight / 2 + 4} textAnchor="start" className="chart-svg-value">
-                      {formatAxisValue(item.value, decimalPlaces)}
-                    </text>
-                  ) : null}
-                </g>
-              );
+            {categories.map((category, categoryIndex) => {
+              const groupY = topPad + rowHeight * categoryIndex + (rowHeight - groupHeight) / 2;
+              let stackedWidth = 0;
               return (
-                href ? (
-                  <a key={`${item.label}-${index}`} href={href} target={anchorTarget} rel={anchorRel}>
-                    {content}
-                  </a>
-                ) : content
+                <g key={category.rawLabel}>
+                  <text x={leftPad - 12} y={groupY + groupHeight / 2 + 4} textAnchor="end" className="chart-svg-label">{cap(category.label, compact ? 12 : 18)}</text>
+                  {primarySeries.map((series, seriesIndex) => {
+                    const datum = items.find((item) =>
+                      String(item.rawLabel ?? item.label ?? "") === category.rawLabel &&
+                      String(item.rawSeries || item.series || "") === series.rawSeries &&
+                      (item.axis || "primary") === "primary"
+                    );
+                    const value = datum?.value || 0;
+                    const width = Math.max(value > 0 ? 8 : 0, (value / axisMax) * plotWidth);
+                    const y = stacked ? groupY : groupY + seriesIndex * (barHeight + 4);
+                    const x = stacked ? leftPad + stackedWidth : leftPad;
+                    if (stacked) {
+                      stackedWidth += width;
+                    }
+                    const href = datum ? (getDatumHref?.(datum) || "") : "";
+                    const content = (
+                      <g key={`${category.rawLabel}-${series.rawSeries || "default"}-${seriesIndex}`} className={href ? "chart-linkable" : undefined}>
+                        <rect x={x} y={y} width={width} height={barHeight} rx="10" fill={getColor(seriesIndex)} fillOpacity="0.9" />
+                        {showValues && value > 0 ? (
+                          <text x={x + width + 10} y={y + barHeight / 2 + 4} textAnchor="start" className="chart-svg-value">
+                            {formatAxisValue(value, decimalPlaces)}
+                          </text>
+                        ) : null}
+                      </g>
+                    );
+                    return href ? (
+                      <a key={`${category.rawLabel}-${series.rawSeries || "default"}-${seriesIndex}`} href={href} target={anchorTarget} rel={anchorRel}>
+                        {content}
+                      </a>
+                    ) : content;
+                  })}
+                </g>
               );
             })}
             {xAxisLabel ? (
@@ -415,26 +535,50 @@ export function ChartPreview({
             ) : null}
           </svg>
         </div>
+        {primarySeries.length > 1 ? renderAxisLegend(primarySeries.map((series) => ({
+          label: series.label,
+          value: 0,
+          rawLabel: series.rawSeries,
+          rawSeries: series.rawSeries,
+          series: series.label
+        })), compact, showLegend, false, undefined, openLinksInNewTab) : null}
       </div>
     );
   }
 
-  if (normalizedChartType === "line" || normalizedChartType === "area") {
-    const { ticks, axisMax } = axisMaxFor(items.map((item) => item.value), compact);
+  if (normalizedChartType === "line" || normalizedChartType === "area" || normalizedChartType === "line-bar") {
+    const primaryMax = Math.max(...primaryItems.map((item) => item.value), 1);
+    const secondaryMax = Math.max(...secondaryItems.map((item) => item.value), 1);
+    const { ticks, axisMax } = axisMaxFor([primaryMax], compact);
+    const secondaryAxis = secondaryItems.length ? axisMaxFor([secondaryMax], compact) : null;
     const reversedTicks = [...ticks].reverse();
     const yAxisWidth = axisTickTextWidth(ticks, decimalPlaces, compact);
-    const points = items.map((item, index) => {
-      const x = items.length === 1 ? 200 : 20 + index * (360 / (items.length - 1));
-      const y = 200 - (item.value / axisMax) * 160;
-      return { x, y, item };
-    });
-    const polyline = points.map((point) => `${point.x},${point.y}`).join(" ");
-    const areaPoints = `20,200 ${polyline} 380,200`;
+    const secondaryAxisWidth = secondaryAxis ? axisTickTextWidth(secondaryAxis.ticks, decimalPlaces, compact) : 0;
+    const buildSeriesPoints = (seriesRaw: string, axis: "primary" | "secondary") => {
+      const maxValue = axis === "secondary" && secondaryAxis ? secondaryAxis.axisMax : axisMax;
+      return categories.map((category, index) => {
+        const x = categories.length === 1 ? 200 : 20 + index * (360 / Math.max(1, categories.length - 1));
+        const value = valueForCategory(items, category.rawLabel, seriesRaw, axis);
+        const y = 200 - (value / maxValue) * 160;
+        const item = items.find((datum) =>
+          String(datum.rawLabel ?? datum.label ?? "") === category.rawLabel &&
+          String(datum.rawSeries || datum.series || "") === seriesRaw &&
+          (datum.axis || "primary") === axis
+        ) || {
+          label: category.label,
+          rawLabel: category.rawLabel,
+          value,
+          rawSeries: seriesRaw,
+          axis
+        };
+        return { x, y, item };
+      });
+    };
 
     return (
       <div className="axis-chart-shell">
         {renderTitle(title)}
-        <div className="axis-chart-layout" style={{ gridTemplateColumns: `auto ${yAxisWidth}px minmax(0, 1fr)` }}>
+        <div className="axis-chart-layout" style={{ gridTemplateColumns: `auto ${yAxisWidth}px minmax(0, 1fr)${secondaryAxis ? ` ${secondaryAxisWidth}px` : ""}` }}>
           {yAxisLabel ? <div className="chart-axis-title chart-axis-title-vertical">{yAxisLabel}</div> : null}
           <div className="chart-y-axis">
             {reversedTicks.map((tick) => (
@@ -450,30 +594,132 @@ export function ChartPreview({
                 })}
                 <line x1="20" y1="20" x2="20" y2="200" className="chart-axis-svg-line" />
                 <line x1="20" y1="200" x2="380" y2="200" className="chart-axis-svg-line" />
-                {normalizedChartType === "area" ? <polygon points={areaPoints} /> : null}
-                <polyline points={polyline} />
-                {points.map((point, index) => {
-                  const href = getDatumHref?.(point.item) || "";
-                  const content = <circle key={`${point.item.label}-${index}`} cx={point.x} cy={point.y} r="5" fill={getColor(index)} className={href ? "chart-linkable" : undefined} />;
+                {normalizedChartType === "line-bar" ? categories.map((category, categoryIndex) => {
+                  const value = primarySeries.reduce((sum, series) => sum + valueForCategory(items, category.rawLabel, series.rawSeries, "primary"), 0);
+                  const width = Math.max(18, Math.min(42, 280 / Math.max(categories.length, 1)));
+                  const x = categories.length === 1 ? 200 - width / 2 : 20 + categoryIndex * (360 / Math.max(1, categories.length - 1)) - width / 2;
+                  const height = (value / axisMax) * 160;
+                  const y = 200 - height;
+                  const datum = primaryItems.find((item) => String(item.rawLabel ?? item.label ?? "") === category.rawLabel) || {
+                    label: category.label,
+                    rawLabel: category.rawLabel,
+                    value,
+                    axis: "primary" as const
+                  };
+                  const href = getDatumHref?.(datum) || "";
+                  const content = (
+                    <rect
+                      x={x}
+                      y={y}
+                      width={width}
+                      height={Math.max(height, 0)}
+                      rx="10"
+                      fill={getColor(categoryIndex)}
+                      fillOpacity="0.72"
+                      className={href ? "chart-linkable" : undefined}
+                    />
+                  );
                   return href ? (
-                    <a key={`${point.item.label}-${index}`} href={href} target={anchorTarget} rel={anchorRel}>
+                    <a key={`combo-bar-${category.rawLabel}`} href={href} target={anchorTarget} rel={anchorRel}>
                       {content}
                     </a>
                   ) : content;
+                }) : null}
+                {primarySeries.map((series, seriesIndex) => {
+                  const points = buildSeriesPoints(series.rawSeries, "primary");
+                  const polyline = points.map((point) => `${point.x},${point.y}`).join(" ");
+                  const areaPoints = `20,200 ${polyline} 380,200`;
+                  return (
+                    <g key={`primary-${series.rawSeries || "default"}-${seriesIndex}`}>
+                      {normalizedChartType === "area" ? <polygon points={areaPoints} fill={getColor(seriesIndex)} fillOpacity="0.18" /> : null}
+                      <polyline points={polyline} stroke={getColor(seriesIndex)} fill="none" strokeWidth="3" />
+                      {points.map((point, index) => {
+                        const href = getDatumHref?.(point.item) || "";
+                        const content = <circle key={`${series.rawSeries}-${point.item.label}-${index}`} cx={point.x} cy={point.y} r="5" fill={getColor(seriesIndex)} className={href ? "chart-linkable" : undefined} />;
+                        return href ? (
+                          <a key={`${series.rawSeries}-${point.item.label}-${index}`} href={href} target={anchorTarget} rel={anchorRel}>
+                            {content}
+                          </a>
+                        ) : content;
+                      })}
+                    </g>
+                  );
+                })}
+                {secondarySeries.map((series, seriesIndex) => {
+                  if (!secondaryItems.length) return null;
+                  const points = buildSeriesPoints(series.rawSeries, "secondary");
+                  const polyline = points.map((point) => `${point.x},${point.y}`).join(" ");
+                  const areaPoints = `20,200 ${polyline} 380,200`;
+                  const secondaryColor = getColor(primarySeries.length + seriesIndex);
+                  const seriesType = secondarySeriesType;
+                  return (
+                    <g key={`secondary-${series.rawSeries || "default"}-${seriesIndex}`}>
+                      {seriesType === "area" ? <polygon points={areaPoints} fill={secondaryColor} fillOpacity="0.12" /> : null}
+                      {(seriesType === "line" || seriesType === "area") ? (
+                        <polyline points={polyline} stroke={secondaryColor} fill="none" strokeWidth="3" strokeDasharray="8 5" />
+                      ) : null}
+                      {(seriesType === "bar" || seriesType === "column") ? points.map((point, index) => {
+                        const previousX = index === 0 ? 20 : points[index - 1].x;
+                        const nextX = index === points.length - 1 ? 380 : points[index + 1].x;
+                        const barWidth = Math.max(10, Math.min(24, ((nextX - previousX) / 2) * 0.35));
+                        const barHeight = 200 - point.y;
+                        const href = getDatumHref?.(point.item) || "";
+                        const content = (
+                          <rect
+                            key={`${series.rawSeries}-${point.item.label}-${index}-secondary-bar`}
+                            x={point.x - barWidth / 2}
+                            y={point.y}
+                            width={barWidth}
+                            height={Math.max(barHeight, 0)}
+                            rx="8"
+                            fill={secondaryColor}
+                            fillOpacity="0.58"
+                            className={href ? "chart-linkable" : undefined}
+                          />
+                        );
+                        return href ? (
+                          <a key={`${series.rawSeries}-${point.item.label}-${index}-secondary-bar`} href={href} target={anchorTarget} rel={anchorRel}>
+                            {content}
+                          </a>
+                        ) : content;
+                      }) : null}
+                      {points.map((point, index) => {
+                        const href = getDatumHref?.(point.item) || "";
+                        if (!(seriesType === "line" || seriesType === "area")) return null;
+                        const content = <circle key={`${series.rawSeries}-${point.item.label}-${index}`} cx={point.x} cy={point.y} r="4.5" fill={secondaryColor} className={href ? "chart-linkable" : undefined} />;
+                        return href ? (
+                          <a key={`${series.rawSeries}-${point.item.label}-${index}`} href={href} target={anchorTarget} rel={anchorRel}>
+                            {content}
+                          </a>
+                        ) : content;
+                      })}
+                    </g>
+                  );
                 })}
               </svg>
             </div>
-            <div className="chart-x-axis-labels" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
-              {items.map((item, index) => (
+            <div className="chart-x-axis-labels" style={{ gridTemplateColumns: `repeat(${categories.length}, minmax(0, 1fr))` }}>
+              {categories.map((item, index) => (
                 <span className="chart-x-tick" key={`${item.label}-${index}`}>
-                  {xTickLabel(item.label, index, items.length, compact)}
+                  {xTickLabel(item.label, index, categories.length, compact)}
                 </span>
               ))}
             </div>
             {xAxisLabel ? <div className="chart-axis-title chart-axis-title-bottom">{xAxisLabel}</div> : null}
           </div>
+          {secondaryAxis ? (
+            <div className="chart-y-axis">
+              {secondaryYAxisLabel ? <div className="chart-axis-title chart-axis-title-right">{secondaryYAxisLabel}</div> : null}
+              {[...secondaryAxis.ticks].reverse().map((tick) => (
+                <span className="chart-y-tick" key={`secondary-${tick}`}>{formatAxisValue(tick, decimalPlaces)}</span>
+              ))}
+            </div>
+          ) : null}
         </div>
-        {shouldRenderLegendStrip(normalizedChartType, compact) ? renderAxisLegend(items, compact, showLegend, showValues, getDatumHref, openLinksInNewTab) : null}
+        {(primarySeries.length > 1 || secondarySeries.length > 0) ? renderAxisLegend([
+          ...primarySeries.map((series) => ({ label: series.label, value: 0, rawLabel: series.rawSeries, rawSeries: series.rawSeries, series: series.label })),
+          ...secondarySeries.map((series) => ({ label: `${series.label} (secondary)`, value: 0, rawLabel: series.rawSeries, rawSeries: series.rawSeries, series: `${series.label} (secondary)` }))
+        ], compact, showLegend, false, undefined, openLinksInNewTab) : null}
       </div>
     );
   }
@@ -482,18 +728,7 @@ export function ChartPreview({
     const cx = 200;
     const cy = 110;
     const radius = 84;
-    const points = items.map((item, index) => {
-      const angle = (-Math.PI / 2) + (index / items.length) * Math.PI * 2;
-      const scaled = (item.value / max) * radius;
-      return {
-        item,
-        x: cx + Math.cos(angle) * scaled,
-        y: cy + Math.sin(angle) * scaled,
-        labelX: cx + Math.cos(angle) * (radius + 22),
-        labelY: cy + Math.sin(angle) * (radius + 22)
-      };
-    });
-    const polyline = points.map((point) => `${point.x},${point.y}`).join(" ");
+    const labels = categories.length ? categories : primaryItems.map((item) => ({ rawLabel: item.rawLabel || item.label, label: item.label }));
     return (
       <div className="radar-chart">
         {renderTitle(title)}
@@ -501,26 +736,54 @@ export function ChartPreview({
           {[0.25, 0.5, 0.75, 1].map((ratio) => (
             <circle key={ratio} cx={cx} cy={cy} r={radius * ratio} fill="none" stroke="rgba(23,49,38,0.12)" />
           ))}
-          {points.map((point) => (
-            <line key={point.item.label} x1={cx} y1={cy} x2={point.labelX} y2={point.labelY} stroke="rgba(23,49,38,0.12)" />
-          ))}
-          <polygon points={polyline} />
-          <polyline points={polyline} />
-          {points.map((point, index) => (
-            <g key={`${point.item.label}-${index}`}>
-              {(() => {
-                const href = getDatumHref?.(point.item) || "";
-                const content = <circle cx={point.x} cy={point.y} r="5" fill={getColor(index)} className={href ? "chart-linkable" : undefined} />;
-                return href ? (
-                  <a href={href} target={anchorTarget} rel={anchorRel}>
-                    {content}
-                  </a>
-                ) : content;
-              })()}
-              {showLegend ? <text x={point.labelX} y={point.labelY} textAnchor="middle">{cap(point.item.label, compact ? 8 : 12)}</text> : null}
-            </g>
-          ))}
+          {labels.map((point, index) => {
+            const angle = (-Math.PI / 2) + (index / Math.max(labels.length, 1)) * Math.PI * 2;
+            const labelX = cx + Math.cos(angle) * (radius + 22);
+            const labelY = cy + Math.sin(angle) * (radius + 22);
+            return <line key={point.rawLabel} x1={cx} y1={cy} x2={labelX} y2={labelY} stroke="rgba(23,49,38,0.12)" />;
+          })}
+          {primarySeries.map((series, seriesIndex) => {
+            const points = labels.map((item, index) => {
+              const angle = (-Math.PI / 2) + (index / Math.max(labels.length, 1)) * Math.PI * 2;
+              const value = valueForCategory(items, item.rawLabel, series.rawSeries, "primary");
+              const scaled = (value / max) * radius;
+              return {
+                item,
+                x: cx + Math.cos(angle) * scaled,
+                y: cy + Math.sin(angle) * scaled,
+                labelX: cx + Math.cos(angle) * (radius + 22),
+                labelY: cy + Math.sin(angle) * (radius + 22),
+                datum: items.find((datum) =>
+                  String(datum.rawLabel ?? datum.label ?? "") === item.rawLabel &&
+                  String(datum.rawSeries || datum.series || "") === series.rawSeries &&
+                  (datum.axis || "primary") === "primary"
+                )
+              };
+            });
+            const polyline = points.map((point) => `${point.x},${point.y}`).join(" ");
+            return (
+              <g key={`radar-${series.rawSeries || "default"}-${seriesIndex}`}>
+                <polygon points={polyline} fill={getColor(seriesIndex)} fillOpacity="0.14" />
+                <polyline points={polyline} stroke={getColor(seriesIndex)} fill="none" strokeWidth="3" />
+                {points.map((point, index) => (
+                  <g key={`${series.rawSeries}-${point.item.rawLabel}-${index}`}>
+                    {(() => {
+                      const href = point.datum ? (getDatumHref?.(point.datum) || "") : "";
+                      const content = <circle cx={point.x} cy={point.y} r="5" fill={getColor(seriesIndex)} className={href ? "chart-linkable" : undefined} />;
+                      return href ? (
+                        <a href={href} target={anchorTarget} rel={anchorRel}>
+                          {content}
+                        </a>
+                      ) : content;
+                    })()}
+                    {showLegend && seriesIndex === 0 ? <text x={point.labelX} y={point.labelY} textAnchor="middle">{cap(point.item.label, compact ? 8 : 12)}</text> : null}
+                  </g>
+                ))}
+              </g>
+            );
+          })}
         </svg>
+        {primarySeries.length > 1 ? renderAxisLegend(primarySeries.map((series) => ({ label: series.label, value: 0, rawLabel: series.rawSeries, rawSeries: series.rawSeries, series: series.label })), compact, showLegend, false, undefined, openLinksInNewTab) : null}
       </div>
     );
   }

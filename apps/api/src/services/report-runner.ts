@@ -115,7 +115,9 @@ function collectReportFieldIds(report: ReportDefinition) {
       ...(report.sorts || []).map((item) => item.fieldId),
       ...((report.summaryMetrics || []).map((item) => item.fieldId)),
       report.view.chartFieldId,
+      report.view.chartSeriesFieldId,
       report.view.chartValueFieldId,
+      report.view.chartSecondaryValueFieldId,
       report.view.timelineDateField,
       report.view.timelineEndField,
       report.view.calendarDateField,
@@ -184,7 +186,7 @@ function isPushdownSafeTree(group: FilterGroupDefinition | null): group is Filte
     if (isFilterGroupNode(condition)) return false;
     if (!filterHasValue(condition)) return false;
     if (DATE_TOKENS.has(String(condition.value || ""))) return false;
-    return ["equals", "contains", "gt", "gte", "lt", "lte"].includes(condition.operator);
+    return ["equals", "on", "contains", "gt", "gte", "lt", "lte", "on-or-after", "on-or-before"].includes(condition.operator);
   });
 }
 
@@ -196,10 +198,13 @@ function extractFlatPushdownFilters(group: FilterGroupDefinition | null): Filter
 function buildQuickbaseWhere(filters: FilterDefinition[]) {
   const operatorMap: Record<string, string> = {
     equals: "EX",
+    on: "EX",
     contains: "CT",
     gt: "GT",
+    "on-or-after": "GTE",
     gte: "GTE",
     lt: "LT",
+    "on-or-before": "LTE",
     lte: "LTE"
   };
   const pushdown: Array<{ fid: string; value: unknown; operator?: string }> = [];
@@ -319,30 +324,70 @@ function aggregateChartValues(values: number[], aggregation: ChartAggregation) {
   return Math.max(...values);
 }
 
-function buildChartResult(chartGroups: Map<string, number[]>, report: ReportDefinition) {
+type BuiltChartDatum = {
+  label: string;
+  rawLabel: string;
+  value: number;
+  series?: string;
+  rawSeries?: string;
+  axis: "primary" | "secondary";
+};
+
+function buildChartResult(chartGroups: Map<string, { primary: number[]; secondary: number[] }>, report: ReportDefinition) {
   const aggregation = report.view.chartAggregation || "count";
-  const rows = Array.from(chartGroups.entries()).map(([label, values]) => ({
-    label: getChartLabel(report, label),
-    rawLabel: label,
-    value: aggregateChartValues(values, aggregation)
-  }));
+  const secondaryEnabled = report.view.chartUseSecondaryAxis && Boolean(report.view.chartSecondaryValueFieldId);
+  const secondaryAggregation = report.view.chartSecondaryAggregation || "sum";
+  const groupedByCategory = new Map<string, BuiltChartDatum[]>();
+  for (const [key, values] of chartGroups.entries()) {
+    const [rawLabel, rawSeries = ""] = key.split("::");
+    const entries = groupedByCategory.get(rawLabel) || [];
+    entries.push({
+      label: getChartLabel(report, rawLabel),
+      rawLabel,
+      value: aggregateChartValues(values.primary, aggregation),
+      series: rawSeries ? getChartLabel(report, rawSeries) : undefined,
+      rawSeries: rawSeries || undefined,
+      axis: "primary"
+    });
+    if (secondaryEnabled) {
+      entries.push({
+        label: getChartLabel(report, rawLabel),
+        rawLabel,
+        value: aggregateChartValues(values.secondary, secondaryAggregation),
+        series: rawSeries ? getChartLabel(report, rawSeries) : undefined,
+        rawSeries: rawSeries || undefined,
+        axis: "secondary"
+      });
+    }
+    groupedByCategory.set(rawLabel, entries);
+  }
+  const rows = Array.from(groupedByCategory.entries());
   const sort = report.view.chartSort || "value-desc";
-  if (sort === "value-asc") rows.sort((left, right) => left.value - right.value);
-  else if (sort === "label-asc") rows.sort((left, right) => left.label.localeCompare(right.label, undefined, { numeric: true }));
-  else if (sort === "label-desc") rows.sort((left, right) => right.label.localeCompare(left.label, undefined, { numeric: true }));
-  else rows.sort((left, right) => right.value - left.value);
+  const categoryValue = (entries: BuiltChartDatum[]) =>
+    entries.filter((entry) => entry.axis === "primary").reduce((sum, entry) => sum + entry.value, 0);
+  if (sort === "value-asc") rows.sort((left, right) => categoryValue(left[1]) - categoryValue(right[1]));
+  else if (sort === "label-asc") rows.sort((left, right) => getChartLabel(report, left[0]).localeCompare(getChartLabel(report, right[0]), undefined, { numeric: true }));
+  else if (sort === "label-desc") rows.sort((left, right) => getChartLabel(report, right[0]).localeCompare(getChartLabel(report, left[0]), undefined, { numeric: true }));
+  else rows.sort((left, right) => categoryValue(right[1]) - categoryValue(left[1]));
   const topN = Math.max(0, Number(report.view.chartTopN) || 0);
-  return topN ? rows.slice(0, topN) : rows;
+  const trimmed = topN ? rows.slice(0, topN) : rows;
+  return trimmed.flatMap(([, entries]) => entries);
 }
 
-function addChartRow(chartGroups: Map<string, number[]>, report: ReportDefinition, row: DataRow) {
+function addChartRow(chartGroups: Map<string, { primary: number[]; secondary: number[] }>, report: ReportDefinition, row: DataRow) {
   const chartField = report.view.chartFieldId || report.groups[0]?.fieldId || report.selectedFieldIds[0] || "";
   if (!chartField) return;
-  const key = String(row[chartField] ?? "Unassigned");
+  const seriesField = report.view.chartSeriesFieldId || "";
+  const key = `${String(row[chartField] ?? "Unassigned")}::${seriesField ? String(row[seriesField] ?? "Unassigned") : ""}`;
   const aggregation = report.view.chartAggregation || "count";
   const valueFieldId = report.view.chartValueFieldId || "";
-  const next = chartGroups.get(key) || [];
-  next.push(aggregation === "count" ? 1 : asNumber(row[valueFieldId]));
+  const secondaryValueFieldId = report.view.chartUseSecondaryAxis ? (report.view.chartSecondaryValueFieldId || "") : "";
+  const secondaryAggregation = report.view.chartSecondaryAggregation || "sum";
+  const next = chartGroups.get(key) || { primary: [], secondary: [] };
+  next.primary.push(aggregation === "count" ? 1 : asNumber(row[valueFieldId]));
+  if (secondaryValueFieldId) {
+    next.secondary.push(secondaryAggregation === "count" ? 1 : asNumber(row[secondaryValueFieldId]));
+  }
   chartGroups.set(key, next);
 }
 
@@ -357,7 +402,7 @@ async function fetchQuickbaseReportPageOnly(
   const filterTree = getCombinedFilterTree(report, extraFilters);
   const filters = extractFlatPushdownFilters(filterTree);
   const requestedFieldIds = collectReportFieldIds(report);
-  const warnings = report.selectedFieldIds.length ? [] : ["This report has no selected fields."];
+  const warnings = report.selectedFieldIds.length || !report.view.showDetails ? [] : ["This report has no selected fields."];
   const { where } = buildQuickbaseWhere(filters);
   const sortBy = buildQuickbaseSort(report);
 
@@ -437,7 +482,7 @@ async function executeQuickbaseReportPage(
   const metricSet = report.summaryMetrics.length
     ? report.summaryMetrics
     : [{ id: "default-count", fieldId: report.selectedFieldIds[0] || "recordId", op: "count" as const, label: "Rows" }];
-  const warnings = report.selectedFieldIds.length ? [] : ["This report has no selected fields."];
+  const warnings = report.selectedFieldIds.length || !report.view.showDetails ? [] : ["This report has no selected fields."];
   const { where } = buildQuickbaseWhere(filters);
   const sortBy = buildQuickbaseSort(report);
 
@@ -455,7 +500,7 @@ async function executeQuickbaseReportPage(
     const batchSize = 500;
     let scanSkip = 0;
     let scannedRows = 0;
-    const chartGroups = new Map<string, number[]>();
+    const chartGroups = new Map<string, { primary: number[]; secondary: number[] }>();
     while (true) {
       const batch = await fetchQuickbaseTablePage(tableQuickbase, getQuickbaseTableId(table), requestedFieldIds, {
         top: batchSize,
@@ -494,7 +539,7 @@ async function executeQuickbaseReportPage(
   let skip = 0;
   let totalRows = 0;
   const pageRows: DataRow[] = [];
-  const chartGroups = new Map<string, number[]>();
+  const chartGroups = new Map<string, { primary: number[]; secondary: number[] }>();
   const summaryAccumulator = createMetricAccumulator(metricSet);
   while (true) {
     const batch = await fetchQuickbaseTablePage(tableQuickbase, getQuickbaseTableId(table), requestedFieldIds, {
@@ -621,12 +666,12 @@ export async function fetchReportExportBundle(
     const metricSet = report.summaryMetrics.length
       ? report.summaryMetrics
       : [{ id: "default-count", fieldId: report.selectedFieldIds[0] || "recordId", op: "count" as const, label: "Rows" }];
-    const warnings = report.selectedFieldIds.length ? [] : ["This report has no selected fields."];
+    const warnings = report.selectedFieldIds.length || !report.view.showDetails ? [] : ["This report has no selected fields."];
     const batchSize = 1000;
     let skip = 0;
     const rows: DataRow[] = [];
     const summaryAccumulator = createMetricAccumulator(metricSet);
-    const chartGroups = new Map<string, number[]>();
+    const chartGroups = new Map<string, { primary: number[]; secondary: number[] }>();
     let processed = 0;
     let expectedTotal = 0;
 

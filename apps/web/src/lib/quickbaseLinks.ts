@@ -45,12 +45,15 @@ export function buildQuickbaseFilteredQueryUrl(
 function buildQuickbaseFilterClause(filter: FilterDefinition) {
   const operatorMap: Record<string, string> = {
     equals: "EX",
+    on: "EX",
     "not-equals": "XEX",
     contains: "CT",
     "not-contains": "XCT",
     gt: "GT",
+    "on-or-after": "GTE",
     gte: "GTE",
     lt: "LT",
+    "on-or-before": "LTE",
     lte: "LTE"
   };
   if (filter.operator === "blank") {
