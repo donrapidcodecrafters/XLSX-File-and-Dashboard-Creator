@@ -758,7 +758,11 @@ export function ChartPreview({
           </div>
           <div className="chart-plot-column">
             <div className={normalizedChartType === "area" ? "area-chart axis-chart" : "line-chart axis-chart"}>
-              <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} preserveAspectRatio="none">
+              <svg
+                viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+                preserveAspectRatio="xMidYMid meet"
+                style={{ width: "100%", height: "auto", aspectRatio: `${chartWidth} / ${chartHeight}` }}
+              >
                 {ticks.map((tick) => {
                   const y = plotBottom - (tick / axisMax) * plotHeight;
                   return <line key={`line-${tick}`} x1={plotLeft} y1={y} x2={plotRight} y2={y} className="chart-grid-svg-line" />;
@@ -948,7 +952,7 @@ export function ChartPreview({
     return (
       <div className="radar-chart">
         {renderTitle(title)}
-        <svg viewBox="0 0 400 240" preserveAspectRatio="none">
+        <svg viewBox="0 0 400 240" preserveAspectRatio="xMidYMid meet" style={{ width: "100%", height: "auto", aspectRatio: "400 / 240" }}>
           {[0.25, 0.5, 0.75, 1].map((ratio) => (
             <circle key={ratio} cx={cx} cy={cy} r={radius * ratio} fill="none" stroke="rgba(23,49,38,0.12)" />
           ))}
@@ -1014,7 +1018,7 @@ export function ChartPreview({
         {renderTitle(title)}
         <div className="donut-shell">
           <div className="donut">
-            <svg viewBox="0 0 220 220" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+              <svg viewBox="0 0 220 220" preserveAspectRatio="xMidYMid meet" style={{ width: "100%", height: "auto", aspectRatio: "1 / 1" }} aria-hidden="true">
               {primaryItems.slice(0, 5).map((item, index) => {
                 const radius = baseRadius + index * ringGap;
                 const circumference = 2 * Math.PI * radius;
@@ -1240,7 +1244,7 @@ export function ChartPreview({
           </div>
           <div className="chart-plot-column">
             <div className="line-chart axis-chart">
-              <svg viewBox="0 0 400 220" preserveAspectRatio="none">
+              <svg viewBox="0 0 400 220" preserveAspectRatio="xMidYMid meet" style={{ width: "100%", height: "auto", aspectRatio: "400 / 220" }}>
                 {ticks.map((tick) => {
                   const y = 190 - (tick / axisMax) * 150;
                   return <line key={`scatter-${tick}`} x1="24" y1={y} x2="380" y2={y} className="chart-grid-svg-line" />;
