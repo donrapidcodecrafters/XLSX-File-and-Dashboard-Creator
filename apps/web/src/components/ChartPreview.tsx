@@ -554,12 +554,22 @@ export function ChartPreview({
     const reversedTicks = [...ticks].reverse();
     const yAxisWidth = axisTickTextWidth(ticks, decimalPlaces, compact);
     const secondaryAxisWidth = secondaryAxis ? axisTickTextWidth(secondaryAxis.ticks, decimalPlaces, compact) : 0;
+    const chartWidth = 400;
+    const chartHeight = 286;
+    const plotLeft = 24;
+    const plotRight = 380;
+    const plotTop = 20;
+    const plotBottom = 184;
+    const plotWidth = plotRight - plotLeft;
+    const plotHeight = plotBottom - plotTop;
+    const tickLabelY = 232;
+    const axisLabelY = 274;
     const buildSeriesPoints = (seriesRaw: string, axis: "primary" | "secondary") => {
       const maxValue = axis === "secondary" && secondaryAxis ? secondaryAxis.axisMax : axisMax;
       return categories.map((category, index) => {
-        const x = categories.length === 1 ? 200 : 20 + index * (360 / Math.max(1, categories.length - 1));
+        const x = categories.length === 1 ? plotLeft + plotWidth / 2 : plotLeft + index * (plotWidth / Math.max(1, categories.length - 1));
         const value = valueForCategory(items, category.rawLabel, seriesRaw, axis);
-        const y = 200 - (value / maxValue) * 160;
+        const y = plotBottom - (value / maxValue) * plotHeight;
         const item = items.find((datum) =>
           String(datum.rawLabel ?? datum.label ?? "") === category.rawLabel &&
           String(datum.rawSeries || datum.series || "") === seriesRaw &&
@@ -587,19 +597,19 @@ export function ChartPreview({
           </div>
           <div className="chart-plot-column">
             <div className={normalizedChartType === "area" ? "area-chart axis-chart" : "line-chart axis-chart"}>
-              <svg viewBox="0 0 400 220" preserveAspectRatio="none">
+              <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} preserveAspectRatio="none">
                 {ticks.map((tick) => {
-                  const y = 200 - (tick / axisMax) * 160;
-                  return <line key={`line-${tick}`} x1="20" y1={y} x2="380" y2={y} className="chart-grid-svg-line" />;
+                  const y = plotBottom - (tick / axisMax) * plotHeight;
+                  return <line key={`line-${tick}`} x1={plotLeft} y1={y} x2={plotRight} y2={y} className="chart-grid-svg-line" />;
                 })}
-                <line x1="20" y1="20" x2="20" y2="200" className="chart-axis-svg-line" />
-                <line x1="20" y1="200" x2="380" y2="200" className="chart-axis-svg-line" />
+                <line x1={plotLeft} y1={plotTop} x2={plotLeft} y2={plotBottom} className="chart-axis-svg-line" />
+                <line x1={plotLeft} y1={plotBottom} x2={plotRight} y2={plotBottom} className="chart-axis-svg-line" />
                 {normalizedChartType === "line-bar" ? categories.map((category, categoryIndex) => {
                   const value = primarySeries.reduce((sum, series) => sum + valueForCategory(items, category.rawLabel, series.rawSeries, "primary"), 0);
                   const width = Math.max(18, Math.min(42, 280 / Math.max(categories.length, 1)));
-                  const x = categories.length === 1 ? 200 - width / 2 : 20 + categoryIndex * (360 / Math.max(1, categories.length - 1)) - width / 2;
-                  const height = (value / axisMax) * 160;
-                  const y = 200 - height;
+                  const x = categories.length === 1 ? plotLeft + plotWidth / 2 - width / 2 : plotLeft + categoryIndex * (plotWidth / Math.max(1, categories.length - 1)) - width / 2;
+                  const height = (value / axisMax) * plotHeight;
+                  const y = plotBottom - height;
                   const datum = primaryItems.find((item) => String(item.rawLabel ?? item.label ?? "") === category.rawLabel) || {
                     label: category.label,
                     rawLabel: category.rawLabel,
@@ -628,7 +638,7 @@ export function ChartPreview({
                 {primarySeries.map((series, seriesIndex) => {
                   const points = buildSeriesPoints(series.rawSeries, "primary");
                   const polyline = points.map((point) => `${point.x},${point.y}`).join(" ");
-                  const areaPoints = `20,200 ${polyline} 380,200`;
+                  const areaPoints = `${plotLeft},${plotBottom} ${polyline} ${plotRight},${plotBottom}`;
                   return (
                     <g key={`primary-${series.rawSeries || "default"}-${seriesIndex}`}>
                       {normalizedChartType === "area" ? <polygon points={areaPoints} fill={getColor(seriesIndex)} fillOpacity="0.18" /> : null}
@@ -649,7 +659,7 @@ export function ChartPreview({
                   if (!secondaryItems.length) return null;
                   const points = buildSeriesPoints(series.rawSeries, "secondary");
                   const polyline = points.map((point) => `${point.x},${point.y}`).join(" ");
-                  const areaPoints = `20,200 ${polyline} 380,200`;
+                  const areaPoints = `${plotLeft},${plotBottom} ${polyline} ${plotRight},${plotBottom}`;
                   const secondaryColor = getColor(primarySeries.length + seriesIndex);
                   const seriesType = secondarySeriesType;
                   return (
@@ -659,10 +669,10 @@ export function ChartPreview({
                         <polyline points={polyline} stroke={secondaryColor} fill="none" strokeWidth="3" strokeDasharray="8 5" />
                       ) : null}
                       {(seriesType === "bar" || seriesType === "column") ? points.map((point, index) => {
-                        const previousX = index === 0 ? 20 : points[index - 1].x;
-                        const nextX = index === points.length - 1 ? 380 : points[index + 1].x;
+                        const previousX = index === 0 ? plotLeft : points[index - 1].x;
+                        const nextX = index === points.length - 1 ? plotRight : points[index + 1].x;
                         const barWidth = Math.max(10, Math.min(24, ((nextX - previousX) / 2) * 0.35));
-                        const barHeight = 200 - point.y;
+                        const barHeight = plotBottom - point.y;
                         const href = getDatumHref?.(point.item) || "";
                         const content = (
                           <rect
@@ -696,16 +706,31 @@ export function ChartPreview({
                     </g>
                   );
                 })}
+                {categories.map((item, index) => {
+                  const x = categories.length === 1 ? plotLeft + plotWidth / 2 : plotLeft + index * (plotWidth / Math.max(1, categories.length - 1));
+                  const tickLabel = item.label || item.rawLabel || "Unassigned";
+                  const rotate = categories.length > 1 ? -38 : 0;
+                  const textAnchor = categories.length === 1 ? "middle" : "end";
+                  return (
+                    <text
+                      key={`line-label-${item.rawLabel}-${index}`}
+                      x={x}
+                      y={tickLabelY}
+                      textAnchor={textAnchor}
+                      className="chart-svg-tick"
+                      transform={rotate ? `rotate(${rotate} ${x} ${tickLabelY})` : undefined}
+                    >
+                      {tickLabel}
+                    </text>
+                  );
+                })}
+                {xAxisLabel ? (
+                  <text x={plotLeft + plotWidth / 2} y={axisLabelY} textAnchor="middle" className="chart-svg-axis-title">
+                    {xAxisLabel}
+                  </text>
+                ) : null}
               </svg>
             </div>
-            <div className="chart-x-axis-labels" style={{ gridTemplateColumns: `repeat(${categories.length}, minmax(0, 1fr))` }}>
-              {categories.map((item, index) => (
-                <span className="chart-x-tick" key={`${item.label}-${index}`}>
-                  {xTickLabel(item.label, index, categories.length, compact)}
-                </span>
-              ))}
-            </div>
-            {xAxisLabel ? <div className="chart-axis-title chart-axis-title-bottom">{xAxisLabel}</div> : null}
           </div>
           {secondaryAxis ? (
             <div className="chart-y-axis">

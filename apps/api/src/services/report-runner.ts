@@ -333,6 +333,26 @@ type BuiltChartDatum = {
   axis: "primary" | "secondary";
 };
 
+function isContinuousChartType(report: ReportDefinition) {
+  return report.view.chartType === "line"
+    || report.view.chartType === "area"
+    || report.view.chartType === "line-bar"
+    || report.view.chartType === "spline"
+    || report.view.chartType === "area-spline"
+    || report.view.chartType === "streamgraph";
+}
+
+function compareChartCategories(report: ReportDefinition, left: string, right: string) {
+  const leftLabel = getChartLabel(report, left);
+  const rightLabel = getChartLabel(report, right);
+  const leftTime = Date.parse(leftLabel);
+  const rightTime = Date.parse(rightLabel);
+  if (Number.isFinite(leftTime) && Number.isFinite(rightTime)) {
+    return leftTime - rightTime;
+  }
+  return leftLabel.localeCompare(rightLabel, undefined, { numeric: true });
+}
+
 function buildChartResult(chartGroups: Map<string, { primary: number[]; secondary: number[] }>, report: ReportDefinition) {
   const aggregation = report.view.chartAggregation || "count";
   const secondaryEnabled = report.view.chartUseSecondaryAxis && Boolean(report.view.chartSecondaryValueFieldId);
@@ -365,6 +385,17 @@ function buildChartResult(chartGroups: Map<string, { primary: number[]; secondar
   const sort = report.view.chartSort || "value-desc";
   const categoryValue = (entries: BuiltChartDatum[]) =>
     entries.filter((entry) => entry.axis === "primary").reduce((sum, entry) => sum + entry.value, 0);
+  if (isContinuousChartType(report)) {
+    const descending = sort === "label-desc";
+    const ordered = rows
+      .filter(([rawLabel]) => String(rawLabel ?? "").trim())
+      .sort((left, right) => compareChartCategories(report, left[0], right[0]) * (descending ? -1 : 1));
+    const topN = Math.max(0, Number(report.view.chartTopN) || 0);
+    const trimmed = topN
+      ? (descending ? ordered.slice(0, topN) : ordered.slice(-topN))
+      : ordered;
+    return trimmed.flatMap(([, entries]) => entries);
+  }
   if (sort === "value-asc") rows.sort((left, right) => categoryValue(left[1]) - categoryValue(right[1]));
   else if (sort === "label-asc") rows.sort((left, right) => getChartLabel(report, left[0]).localeCompare(getChartLabel(report, right[0]), undefined, { numeric: true }));
   else if (sort === "label-desc") rows.sort((left, right) => getChartLabel(report, right[0]).localeCompare(getChartLabel(report, left[0]), undefined, { numeric: true }));
