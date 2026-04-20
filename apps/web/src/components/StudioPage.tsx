@@ -1379,6 +1379,7 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
       } as StudioObject);
   const activeReport = hasActiveObject && activeObject.type === "report" ? activeObject : null;
   const activeDashboard = hasActiveObject && activeObject.type === "dashboard" ? activeObject : null;
+  const activeDashboardTab = activeDashboard?.tabs.find((tab) => tab.id === activeTabId) || activeDashboard?.tabs[0] || null;
   const activeTable = activeReport ? bundle.tables.find((table) => table.id === activeReport.sourceTableId) || null : null;
   const activeDashboardRefreshTables = useMemo(() => {
     if (!activeDashboard) return [] as TableDefinition[];
@@ -1512,11 +1513,10 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
   }, [activeObjectId]);
 
   useEffect(() => {
-    if (activeDashboard) {
-      setActiveTabId((current) => activeDashboard.tabs.some((tab) => tab.id === current) ? current : (activeDashboard.tabs[0]?.id || ""));
-      setRuntimeValues(Object.fromEntries(activeDashboard.runtimeFilters.map((filter) => [filter.id, filter.defaultValue || ""])));
-    }
-  }, [activeDashboard?.id]);
+    if (!activeDashboard) return;
+    setActiveTabId((current) => activeDashboard.tabs.some((tab) => tab.id === current) ? current : (activeDashboard.tabs[0]?.id || ""));
+    setRuntimeValues(Object.fromEntries(activeDashboard.runtimeFilters.map((filter) => [filter.id, filter.defaultValue || ""])));
+  }, [activeDashboard?.id, activeDashboard?.tabs, activeDashboard?.runtimeFilters]);
 
   useEffect(() => {
     setPreviewPage(1);
@@ -2847,89 +2847,118 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
               <>
                 <label className="field"><span>Name</span><input value={activeDashboard.name} onChange={(event) => updateObject({ ...activeDashboard, name: event.target.value })} /></label>
                 <label className="field"><span>Description</span><input value={activeDashboard.description} onChange={(event) => updateObject({ ...activeDashboard, description: event.target.value })} /></label>
-                <div className="stack-compact">
-                  {activeDashboard.tabs.map((tab, tabIndex) => (
-                    <div className="card" key={tab.id}>
-                      <div className="card-head">
-                        <strong>{tab.name}</strong>
-                        <div className="studio-actions">
-                          <button onClick={() => updateObject({ ...activeDashboard, tabs: activeDashboard.tabs.filter((item) => item.id !== tab.id) })}>Remove</button>
-                          <button
-                            disabled={tabIndex === 0}
-                            onClick={() => {
-                              const nextTabs = [...activeDashboard.tabs];
-                              const currentTab = nextTabs[tabIndex];
-                              nextTabs[tabIndex] = nextTabs[tabIndex - 1];
-                              nextTabs[tabIndex - 1] = currentTab;
-                              updateObject({ ...activeDashboard, tabs: nextTabs });
-                            }}
-                          >
-                            Up
-                          </button>
-                        </div>
-                      </div>
-                      <label className="field"><span>Tab name</span><input value={tab.name} onChange={(event) => updateObject({ ...activeDashboard, tabs: activeDashboard.tabs.map((item) => item.id === tab.id ? { ...item, name: event.target.value } : item) })} /></label>
-                      <div className="stack-compact">
-                        {tab.widgets.filter((widget) => !widgetSearch || `${widget.title} ${widget.reportId}`.toLowerCase().includes(widgetSearch.toLowerCase())).map((widget) => (
-                          <div className="widget-edit-card" key={widget.id}>
-                            <label className="field"><span>Title</span><input value={widget.title} onChange={(event) => updateActiveDashboardWidget(tab.id, widget.id, (candidate) => ({ ...candidate, title: event.target.value }))} /></label>
-                            <div className="widget-editor-grid">
-                              <label className="field">
-                                <span>Report</span>
-                                <select value={widget.reportId} onChange={(event) => updateActiveDashboardWidget(tab.id, widget.id, (candidate) => ({ ...candidate, reportId: event.target.value, snapshot: undefined, mode: "linked" }))}>{objects.filter((object): object is ReportDefinition => object.type === "report").map((report) => <option key={report.id} value={report.id}>{report.name}</option>)}</select>
-                              </label>
-                              <label className="field">
-                                <span>Connection</span>
-                                <select value={widget.mode} onChange={(event) => {
-                                  const report = bundle.objects[widget.reportId] as ReportDefinition | undefined;
-                                  updateActiveDashboardWidget(tab.id, widget.id, (candidate) => ({
-                                    ...candidate,
-                                    mode: event.target.value as "linked" | "copied",
-                                    snapshot: event.target.value === "copied" && report ? clone(report) : undefined
-                                  }));
-                                }}>
-                                  <option value="linked">Live report</option>
-                                  <option value="copied">Saved copy</option>
-                                </select>
-                              </label>
-                              <label className="field">
-                                <span>Display</span>
-                                <select value={widget.displayMode} onChange={(event) => updateActiveDashboardWidget(tab.id, widget.id, (candidate) => ({ ...candidate, displayMode: event.target.value as "inherit" | "table" | "summary" | "chart" }))}>
-                                  <option value="inherit">Inherit report view</option>
-                                  <option value="table">Table only</option>
-                                  <option value="summary">Summary only</option>
-                                  <option value="chart">Chart/graph</option>
-                                </select>
-                              </label>
-                              <label className="toggle-row"><input type="checkbox" checked={widget.showSummary} onChange={(event) => updateActiveDashboardWidget(tab.id, widget.id, (candidate) => ({ ...candidate, showSummary: event.target.checked }))} /> Show summary</label>
-                              <label className="toggle-row"><input type="checkbox" checked={widget.showDetails} onChange={(event) => updateActiveDashboardWidget(tab.id, widget.id, (candidate) => ({ ...candidate, showDetails: event.target.checked }))} /> Show details</label>
-                              <label className="toggle-row"><input type="checkbox" checked={clampWidgetWidth(widget.layout.w) >= 12} onChange={() => toggleDashboardWidgetFullWidth(tab.id, widget.id)} /> Full width</label>
-                              <label className="field-inline"><span>Width</span><input type="number" min="1" max="12" value={widget.layout.w} onChange={(event) => updateActiveDashboardWidget(tab.id, widget.id, (candidate) => ({ ...candidate, layout: { ...candidate.layout, w: clampWidgetWidth(Number(event.target.value)) } }))} /></label>
-                              <label className="field-inline"><span>Height</span><input type="number" min="2" max="10" value={widget.layout.h} onChange={(event) => updateActiveDashboardWidget(tab.id, widget.id, (candidate) => ({ ...candidate, layout: { ...candidate.layout, h: clampWidgetHeight(Number(event.target.value)) } }))} /></label>
-                            </div>
-                            <div className="widget-edit-actions">
-                              <button onClick={() => moveDashboardWidget(tab.id, widget.id, -1)}>Move up</button>
-                              <button onClick={() => moveDashboardWidget(tab.id, widget.id, 1)}>Move down</button>
-                              <button onClick={() => toggleDashboardWidgetFullWidth(tab.id, widget.id)}>
-                                {clampWidgetWidth(widget.layout.w) >= 12 ? "Restore width" : "Make full width"}
-                              </button>
-                              <button onClick={() => updateObject({ ...activeDashboard, tabs: activeDashboard.tabs.map((item) => item.id === tab.id ? { ...item, widgets: item.widgets.filter((candidate) => candidate.id !== widget.id) } : item) })}>Remove card</button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                      <button onClick={() => {
-                        const report = objects.find((object): object is ReportDefinition => object.type === "report");
-                        if (!report) return;
-                        updateObject({
-                          ...activeDashboard,
-                          tabs: activeDashboard.tabs.map((item) => item.id === tab.id ? { ...item, widgets: [...item.widgets, { id: uid("widget"), title: report.name, mode: "linked", displayMode: "inherit", showDetails: false, showSummary: true, reportId: report.id, layout: { w: 6, h: 4 } }] } : item)
-                        });
-                      }}>Add card</button>
-                    </div>
-                  ))}
+                <div className="card">
+                  <div className="card-head">
+                    <strong>Tabs</strong>
+                    <button
+                      onClick={() => {
+                        const nextTab = { id: uid("tab"), name: `Tab ${activeDashboard.tabs.length + 1}`, widgets: [] };
+                        updateObject({ ...activeDashboard, tabs: [...activeDashboard.tabs, nextTab] });
+                        setActiveTabId(nextTab.id);
+                      }}
+                    >
+                      Add tab
+                    </button>
+                  </div>
+                  <div className="studio-tab-strip">
+                    {activeDashboard.tabs.map((tab) => (
+                      <button key={tab.id} className={tab.id === activeDashboardTab?.id ? "active-tab" : ""} onClick={() => setActiveTabId(tab.id)}>
+                        {tab.name}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <button onClick={() => updateObject({ ...activeDashboard, tabs: [...activeDashboard.tabs, { id: uid("tab"), name: `Tab ${activeDashboard.tabs.length + 1}`, widgets: [] }] })}>Add tab</button>
+                {activeDashboardTab ? (
+                  <div className="card">
+                    <div className="card-head">
+                      <strong>{activeDashboardTab.name}</strong>
+                      <div className="studio-actions">
+                        <button
+                          disabled={activeDashboard.tabs.length <= 1}
+                          onClick={() => {
+                            const remainingTabs = activeDashboard.tabs.filter((item) => item.id !== activeDashboardTab.id);
+                            updateObject({ ...activeDashboard, tabs: remainingTabs });
+                            setActiveTabId(remainingTabs[0]?.id || "");
+                          }}
+                        >
+                          Remove
+                        </button>
+                        <button
+                          disabled={activeDashboard.tabs.findIndex((item) => item.id === activeDashboardTab.id) === 0}
+                          onClick={() => {
+                            const tabIndex = activeDashboard.tabs.findIndex((item) => item.id === activeDashboardTab.id);
+                            if (tabIndex <= 0) return;
+                            const nextTabs = [...activeDashboard.tabs];
+                            const currentTab = nextTabs[tabIndex];
+                            nextTabs[tabIndex] = nextTabs[tabIndex - 1];
+                            nextTabs[tabIndex - 1] = currentTab;
+                            updateObject({ ...activeDashboard, tabs: nextTabs });
+                          }}
+                        >
+                          Up
+                        </button>
+                      </div>
+                    </div>
+                    <label className="field"><span>Tab name</span><input value={activeDashboardTab.name} onChange={(event) => updateObject({ ...activeDashboard, tabs: activeDashboard.tabs.map((item) => item.id === activeDashboardTab.id ? { ...item, name: event.target.value } : item) })} /></label>
+                    <div className="stack-compact">
+                      {activeDashboardTab.widgets.filter((widget) => !widgetSearch || `${widget.title} ${widget.reportId}`.toLowerCase().includes(widgetSearch.toLowerCase())).map((widget) => (
+                        <div className="widget-edit-card" key={widget.id}>
+                          <label className="field"><span>Title</span><input value={widget.title} onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, widget.id, (candidate) => ({ ...candidate, title: event.target.value }))} /></label>
+                          <div className="widget-editor-grid">
+                            <label className="field">
+                              <span>Report</span>
+                              <select value={widget.reportId} onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, widget.id, (candidate) => ({ ...candidate, reportId: event.target.value, snapshot: undefined, mode: "linked" }))}>{objects.filter((object): object is ReportDefinition => object.type === "report").map((report) => <option key={report.id} value={report.id}>{report.name}</option>)}</select>
+                            </label>
+                            <label className="field">
+                              <span>Connection</span>
+                              <select value={widget.mode} onChange={(event) => {
+                                const report = bundle.objects[widget.reportId] as ReportDefinition | undefined;
+                                updateActiveDashboardWidget(activeDashboardTab.id, widget.id, (candidate) => ({
+                                  ...candidate,
+                                  mode: event.target.value as "linked" | "copied",
+                                  snapshot: event.target.value === "copied" && report ? clone(report) : undefined
+                                }));
+                              }}>
+                                <option value="linked">Live report</option>
+                                <option value="copied">Saved copy</option>
+                              </select>
+                            </label>
+                            <label className="field">
+                              <span>Display</span>
+                              <select value={widget.displayMode} onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, widget.id, (candidate) => ({ ...candidate, displayMode: event.target.value as "inherit" | "table" | "summary" | "chart" }))}>
+                                <option value="inherit">Inherit report view</option>
+                                <option value="table">Table only</option>
+                                <option value="summary">Summary only</option>
+                                <option value="chart">Chart/graph</option>
+                              </select>
+                            </label>
+                            <label className="toggle-row"><input type="checkbox" checked={widget.showSummary} onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, widget.id, (candidate) => ({ ...candidate, showSummary: event.target.checked }))} /> Show summary</label>
+                            <label className="toggle-row"><input type="checkbox" checked={widget.showDetails} onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, widget.id, (candidate) => ({ ...candidate, showDetails: event.target.checked }))} /> Show details</label>
+                            <label className="toggle-row"><input type="checkbox" checked={clampWidgetWidth(widget.layout.w) >= 12} onChange={() => toggleDashboardWidgetFullWidth(activeDashboardTab.id, widget.id)} /> Full width</label>
+                            <label className="field-inline"><span>Width</span><input type="number" min="1" max="12" value={widget.layout.w} onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, widget.id, (candidate) => ({ ...candidate, layout: { ...candidate.layout, w: clampWidgetWidth(Number(event.target.value)) } }))} /></label>
+                            <label className="field-inline"><span>Height</span><input type="number" min="2" max="10" value={widget.layout.h} onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, widget.id, (candidate) => ({ ...candidate, layout: { ...candidate.layout, h: clampWidgetHeight(Number(event.target.value)) } }))} /></label>
+                          </div>
+                          <div className="widget-edit-actions">
+                            <button onClick={() => moveDashboardWidget(activeDashboardTab.id, widget.id, -1)}>Move up</button>
+                            <button onClick={() => moveDashboardWidget(activeDashboardTab.id, widget.id, 1)}>Move down</button>
+                            <button onClick={() => toggleDashboardWidgetFullWidth(activeDashboardTab.id, widget.id)}>
+                              {clampWidgetWidth(widget.layout.w) >= 12 ? "Restore width" : "Make full width"}
+                            </button>
+                            <button onClick={() => updateObject({ ...activeDashboard, tabs: activeDashboard.tabs.map((item) => item.id === activeDashboardTab.id ? { ...item, widgets: item.widgets.filter((candidate) => candidate.id !== widget.id) } : item) })}>Remove card</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <button onClick={() => {
+                      const report = objects.find((object): object is ReportDefinition => object.type === "report");
+                      if (!report) return;
+                      updateObject({
+                        ...activeDashboard,
+                        tabs: activeDashboard.tabs.map((item) => item.id === activeDashboardTab.id ? { ...item, widgets: [...item.widgets, { id: uid("widget"), title: report.name, mode: "linked", displayMode: "inherit", showDetails: false, showSummary: true, reportId: report.id, layout: { w: 6, h: 4 } }] } : item)
+                      });
+                    }}>Add card</button>
+                  </div>
+                ) : null}
                 {activeDashboardRefreshTables.length ? (
                   <div className="card">
                     <div className="card-head">
