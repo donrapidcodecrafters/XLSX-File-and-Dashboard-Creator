@@ -203,6 +203,15 @@ function buildAreaPath(points: Array<{ x: number; y: number }>, bottom: number, 
   return `${linePath} L ${last.x} ${bottom} L ${first.x} ${bottom} Z`;
 }
 
+function chartLabelNumericValue(rawLabel: string, index: number) {
+  const trimmed = String(rawLabel || "").trim();
+  const numeric = Number(trimmed);
+  if (Number.isFinite(numeric)) return numeric;
+  const dateValue = Date.parse(trimmed);
+  if (Number.isFinite(dateValue)) return dateValue;
+  return index;
+}
+
 function axisTickTextWidth(ticks: number[], decimalPlaces: number, compact: boolean) {
   const longest = ticks.reduce((max, tick) => {
     const length = formatAxisValue(tick, decimalPlaces).length;
@@ -323,6 +332,7 @@ export function ChartPreview({
   const smoothLine = chartType === "spline" || chartType === "area-spline";
   const streamgraph = chartType === "streamgraph";
   const threeDimensional = chartType.startsWith("3d-");
+  const bubbleChart = chartType === "bubble";
   const orientation = chartType === "horizontal-bar" || chartType === "horizontal-stacked-bar"
     ? "horizontal"
     : (normalizedChartType === "column" || normalizedChartType === "stacked-column" ? "vertical" : chartOrientation);
@@ -671,6 +681,18 @@ export function ChartPreview({
                     const href = datum ? (getDatumHref?.(datum) || "") : "";
                     const content = (
                       <g key={`${category.rawLabel}-${series.rawSeries || "default"}-${seriesIndex}`} className={href ? "chart-linkable" : undefined}>
+                        {threeDimensional ? (
+                          <>
+                            <polygon
+                              points={`${x + width},${y} ${x + width + 8},${y - 5} ${x + width + 8},${y + barHeight - 5} ${x + width},${y + barHeight}`}
+                              fill="rgba(23,49,38,0.16)"
+                            />
+                            <polygon
+                              points={`${x},${y} ${x + 8},${y - 5} ${x + width + 8},${y - 5} ${x + width},${y}`}
+                              fill="rgba(255,255,255,0.16)"
+                            />
+                          </>
+                        ) : null}
                         <rect x={x} y={y} width={width} height={barHeight} rx="10" fill={getColor(seriesIndex)} fillOpacity="0.9" />
                         {showValues && value > 0 ? (
                           <text x={x + width + 10} y={y + barHeight / 2 + 4} textAnchor="start" className="chart-svg-value">
@@ -801,7 +823,11 @@ export function ChartPreview({
                   ) : content;
                 }) : null}
                 {streamgraph && primarySeries.length > 1 ? (() => {
-                  const cumulativeValues = categories.map(() => 0);
+                  const totals = categories.map((category) =>
+                    primarySeries.reduce((sum, series) => sum + valueForCategory(items, category.rawLabel, series.rawSeries, "primary"), 0)
+                  );
+                  const baselines = totals.map((totalValue) => Math.max(0, (axisMax - totalValue) / 2));
+                  const cumulativeValues = [...baselines];
                   return primarySeries.map((series, seriesIndex) => {
                     const upperPoints = categories.map((category, index) => {
                       cumulativeValues[index] += valueForCategory(items, category.rawLabel, series.rawSeries, "primary");
@@ -816,7 +842,7 @@ export function ChartPreview({
                       return { x, y };
                     }).reverse();
                     const path = `${buildSmoothLinePath(upperPoints)} L ${lowerPoints.map((point) => `${point.x} ${point.y}`).join(" L ")} Z`;
-                    return <path key={`stream-${series.rawSeries || "default"}-${seriesIndex}`} d={path} fill={getColor(seriesIndex)} fillOpacity="0.28" stroke="none" />;
+                    return <path key={`stream-${series.rawSeries || "default"}-${seriesIndex}`} d={path} fill={getColor(seriesIndex)} fillOpacity="0.34" stroke="none" />;
                   });
                 })() : null}
                 {primarySeries.map((series, seriesIndex) => {
@@ -826,7 +852,7 @@ export function ChartPreview({
                   const areaPath = buildAreaPath(points, plotBottom, smoothLine || streamgraph);
                   return (
                     <g key={`primary-${series.rawSeries || "default"}-${seriesIndex}`}>
-                      {normalizedChartType === "area" && !streamgraph ? <path d={areaPath} fill={getColor(seriesIndex)} fillOpacity="0.18" /> : null}
+                      {normalizedChartType === "area" && !streamgraph ? <path d={areaPath} fill={getColor(seriesIndex)} fillOpacity={primarySeries.length > 1 ? 0.12 : 0.22} /> : null}
                       {threeDimensional && (normalizedChartType === "area" || normalizedChartType === "line") ? (
                         <path d={linePath} transform="translate(0 8)" stroke="rgba(23,49,38,0.18)" fill="none" strokeWidth="5" />
                       ) : null}
@@ -1059,17 +1085,19 @@ export function ChartPreview({
         {renderTitle(title)}
         {primaryItems.map((item, index) => {
           const href = getDatumHref?.(item) || "";
-          const percent = Math.max(0, Math.min(100, (item.value / max) * 100));
+          const percent = Math.max(0, Math.min(100, item.value));
+          const secondaryMatch = secondaryItems.find((entry) => String(entry.rawLabel ?? entry.label ?? "") === String(item.rawLabel ?? item.label ?? ""));
+          const targetPercent = Math.max(0, Math.min(100, secondaryMatch?.value ?? 80));
           const content = (
             <div className={`waterfall-row${href ? " chart-linkable" : ""}`} key={item.label}>
               {showLegend ? <div className="chart-label">{cap(item.label, compact ? 12 : 18)}</div> : null}
               <div className="waterfall-track" style={normalizedChartType === "bullet" ? { position: "relative", background: "linear-gradient(90deg, rgba(23,49,38,0.08) 0 45%, rgba(23,49,38,0.14) 45% 75%, rgba(23,49,38,0.22) 75% 100%)" } : undefined}>
                 <div className="waterfall-bar" style={{ width: `${percent}%`, background: getColor(index) }} />
                 {normalizedChartType === "bullet" ? (
-                  <div style={{ position: "absolute", left: "80%", top: "-4px", bottom: "-4px", width: "3px", background: "rgba(23,49,38,0.8)", borderRadius: "999px" }} />
+                  <div style={{ position: "absolute", left: `${targetPercent}%`, top: "-4px", bottom: "-4px", width: "3px", background: "rgba(23,49,38,0.8)", borderRadius: "999px" }} />
                 ) : null}
               </div>
-              {showValues ? <div className="chart-value">{formatAxisValue(item.value, decimalPlaces)}</div> : null}
+              {showValues ? <div className="chart-value">{normalizedChartType === "progress-bar" || normalizedChartType === "bullet" ? `${formatAxisValue(percent, decimalPlaces)}%` : formatAxisValue(item.value, decimalPlaces)}</div> : null}
             </div>
           );
           return href ? (
@@ -1223,14 +1251,27 @@ export function ChartPreview({
   }
 
   if (normalizedChartType === "scatter") {
+    const xNumbers = items.map((item, index) => chartLabelNumericValue(String(item.rawLabel ?? item.label ?? ""), index));
+    const xMin = Math.min(...xNumbers);
+    const xMax = Math.max(...xNumbers);
+    const xRange = Math.max(1, xMax - xMin);
     const { ticks, axisMax } = axisMaxFor(items.map((item) => item.value), compact);
     const reversedTicks = [...ticks].reverse();
     const yAxisWidth = axisTickTextWidth(ticks, decimalPlaces, compact);
     const axisLayoutColumns = `${yAxisLabel ? "auto " : ""}${yAxisWidth}px minmax(0, 1fr)`;
     const points = items.map((item, index) => {
-      const x = items.length === 1 ? 200 : 30 + index * (340 / Math.max(1, items.length - 1));
+      const rawX = chartLabelNumericValue(String(item.rawLabel ?? item.label ?? ""), index);
+      const x = items.length === 1 ? 200 : 30 + ((rawX - xMin) / xRange) * 340;
       const y = 190 - (item.value / axisMax) * 150;
-      return { item, x, y, r: chartType === "bubble" ? Math.max(8, (item.value / axisMax) * 22) : 7 };
+      const sizeMatch = secondaryItems.find((entry) =>
+        String(entry.rawLabel ?? entry.label ?? "") === String(item.rawLabel ?? item.label ?? "")
+        && String(entry.rawSeries || entry.series || "") === String(item.rawSeries || item.series || "")
+      );
+      const sizeSource = bubbleChart ? (sizeMatch?.value ?? item.value) : item.value;
+      const radius = bubbleChart
+        ? Math.max(8, Math.min(26, 8 + (sizeSource / Math.max(...secondaryItems.map((entry) => entry.value), ...items.map((entry) => entry.value), 1)) * 18))
+        : 7;
+      return { item, x, y, r: radius };
     });
     return (
       <div className="axis-chart-shell">
@@ -1269,7 +1310,7 @@ export function ChartPreview({
                         cy={point.y}
                         r={point.r}
                         fill={getColor(index)}
-                        fillOpacity={chartType === "bubble" ? 0.75 : 1}
+                        fillOpacity={bubbleChart ? 0.68 : 1}
                         className={href ? "chart-linkable" : undefined}
                       />
                     </g>
@@ -1285,7 +1326,7 @@ export function ChartPreview({
             <div className="chart-x-axis-labels" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
               {items.map((item, index) => (
                 <span className="chart-x-tick" key={`${item.label}-${index}`}>
-                  {xTickLabel(item.label, index, items.length, compact)}
+                  {formatCategoryTickLabel(item.label || item.rawLabel || "")}
                 </span>
               ))}
             </div>
