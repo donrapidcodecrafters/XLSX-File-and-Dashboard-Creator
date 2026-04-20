@@ -105,9 +105,10 @@ function normalizeChartType(chartType: ChartType, orientation: ChartOrientation)
   if (chartType === "3d-scatter") return "scatter";
   if (chartType === "spline") return "line";
   if (chartType === "area-spline" || chartType === "streamgraph") return "area";
-  if (chartType === "radial-bar") return "gauge";
-  if (chartType === "variwide-bar") return orientation === "horizontal" ? "bar" : "column";
-  if (chartType === "progress-bar" || chartType === "bullet") return "bar";
+  if (chartType === "radial-bar") return "radial-bar";
+  if (chartType === "variwide-bar") return "variwide-bar";
+  if (chartType === "progress-bar") return "progress-bar";
+  if (chartType === "bullet") return "bullet";
   return chartType;
 }
 
@@ -172,6 +173,34 @@ function axisMaxFor(values: number[], compact: boolean) {
     ticks,
     axisMax: ticks[ticks.length - 1] || 1
   };
+}
+
+function buildSmoothLinePath(points: Array<{ x: number; y: number }>) {
+  if (!points.length) return "";
+  if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
+  let path = `M ${points[0].x} ${points[0].y}`;
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const previous = points[index - 1] || points[index];
+    const current = points[index];
+    const next = points[index + 1];
+    const afterNext = points[index + 2] || next;
+    const cp1x = current.x + (next.x - previous.x) / 6;
+    const cp1y = current.y + (next.y - previous.y) / 6;
+    const cp2x = next.x - (afterNext.x - current.x) / 6;
+    const cp2y = next.y - (afterNext.y - current.y) / 6;
+    path += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${next.x} ${next.y}`;
+  }
+  return path;
+}
+
+function buildAreaPath(points: Array<{ x: number; y: number }>, bottom: number, smooth = false) {
+  if (!points.length) return "";
+  const linePath = smooth
+    ? buildSmoothLinePath(points)
+    : `M ${points.map((point) => `${point.x} ${point.y}`).join(" L ")}`;
+  const last = points[points.length - 1];
+  const first = points[0];
+  return `${linePath} L ${last.x} ${bottom} L ${first.x} ${bottom} Z`;
 }
 
 function axisTickTextWidth(ticks: number[], decimalPlaces: number, compact: boolean) {
@@ -291,6 +320,9 @@ export function ChartPreview({
   const max = Math.max(...items.map((item) => item.value), 1);
   const total = primaryItems.reduce((sum, item) => sum + item.value, 0) || 1;
   const normalizedChartType = normalizeChartType(chartType, chartOrientation);
+  const smoothLine = chartType === "spline" || chartType === "area-spline";
+  const streamgraph = chartType === "streamgraph";
+  const threeDimensional = chartType.startsWith("3d-");
   const orientation = chartType === "horizontal-bar" || chartType === "horizontal-stacked-bar"
     ? "horizontal"
     : (normalizedChartType === "column" || normalizedChartType === "stacked-column" ? "vertical" : chartOrientation);
@@ -325,7 +357,12 @@ export function ChartPreview({
             <svg viewBox="0 0 200 200" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
               {slices.map(({ item, index, path }) => {
                 const href = getDatumHref?.(item) || "";
-                const content = <path d={path} fill={getColor(index)} className={href ? "chart-linkable" : undefined} />;
+                const content = (
+                  <g>
+                    {threeDimensional ? <path d={path} transform="translate(0 8)" fill="rgba(23,49,38,0.18)" /> : null}
+                    <path d={path} fill={getColor(index)} className={href ? "chart-linkable" : undefined} />
+                  </g>
+                );
                 return href ? (
                   <a key={item.label} href={href} target={anchorTarget} rel={anchorRel}>
                     {content}
@@ -346,6 +383,92 @@ export function ChartPreview({
           </div>
         </div>
         {renderAxisLegend(primaryItems, compact, showLegend, showValues, getDatumHref, openLinksInNewTab)}
+      </div>
+    );
+  }
+
+  if (normalizedChartType === "variwide-bar") {
+    const { ticks, axisMax } = axisMaxFor(primaryItems.map((item) => item.value), compact);
+    const chartWidth = 760;
+    const chartHeight = 348;
+    const leftPad = axisTickTextWidth(ticks, decimalPlaces, compact);
+    const rightPad = 24;
+    const topPad = 24;
+    const bottomPad = columnBottomPad(primaryItems.length, compact, Boolean(xAxisLabel));
+    const plotWidth = chartWidth - leftPad - rightPad;
+    const plotHeight = chartHeight - topPad - bottomPad;
+    const totalWidthWeight = primaryItems.reduce((sum, item) => sum + Math.max(item.value, 1), 0) || 1;
+    let currentX = leftPad;
+    return (
+      <div className="axis-chart-shell">
+        {renderTitle(title)}
+        <div className="axis-svg-shell">
+          <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} preserveAspectRatio="none" className="bar-chart-svg">
+            {ticks.map((tick) => {
+              const y = topPad + plotHeight - (tick / axisMax) * plotHeight;
+              return (
+                <g key={`variwide-tick-${tick}`}>
+                  <line x1={leftPad} y1={y} x2={chartWidth - rightPad} y2={y} className="chart-grid-svg-line" />
+                  <text x={leftPad - 10} y={y + 4} textAnchor="end" className="chart-svg-tick">{formatAxisValue(tick, decimalPlaces)}</text>
+                </g>
+              );
+            })}
+            <line x1={leftPad} y1={topPad} x2={leftPad} y2={topPad + plotHeight} className="chart-axis-svg-line" />
+            <line x1={leftPad} y1={topPad + plotHeight} x2={chartWidth - rightPad} y2={topPad + plotHeight} className="chart-axis-svg-line" />
+            {yAxisLabel ? (
+              <text
+                x={18}
+                y={topPad + plotHeight / 2}
+                transform={`rotate(-90 18 ${topPad + plotHeight / 2})`}
+                textAnchor="middle"
+                className="chart-svg-axis-title"
+              >
+                {yAxisLabel}
+              </text>
+            ) : null}
+            {primaryItems.map((item, index) => {
+              const width = Math.max(22, (Math.max(item.value, 1) / totalWidthWeight) * plotWidth);
+              const height = (item.value / axisMax) * plotHeight;
+              const x = currentX;
+              currentX += width;
+              const y = topPad + plotHeight - height;
+              const href = getDatumHref?.(item) || "";
+              const content = (
+                <g className={href ? "chart-linkable" : undefined}>
+                  <rect x={x + 2} y={y} width={Math.max(width - 6, 14)} height={Math.max(height, 0)} rx="10" fill={getColor(index)} fillOpacity="0.9" />
+                  <polygon
+                    points={`${x + width - 4},${y} ${x + width + 6},${y - 6} ${x + width + 6},${topPad + plotHeight - 6} ${x + width - 4},${topPad + plotHeight}`}
+                    fill="rgba(23,49,38,0.14)"
+                  />
+                  <text
+                    x={x + width / 2}
+                    y={topPad + plotHeight + 16}
+                    textAnchor="end"
+                    transform={`rotate(-40 ${x + width / 2} ${topPad + plotHeight + 16})`}
+                    className="chart-svg-label"
+                  >
+                    {xTickLabel(item.label, index, primaryItems.length, compact)}
+                  </text>
+                  {showValues ? (
+                    <text x={x + width / 2} y={Math.max(topPad + 12, y - 8)} textAnchor="middle" className="chart-svg-value">
+                      {formatAxisValue(item.value, decimalPlaces)}
+                    </text>
+                  ) : null}
+                </g>
+              );
+              return href ? (
+                <a key={item.label} href={href} target={anchorTarget} rel={anchorRel}>
+                  {content}
+                </a>
+              ) : <g key={item.label}>{content}</g>;
+            })}
+            {xAxisLabel ? (
+              <text x={leftPad + plotWidth / 2} y={chartHeight - 12} textAnchor="middle" className="chart-svg-axis-title">
+                {xAxisLabel}
+              </text>
+            ) : null}
+          </svg>
+        </div>
       </div>
     );
   }
@@ -421,6 +544,18 @@ export function ChartPreview({
                     const href = datum ? (getDatumHref?.(datum) || "") : "";
                     const content = (
                       <g key={`${category.rawLabel}-${series.rawSeries || "default"}-${seriesIndex}`} className={href ? "chart-linkable" : undefined}>
+                        {threeDimensional ? (
+                          <>
+                            <polygon
+                              points={`${x + barWidth},${y} ${x + barWidth + 8},${y - 6} ${x + barWidth + 8},${topPad + plotHeight - 6} ${x + barWidth},${topPad + plotHeight}`}
+                              fill="rgba(23,49,38,0.16)"
+                            />
+                            <polygon
+                              points={`${x},${y} ${x + 8},${y - 6} ${x + barWidth + 8},${y - 6} ${x + barWidth},${y}`}
+                              fill="rgba(255,255,255,0.18)"
+                            />
+                          </>
+                        ) : null}
                         <rect x={x} y={y} width={barWidth} height={Math.max(height, 0)} rx="10" fill={getColor(seriesIndex)} fillOpacity="0.9" />
                         {showValues && value > 0 ? (
                           <text x={x + barWidth / 2} y={Math.max(topPad + 12, y - 8)} textAnchor="middle" className="chart-svg-value">
@@ -661,14 +796,41 @@ export function ChartPreview({
                     </a>
                   ) : content;
                 }) : null}
+                {streamgraph && primarySeries.length > 1 ? (() => {
+                  const cumulativeValues = categories.map(() => 0);
+                  return primarySeries.map((series, seriesIndex) => {
+                    const upperPoints = categories.map((category, index) => {
+                      cumulativeValues[index] += valueForCategory(items, category.rawLabel, series.rawSeries, "primary");
+                      const x = categories.length === 1 ? plotLeft + plotWidth / 2 : plotLeft + index * (plotWidth / Math.max(1, categories.length - 1));
+                      const y = plotBottom - (cumulativeValues[index] / axisMax) * plotHeight;
+                      return { x, y };
+                    });
+                    const lowerValues = [...cumulativeValues].map((value, index) => value - valueForCategory(items, categories[index].rawLabel, series.rawSeries, "primary"));
+                    const lowerPoints = categories.map((category, index) => {
+                      const x = categories.length === 1 ? plotLeft + plotWidth / 2 : plotLeft + index * (plotWidth / Math.max(1, categories.length - 1));
+                      const y = plotBottom - (lowerValues[index] / axisMax) * plotHeight;
+                      return { x, y };
+                    }).reverse();
+                    const path = `${buildSmoothLinePath(upperPoints)} L ${lowerPoints.map((point) => `${point.x} ${point.y}`).join(" L ")} Z`;
+                    return <path key={`stream-${series.rawSeries || "default"}-${seriesIndex}`} d={path} fill={getColor(seriesIndex)} fillOpacity="0.28" stroke="none" />;
+                  });
+                })() : null}
                 {primarySeries.map((series, seriesIndex) => {
                   const points = buildSeriesPoints(series.rawSeries, "primary");
-                  const polyline = points.map((point) => `${point.x},${point.y}`).join(" ");
-                  const areaPoints = `${plotLeft},${plotBottom} ${polyline} ${plotRight},${plotBottom}`;
+                  const pointList = points.map((point) => `${point.x},${point.y}`).join(" ");
+                  const linePath = smoothLine || streamgraph ? buildSmoothLinePath(points) : `M ${points.map((point) => `${point.x} ${point.y}`).join(" L ")}`;
+                  const areaPath = buildAreaPath(points, plotBottom, smoothLine || streamgraph);
                   return (
                     <g key={`primary-${series.rawSeries || "default"}-${seriesIndex}`}>
-                      {normalizedChartType === "area" ? <polygon points={areaPoints} fill={getColor(seriesIndex)} fillOpacity="0.18" /> : null}
-                      <polyline points={polyline} stroke={getColor(seriesIndex)} fill="none" strokeWidth="3" />
+                      {normalizedChartType === "area" && !streamgraph ? <path d={areaPath} fill={getColor(seriesIndex)} fillOpacity="0.18" /> : null}
+                      {threeDimensional && (normalizedChartType === "area" || normalizedChartType === "line") ? (
+                        <path d={linePath} transform="translate(0 8)" stroke="rgba(23,49,38,0.18)" fill="none" strokeWidth="5" />
+                      ) : null}
+                      {normalizedChartType === "area" || streamgraph || smoothLine ? (
+                        <path d={linePath} stroke={getColor(seriesIndex)} fill="none" strokeWidth="3" />
+                      ) : (
+                        <polyline points={pointList} stroke={getColor(seriesIndex)} fill="none" strokeWidth="3" />
+                      )}
                       {points.map((point, index) => {
                         const href = getDatumHref?.(point.item) || "";
                         const content = <circle key={`${series.rawSeries}-${point.item.label}-${index}`} cx={point.x} cy={point.y} r="5" fill={getColor(seriesIndex)} className={href ? "chart-linkable" : undefined} />;
@@ -684,15 +846,18 @@ export function ChartPreview({
                 {secondarySeries.map((series, seriesIndex) => {
                   if (!secondaryItems.length) return null;
                   const points = buildSeriesPoints(series.rawSeries, "secondary");
-                  const polyline = points.map((point) => `${point.x},${point.y}`).join(" ");
-                  const areaPoints = `${plotLeft},${plotBottom} ${polyline} ${plotRight},${plotBottom}`;
+                  const pointList = points.map((point) => `${point.x},${point.y}`).join(" ");
+                  const linePath = smoothLine ? buildSmoothLinePath(points) : `M ${points.map((point) => `${point.x} ${point.y}`).join(" L ")}`;
+                  const areaPath = buildAreaPath(points, plotBottom, smoothLine);
                   const secondaryColor = getColor(primarySeries.length + seriesIndex);
                   const seriesType = secondarySeriesType;
                   return (
                     <g key={`secondary-${series.rawSeries || "default"}-${seriesIndex}`}>
-                      {seriesType === "area" ? <polygon points={areaPoints} fill={secondaryColor} fillOpacity="0.12" /> : null}
+                      {seriesType === "area" ? <path d={areaPath} fill={secondaryColor} fillOpacity="0.12" /> : null}
                       {(seriesType === "line" || seriesType === "area") ? (
-                        <polyline points={polyline} stroke={secondaryColor} fill="none" strokeWidth="3" strokeDasharray="8 5" />
+                        (smoothLine
+                          ? <path d={linePath} stroke={secondaryColor} fill="none" strokeWidth="3" strokeDasharray="8 5" />
+                          : <polyline points={pointList} stroke={secondaryColor} fill="none" strokeWidth="3" strokeDasharray="8 5" />)
                       ) : null}
                       {(seriesType === "bar" || seriesType === "column") ? points.map((point, index) => {
                         const previousX = index === 0 ? plotLeft : points[index - 1].x;
@@ -839,6 +1004,80 @@ export function ChartPreview({
     );
   }
 
+  if (normalizedChartType === "radial-bar") {
+    const cx = 110;
+    const cy = 110;
+    const baseRadius = 34;
+    const ringGap = 18;
+    return (
+      <div className="chart-shell">
+        {renderTitle(title)}
+        <div className="donut-shell">
+          <div className="donut">
+            <svg viewBox="0 0 220 220" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+              {primaryItems.slice(0, 5).map((item, index) => {
+                const radius = baseRadius + index * ringGap;
+                const circumference = 2 * Math.PI * radius;
+                const percent = Math.max(0, Math.min(1, item.value / max));
+                const href = getDatumHref?.(item) || "";
+                const content = (
+                  <g>
+                    <circle cx={cx} cy={cy} r={radius} fill="none" stroke="rgba(23,49,38,0.10)" strokeWidth="12" />
+                    <circle
+                      cx={cx}
+                      cy={cy}
+                      r={radius}
+                      fill="none"
+                      stroke={getColor(index)}
+                      strokeWidth="12"
+                      strokeLinecap="round"
+                      strokeDasharray={`${circumference * percent} ${circumference}`}
+                      transform={`rotate(-90 ${cx} ${cy})`}
+                      className={href ? "chart-linkable" : undefined}
+                    />
+                  </g>
+                );
+                return href ? (
+                  <a key={item.label} href={href} target={anchorTarget} rel={anchorRel}>{content}</a>
+                ) : <g key={item.label}>{content}</g>;
+              })}
+            </svg>
+          </div>
+        </div>
+        {renderAxisLegend(primaryItems, compact, showLegend, showValues, getDatumHref, openLinksInNewTab)}
+      </div>
+    );
+  }
+
+  if (normalizedChartType === "progress-bar" || normalizedChartType === "bullet") {
+    return (
+      <div className="waterfall-chart">
+        {renderTitle(title)}
+        {primaryItems.map((item, index) => {
+          const href = getDatumHref?.(item) || "";
+          const percent = Math.max(0, Math.min(100, (item.value / max) * 100));
+          const content = (
+            <div className={`waterfall-row${href ? " chart-linkable" : ""}`} key={item.label}>
+              {showLegend ? <div className="chart-label">{cap(item.label, compact ? 12 : 18)}</div> : null}
+              <div className="waterfall-track" style={normalizedChartType === "bullet" ? { position: "relative", background: "linear-gradient(90deg, rgba(23,49,38,0.08) 0 45%, rgba(23,49,38,0.14) 45% 75%, rgba(23,49,38,0.22) 75% 100%)" } : undefined}>
+                <div className="waterfall-bar" style={{ width: `${percent}%`, background: getColor(index) }} />
+                {normalizedChartType === "bullet" ? (
+                  <div style={{ position: "absolute", left: "80%", top: "-4px", bottom: "-4px", width: "3px", background: "rgba(23,49,38,0.8)", borderRadius: "999px" }} />
+                ) : null}
+              </div>
+              {showValues ? <div className="chart-value">{formatAxisValue(item.value, decimalPlaces)}</div> : null}
+            </div>
+          );
+          return href ? (
+            <a key={item.label} className="chart-link-reset chart-row-link" href={href} target={anchorTarget} rel={anchorRel}>
+              {content}
+            </a>
+          ) : content;
+        })}
+      </div>
+    );
+  }
+
   if (normalizedChartType === "gauge") {
     const current = items[0]?.value || 0;
     const percent = Math.max(0, Math.min(100, max ? (current / max) * 100 : 0));
@@ -932,7 +1171,13 @@ export function ChartPreview({
             <div
               className={`funnel-step${href ? " chart-linkable" : ""}`}
               key={item.label}
-              style={{ width: `${Math.max(34, (item.value / max) * 100)}%`, background: getColor(index) }}
+              style={{
+                width: `${Math.max(34, (item.value / max) * 100)}%`,
+                background: threeDimensional
+                  ? `linear-gradient(135deg, ${getColor(index)}, rgba(23,49,38,0.34))`
+                  : getColor(index),
+                boxShadow: threeDimensional ? "0 10px 18px rgba(23,49,38,0.14)" : undefined
+              }}
             >
               {cap(item.label, compact ? 12 : 18)}{showValues ? ` · ${formatAxisValue(item.value, decimalPlaces)}` : ""}
             </div>
@@ -1005,15 +1250,25 @@ export function ChartPreview({
                 {points.map((point, index) => {
                   const href = getDatumHref?.(point.item) || "";
                   const content = (
-                    <circle
-                      key={point.item.label}
-                      cx={point.x}
-                      cy={point.y}
-                      r={point.r}
-                      fill={getColor(index)}
-                      fillOpacity={chartType === "bubble" ? 0.75 : 1}
-                      className={href ? "chart-linkable" : undefined}
-                    />
+                    <g>
+                      {threeDimensional ? (
+                        <circle
+                          cx={point.x + 4}
+                          cy={point.y + 5}
+                          r={point.r}
+                          fill="rgba(23,49,38,0.16)"
+                        />
+                      ) : null}
+                      <circle
+                        key={point.item.label}
+                        cx={point.x}
+                        cy={point.y}
+                        r={point.r}
+                        fill={getColor(index)}
+                        fillOpacity={chartType === "bubble" ? 0.75 : 1}
+                        className={href ? "chart-linkable" : undefined}
+                      />
+                    </g>
                   );
                   return href ? (
                     <a key={point.item.label} href={href} target={anchorTarget} rel={anchorRel}>
