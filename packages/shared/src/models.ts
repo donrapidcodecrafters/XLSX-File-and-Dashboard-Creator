@@ -132,6 +132,7 @@ export interface ReportViewDefinition {
   chartSecondarySeriesType: ChartSeriesType;
   chartTopN: number;
   chartSort: ChartSortMode;
+  chartColors: string[];
   chartShowLegend: boolean;
   chartShowValues: boolean;
   chartXAxisLabel: string;

@@ -14,6 +14,7 @@ const CHART_COLORS = [
 interface ChartPreviewProps {
   chartType: ChartType;
   data: ChartDatum[];
+  chartColors?: string[];
   chartOrientation?: ChartOrientation;
   title?: string;
   decimalPlaces?: number;
@@ -32,8 +33,8 @@ function cap(value: string, max = 16) {
   return value.length > max ? `${value.slice(0, max - 1)}…` : value;
 }
 
-function getColor(index: number) {
-  return CHART_COLORS[index % CHART_COLORS.length];
+function getColor(palette: string[], index: number) {
+  return palette[index % palette.length];
 }
 
 function collapseChartData(data: ChartDatum[], axis: "primary" | "secondary" = "primary") {
@@ -231,6 +232,7 @@ function renderAxisLegend(
   compact: boolean,
   showLegend: boolean,
   showValues: boolean,
+  palette: string[],
   getDatumHref?: (datum: ChartDatum) => string,
   openLinksInNewTab = false
 ) {
@@ -242,7 +244,7 @@ function renderAxisLegend(
           const href = getDatumHref?.(item) || "";
           const content = (
             <span className={`badge${href ? " chart-badge-link" : ""}`} key={item.label}>
-              <span className="badge-dot" style={{ background: getColor(index) }} />
+              <span className="badge-dot" style={{ background: getColor(palette, index) }} />
               {cap(item.label, compact ? 12 : 18)}{showValues ? ` · ${item.value}` : ""}
             </span>
           );
@@ -303,6 +305,7 @@ function describeDonutSlicePath(cx: number, cy: number, outerRadius: number, inn
 export function ChartPreview({
   chartType,
   data,
+  chartColors = CHART_COLORS,
   chartOrientation = "vertical",
   title = "",
   decimalPlaces = 2,
@@ -319,6 +322,11 @@ export function ChartPreview({
   if (!data.length) {
     return <div className="chart-empty">No chart data available.</div>;
   }
+
+  const colors = chartColors
+    .map((color) => String(color || "").trim())
+    .filter((color) => /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(color));
+  const palette = colors.length ? colors : CHART_COLORS;
 
   const items = data;
   const primaryItems = collapseChartData(items, "primary");
@@ -370,7 +378,7 @@ export function ChartPreview({
                 const content = (
                   <g>
                     {threeDimensional ? <path d={path} transform="translate(0 8)" fill="rgba(23,49,38,0.18)" /> : null}
-                    <path d={path} fill={getColor(index)} className={href ? "chart-linkable" : undefined} />
+                    <path d={path} fill={getColor(palette, index)} className={href ? "chart-linkable" : undefined} />
                   </g>
                 );
                 return href ? (
@@ -392,7 +400,7 @@ export function ChartPreview({
             ) : null}
           </div>
         </div>
-        {renderAxisLegend(primaryItems, compact, showLegend, showValues, getDatumHref, openLinksInNewTab)}
+        {renderAxisLegend(primaryItems, compact, showLegend, showValues, palette, getDatumHref, openLinksInNewTab)}
       </div>
     );
   }
@@ -445,7 +453,7 @@ export function ChartPreview({
               const href = getDatumHref?.(item) || "";
               const content = (
                 <g className={href ? "chart-linkable" : undefined}>
-                  <rect x={x + 2} y={y} width={Math.max(width - 6, 14)} height={Math.max(height, 0)} rx="10" fill={getColor(index)} fillOpacity="0.9" />
+                  <rect x={x + 2} y={y} width={Math.max(width - 6, 14)} height={Math.max(height, 0)} rx="10" fill={getColor(palette, index)} fillOpacity="0.9" />
                   <polygon
                     points={`${x + width - 4},${y} ${x + width + 6},${y - 6} ${x + width + 6},${topPad + plotHeight - 6} ${x + width - 4},${topPad + plotHeight}`}
                     fill="rgba(23,49,38,0.14)"
@@ -566,7 +574,7 @@ export function ChartPreview({
                             />
                           </>
                         ) : null}
-                        <rect x={x} y={y} width={barWidth} height={Math.max(height, 0)} rx="10" fill={getColor(seriesIndex)} fillOpacity="0.9" />
+                        <rect x={x} y={y} width={barWidth} height={Math.max(height, 0)} rx="10" fill={getColor(palette, seriesIndex)} fillOpacity="0.9" />
                         {showValues && value > 0 ? (
                           <text x={x + barWidth / 2} y={Math.max(topPad + 12, y - 8)} textAnchor="middle" className="chart-svg-value">
                             {formatAxisValue(value, decimalPlaces)}
@@ -605,7 +613,7 @@ export function ChartPreview({
           rawLabel: series.rawSeries,
           rawSeries: series.rawSeries,
           series: series.label
-        })), compact, showLegend, false, undefined, openLinksInNewTab) : null}
+        })), compact, showLegend, false, palette, undefined, openLinksInNewTab) : null}
       </div>
     );
   }
@@ -693,7 +701,7 @@ export function ChartPreview({
                             />
                           </>
                         ) : null}
-                        <rect x={x} y={y} width={width} height={barHeight} rx="10" fill={getColor(seriesIndex)} fillOpacity="0.9" />
+                        <rect x={x} y={y} width={width} height={barHeight} rx="10" fill={getColor(palette, seriesIndex)} fillOpacity="0.9" />
                         {showValues && value > 0 ? (
                           <text x={x + width + 10} y={y + barHeight / 2 + 4} textAnchor="start" className="chart-svg-value">
                             {formatAxisValue(value, decimalPlaces)}
@@ -723,7 +731,7 @@ export function ChartPreview({
           rawLabel: series.rawSeries,
           rawSeries: series.rawSeries,
           series: series.label
-        })), compact, showLegend, false, undefined, openLinksInNewTab) : null}
+        })), compact, showLegend, false, palette, undefined, openLinksInNewTab) : null}
       </div>
     );
   }
@@ -820,7 +828,7 @@ export function ChartPreview({
                       width={width}
                       height={Math.max(height, 0)}
                       rx="10"
-                      fill={getColor(categoryIndex)}
+                      fill={getColor(palette, categoryIndex)}
                       fillOpacity="0.72"
                       className={href ? "chart-linkable" : undefined}
                     />
@@ -851,7 +859,7 @@ export function ChartPreview({
                       return { x, y };
                     }).reverse();
                     const path = `${buildSmoothLinePath(upperPoints)} L ${lowerPoints.map((point) => `${point.x} ${point.y}`).join(" L ")} Z`;
-                    return <path key={`stream-${series.rawSeries || "default"}-${seriesIndex}`} d={path} fill={getColor(seriesIndex)} fillOpacity="0.34" stroke="none" />;
+                    return <path key={`stream-${series.rawSeries || "default"}-${seriesIndex}`} d={path} fill={getColor(palette, seriesIndex)} fillOpacity="0.34" stroke="none" />;
                   });
                 })() : null}
                 {primarySeries.map((series, seriesIndex) => {
@@ -861,18 +869,18 @@ export function ChartPreview({
                   const areaPath = buildAreaPath(points, plotBottom, smoothLine || streamgraph);
                   return (
                     <g key={`primary-${series.rawSeries || "default"}-${seriesIndex}`}>
-                      {normalizedChartType === "area" && !streamgraph ? <path d={areaPath} fill={getColor(seriesIndex)} fillOpacity={primarySeries.length > 1 ? 0.12 : 0.22} /> : null}
+                      {normalizedChartType === "area" && !streamgraph ? <path d={areaPath} fill={getColor(palette, seriesIndex)} fillOpacity={primarySeries.length > 1 ? 0.12 : 0.22} /> : null}
                       {threeDimensional && (normalizedChartType === "area" || normalizedChartType === "line") ? (
                         <path d={linePath} transform="translate(0 8)" stroke="rgba(23,49,38,0.18)" fill="none" strokeWidth="5" />
                       ) : null}
                       {normalizedChartType === "area" || streamgraph || smoothLine ? (
-                        <path d={linePath} stroke={getColor(seriesIndex)} fill="none" strokeWidth="3" />
+                        <path d={linePath} stroke={getColor(palette, seriesIndex)} fill="none" strokeWidth="3" />
                       ) : (
-                        <polyline points={pointList} stroke={getColor(seriesIndex)} fill="none" strokeWidth="3" />
+                        <polyline points={pointList} stroke={getColor(palette, seriesIndex)} fill="none" strokeWidth="3" />
                       )}
                       {points.map((point, index) => {
                         const href = getDatumHref?.(point.item) || "";
-                        const content = <circle key={`${series.rawSeries}-${point.item.label}-${index}`} cx={point.x} cy={point.y} r="5" fill={getColor(seriesIndex)} className={href ? "chart-linkable" : undefined} />;
+                        const content = <circle key={`${series.rawSeries}-${point.item.label}-${index}`} cx={point.x} cy={point.y} r="5" fill={getColor(palette, seriesIndex)} className={href ? "chart-linkable" : undefined} />;
                         return href ? (
                           <a key={`${series.rawSeries}-${point.item.label}-${index}`} href={href} target={anchorTarget} rel={anchorRel}>
                             {content}
@@ -888,7 +896,7 @@ export function ChartPreview({
                   const pointList = points.map((point) => `${point.x},${point.y}`).join(" ");
                   const linePath = smoothLine ? buildSmoothLinePath(points) : `M ${points.map((point) => `${point.x} ${point.y}`).join(" L ")}`;
                   const areaPath = buildAreaPath(points, plotBottom, smoothLine);
-                  const secondaryColor = getColor(primarySeries.length + seriesIndex);
+                  const secondaryColor = getColor(palette, primarySeries.length + seriesIndex);
                   const seriesType = secondarySeriesType;
                   return (
                     <g key={`secondary-${series.rawSeries || "default"}-${seriesIndex}`}>
@@ -967,7 +975,7 @@ export function ChartPreview({
         {(primarySeries.length > 1 || secondarySeries.length > 0) ? renderAxisLegend([
           ...primarySeries.map((series) => ({ label: series.label, value: 0, rawLabel: series.rawSeries, rawSeries: series.rawSeries, series: series.label })),
           ...secondarySeries.map((series) => ({ label: `${series.label} (secondary)`, value: 0, rawLabel: series.rawSeries, rawSeries: series.rawSeries, series: `${series.label} (secondary)` }))
-        ], compact, showLegend, false, undefined, openLinksInNewTab) : null}
+        ], compact, showLegend, false, palette, undefined, openLinksInNewTab) : null}
       </div>
     );
   }
@@ -1011,13 +1019,13 @@ export function ChartPreview({
             const polyline = points.map((point) => `${point.x},${point.y}`).join(" ");
             return (
               <g key={`radar-${series.rawSeries || "default"}-${seriesIndex}`}>
-                <polygon points={polyline} fill={getColor(seriesIndex)} fillOpacity="0.14" />
-                <polyline points={polyline} stroke={getColor(seriesIndex)} fill="none" strokeWidth="3" />
+                <polygon points={polyline} fill={getColor(palette, seriesIndex)} fillOpacity="0.14" />
+                <polyline points={polyline} stroke={getColor(palette, seriesIndex)} fill="none" strokeWidth="3" />
                 {points.map((point, index) => (
                   <g key={`${series.rawSeries}-${point.item.rawLabel}-${index}`}>
                     {(() => {
                       const href = point.datum ? (getDatumHref?.(point.datum) || "") : "";
-                      const content = <circle cx={point.x} cy={point.y} r="5" fill={getColor(seriesIndex)} className={href ? "chart-linkable" : undefined} />;
+                      const content = <circle cx={point.x} cy={point.y} r="5" fill={getColor(palette, seriesIndex)} className={href ? "chart-linkable" : undefined} />;
                       return href ? (
                         <a href={href} target={anchorTarget} rel={anchorRel}>
                           {content}
@@ -1031,7 +1039,7 @@ export function ChartPreview({
             );
           })}
         </svg>
-        {primarySeries.length > 1 ? renderAxisLegend(primarySeries.map((series) => ({ label: series.label, value: 0, rawLabel: series.rawSeries, rawSeries: series.rawSeries, series: series.label })), compact, showLegend, false, undefined, openLinksInNewTab) : null}
+        {primarySeries.length > 1 ? renderAxisLegend(primarySeries.map((series) => ({ label: series.label, value: 0, rawLabel: series.rawSeries, rawSeries: series.rawSeries, series: series.label })), compact, showLegend, false, palette, undefined, openLinksInNewTab) : null}
       </div>
     );
   }
@@ -1060,7 +1068,7 @@ export function ChartPreview({
                       cy={cy}
                       r={radius}
                       fill="none"
-                      stroke={getColor(index)}
+                      stroke={getColor(palette, index)}
                       strokeWidth="12"
                       strokeLinecap="round"
                       strokeDasharray={`${circumference * percent} ${circumference}`}
@@ -1076,7 +1084,7 @@ export function ChartPreview({
             </svg>
           </div>
         </div>
-        {renderAxisLegend(primaryItems, compact, showLegend, showValues, getDatumHref, openLinksInNewTab)}
+        {renderAxisLegend(primaryItems, compact, showLegend, showValues, palette, getDatumHref, openLinksInNewTab)}
       </div>
     );
   }
@@ -1094,7 +1102,7 @@ export function ChartPreview({
             <div className={`waterfall-row${href ? " chart-linkable" : ""}`} key={item.label}>
               {showLegend ? <div className="chart-label">{cap(item.label, compact ? 12 : 18)}</div> : null}
               <div className="waterfall-track" style={normalizedChartType === "bullet" ? { position: "relative", background: "linear-gradient(90deg, rgba(23,49,38,0.08) 0 45%, rgba(23,49,38,0.14) 45% 75%, rgba(23,49,38,0.22) 75% 100%)" } : undefined}>
-                <div className="waterfall-bar" style={{ width: `${percent}%`, background: getColor(index) }} />
+                <div className="waterfall-bar" style={{ width: `${percent}%`, background: getColor(palette, index) }} />
                 {normalizedChartType === "bullet" ? (
                   <div style={{ position: "absolute", left: `${targetPercent}%`, top: "-4px", bottom: "-4px", width: "3px", background: "rgba(23,49,38,0.8)", borderRadius: "999px" }} />
                 ) : null}
@@ -1148,7 +1156,7 @@ export function ChartPreview({
             <div className={`waterfall-row${href ? " chart-linkable" : ""}`} key={item.label}>
               {showLegend ? <div className="chart-label">{cap(item.label, compact ? 12 : 18)}</div> : null}
               <div className="waterfall-track">
-                <div className="waterfall-bar" style={{ marginLeft: `${startPercent}%`, width: `${widthPercent}%`, background: getColor(index) }} />
+                <div className="waterfall-bar" style={{ marginLeft: `${startPercent}%`, width: `${widthPercent}%`, background: getColor(palette, index) }} />
               </div>
               {showValues ? <div className="chart-value">{formatAxisValue(item.value, decimalPlaces)}</div> : null}
             </div>
@@ -1180,7 +1188,7 @@ export function ChartPreview({
               <div
                 className={`stacked-segment${href ? " chart-linkable" : ""}`}
                 key={item.label}
-                style={{ width: `${(item.value / total) * 100}%`, background: getColor(index) }}
+                style={{ width: `${(item.value / total) * 100}%`, background: getColor(palette, index) }}
               />
             );
             return href ? (
@@ -1190,7 +1198,7 @@ export function ChartPreview({
             ) : content;
           })}
         </div>
-        {shouldRenderLegendStrip(normalizedChartType, compact) ? renderAxisLegend(items, compact, showLegend, showValues, getDatumHref, openLinksInNewTab) : null}
+        {shouldRenderLegendStrip(normalizedChartType, compact) ? renderAxisLegend(items, compact, showLegend, showValues, palette, getDatumHref, openLinksInNewTab) : null}
       </div>
     );
   }
@@ -1208,8 +1216,8 @@ export function ChartPreview({
               style={{
                 width: `${Math.max(34, (item.value / max) * 100)}%`,
                 background: threeDimensional
-                  ? `linear-gradient(135deg, ${getColor(index)}, rgba(23,49,38,0.34))`
-                  : getColor(index),
+                  ? `linear-gradient(135deg, ${getColor(palette, index)}, rgba(23,49,38,0.34))`
+                  : getColor(palette, index),
                 boxShadow: threeDimensional ? "0 10px 18px rgba(23,49,38,0.14)" : undefined
               }}
             >
@@ -1310,7 +1318,7 @@ export function ChartPreview({
                         cx={point.x}
                         cy={point.y}
                         r={point.r}
-                        fill={getColor(index)}
+                        fill={getColor(palette, index)}
                         fillOpacity={bubbleChart ? 0.68 : 1}
                         className={href ? "chart-linkable" : undefined}
                       />
@@ -1334,7 +1342,7 @@ export function ChartPreview({
             {xAxisLabel ? <div className="chart-axis-title chart-axis-title-bottom">{xAxisLabel}</div> : null}
           </div>
         </div>
-        {renderAxisLegend(items, compact, showLegend, showValues, getDatumHref, openLinksInNewTab)}
+        {renderAxisLegend(items, compact, showLegend, showValues, palette, getDatumHref, openLinksInNewTab)}
       </div>
     );
   }
@@ -1354,7 +1362,7 @@ export function ChartPreview({
           <div className={`chart-row${href ? " chart-linkable" : ""}`} key={item.label}>
             {showLegend ? <div className="chart-label">{cap(item.label, compact ? 12 : 18)}</div> : null}
             <div className="chart-track">
-              <div className="chart-fill" style={{ width: `${Math.max(6, (item.value / max) * 100)}%`, background: `linear-gradient(90deg, ${getColor(index)}, ${getColor(index)}dd)` }} />
+              <div className="chart-fill" style={{ width: `${Math.max(6, (item.value / max) * 100)}%`, background: `linear-gradient(90deg, ${getColor(palette, index)}, ${getColor(palette, index)}dd)` }} />
             </div>
             {showValues ? <div className="chart-value">{formatAxisValue(item.value, decimalPlaces)}</div> : null}
           </div>

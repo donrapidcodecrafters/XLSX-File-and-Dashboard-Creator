@@ -60,6 +60,7 @@ import { downloadExportJob, fetchExportJobStatus, startDashboardExportJob, start
 import { ChartPreview } from "./ChartPreview";
 
 const STORAGE_KEY = "hosted-reporting-studio-v2";
+const DEFAULT_CHART_COLORS = ["#0d7c66", "#d88d3d", "#5b7cfa", "#9b59b6", "#e66f5c", "#3a9782", "#b7a26a", "#4f8fba"];
 const REPORT_VIEW_OPTIONS: ReportViewMode[] = ["table", "summary", "chart", "timeline", "calendar", "kanban"];
 const CHART_OPTIONS: ChartType[] = [
   "bar",
@@ -503,6 +504,7 @@ function buildCreateDraft(table?: TableDefinition | null, type: CreateModalType 
       chartSecondarySeriesType: "line",
       chartTopN: 12,
       chartSort: "value-desc",
+      chartColors: [...DEFAULT_CHART_COLORS],
       chartShowLegend: true,
       chartShowValues: true,
       chartXAxisLabel: "",
@@ -837,6 +839,7 @@ function ReportPreview({
           data={result.chartData}
           title={report.view.chartTitle}
           decimalPlaces={report.view.decimalPlaces}
+          chartColors={report.view.chartColors}
           chartOrientation={report.view.chartOrientation}
           xAxisLabel={axisLabels.xAxisLabel}
           yAxisLabel={axisLabels.yAxisLabel}
@@ -1065,6 +1068,7 @@ function DashboardPreview({
                         data={widget.result.chartData}
                         title={widget.report.view.chartTitle || widget.widget.title}
                         decimalPlaces={widget.report.view.decimalPlaces}
+                        chartColors={widget.report.view.chartColors}
                         chartOrientation={widget.report.view.chartOrientation}
                         xAxisLabel={widget.report.view.chartXAxisLabel}
                         yAxisLabel={widget.report.view.chartYAxisLabel}
@@ -1807,6 +1811,7 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
         chartSecondarySeriesType: "line",
         chartTopN: current.view.chartTopN || 12,
         chartSort: current.view.chartSort || "value-desc",
+        chartColors: current.view.chartColors?.length ? [...current.view.chartColors] : [...DEFAULT_CHART_COLORS],
         chartShowLegend: current.view.chartShowLegend ?? true,
         chartShowValues: current.view.chartShowValues ?? true,
         chartXAxisLabel: current.view.chartXAxisLabel || "",
@@ -3321,6 +3326,76 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
                                 ) : null}
                               </>
                             ) : null}
+                            <div className="field" style={{ gridColumn: "1 / -1" }}>
+                              <span>Chart colors</span>
+                              <div className="micro">These colors are used in preview, dashboards, and full-screen charts in the order shown.</div>
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", marginTop: "8px" }}>
+                                {(createDraft.view.chartColors?.length ? createDraft.view.chartColors : DEFAULT_CHART_COLORS).map((color, index) => (
+                                  <label key={`chart-color-${index}`} className="field" style={{ width: "84px" }}>
+                                    <span>Color {index + 1}</span>
+                                    <input
+                                      type="color"
+                                      value={color}
+                                      onChange={(event) => setCreateDraft((current) => {
+                                        const nextColors = [...(current.view.chartColors?.length ? current.view.chartColors : DEFAULT_CHART_COLORS)];
+                                        nextColors[index] = event.target.value;
+                                        return {
+                                          ...current,
+                                          view: {
+                                            ...current.view,
+                                            chartColors: nextColors
+                                          }
+                                        };
+                                      })}
+                                    />
+                                  </label>
+                                ))}
+                              </div>
+                              <div style={{ display: "flex", gap: "10px", marginTop: "10px", flexWrap: "wrap" }}>
+                                <button
+                                  type="button"
+                                  className="ghost-button"
+                                  onClick={() => setCreateDraft((current) => ({
+                                    ...current,
+                                    view: {
+                                      ...current.view,
+                                      chartColors: [...(current.view.chartColors?.length ? current.view.chartColors : DEFAULT_CHART_COLORS), "#0d7c66"].slice(0, 12)
+                                    }
+                                  }))}
+                                  disabled={(createDraft.view.chartColors?.length || DEFAULT_CHART_COLORS.length) >= 12}
+                                >
+                                  Add color
+                                </button>
+                                <button
+                                  type="button"
+                                  className="ghost-button"
+                                  onClick={() => setCreateDraft((current) => ({
+                                    ...current,
+                                    view: {
+                                      ...current.view,
+                                      chartColors: current.view.chartColors?.length && current.view.chartColors.length > 1
+                                        ? current.view.chartColors.slice(0, -1)
+                                        : [...DEFAULT_CHART_COLORS]
+                                    }
+                                  }))}
+                                >
+                                  Remove last color
+                                </button>
+                                <button
+                                  type="button"
+                                  className="ghost-button"
+                                  onClick={() => setCreateDraft((current) => ({
+                                    ...current,
+                                    view: {
+                                      ...current.view,
+                                      chartColors: [...DEFAULT_CHART_COLORS]
+                                    }
+                                  }))}
+                                >
+                                  Reset colors
+                                </button>
+                              </div>
+                            </div>
                             <label className="toggle-row builder-subsection-toggle"><input type="checkbox" checked={createDraft.view.chartShowLegend} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartShowLegend: event.target.checked } }))} /> Show legend</label>
                             <label className="toggle-row builder-subsection-toggle"><input type="checkbox" checked={createDraft.view.chartShowValues} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartShowValues: event.target.checked } }))} /> Show values</label>
                           </div>

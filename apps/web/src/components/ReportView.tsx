@@ -291,6 +291,7 @@ export function ReportView({
               data={result?.chartData || []}
               title={report.view.chartTitle}
               decimalPlaces={report.view.decimalPlaces}
+              chartColors={report.view.chartColors}
               chartOrientation={report.view.chartOrientation}
               xAxisLabel={axisLabels.xAxisLabel}
               yAxisLabel={axisLabels.yAxisLabel}

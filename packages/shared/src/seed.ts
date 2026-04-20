@@ -37,6 +37,7 @@ function buildReportView(overrides: Partial<ReportViewDefinition> = {}): ReportV
     chartSecondarySeriesType: "line",
     chartTopN: 12,
     chartSort: "value-desc",
+    chartColors: ["#0d7c66", "#d88d3d", "#5b7cfa", "#9b59b6", "#e66f5c", "#3a9782", "#b7a26a", "#4f8fba"],
     chartShowLegend: true,
     chartShowValues: true,
     chartXAxisLabel: "",

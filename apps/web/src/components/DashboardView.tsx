@@ -333,6 +333,7 @@ export function DashboardView({
                       data={chartData}
                       title={widget.report.view.chartTitle || widget.widget.title}
                       decimalPlaces={widget.report.view.decimalPlaces}
+                      chartColors={widget.report.view.chartColors}
                       chartOrientation={widget.report.view.chartOrientation}
                       xAxisLabel={axisLabels.xAxisLabel}
                       yAxisLabel={axisLabels.yAxisLabel}
