@@ -1877,6 +1877,10 @@ th {
   flex-direction: column;
 }
 
+.studio-page-dashboard .studio-inspector {
+  order: -1;
+}
+
 .studio-page-home {
   display: block;
 }

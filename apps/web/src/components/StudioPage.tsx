@@ -1018,6 +1018,11 @@ export function StudioPage({
   const activeDashboardTab = activeDashboard?.tabs.find((tab) => tab.id === resolvedActiveDashboardTabId) || null;
   const resolvedSelectedDashboardWidgetId = resolveSelectedDashboardWidgetId(activeDashboardTab, selectedWidgetId);
   const selectedDashboardWidget = activeDashboardTab?.widgets.find((widget) => widget.id === resolvedSelectedDashboardWidgetId) || null;
+  const selectedDashboardWidgetReport = selectedDashboardWidget
+    ? (selectedDashboardWidget.mode === "copied" && selectedDashboardWidget.snapshot
+      ? selectedDashboardWidget.snapshot
+      : (bundle.objects[selectedDashboardWidget.reportId] as ReportDefinition | undefined) || null)
+    : null;
   const activeDashboardRows = useMemo(
     () => (activeDashboardTab ? getDashboardWidgetRowsInStudio(activeDashboardTab) : []),
     [activeDashboardTab]
@@ -3229,7 +3234,7 @@ export function StudioPage({
           </section>
         ) : null}
 
-        {lastWorkbookImportReview ? (
+        {lastWorkbookImportReview && !activeObject ? (
           <section className="card import-review-card">
             <div className="card-head">
               <div>
@@ -3572,6 +3577,17 @@ export function StudioPage({
                               <option value="chart">Chart/graph</option>
                             </select>
                           </label>
+                          {selectedDashboardWidget.mode !== "copied" && selectedDashboardWidgetReport ? (
+                            <div className="field">
+                              <span>Edit linked report</span>
+                              <button
+                                type="button"
+                                onClick={() => navigate(buildHostedRoute(`/studio/${selectedDashboardWidgetReport.id}`))}
+                              >
+                                Open report setup
+                              </button>
+                            </div>
+                          ) : null}
                           <label className="toggle-row"><input type="checkbox" checked={selectedDashboardWidget.showSummary} onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, (candidate) => ({ ...candidate, showSummary: event.target.checked }))} /> Show summary</label>
                           <label className="toggle-row"><input type="checkbox" checked={selectedDashboardWidget.showDetails} onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, (candidate) => ({ ...candidate, showDetails: event.target.checked }))} /> Show details</label>
                           <label className="toggle-row"><input type="checkbox" checked={clampDashboardWidgetWidth(selectedDashboardWidget.layout.w) >= 12} onChange={() => toggleDashboardWidgetFullWidth(activeDashboardTab.id, selectedDashboardWidget.id)} /> Full width</label>
