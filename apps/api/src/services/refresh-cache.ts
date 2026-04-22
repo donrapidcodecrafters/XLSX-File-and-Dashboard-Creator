@@ -457,7 +457,7 @@ export async function primeRefreshJob(jobId: string, options: { objectId?: strin
   return getPersistedRefreshStatus(jobId);
 }
 
-export async function cancelRefreshJob(jobId: string) {
+export async function cancelRefreshJob(jobId: string, message = "Cancelling refresh…") {
   await studioStore.hydrateFromQuickbase(true);
   const document = studioStore.getLiveDocument();
   const statuses = [
@@ -469,23 +469,16 @@ export async function cancelRefreshJob(jobId: string) {
     if (!status.running) return;
     if (status.activeJobId && status.activeJobId !== jobId) return;
     status.cancelRequested = true;
-    status.message = "Cancelling refresh…";
+    status.message = message;
     matched = true;
   });
+  const cancelled = refreshJobStore.cancelJob(jobId, message);
   if (!matched) {
-    const current = refreshJobStore.getJob(jobId);
-    if (current) {
-      return {
-        ...current,
-        status: "cancelled",
-        message: "Cancelling refresh…",
-        estimatedSecondsRemaining: 0
-      } as RefreshJobStatus;
-    }
+    if (cancelled) return cancelled;
     return getPersistedRefreshStatus(jobId);
   }
   studioStore.flushDocument(document, { markSavedAt: false });
-  return getPersistedRefreshStatus(jobId);
+  return cancelled || getPersistedRefreshStatus(jobId);
 }
 
 export function getTrackedRefreshJob(jobId: string) {

@@ -14,6 +14,15 @@ import {
 import { refreshJobStore } from "../services/refresh-jobs.js";
 import { importWorkbookIntoStudioDocument } from "../services/xlsx-import.js";
 
+const STALE_REFRESH_JOB_MS = 3 * 60 * 1000;
+
+function isRefreshJobStale(job: { status?: string; updatedAt?: string; createdAt?: string } | null) {
+  if (!job || (job.status !== "queued" && job.status !== "running")) return false;
+  const updatedAt = Date.parse(String(job.updatedAt || job.createdAt || ""));
+  if (Number.isNaN(updatedAt)) return false;
+  return Date.now() - updatedAt > STALE_REFRESH_JOB_MS;
+}
+
 export async function registerStudioRoutes(app: FastifyInstance) {
   app.get("/api/studio/document", async () => {
     const document = studioStore.getDocument();
@@ -194,7 +203,11 @@ export async function registerStudioRoutes(app: FastifyInstance) {
 
   app.post("/api/studio/refresh/start", async (request, reply) => {
     try {
-      const activeJob = getActiveRefreshJob();
+      let activeJob = getActiveRefreshJob();
+      if (isRefreshJobStale(activeJob)) {
+        await cancelRefreshJob(activeJob!.id, "Previous refresh stalled.");
+        activeJob = getActiveRefreshJob();
+      }
       if (activeJob && (activeJob.status === "queued" || activeJob.status === "running")) {
         return { job: activeJob };
       }
@@ -221,7 +234,11 @@ export async function registerStudioRoutes(app: FastifyInstance) {
   app.post("/api/studio/objects/:id/refresh/start", async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
-      const activeJob = getActiveRefreshJob();
+      let activeJob = getActiveRefreshJob();
+      if (isRefreshJobStale(activeJob)) {
+        await cancelRefreshJob(activeJob!.id, "Previous refresh stalled.");
+        activeJob = getActiveRefreshJob();
+      }
       if (activeJob && (activeJob.status === "queued" || activeJob.status === "running")) {
         return { job: activeJob };
       }
