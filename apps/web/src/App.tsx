@@ -246,8 +246,9 @@ function ObjectPage({
         .then((response) => {
           setRefreshJob(response.job);
           if (response.job.status === "complete") {
+            setRefreshJob(null);
             setRefreshNonce((current) => current + 1);
-            void reloadObject();
+            setLoading(true);
           }
         })
         .catch(() => undefined);
