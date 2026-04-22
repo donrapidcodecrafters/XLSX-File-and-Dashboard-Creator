@@ -2,6 +2,7 @@ import { type ChangeEvent, type RefObject } from "react";
 import { Link } from "react-router-dom";
 import { type StudioObject, type StudioTemplateRecord } from "@studio/shared";
 import { typeLabel } from "../lib/catalog";
+import { buildHostedRoute } from "../lib/embed";
 
 type LibraryFilter = "all" | "report" | "dashboard";
 type LibraryScopeFilter = "all" | "global" | "personal";
@@ -125,7 +126,7 @@ export function StudioLibrarySidebar({
             <Link
               key={object.id}
               className={`nav-card${object.id === activeObjectId ? " active-card" : ""}`}
-              to={`/studio/${object.id}`}
+              to={buildHostedRoute(`/studio/${object.id}`)}
               target={openLinksInNewTab ? "_blank" : undefined}
               rel={openLinksInNewTab ? "noreferrer" : undefined}
             >

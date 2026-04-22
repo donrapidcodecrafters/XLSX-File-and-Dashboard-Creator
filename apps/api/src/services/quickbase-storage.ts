@@ -547,7 +547,7 @@ async function quickbaseRunReportRest(
   reportId: string,
   options: { top?: number; skip?: number } = {}
 ): Promise<QuickbaseQueryResult> {
-  const top = Math.max(1, Math.min(Number(options.top) || 250, 250));
+  const top = Math.max(1, Math.min(Number(options.top) || 1000, 1000));
   const skip = Math.max(0, Number(options.skip) || 0);
   const query = new URLSearchParams({
     tableId: String(tableId),
@@ -682,38 +682,38 @@ export async function fetchQuickbaseTableRows(
   return response.rows;
 }
 
-export async function fetchQuickbaseRowsBySavedReport(
+export async function fetchQuickbaseSavedReportPage(
   config: StudioDocument["quickbase"],
   tableId: string,
   reportId: string,
   options: { top?: number; skip?: number } = {}
-): Promise<DataRow[]> {
+): Promise<{ rows: DataRow[]; totalRecords: number | null }> {
   if (!hasQuickbaseConnection(config) || !tableId || !reportId) {
-    return [];
+    return { rows: [], totalRecords: 0 };
   }
   const fetchSavedReport = async () => {
     if (usingDirectQuickbaseApi(config)) {
       try {
         const restResponse = await quickbaseRunReportRest(config, tableId, reportId, {
-          top: Math.max(1, Math.min(Number(options.top) || 250, 250)),
+          top: Math.max(1, Math.min(Number(options.top) || 1000, 1000)),
           skip: Math.max(0, Number(options.skip) || 0)
         });
         if ((restResponse.data?.length || 0) > 0 || Math.max(0, Number(options.skip) || 0) > 0) {
           return restResponse;
         }
         return quickbaseQueryRecordsBySavedReportXml(config, tableId, reportId, {
-          top: Math.max(1, Math.min(Number(options.top) || 250, 250)),
+          top: Math.max(1, Math.min(Number(options.top) || 1000, 1000)),
           skip: Math.max(0, Number(options.skip) || 0)
         });
       } catch {
         return quickbaseQueryRecordsBySavedReportXml(config, tableId, reportId, {
-          top: Math.max(1, Math.min(Number(options.top) || 250, 250)),
+          top: Math.max(1, Math.min(Number(options.top) || 1000, 1000)),
           skip: Math.max(0, Number(options.skip) || 0)
         });
       }
     }
     return quickbaseQueryRecordsBySavedReportXml(config, tableId, reportId, {
-      top: Math.max(1, Math.min(Number(options.top) || 250, 250)),
+      top: Math.max(1, Math.min(Number(options.top) || 1000, 1000)),
       skip: Math.max(0, Number(options.skip) || 0)
     });
   };
@@ -722,15 +722,30 @@ export async function fetchQuickbaseRowsBySavedReport(
     throw new Error(`Quickbase saved report ${reportId} failed for table ${tableId}. ${message}`);
   });
 
-  return response.data.map((row) => {
-    const data: DataRow = {
-      __recordId: String(qbFieldValue(row, "3") || "")
-    };
-    Object.keys(row).forEach((fieldId) => {
-      data[fieldId] = qbFieldValue(row, fieldId);
-    });
-    return data;
-  });
+  return {
+    rows: response.data.map((row) => {
+      const data: DataRow = {
+        __recordId: String(qbFieldValue(row, "3") || "")
+      };
+      Object.keys(row).forEach((fieldId) => {
+        data[fieldId] = qbFieldValue(row, fieldId);
+      });
+      return data;
+    }),
+    totalRecords: Number.isFinite(Number(response.metadata?.totalRecords))
+      ? Number(response.metadata?.totalRecords)
+      : null
+  };
+}
+
+export async function fetchQuickbaseRowsBySavedReport(
+  config: StudioDocument["quickbase"],
+  tableId: string,
+  reportId: string,
+  options: { top?: number; skip?: number } = {}
+): Promise<DataRow[]> {
+  const response = await fetchQuickbaseSavedReportPage(config, tableId, reportId, options);
+  return response.rows;
 }
 
 async function quickbaseWriteRecordsXml(

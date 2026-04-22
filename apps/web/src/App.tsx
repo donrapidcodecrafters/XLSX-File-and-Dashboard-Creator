@@ -34,7 +34,7 @@ import {
 } from "./lib/catalog";
 import { buildHostedRoute, getHostedContext } from "./lib/embed";
 import type { QuickbaseTableLinkContext } from "./lib/quickbaseLinks";
-import { cancelStudioRefreshJob, fetchStudioDocument, fetchStudioRefreshJob, saveStudioUserSettings, startStudioObjectRefresh, updateStudioSession } from "./lib/studioApi";
+import { fetchStudioDocument, fetchStudioRefreshJob, saveStudioUserSettings, startStudioObjectRefresh, updateStudioSession } from "./lib/studioApi";
 
 const SESSION_RECENT_KEY = "studio-session-recent";
 const SESSION_PERSIST_INTERVAL_MS = 5 * 60_000;
@@ -318,14 +318,6 @@ function ObjectPage({
     setRefreshJob(response.job);
   }
 
-  async function cancelObjectRefresh() {
-    if (!refreshJob?.id) return;
-    const refreshJobId = refreshJob.id;
-    setRefreshJob(null);
-    setLoading(false);
-    await cancelStudioRefreshJob(refreshJobId).catch(() => undefined);
-  }
-
   if (!params.objectId) return null;
   if (!object && loading) return <div className="empty-page">Loading report or dashboard…</div>;
   if (!object) return <div className="empty-page">That report or dashboard could not be found.</div>;
@@ -349,7 +341,7 @@ function ObjectPage({
           </div>
         ) : null}
         {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" && refreshJob.status !== "cancelled" ? (
-          <RefreshOverlay title="Refreshing this report" job={refreshJob} onCancel={() => { void cancelObjectRefresh(); }} />
+          <RefreshOverlay title="Refreshing this report" job={refreshJob} />
         ) : null}
         <ReportView
           report={object as ReportDefinition}
@@ -433,7 +425,7 @@ function ObjectPage({
         </div>
       ) : null}
       {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" && refreshJob.status !== "cancelled" ? (
-        <RefreshOverlay title="Refreshing this dashboard" job={refreshJob} onCancel={() => { void cancelObjectRefresh(); }} />
+        <RefreshOverlay title="Refreshing this dashboard" job={refreshJob} />
       ) : null}
       <DashboardView
         dashboard={object}

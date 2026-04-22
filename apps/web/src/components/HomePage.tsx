@@ -10,6 +10,7 @@ import {
 } from "@studio/shared";
 import { cancelStudioRefreshJob, fetchStudioRefreshJob, startStudioRefresh } from "../lib/studioApi";
 import { getProfileIdsForCatalogItem, typeLabel } from "../lib/catalog";
+import { buildHostedRoute } from "../lib/embed";
 import { CatalogCard } from "./CatalogCard";
 import { RefreshOverlay } from "./RefreshOverlay";
 
@@ -142,9 +143,9 @@ export function HomePage({
           </div>
           <div className="home-hero-actions">
             <button className="ghost-button" onClick={() => { void startFullRefresh(); }}>Refresh all</button>
-            <Link className="ghost-button" to="/viewer">Browse reports and dashboards</Link>
-            <Link className="ghost-button" to="/help">Open manual</Link>
-            <Link className="ghost-button" to="/studio">Open building area</Link>
+            <Link className="ghost-button" to={buildHostedRoute("/viewer")}>Browse reports and dashboards</Link>
+            <Link className="ghost-button" to={buildHostedRoute("/help")}>Open manual</Link>
+            <Link className="ghost-button" to={buildHostedRoute("/studio")}>Open building area</Link>
           </div>
           <div className="home-highlight-grid">
             <div className="home-highlight-card home-highlight-card-primary">
@@ -250,7 +251,7 @@ export function HomePage({
                         <Link
                           key={object.id}
                           className="home-app-browse-link"
-                          to={`/${object.type}/${object.id}`}
+                          to={buildHostedRoute(`/${object.type}/${object.id}`)}
                           target={openLinksInNewTab ? "_blank" : undefined}
                           rel={openLinksInNewTab ? "noreferrer" : undefined}
                         >

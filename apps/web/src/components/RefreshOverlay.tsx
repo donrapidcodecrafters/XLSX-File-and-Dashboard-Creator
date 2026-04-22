@@ -1,15 +1,11 @@
 export function RefreshOverlay({
   title,
   job,
-  indeterminate = false,
-  onCancel,
-  cancelLabel = "Cancel refresh"
+  indeterminate = false
 }: {
   title: string;
   job: { progress?: number; message?: string; estimatedSecondsRemaining?: number } | null;
   indeterminate?: boolean;
-  onCancel?: (() => void) | null;
-  cancelLabel?: string;
 }) {
   if (!job) return null;
   const progress = indeterminate ? 42 : (job.progress || 0);
@@ -25,11 +21,6 @@ export function RefreshOverlay({
           <span>{indeterminate ? "Loading in progress" : `${progress}% complete`}</span>
           <span>{indeterminate ? "Preparing results…" : (typeof job.estimatedSecondsRemaining === "number" ? `~${job.estimatedSecondsRemaining}s remaining` : "Estimating time…")}</span>
         </div>
-        {onCancel ? (
-          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "16px" }}>
-            <button className="ghost-button" onClick={onCancel}>{cancelLabel}</button>
-          </div>
-        ) : null}
       </div>
     </div>
   );

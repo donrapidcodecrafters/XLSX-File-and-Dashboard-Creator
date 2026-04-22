@@ -5,7 +5,7 @@ import { downloadExportJob, fetchExportJobStatus, renderDashboard, runReportPage
 import { LinkToolbar } from "./LinkToolbar";
 import { ChartPreview } from "./ChartPreview";
 import { RefreshOverlay } from "./RefreshOverlay";
-import { buildObjectUrl, getHostedContext } from "../lib/embed";
+import { buildHostedRoute, buildObjectUrl, getHostedContext } from "../lib/embed";
 import { buildQuickbaseChartDatumUrl, buildQuickbaseRecordEditUrl, buildQuickbaseReportFilterTree, type QuickbaseTableLinkContext } from "../lib/quickbaseLinks";
 
 interface DashboardViewProps {
@@ -441,9 +441,9 @@ export function DashboardView({
             ) : (
               <>
                 <button className="ghost-button" onClick={() => window.history.back()}>Back</button>
-                <Link className="ghost-button" to="/">Home</Link>
-                <Link className="ghost-button" to="/help">Open manual</Link>
-                <Link className="ghost-button" to={`/studio/${dashboard.id}`} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>Open in building area</Link>
+                <Link className="ghost-button" to={buildHostedRoute("/")}>Home</Link>
+                <Link className="ghost-button" to={buildHostedRoute("/help")}>Open manual</Link>
+                <Link className="ghost-button" to={buildHostedRoute(`/studio/${dashboard.id}`)} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>Open in building area</Link>
               </>
             )}
             {onToggleFavorite ? (
@@ -619,7 +619,7 @@ export function DashboardView({
                   <div className="widget-preview-controls">
                     <button className="link-like" onClick={() => setFocusedWidgetId(widget.widgetId)}>Focus card</button>
                     {widget.report.sourceTableId ? (
-                      <Link to={`/report/${widget.report.id}`} className="widget-link" target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>Open report</Link>
+                      <Link to={buildHostedRoute(`/report/${widget.report.id}`)} className="widget-link" target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>Open report</Link>
                     ) : null}
                   </div>
                 </div>
@@ -805,7 +805,7 @@ export function DashboardView({
               <strong>{focusedWidget.widget.title || focusedWidget.report.name}</strong>
               <div className="link-toolbar">
                 {focusedWidget.report.sourceTableId ? (
-                  <Link className="ghost-button" to={`/report/${focusedWidget.report.id}`} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>Open report</Link>
+                  <Link className="ghost-button" to={buildHostedRoute(`/report/${focusedWidget.report.id}`)} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>Open report</Link>
                 ) : null}
                 <button className="ghost-button" onClick={() => setFocusedWidgetId("")}>Close</button>
               </div>

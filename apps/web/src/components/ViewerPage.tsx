@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { filterStudioLibraryItems, type CatalogSummaryItem, type StudioDocument } from "@studio/shared";
 import { cancelStudioRefreshJob, fetchStudioRefreshJob, startStudioRefresh } from "../lib/studioApi";
 import { getProfileIdsForCatalogItem, getProfileLabelsForCatalogItem } from "../lib/catalog";
+import { buildHostedRoute } from "../lib/embed";
 import { CatalogCard } from "./CatalogCard";
 import { RefreshOverlay } from "./RefreshOverlay";
 
@@ -98,8 +99,8 @@ export function ViewerPage({
           <p>Search, filter, and browse saved content by app, type, favorites, and recent activity before opening a report or dashboard.</p>
         </div>
         <div className="link-toolbar viewer-actions">
-          <Link className="ghost-button" to="/help">Open manual</Link>
-          <Link className="ghost-button" to="/studio">Open building area</Link>
+          <Link className="ghost-button" to={buildHostedRoute("/help")}>Open manual</Link>
+          <Link className="ghost-button" to={buildHostedRoute("/studio")}>Open building area</Link>
         </div>
       </div>
 

@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { getStudioObjectScopeLabel, type CatalogSummaryItem, type StudioDocument } from "@studio/shared";
 import { getProfileLabelsForCatalogItem, typeLabel } from "../lib/catalog";
+import { buildHostedRoute } from "../lib/embed";
 
 function AppBadgeRow({ labels }: { labels: string[] }) {
   if (!labels.length) return null;
@@ -51,7 +52,7 @@ export function CatalogCard({
       </div>
       <Link
         className="catalog-card-link"
-        to={`/${object.type}/${object.id}`}
+        to={buildHostedRoute(`/${object.type}/${object.id}`)}
         target={openLinksInNewTab ? "_blank" : undefined}
         rel={openLinksInNewTab ? "noreferrer" : undefined}
       >

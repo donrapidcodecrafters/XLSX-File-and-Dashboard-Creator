@@ -5,7 +5,7 @@ import { LinkToolbar } from "./LinkToolbar";
 import { ChartPreview } from "./ChartPreview";
 import { RefreshOverlay } from "./RefreshOverlay";
 import { downloadExportJob, fetchExportJobStatus, startReportExportJob } from "../lib/api";
-import { buildObjectUrl, getHostedContext } from "../lib/embed";
+import { buildHostedRoute, buildObjectUrl, getHostedContext } from "../lib/embed";
 import { buildQuickbaseChartDatumUrl, buildQuickbaseRecordEditUrl, buildQuickbaseReportFilterTree, type QuickbaseTableLinkContext } from "../lib/quickbaseLinks";
 
 interface ReportViewProps {
@@ -352,9 +352,9 @@ export function ReportView({
             ) : (
               <>
                 <button className="ghost-button" onClick={() => window.history.back()}>Back</button>
-                <Link className="ghost-button" to="/">Home</Link>
-                <Link className="ghost-button" to="/help">Open manual</Link>
-                <Link className="ghost-button" to={`/studio/${report.id}`} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>Open in building area</Link>
+                <Link className="ghost-button" to={buildHostedRoute("/")}>Home</Link>
+                <Link className="ghost-button" to={buildHostedRoute("/help")}>Open manual</Link>
+                <Link className="ghost-button" to={buildHostedRoute(`/studio/${report.id}`)} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>Open in building area</Link>
               </>
             )}
             {onToggleFavorite ? (

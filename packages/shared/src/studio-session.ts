@@ -24,6 +24,7 @@ export function normalizeStudioRealmHostname(value: string | undefined) {
     .trim()
     .toLowerCase()
     .replace(/^https?:\/\//, "")
+    .replace(/\.ui\.quickbase\.com$/, ".quickbase.com")
     .replace(/\/+$/, "");
 }
 

@@ -1,6 +1,6 @@
 import type { FastifyBaseLogger } from "fastify";
 import type { DataRow, RefreshJobStatus, RefreshScheduleConfig, ReportDefinition, StudioDocument, TableDefinition } from "@studio/shared";
-import { fetchQuickbaseRowsBySavedReport, fetchQuickbaseTablePage } from "./quickbase-storage.js";
+import { fetchQuickbaseSavedReportPage, fetchQuickbaseTablePage } from "./quickbase-storage.js";
 import { studioStore } from "./studio-store.js";
 import { RefreshCancelledError, refreshJobStore } from "./refresh-jobs.js";
 
@@ -233,8 +233,41 @@ function isScheduleDue(schedule: RefreshScheduleConfig, nextRunAt: string, now =
 type TableRefreshProgress = {
   loadedRows: number;
   fetchedPages: number;
+  totalRowsHint?: number | null;
+  currentBatchSize?: number;
+  rowsPerSecond?: number;
   message: string;
 };
+
+function estimateRefreshProgress(
+  index: number,
+  totalTables: number,
+  tableProgress: TableRefreshProgress,
+  totalRowsSoFar: number,
+  elapsedSinceRefreshStartSeconds: number
+) {
+  const tableShare = 80 / totalTables;
+  const hintedTotal = typeof tableProgress.totalRowsHint === "number" && tableProgress.totalRowsHint > 0
+    ? tableProgress.totalRowsHint
+    : null;
+  const withinTable = hintedTotal
+    ? Math.min(0.96, tableProgress.loadedRows / Math.max(hintedTotal, 1))
+    : Math.min(0.92, tableProgress.loadedRows / Math.max(tableProgress.loadedRows + 10000, 1));
+  const perCompletedTableSeconds = index > 0 ? elapsedSinceRefreshStartSeconds / index : 0;
+  const remainingTablesAfterCurrent = Math.max(0, totalTables - index - 1);
+  const currentTableEta = hintedTotal && tableProgress.rowsPerSecond
+    ? Math.max(0, Math.round((hintedTotal - tableProgress.loadedRows) / Math.max(tableProgress.rowsPerSecond, 1)))
+    : undefined;
+  const estimatedSecondsRemaining = currentTableEta !== undefined
+    ? currentTableEta + Math.round((perCompletedTableSeconds || currentTableEta) * remainingTablesAfterCurrent)
+    : undefined;
+
+  return {
+    progress: 5 + Math.round((index / totalTables) * 80 + tableShare * withinTable),
+    rowCount: totalRowsSoFar + tableProgress.loadedRows,
+    estimatedSecondsRemaining
+  };
+}
 
 function persistRefreshProgress(
   document: StudioDocument,
@@ -455,24 +488,29 @@ async function fetchAllTableRows(
   options: { objectId?: string; activeJobId?: string } = {}
 ) {
   const quickbase = getQuickbaseConfigForTable(document, table);
+  const tableStartedAt = Date.now();
   const savedReportId = (options.objectId ? getObjectOverrideReportIdForTable(document, options.objectId, table) : "") || getSavedReportIdForTable(document, table);
   const profileIds = table.quickbaseProfileId ? [table.quickbaseProfileId] : [];
   if (savedReportId) {
-    const pageSize = 250;
+    const pageSize = 1000;
     let skip = 0;
     const merged = new Map<string, DataRow>();
     let fetchedPages = 0;
     let previousPageSignature = "";
+    let totalRowsHint: number | null = null;
     while (true) {
       assertRefreshNotCancelled(options.activeJobId || "", profileIds);
-      const page = await fetchQuickbaseRowsBySavedReport(quickbase, getQuickbaseTableId(table), savedReportId, {
+      const page = await fetchQuickbaseSavedReportPage(quickbase, getQuickbaseTableId(table), savedReportId, {
         top: pageSize,
         skip
       });
-      if (!page.length) break;
+      if (!page.rows.length) break;
       fetchedPages += 1;
       const beforeSize = merged.size;
-      page.forEach((row) => {
+      if (typeof page.totalRecords === "number" && page.totalRecords > 0) {
+        totalRowsHint = page.totalRecords;
+      }
+      page.rows.forEach((row) => {
         const recordId = String(row.__recordId || "");
         const existing = merged.get(recordId) || { __recordId: recordId };
         Object.assign(existing, row);
@@ -480,18 +518,25 @@ async function fetchAllTableRows(
       });
       document.bundle.data[table.id] = Array.from(merged.values());
       studioStore.touchCacheEntry(table.id, merged.size);
+      const elapsedSeconds = Math.max(1, Math.round((Date.now() - tableStartedAt) / 1000));
+      const rowsPerSecond = merged.size / elapsedSeconds;
       onProgress?.({
         loadedRows: merged.size,
         fetchedPages,
-        message: `Loading ${table.name}: ${merged.size.toLocaleString()} rows saved so far`
+        totalRowsHint,
+        currentBatchSize: page.rows.length,
+        rowsPerSecond,
+        message: totalRowsHint
+          ? `Loading ${table.name}: ${merged.size.toLocaleString()} / ${totalRowsHint.toLocaleString()} rows cached across ${fetchedPages.toLocaleString()} pages`
+          : `Loading ${table.name}: ${merged.size.toLocaleString()} rows cached across ${fetchedPages.toLocaleString()} pages`
       });
-      const currentPageSignature = `${page[0]?.__recordId || ""}:${page[page.length - 1]?.__recordId || ""}:${page.length}`;
-      if (page.length < pageSize) break;
+      const currentPageSignature = `${page.rows[0]?.__recordId || ""}:${page.rows[page.rows.length - 1]?.__recordId || ""}:${page.rows.length}`;
+      if (page.rows.length < pageSize) break;
       if (merged.size === beforeSize || currentPageSignature === previousPageSignature) {
         throw new Error(`Refresh could not move past the same saved report page for ${table.name}. Check Quickbase source report ${savedReportId} and make sure it returns all records in a stable order.`);
       }
       previousPageSignature = currentPageSignature;
-      skip += page.length;
+      skip += page.rows.length;
     }
     return Array.from(merged.values());
   }
@@ -499,6 +544,7 @@ async function fetchAllTableRows(
   const chunks = chunk(fieldIds, 30);
   const merged = new Map<string, DataRow>();
   let fetchedPages = 0;
+  let totalRowsHint: number | null = null;
   for (const fieldChunk of chunks) {
     let skip = 0;
     while (true) {
@@ -508,6 +554,9 @@ async function fetchAllTableRows(
         skip
       });
       if (!page.rows.length) break;
+      if (typeof page.totalRecords === "number" && page.totalRecords > 0) {
+        totalRowsHint = page.totalRecords;
+      }
       page.rows.forEach((row) => {
         const recordId = String(row.__recordId || "");
         const existing = merged.get(recordId) || { __recordId: recordId };
@@ -517,10 +566,16 @@ async function fetchAllTableRows(
       document.bundle.data[table.id] = Array.from(merged.values());
       studioStore.touchCacheEntry(table.id, merged.size);
       fetchedPages += 1;
+      const elapsedSeconds = Math.max(1, Math.round((Date.now() - tableStartedAt) / 1000));
       onProgress?.({
         loadedRows: merged.size,
         fetchedPages,
-        message: `Loading ${table.name}: ${merged.size.toLocaleString()} rows saved so far`
+        totalRowsHint,
+        currentBatchSize: page.rows.length,
+        rowsPerSecond: merged.size / elapsedSeconds,
+        message: totalRowsHint
+          ? `Loading ${table.name}: ${merged.size.toLocaleString()} / ${totalRowsHint.toLocaleString()} rows cached`
+          : `Loading ${table.name}: ${merged.size.toLocaleString()} rows cached`
       });
       if (page.rows.length < 1000) break;
       skip += page.rows.length;
@@ -761,17 +816,14 @@ export async function refreshAllCachedDataWithProgress(
         rowCount: totalRows,
         estimatedSecondsRemaining
       });
-      const rows = await fetchAllTableRows(nextDocument, table, ({ loadedRows, message }) => {
-        const tableShare = 80 / totalTables;
-        const withinTable = Math.min(0.92, loadedRows / Math.max(loadedRows + 10000, 1));
-        updateDocumentProgress(
-          5 + Math.round((index / totalTables) * 80 + tableShare * withinTable),
-          message,
-          {
-            tableCount: tableIds.length,
-            rowCount: totalRows + loadedRows
-          }
-        );
+      const rows = await fetchAllTableRows(nextDocument, table, (tableProgress) => {
+        const elapsedSinceRefreshStartSeconds = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
+        const progress = estimateRefreshProgress(index, totalTables, tableProgress, totalRows, elapsedSinceRefreshStartSeconds);
+        updateDocumentProgress(progress.progress, tableProgress.message, {
+          tableCount: tableIds.length,
+          rowCount: progress.rowCount,
+          estimatedSecondsRemaining: progress.estimatedSecondsRemaining
+        });
       }, { activeJobId });
       nextDocument.bundle.data[tableId] = rows;
       studioStore.touchCacheEntry(tableId, rows.length);
@@ -945,17 +997,14 @@ export async function refreshObjectCachedDataWithProgress(
         rowCount: totalRows,
         estimatedSecondsRemaining
       });
-      const rows = await fetchAllTableRows(nextDocument, table, ({ loadedRows, message }) => {
-        const tableShare = 80 / totalTables;
-        const withinTable = Math.min(0.92, loadedRows / Math.max(loadedRows + 10000, 1));
-        updateDocumentProgress(
-          5 + Math.round((index / totalTables) * 80 + tableShare * withinTable),
-          message,
-          {
-            tableCount: tableIds.length,
-            rowCount: totalRows + loadedRows
-          }
-        );
+      const rows = await fetchAllTableRows(nextDocument, table, (tableProgress) => {
+        const elapsedSinceRefreshStartSeconds = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
+        const progress = estimateRefreshProgress(index, totalTables, tableProgress, totalRows, elapsedSinceRefreshStartSeconds);
+        updateDocumentProgress(progress.progress, tableProgress.message, {
+          tableCount: tableIds.length,
+          rowCount: progress.rowCount,
+          estimatedSecondsRemaining: progress.estimatedSecondsRemaining
+        });
       }, { objectId, activeJobId });
       nextDocument.bundle.data[tableId] = rows;
       studioStore.touchCacheEntry(tableId, rows.length);

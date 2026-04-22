@@ -3,3 +3,9 @@ dist
 .DS_Store
 apps/web/.vite
 *.tsbuildinfo
+.data/
+apps/api/.data/
+apps/web/test-results/
+test-results/
+*.docx
+Screenshot *.png
