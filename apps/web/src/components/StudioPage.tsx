@@ -2228,8 +2228,6 @@ export function StudioPage({
       pushToast("Select at least one report first.", "warn");
       return;
     }
-    const confirmed = window.confirm(`Delete ${reportIds.length} selected report${reportIds.length === 1 ? "" : "s"}?`);
-    if (!confirmed) return;
 
     const nextDocument = clone(documentState);
     reportIds.forEach((reportId) => {
@@ -2247,7 +2245,7 @@ export function StudioPage({
     if (activeReport && reportIds.includes(activeReport.id)) {
       navigate(buildHostedRoute("/studio"));
     }
-    pushToast(`Deleted ${reportIds.length} report${reportIds.length === 1 ? "" : "s"}.`, "warn");
+    pushToast(`Deleted ${reportIds.length} report${reportIds.length === 1 ? "" : "s"}. Use Undo if needed.`, "warn");
     try {
       await persistRemote(nextDocument);
     } catch (error) {
