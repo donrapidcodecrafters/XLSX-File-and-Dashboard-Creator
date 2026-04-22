@@ -1,6 +1,13 @@
 import type { RefreshJobStatus } from "@studio/shared";
 import { randomUUID } from "node:crypto";
 
+class RefreshCancelledError extends Error {
+  constructor(message = "Refresh cancelled.") {
+    super(message);
+    this.name = "RefreshCancelledError";
+  }
+}
+
 type RefreshJobRunner = (helpers: {
   jobId: string;
   update: (progress: number, message: string, extras?: Partial<RefreshJobStatus>) => void;
@@ -36,6 +43,24 @@ export class RefreshJobStore {
     return job;
   }
 
+  cancelJob(id: string, message = "Refresh cancelled.") {
+    const current = this.jobs.get(id);
+    if (!current) return null;
+    if (current.status === "complete" || current.status === "failed" || current.status === "cancelled") {
+      return current;
+    }
+    this.update(id, current.progress || 0, message, {
+      status: "cancelled",
+      error: undefined,
+      completedAt: new Date().toISOString(),
+      estimatedSecondsRemaining: 0
+    });
+    if (this.runningJobId === id) {
+      this.runningJobId = null;
+    }
+    return this.jobs.get(id) || null;
+  }
+
   private async runJob(job: RefreshJobStatus, runner: RefreshJobRunner) {
     this.update(job.id, 1, "Starting refresh", { status: "running", startedAt: new Date().toISOString() });
     try {
@@ -49,6 +74,14 @@ export class RefreshJobStore {
         ...(extras || {})
       });
     } catch (error) {
+      if (error instanceof RefreshCancelledError) {
+        this.update(job.id, Math.max(this.jobs.get(job.id)?.progress || 0, 1), error.message || "Refresh cancelled.", {
+          status: "cancelled",
+          completedAt: new Date().toISOString(),
+          estimatedSecondsRemaining: 0
+        });
+        return;
+      }
       this.update(job.id, Math.max(this.jobs.get(job.id)?.progress || 0, 1), error instanceof Error ? error.message : "Refresh failed.", {
         status: "failed",
         error: error instanceof Error ? error.message : "Refresh failed.",
@@ -87,3 +120,4 @@ export class RefreshJobStore {
 }
 
 export const refreshJobStore = new RefreshJobStore();
+export { RefreshCancelledError };

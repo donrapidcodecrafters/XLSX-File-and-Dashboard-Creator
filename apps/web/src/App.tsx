@@ -25,7 +25,7 @@ import { fetchCatalog, fetchObject, fetchTables, runReport, runReportPage } from
 import { getProfileIdsForCatalogItem, getProfileIdsForObject, resolveTableDefinition, toggleFavoriteIds, typeLabel } from "./lib/catalog";
 import { getHostedContext } from "./lib/embed";
 import type { QuickbaseTableLinkContext } from "./lib/quickbaseLinks";
-import { fetchStudioDocument, fetchStudioRefreshJob, saveStudioUserSettings, startStudioObjectRefresh, updateStudioSession } from "./lib/studioApi";
+import { cancelStudioRefreshJob, fetchStudioDocument, fetchStudioRefreshJob, saveStudioUserSettings, startStudioObjectRefresh, updateStudioSession } from "./lib/studioApi";
 
 const SESSION_RECENT_KEY = "studio-session-recent";
 
@@ -240,7 +240,7 @@ function ObjectPage({
   }, [liveModeEnabled, object?.id, object?.type, page, refreshNonce]);
 
   useEffect(() => {
-    if (!refreshJob || refreshJob.status === "complete" || refreshJob.status === "failed") return;
+    if (!refreshJob || refreshJob.status === "complete" || refreshJob.status === "failed" || refreshJob.status === "cancelled") return;
     const handle = window.setInterval(() => {
       fetchStudioRefreshJob(refreshJob.id)
         .then((response) => {
@@ -249,6 +249,9 @@ function ObjectPage({
             setRefreshJob(null);
             setRefreshNonce((current) => current + 1);
             setLoading(true);
+          } else if (response.job.status === "cancelled") {
+            setRefreshJob(null);
+            setLoading(false);
           }
         })
         .catch(() => undefined);
@@ -260,6 +263,13 @@ function ObjectPage({
     if (!object) return;
     const response = await startStudioObjectRefresh(object.id);
     setRefreshJob(response.job);
+  }
+
+  async function cancelObjectRefresh() {
+    if (!refreshJob?.id) return;
+    const response = await cancelStudioRefreshJob(refreshJob.id);
+    setRefreshJob(response.job.status === "cancelled" ? null : response.job);
+    setLoading(false);
   }
 
   if (!params.objectId) return null;
@@ -281,20 +291,8 @@ function ObjectPage({
             <span>This report is loading live Quickbase data directly, so loading can take significantly longer.</span>
           </div>
         ) : null}
-        {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" ? (
-          <div style={{ position: "fixed", inset: 0, background: "rgba(12,22,18,0.58)", zIndex: 9999, display: "grid", placeItems: "center", padding: "24px" }}>
-            <div style={{ width: "min(560px, 100%)", background: "#fff", borderRadius: "20px", padding: "24px", boxShadow: "0 24px 64px rgba(0,0,0,0.24)" }}>
-              <strong style={{ display: "block", fontSize: "1.1rem", marginBottom: "8px" }}>Refreshing this report</strong>
-              <div style={{ marginBottom: "10px", color: "#41554a" }}>{refreshJob.message}</div>
-              <div style={{ height: "12px", background: "#e5ece8", borderRadius: "999px", overflow: "hidden", marginBottom: "10px" }}>
-                <div style={{ height: "100%", width: `${refreshJob.progress || 0}%`, background: "#0d7c66" }} />
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.95rem", color: "#41554a" }}>
-                <span>{refreshJob.progress || 0}% complete</span>
-                <span>{typeof refreshJob.estimatedSecondsRemaining === "number" ? `~${refreshJob.estimatedSecondsRemaining}s remaining` : "Estimating time…"}</span>
-              </div>
-            </div>
-          </div>
+        {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" && refreshJob.status !== "cancelled" ? (
+          <RefreshOverlay title="Refreshing this report" job={refreshJob} onCancel={() => { void cancelObjectRefresh(); }} />
         ) : null}
         <ReportView
           report={object as ReportDefinition}
@@ -377,20 +375,8 @@ function ObjectPage({
           <span>This dashboard is loading live Quickbase data directly, so loading can take significantly longer.</span>
         </div>
       ) : null}
-      {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" ? (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(12,22,18,0.58)", zIndex: 9999, display: "grid", placeItems: "center", padding: "24px" }}>
-          <div style={{ width: "min(560px, 100%)", background: "#fff", borderRadius: "20px", padding: "24px", boxShadow: "0 24px 64px rgba(0,0,0,0.24)" }}>
-            <strong style={{ display: "block", fontSize: "1.1rem", marginBottom: "8px" }}>Refreshing this dashboard</strong>
-            <div style={{ marginBottom: "10px", color: "#41554a" }}>{refreshJob.message}</div>
-            <div style={{ height: "12px", background: "#e5ece8", borderRadius: "999px", overflow: "hidden", marginBottom: "10px" }}>
-              <div style={{ height: "100%", width: `${refreshJob.progress || 0}%`, background: "#0d7c66" }} />
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.95rem", color: "#41554a" }}>
-              <span>{refreshJob.progress || 0}% complete</span>
-              <span>{typeof refreshJob.estimatedSecondsRemaining === "number" ? `~${refreshJob.estimatedSecondsRemaining}s remaining` : "Estimating time…"}</span>
-            </div>
-          </div>
-        </div>
+      {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" && refreshJob.status !== "cancelled" ? (
+        <RefreshOverlay title="Refreshing this dashboard" job={refreshJob} onCancel={() => { void cancelObjectRefresh(); }} />
       ) : null}
       <DashboardView
         dashboard={object}

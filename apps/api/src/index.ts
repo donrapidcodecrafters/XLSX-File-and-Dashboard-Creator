@@ -13,7 +13,21 @@ const app = Fastify({
 });
 
 await app.register(cors, {
-  origin: true
+  origin(origin, callback) {
+    if (!origin) {
+      callback(null, true);
+      return;
+    }
+    const allowedOrigins = [
+      /^https?:\/\/localhost(?::\d+)?$/i,
+      /^https?:\/\/127\.0\.0\.1(?::\d+)?$/i,
+      /^https:\/\/donrapidcodecrafters\.github\.io$/i
+    ];
+    callback(null, allowedOrigins.some((pattern) => pattern.test(origin)));
+  },
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  maxAge: 60 * 60
 });
 await app.register(formbody);
 

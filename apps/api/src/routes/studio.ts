@@ -2,36 +2,17 @@ import type { FastifyInstance } from "fastify";
 import { normalizeStudioDocument, type StudioDocument } from "@studio/shared";
 import { studioStore } from "../services/studio-store.js";
 import { ensureQuickbaseStorageForProfiles, syncStudioDocumentToQuickbase, syncStudioUserSettingsToQuickbase } from "../services/quickbase-storage.js";
-import { refreshAllCachedDataWithProgress, refreshObjectCachedDataWithProgress, updateRefreshScheduleMetadata } from "../services/refresh-cache.js";
+import {
+  cancelRefreshJob,
+  getActiveRefreshJob,
+  getTrackedRefreshJob,
+  primeRefreshJob,
+  refreshAllCachedDataWithProgress,
+  refreshObjectCachedDataWithProgress,
+  updateRefreshScheduleMetadata
+} from "../services/refresh-cache.js";
 import { refreshJobStore } from "../services/refresh-jobs.js";
 import { importWorkbookIntoStudioDocument } from "../services/xlsx-import.js";
-
-function synthesizeRefreshJob(id: string) {
-  const document = studioStore.getLiveDocument();
-  const globalStatus = document.sync.refreshStatus;
-  const runningProfile = document.quickbaseProfiles.find((profile) => profile.refreshStatus.running);
-  const status = runningProfile?.refreshStatus?.running ? runningProfile.refreshStatus : globalStatus;
-  const isRefreshActive = globalStatus.running || document.quickbaseProfiles.some((profile) => profile.refreshStatus.running);
-  if (!isRefreshActive && !globalStatus.lastStartedAt && !globalStatus.lastCompletedAt) {
-    return null;
-  }
-  const jobStatus: "running" | "failed" | "complete" = isRefreshActive ? "running" : (status.lastError ? "failed" : "complete");
-  return {
-    id,
-    status: jobStatus,
-    progress: status.progress || globalStatus.progress || 0,
-    message: status.message || globalStatus.message || (isRefreshActive ? "Refreshing…" : "Refresh complete"),
-    error: status.lastError || globalStatus.lastError || undefined,
-    reason: "manual" as const,
-    createdAt: status.lastStartedAt || globalStatus.lastStartedAt || new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    startedAt: status.lastStartedAt || globalStatus.lastStartedAt || undefined,
-    completedAt: status.lastCompletedAt || globalStatus.lastCompletedAt || undefined,
-    estimatedSecondsRemaining: status.estimatedSecondsRemaining ?? globalStatus.estimatedSecondsRemaining,
-    tableCount: (status.cachedTableIds?.length || globalStatus.cachedTableIds?.length || 0) || undefined,
-    rowCount: (status.cachedRowCount || globalStatus.cachedRowCount || 0) || undefined
-  };
-}
 
 export async function registerStudioRoutes(app: FastifyInstance) {
   app.get("/api/studio/document", async () => {
@@ -220,6 +201,11 @@ export async function registerStudioRoutes(app: FastifyInstance) {
 
   app.post("/api/studio/refresh/start", async (request, reply) => {
     try {
+      await studioStore.hydrateFromQuickbase();
+      const activeJob = getActiveRefreshJob();
+      if (activeJob && (activeJob.status === "queued" || activeJob.status === "running")) {
+        return { job: activeJob };
+      }
       const job = refreshJobStore.createJob("manual", async ({ jobId, update }) => {
         const result = await refreshAllCachedDataWithProgress("manual", (progress, message, extras) => {
           update(progress, message, extras);
@@ -229,6 +215,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
           rowCount: result.rowCount
         };
       });
+      await primeRefreshJob(job.id, { message: "Preparing refresh" });
       return { job };
     } catch (error) {
       reply.code(500);
@@ -242,6 +229,11 @@ export async function registerStudioRoutes(app: FastifyInstance) {
   app.post("/api/studio/objects/:id/refresh/start", async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
+      await studioStore.hydrateFromQuickbase();
+      const activeJob = getActiveRefreshJob();
+      if (activeJob && (activeJob.status === "queued" || activeJob.status === "running")) {
+        return { job: activeJob };
+      }
       const job = refreshJobStore.createJob("manual", async ({ jobId, update }) => {
         const result = await refreshObjectCachedDataWithProgress(id, (progress, message, extras) => {
           update(progress, message, extras);
@@ -251,6 +243,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
           rowCount: result.rowCount
         };
       });
+      await primeRefreshJob(job.id, { objectId: id, message: "Preparing object refresh" });
       return { job };
     } catch (error) {
       reply.code(500);
@@ -263,11 +256,18 @@ export async function registerStudioRoutes(app: FastifyInstance) {
 
   app.get("/api/studio/refresh/jobs/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
-    let job = refreshJobStore.getJob(id);
+    await studioStore.hydrateFromQuickbase();
+    const job = getTrackedRefreshJob(id);
     if (!job) {
-      await studioStore.hydrateFromQuickbase();
-      job = synthesizeRefreshJob(id);
+      reply.code(404);
+      return { message: "Refresh job not found." };
     }
+    return { job };
+  });
+
+  app.post("/api/studio/refresh/jobs/:id/cancel", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const job = await cancelRefreshJob(id);
     if (!job) {
       reply.code(404);
       return { message: "Refresh job not found." };

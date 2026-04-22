@@ -7,7 +7,7 @@ import { studioStore } from "../services/studio-store.js";
 import { exportJobStore } from "../services/export-jobs.js";
 import { buildDashboardFileName, buildReportFileName, streamDashboardWorkbook, streamReportWorkbook } from "../services/xlsx-export.js";
 import { refreshJobStore } from "../services/refresh-jobs.js";
-import { refreshObjectCachedDataWithProgress } from "../services/refresh-cache.js";
+import { getActiveRefreshJob, primeRefreshJob, refreshObjectCachedDataWithProgress } from "../services/refresh-cache.js";
 
 function normalizeClientFilters(filters: Array<{ fieldId: string; operator?: string; value: string }> = []): FilterDefinition[] {
   return filters.map((filter, index) => ({
@@ -39,10 +39,23 @@ async function runWithConcurrency<T>(items: T[], concurrency: number, worker: (i
   await Promise.all(runners);
 }
 
-function hasRowsForTable(tableId: string) {
+function getTableRefreshState(tableId: string) {
   const table = objectStore.getTable(tableId);
-  if (!table) return false;
-  return objectStore.getRows(table.id).length > 0 || Boolean(table.quickbaseTableId && objectStore.getRows(table.quickbaseTableId).length);
+  if (!table) return { hasRows: false, isFresh: false };
+  const keys = Array.from(new Set([tableId, table.id, table.quickbaseTableId || ""].filter(Boolean)));
+  let hasRows = false;
+  let isFresh = false;
+  for (const key of keys) {
+    const rows = objectStore.getRows(key);
+    if (rows.length) {
+      hasRows = true;
+      if (studioStore.isCacheFresh(key)) {
+        isFresh = true;
+        break;
+      }
+    }
+  }
+  return { hasRows, isFresh };
 }
 
 function hasQuickbaseSource(tableId: string) {
@@ -57,6 +70,10 @@ function hasQuickbaseSource(tableId: string) {
 }
 
 async function startAutoRefreshForObject(objectId: string) {
+  const activeJob = getActiveRefreshJob();
+  if (activeJob && (activeJob.status === "queued" || activeJob.status === "running")) {
+    return activeJob;
+  }
   const job = refreshJobStore.createJob("manual", async ({ jobId, update }) => {
     const result = await refreshObjectCachedDataWithProgress(objectId, (progress, message, extras) => {
       update(progress, message, extras);
@@ -66,13 +83,18 @@ async function startAutoRefreshForObject(objectId: string) {
       rowCount: result.rowCount
     };
   });
+  await primeRefreshJob(job.id, { objectId, message: "Preparing object refresh" });
   return job;
 }
 
 async function maybeStartAutoRefreshForReport(report: ReportDefinition) {
-  if (hasRowsForTable(report.sourceTableId)) return null;
+  const state = getTableRefreshState(report.sourceTableId);
+  if (state.isFresh) return { refreshJob: null, needsBlockingLoad: false };
   if (!hasQuickbaseSource(report.sourceTableId)) return null;
-  return startAutoRefreshForObject(report.id);
+  return {
+    refreshJob: await startAutoRefreshForObject(report.id),
+    needsBlockingLoad: !state.hasRows
+  };
 }
 
 async function maybeStartAutoRefreshForDashboard(dashboard: DashboardDefinition) {
@@ -82,9 +104,13 @@ async function maybeStartAutoRefreshForDashboard(dashboard: DashboardDefinition)
       .filter(Boolean)
   ));
   if (!tableIds.length) return null;
-  if (tableIds.every((tableId) => hasRowsForTable(tableId))) return null;
+  const states = tableIds.map((tableId) => ({ tableId, ...getTableRefreshState(tableId) }));
+  if (states.every((state) => state.isFresh)) return { refreshJob: null, needsBlockingLoad: false };
   if (!tableIds.some((tableId) => hasQuickbaseSource(tableId))) return null;
-  return startAutoRefreshForObject(dashboard.id);
+  return {
+    refreshJob: await startAutoRefreshForObject(dashboard.id),
+    needsBlockingLoad: states.some((state) => !state.hasRows)
+  };
 }
 
 function buildPendingReportResult(
@@ -138,14 +164,18 @@ export async function registerRenderRoutes(app: FastifyInstance) {
     } | undefined) || {};
     const extraFilters = normalizeClientFilters(body.filters || []);
     const pendingRefresh = await maybeStartAutoRefreshForReport(report);
-    if (pendingRefresh) {
-      return buildPendingReportResult(report, pendingRefresh, body.page || 1, body.pageSize || 100);
+    if (pendingRefresh?.refreshJob && pendingRefresh.needsBlockingLoad) {
+      return buildPendingReportResult(report, pendingRefresh.refreshJob, body.page || 1, body.pageSize || 100);
     }
-    return executeReport(report, extraFilters, {
+    const result = await executeReport(report, extraFilters, {
       page: body.page || 1,
       pageSize: body.pageSize || 100,
       forceLive: body.forceLive === true
     });
+    if (pendingRefresh?.refreshJob) {
+      result.refreshJob = pendingRefresh.refreshJob;
+    }
+    return result;
   });
 
   app.post("/api/reports/:id/page", async (request, reply) => {
@@ -164,14 +194,18 @@ export async function registerRenderRoutes(app: FastifyInstance) {
     } | undefined) || {};
     const extraFilters = normalizeClientFilters(body.filters || []);
     const pendingRefresh = await maybeStartAutoRefreshForReport(report);
-    if (pendingRefresh) {
-      return buildPendingReportResult(report, pendingRefresh, body.page || 1, body.pageSize || 100);
+    if (pendingRefresh?.refreshJob && pendingRefresh.needsBlockingLoad) {
+      return buildPendingReportResult(report, pendingRefresh.refreshJob, body.page || 1, body.pageSize || 100);
     }
-    return fetchReportPage(report, extraFilters, {
+    const result = await fetchReportPage(report, extraFilters, {
       page: body.page || 1,
       pageSize: body.pageSize || 100,
       forceLive: body.forceLive === true
     });
+    if (pendingRefresh?.refreshJob) {
+      result.refreshJob = pendingRefresh.refreshJob;
+    }
+    return result;
   });
 
   app.post("/api/reports/:id/export-rows", async (request, reply) => {
@@ -347,13 +381,20 @@ export async function registerRenderRoutes(app: FastifyInstance) {
         return { message: "Dashboard not found." };
       }
       const pendingRefresh = await maybeStartAutoRefreshForDashboard(dashboard);
-      if (pendingRefresh) {
-        return buildPendingDashboardResult(dashboard, pendingRefresh);
+      if (pendingRefresh?.refreshJob && pendingRefresh.needsBlockingLoad) {
+        return buildPendingDashboardResult(dashboard, pendingRefresh.refreshJob);
       }
-      return await executeDashboard(id, body.runtimeFilters || {}, {
+      const result = await executeDashboard(id, body.runtimeFilters || {}, {
         activeTabId: body.activeTabId || "",
         forceLive: body.forceLive === true
       });
+      if (pendingRefresh?.refreshJob) {
+        return {
+          ...result,
+          refreshJob: pendingRefresh.refreshJob
+        };
+      }
+      return result;
     } catch (error) {
       reply.code(404);
       return {

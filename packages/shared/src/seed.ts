@@ -71,11 +71,13 @@ function buildRefreshStatus() {
   return {
     running: false,
     activeJobId: "",
+    cancelRequested: false,
     progress: 0,
     message: "",
     estimatedSecondsRemaining: undefined,
     lastStartedAt: "",
     lastCompletedAt: "",
+    lastCancelledAt: "",
     lastSuccessAt: "",
     lastError: "",
     nextRunAt: "",

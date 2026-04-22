@@ -289,11 +289,13 @@ export interface RefreshScheduleConfig {
 export interface RefreshStatus {
   running: boolean;
   activeJobId: string;
+  cancelRequested: boolean;
   progress: number;
   message: string;
   estimatedSecondsRemaining?: number;
   lastStartedAt: string;
   lastCompletedAt: string;
+  lastCancelledAt: string;
   lastSuccessAt: string;
   lastError: string;
   nextRunAt: string;
@@ -356,7 +358,7 @@ export interface QuickbaseAppProfile {
 
 export interface RefreshJobStatus {
   id: string;
-  status: "queued" | "running" | "complete" | "failed";
+  status: "queued" | "running" | "complete" | "failed" | "cancelled";
   progress: number;
   message: string;
   error?: string;

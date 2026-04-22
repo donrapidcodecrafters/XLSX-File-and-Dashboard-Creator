@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { filterStudioLibraryItems, type CatalogSummaryItem, type StudioDocument } from "@studio/shared";
-import { fetchStudioRefreshJob, startStudioRefresh } from "../lib/studioApi";
+import { cancelStudioRefreshJob, fetchStudioRefreshJob, startStudioRefresh } from "../lib/studioApi";
 import { getProfileIdsForCatalogItem, getProfileLabelsForCatalogItem } from "../lib/catalog";
 import { CatalogCard } from "./CatalogCard";
 import { RefreshOverlay } from "./RefreshOverlay";
@@ -55,12 +55,12 @@ export function ViewerPage({
   const profileOptions = studioDocument?.quickbaseProfiles || [];
 
   useEffect(() => {
-    if (!refreshJob || refreshJob.status === "complete" || refreshJob.status === "failed") return;
+    if (!refreshJob || refreshJob.status === "complete" || refreshJob.status === "failed" || refreshJob.status === "cancelled") return;
     const handle = window.setInterval(() => {
       fetchStudioRefreshJob(refreshJob.id)
         .then((response) => {
           setRefreshJob(response.job);
-          if (response.job.status === "complete" || response.job.status === "failed") {
+          if (response.job.status === "complete" || response.job.status === "failed" || response.job.status === "cancelled") {
             void onRefreshComplete();
           }
         })
@@ -79,9 +79,17 @@ export function ViewerPage({
     setRefreshJob(response.job);
   }
 
+  async function cancelRefresh() {
+    if (!refreshJob?.id) return;
+    const response = await cancelStudioRefreshJob(refreshJob.id);
+    setRefreshJob(response.job);
+  }
+
   return (
     <section className="surface stack viewer-page">
-      {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" ? <RefreshOverlay title="Refreshing all reports and dashboards" job={refreshJob} /> : null}
+      {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" && refreshJob.status !== "cancelled" ? (
+        <RefreshOverlay title="Refreshing all reports and dashboards" job={refreshJob} onCancel={() => { void cancelRefresh(); }} />
+      ) : null}
       <div className="hero viewer-hero">
         <div>
           <span className="badge brand">Viewing</span>

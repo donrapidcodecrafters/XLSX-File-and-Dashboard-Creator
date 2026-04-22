@@ -8,7 +8,7 @@ import {
   type CatalogSummaryItem,
   type StudioDocument
 } from "@studio/shared";
-import { fetchStudioRefreshJob, startStudioRefresh } from "../lib/studioApi";
+import { cancelStudioRefreshJob, fetchStudioRefreshJob, startStudioRefresh } from "../lib/studioApi";
 import { getProfileIdsForCatalogItem, typeLabel } from "../lib/catalog";
 import { CatalogCard } from "./CatalogCard";
 import { RefreshOverlay } from "./RefreshOverlay";
@@ -97,12 +97,12 @@ export function HomePage({
   const healthTone = totalCachedRows > 0 ? "Up to date" : "Needs refresh";
 
   useEffect(() => {
-    if (!refreshJob || refreshJob.status === "complete" || refreshJob.status === "failed") return;
+    if (!refreshJob || refreshJob.status === "complete" || refreshJob.status === "failed" || refreshJob.status === "cancelled") return;
     const handle = window.setInterval(() => {
       fetchStudioRefreshJob(refreshJob.id)
         .then((response) => {
           setRefreshJob(response.job);
-          if (response.job.status === "complete" || response.job.status === "failed") {
+          if (response.job.status === "complete" || response.job.status === "failed" || response.job.status === "cancelled") {
             void onRefreshComplete();
           }
         })
@@ -121,9 +121,17 @@ export function HomePage({
     setRefreshJob(response.job);
   }
 
+  async function cancelRefresh() {
+    if (!refreshJob?.id) return;
+    const response = await cancelStudioRefreshJob(refreshJob.id);
+    setRefreshJob(response.job);
+  }
+
   return (
     <section className="surface home-page">
-      {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" ? <RefreshOverlay title="Refreshing all reports and dashboards" job={refreshJob} /> : null}
+      {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" && refreshJob.status !== "cancelled" ? (
+        <RefreshOverlay title="Refreshing all reports and dashboards" job={refreshJob} onCancel={() => { void cancelRefresh(); }} />
+      ) : null}
       <div className="home-shell">
         <section className="home-hero-panel">
           <div className="home-hero-copy">

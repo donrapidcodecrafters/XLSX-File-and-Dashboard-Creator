@@ -74,6 +74,7 @@ import {
   type TableDefinition
 } from "@studio/shared";
 import {
+  cancelStudioRefreshJob,
   createStudioSnapshot,
   fetchQuickbaseApps,
   fetchQuickbaseReportPreview,
@@ -92,6 +93,7 @@ import {
 } from "../lib/studioApi";
 import { downloadExportJob, fetchExportJobStatus, fetchExportJobs, startDashboardExportJob, startReportExportJob } from "../lib/api";
 import { ChartPreview } from "./ChartPreview";
+import { RefreshOverlay } from "./RefreshOverlay";
 import { StudioDraftReviewStep } from "./StudioDraftReviewStep";
 import { StudioDashboardPreview } from "./StudioDashboardPreview";
 import { StudioReportDraftDataStep } from "./StudioReportDraftDataStep";
@@ -2242,7 +2244,7 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
   }
 
   useEffect(() => {
-    if (!refreshJob || refreshJob.status === "complete" || refreshJob.status === "failed") return;
+    if (!refreshJob || refreshJob.status === "complete" || refreshJob.status === "failed" || refreshJob.status === "cancelled") return;
     const handle = window.setInterval(() => {
       fetchStudioRefreshJob(refreshJob.id)
         .then((response) => {
@@ -2251,6 +2253,9 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
             setRefreshingCache(false);
             pushToast(`Refreshed ${response.job.tableCount || 0} tables and cached ${(response.job.rowCount || 0).toLocaleString()} rows.`, "ok");
             void reloadRemote();
+          } else if (response.job.status === "cancelled") {
+            setRefreshingCache(false);
+            pushToast("Refresh cancelled.", "warn");
           } else if (response.job.status === "failed") {
             setRefreshingCache(false);
             pushToast(response.job.error || response.job.message, "danger");
@@ -2266,6 +2271,8 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
     if (refreshJob.status === "complete") {
       setRefreshingCache(false);
       void reloadRemote();
+    } else if (refreshJob.status === "cancelled") {
+      setRefreshingCache(false);
     } else if (refreshJob.status === "failed") {
       setRefreshingCache(false);
     }
@@ -2301,6 +2308,13 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
       pushToast(error instanceof Error ? error.message : "Refresh failed.", "danger");
       setRefreshingCache(false);
     }
+  }
+
+  async function cancelRefreshNow() {
+    if (!refreshJob?.id) return;
+    const response = await cancelStudioRefreshJob(refreshJob.id);
+    setRefreshJob(response.job.status === "cancelled" ? null : response.job);
+    setRefreshingCache(false);
   }
 
   async function restoreVersion(versionId: string) {
@@ -2432,20 +2446,8 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
   if (!activeObject && !visibleObjects.length) {
     return (
       <>
-        {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" ? (
-          <div style={{ position: "fixed", inset: 0, background: "rgba(12,22,18,0.58)", zIndex: 9999, display: "grid", placeItems: "center", padding: "24px" }}>
-            <div style={{ width: "min(560px, 100%)", background: "#fff", borderRadius: "20px", padding: "24px", boxShadow: "0 24px 64px rgba(0,0,0,0.24)" }}>
-              <strong style={{ display: "block", fontSize: "1.1rem", marginBottom: "8px" }}>Refreshing all reports and dashboards</strong>
-              <div style={{ marginBottom: "10px", color: "#41554a" }}>{refreshJob.message}</div>
-              <div style={{ height: "12px", background: "#e5ece8", borderRadius: "999px", overflow: "hidden", marginBottom: "10px" }}>
-                <div style={{ height: "100%", width: `${refreshJob.progress || 0}%`, background: "#0d7c66" }} />
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.95rem", color: "#41554a" }}>
-                <span>{refreshJob.progress || 0}% complete</span>
-                <span>{typeof refreshJob.estimatedSecondsRemaining === "number" ? `~${refreshJob.estimatedSecondsRemaining}s remaining` : "Estimating time…"}</span>
-              </div>
-            </div>
-          </div>
+        {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" && refreshJob.status !== "cancelled" ? (
+          <RefreshOverlay title="Refreshing all reports and dashboards" job={refreshJob} onCancel={() => { void cancelRefreshNow(); }} />
         ) : null}
         <section className="studio-page studio-page-empty">
           <StudioWorkspaceEmptyState
@@ -2467,20 +2469,8 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
   if (!activeObject) {
     return (
       <>
-        {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" ? (
-          <div style={{ position: "fixed", inset: 0, background: "rgba(12,22,18,0.58)", zIndex: 9999, display: "grid", placeItems: "center", padding: "24px" }}>
-            <div style={{ width: "min(560px, 100%)", background: "#fff", borderRadius: "20px", padding: "24px", boxShadow: "0 24px 64px rgba(0,0,0,0.24)" }}>
-              <strong style={{ display: "block", fontSize: "1.1rem", marginBottom: "8px" }}>Refreshing all reports and dashboards</strong>
-              <div style={{ marginBottom: "10px", color: "#41554a" }}>{refreshJob.message}</div>
-              <div style={{ height: "12px", background: "#e5ece8", borderRadius: "999px", overflow: "hidden", marginBottom: "10px" }}>
-                <div style={{ height: "100%", width: `${refreshJob.progress || 0}%`, background: "#0d7c66" }} />
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.95rem", color: "#41554a" }}>
-                <span>{refreshJob.progress || 0}% complete</span>
-                <span>{typeof refreshJob.estimatedSecondsRemaining === "number" ? `~${refreshJob.estimatedSecondsRemaining}s remaining` : "Estimating time…"}</span>
-              </div>
-            </div>
-          </div>
+        {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" && refreshJob.status !== "cancelled" ? (
+          <RefreshOverlay title="Refreshing all reports and dashboards" job={refreshJob} onCancel={() => { void cancelRefreshNow(); }} />
         ) : null}
         <section className="studio-page studio-page-home">
           <StudioWorkspaceHome
@@ -2523,20 +2513,8 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
 
   return (
     <>
-      {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" ? (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(12,22,18,0.58)", zIndex: 9999, display: "grid", placeItems: "center", padding: "24px" }}>
-          <div style={{ width: "min(560px, 100%)", background: "#fff", borderRadius: "20px", padding: "24px", boxShadow: "0 24px 64px rgba(0,0,0,0.24)" }}>
-            <strong style={{ display: "block", fontSize: "1.1rem", marginBottom: "8px" }}>Refreshing all reports and dashboards</strong>
-            <div style={{ marginBottom: "10px", color: "#41554a" }}>{refreshJob.message}</div>
-            <div style={{ height: "12px", background: "#e5ece8", borderRadius: "999px", overflow: "hidden", marginBottom: "10px" }}>
-              <div style={{ height: "100%", width: `${refreshJob.progress || 0}%`, background: "#0d7c66" }} />
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.95rem", color: "#41554a" }}>
-              <span>{refreshJob.progress || 0}% complete</span>
-              <span>{typeof refreshJob.estimatedSecondsRemaining === "number" ? `~${refreshJob.estimatedSecondsRemaining}s remaining` : "Estimating time…"}</span>
-            </div>
-          </div>
-        </div>
+      {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" && refreshJob.status !== "cancelled" ? (
+        <RefreshOverlay title="Refreshing all reports and dashboards" job={refreshJob} onCancel={() => { void cancelRefreshNow(); }} />
       ) : null}
       <section className={`studio-page ${activeDashboard ? "studio-page-dashboard" : "studio-page-report"}`}>
       <div className="studio-canvas">

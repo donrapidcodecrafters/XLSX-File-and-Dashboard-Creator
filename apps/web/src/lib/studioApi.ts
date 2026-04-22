@@ -216,6 +216,13 @@ export function fetchStudioRefreshJob(id: string) {
   return request<{ job: RefreshJobStatus }>(`/api/studio/refresh/jobs/${encodeURIComponent(id)}`);
 }
 
+export function cancelStudioRefreshJob(id: string) {
+  return request<{ job: RefreshJobStatus }>(`/api/studio/refresh/jobs/${encodeURIComponent(id)}/cancel`, {
+    method: "POST",
+    body: JSON.stringify({})
+  });
+}
+
 export function fetchQuickbaseSchema(config: StudioDocument["quickbase"]) {
   return request<{ schema: QuickbaseAppSchema }>("/api/quickbase/schema", {
     method: "POST",
