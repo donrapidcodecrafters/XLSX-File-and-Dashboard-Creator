@@ -1,13 +1,13 @@
 type HostedLaunchSource = "quickbase-button" | "local-dev" | null;
 
-function normalizeSearch(rawSearch: string) {
+export function normalizeHostedSearch(rawSearch: string) {
   return String(rawSearch || "")
     .replace(/^\?/, "")
     .replace(/\?/g, "&");
 }
 
 export function getHostedContext() {
-  const params = new URLSearchParams(normalizeSearch(window.location.search));
+  const params = new URLSearchParams(normalizeHostedSearch(window.location.search));
   const realmHostname = String(params.get("realm") || params.get("realmHostname") || "").trim().toLowerCase();
   const appId = String(params.get("dbid") || params.get("appId") || "").trim();
   const userId = String(params.get("userId") || params.get("userid") || "").trim();
@@ -29,9 +29,17 @@ export function getHostedContext() {
   };
 }
 
+export function buildHostedRoute(pathname: string) {
+  const params = new URLSearchParams(normalizeHostedSearch(window.location.search));
+  return {
+    pathname,
+    search: params.toString() ? `?${params.toString()}` : ""
+  };
+}
+
 export function buildObjectUrl(type: "report" | "dashboard", id: string, options?: { embed?: boolean; viewer?: boolean }) {
   const url = new URL(window.location.href);
-  const params = new URLSearchParams(url.search);
+  const params = new URLSearchParams(normalizeHostedSearch(url.search));
   if (options?.embed) params.set("embed", "1");
   else params.delete("embed");
   if (options?.viewer) params.set("mode", "viewer");
