@@ -500,7 +500,7 @@ export async function cancelRefreshJob(jobId: string, message = "Cancelling refr
 
 export function getTrackedRefreshJob(jobId: string) {
   const inMemory = refreshJobStore.getJob(jobId);
-  const persisted = getPersistedRefreshStatus(jobId);
+  const persisted = getPersistedRefreshStatus(jobId) || getPersistedRefreshStatus();
   if (persisted && inMemory && (persisted.status === "cancelled" || persisted.status === "complete" || persisted.status === "failed")) {
     return persisted;
   }
