@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { type StudioObject, type StudioTemplateRecord } from "@studio/shared";
 import { typeLabel } from "../lib/catalog";
+import { buildHostedRoute } from "../lib/embed";
 
 type LibraryFilter = "all" | "report" | "dashboard";
 type LibraryScopeFilter = "all" | "global" | "personal";
@@ -58,6 +59,34 @@ export function StudioWorkspaceHome({
   onUseTemplate: () => void;
   onApplyTemplate: (template: StudioTemplateRecord) => void;
 }) {
+  const quickStartActions = [
+    {
+      id: "new-report",
+      title: "Add new report",
+      description: "Choose a table, fields, filters, and a report or chart view.",
+      action: onCreateReport
+    },
+    {
+      id: "new-dashboard",
+      title: "Add new dashboard",
+      description: "Start a dashboard canvas and add reports, charts, and summary cards.",
+      action: onCreateDashboard
+    },
+    {
+      id: "template",
+      title: "Use a template",
+      description: "Apply an existing dashboard or report structure.",
+      action: onUseTemplate
+    },
+    {
+      id: "import-xlsx",
+      title: xlsxImporting ? "Importing xlsx" : "Import xlsx",
+      description: "Reconstruct workbook sheets into reports and dashboards.",
+      action: onImportXlsx,
+      disabled: xlsxImporting
+    }
+  ];
+
   return (
     <div className="studio-canvas studio-workspace-home">
       <div className="hero studio-hero">
@@ -71,8 +100,8 @@ export function StudioWorkspaceHome({
           </div>
         </div>
         <div className="link-toolbar">
-          <button onClick={onSave} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save"}</button>
-          <button onClick={onOpenSettings}>Settings</button>
+          <button type="button" onClick={onSave} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save"}</button>
+          <button type="button" onClick={onOpenSettings}>Settings</button>
         </div>
       </div>
 
@@ -81,23 +110,19 @@ export function StudioWorkspaceHome({
           <strong>Quick start</strong>
           <span className="micro">Use this row when you want to begin something new.</span>
         </div>
-        <div className="summary-grid">
-          <button className="template-card-button" onClick={onCreateReport}>
-            <strong>Add new report</strong>
-            <span>Choose a table, fields, filters, and a report or chart view.</span>
-          </button>
-          <button className="template-card-button" onClick={onCreateDashboard}>
-            <strong>Add new dashboard</strong>
-            <span>Start a dashboard canvas and add reports, charts, and summary cards.</span>
-          </button>
-          <button className="template-card-button" onClick={onUseTemplate}>
-            <strong>Use a template</strong>
-            <span>Apply an existing dashboard or report structure.</span>
-          </button>
-          <button className="template-card-button" onClick={onImportXlsx} disabled={xlsxImporting}>
-            <strong>{xlsxImporting ? "Importing xlsx" : "Import xlsx"}</strong>
-            <span>Reconstruct workbook sheets into reports and dashboards.</span>
-          </button>
+        <div className="studio-quickstart-grid">
+          {quickStartActions.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className="template-card-button studio-quickstart-button"
+              onClick={item.action}
+              disabled={item.disabled}
+            >
+              <strong>{item.title}</strong>
+              <span>{item.description}</span>
+            </button>
+          ))}
         </div>
       </section>
 
@@ -160,7 +185,7 @@ export function StudioWorkspaceHome({
               <Link
                 key={object.id}
                 className="nav-card studio-home-object-card"
-                to={`/studio/${object.id}`}
+                to={buildHostedRoute(`/studio/${object.id}`)}
                 target={openLinksInNewTab ? "_blank" : undefined}
                 rel={openLinksInNewTab ? "noreferrer" : undefined}
               >
@@ -189,7 +214,7 @@ export function StudioWorkspaceHome({
         {templates.length ? (
           <div className="summary-grid">
             {templates.slice(0, 8).map((template) => (
-              <button className="template-card-button" key={template.id} onClick={() => onApplyTemplate(template)}>
+              <button type="button" className="template-card-button" key={template.id} onClick={() => onApplyTemplate(template)}>
                 <strong>{template.name}</strong>
                 <span>{template.type}</span>
               </button>

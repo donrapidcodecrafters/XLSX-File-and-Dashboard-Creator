@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { buildHostedRoute } from "../lib/embed";
 
 // Keep this manual aligned with the current live product flow whenever labels,
 // routes, builder steps, or reader behavior change.
@@ -19,35 +20,40 @@ const helpSections = [
 export function HelpPage() {
   return (
     <section className="surface stack viewer-page help-page">
-      <div className="hero viewer-hero">
-        <div>
-          <span className="badge brand">Help</span>
-          <h1>Platform Manual</h1>
-          <p>Everything here is written for a first-time business user and reflects the current live workflow. Use these links in order if you are new, or jump directly to the task you need.</p>
-        </div>
-        <div className="link-toolbar viewer-actions">
-          <Link className="ghost-button" to="/">Home</Link>
-          <Link className="ghost-button" to="/viewer">Browse content</Link>
-          <Link className="ghost-button" to="/studio">Open building area</Link>
-        </div>
-      </div>
+      <div className="help-layout">
+        <aside className="card help-sidebar">
+          <div className="card-head">
+            <div>
+              <span className="badge brand">Help</span>
+              <strong>Platform Manual</strong>
+            </div>
+            <span className="micro">Use the left navigation to move through the manual.</span>
+          </div>
+          <div className="help-sidebar-actions">
+            <Link className="ghost-button" to={buildHostedRoute("/")}>Home</Link>
+            <Link className="ghost-button" to={buildHostedRoute("/viewer")}>Browse content</Link>
+            <Link className="ghost-button" to={buildHostedRoute("/studio")}>Open building area</Link>
+          </div>
+          <nav className="help-sidebar-nav" aria-label="Manual sections">
+            {helpSections.map((section) => (
+              <a className="help-sidebar-link" key={section.id} href={`#${section.id}`}>
+                <strong>{section.title}</strong>
+                <span>{section.summary}</span>
+              </a>
+            ))}
+          </nav>
+        </aside>
 
-      <div className="card help-card help-nav-card">
-        <div className="card-head">
-          <strong>Quick Navigation</strong>
-          <span className="micro">Use these links to move around the platform and this manual</span>
-        </div>
-        <div className="help-link-grid">
-          <Link className="ghost-button" to="/">Go to Home</Link>
-          <Link className="ghost-button" to="/viewer">Go to Viewing</Link>
-          <Link className="ghost-button" to="/studio">Go to Building</Link>
-          {helpSections.map((section) => (
-            <a className="ghost-button" key={section.id} href={`#${section.id}`}>{section.title}</a>
-          ))}
-        </div>
-      </div>
+        <div className="help-content">
+          <div className="hero viewer-hero help-hero">
+            <div>
+              <span className="badge brand">Help</span>
+              <h1>Platform Manual</h1>
+              <p>Everything here is written for a first-time business user and reflects the current live workflow. Use the toolbar on the left to jump between sections while you scroll the manual.</p>
+            </div>
+          </div>
 
-      <div className="help-grid">
+          <div className="help-grid">
         <article className="card help-card" id="first-day">
           <div className="card-head">
             <strong>First Day Setup</strong>
@@ -69,10 +75,10 @@ export function HelpPage() {
             <span className="micro">Only for setup or maintenance users</span>
           </div>
           <ol className="flat-list">
-            <li>Open <Link to="/studio">Building</Link>, then open `Settings` only if you are responsible for connecting or maintaining Quickbase apps.</li>
+            <li>Open <Link to={buildHostedRoute("/studio")}>Building</Link>, then open `Settings` only if you are responsible for connecting or maintaining Quickbase apps.</li>
             <li>Use the connected-app section to add a realm and app. The platform validates and bootstraps required support tables automatically before marking the app ready.</li>
             <li>Use `Find apps` when possible instead of typing raw IDs manually. This reduces setup mistakes for first-time admins.</li>
-            <li>After setup, return ordinary users to <Link to="/">Home</Link> or <Link to="/viewer">Viewing</Link>. Normal business users should not need to work inside settings.</li>
+            <li>After setup, return ordinary users to <Link to={buildHostedRoute("/")}>Home</Link> or <Link to={buildHostedRoute("/viewer")}>Viewing</Link>. Normal business users should not need to work inside settings.</li>
           </ol>
         </article>
 
@@ -82,12 +88,12 @@ export function HelpPage() {
             <span className="micro">How to find what you need quickly</span>
           </div>
           <ol className="flat-list">
-            <li>Open <Link to="/viewer">Viewing</Link> to search across saved reports and dashboards.</li>
+            <li>Open <Link to={buildHostedRoute("/viewer")}>Viewing</Link> to search across saved reports and dashboards.</li>
             <li>Use `Scope` to switch between shared content and your personal items.</li>
             <li>Use the app badge on each card to confirm which connected Quickbase app the item belongs to.</li>
             <li>If you launched from Quickbase, the library is automatically limited to that realm and app so you do not accidentally open another workspace.</li>
             <li>Use `Favorites` and `Recent` filters when the library gets large.</li>
-            <li>Open a card directly from the viewer, or start at <Link to="/">Home</Link> if you prefer grouped sections and app-based browsing.</li>
+            <li>Open a card directly from the viewer, or start at <Link to={buildHostedRoute("/")}>Home</Link> if you prefer grouped sections and app-based browsing.</li>
           </ol>
         </article>
 
@@ -97,7 +103,7 @@ export function HelpPage() {
             <span className="micro">How to read, filter, focus, and export reports</span>
           </div>
           <ol className="flat-list">
-            <li>Open a report from <Link to="/viewer">Viewing</Link> or <Link to="/">Home</Link>.</li>
+            <li>Open a report from <Link to={buildHostedRoute("/viewer")}>Viewing</Link> or <Link to={buildHostedRoute("/")}>Home</Link>.</li>
             <li>Check the freshness banner near the top of the page before sharing or exporting. This tells you whether you are looking at cached or live data.</li>
             <li>Use `Save view` to keep your own preferred page or focus mode without changing the shared report for everyone else.</li>
             <li>Use `Focus chart` or `Focus details` when you need a larger reading surface.</li>
@@ -127,7 +133,7 @@ export function HelpPage() {
             <span className="micro">The safe building area for native platform objects</span>
           </div>
           <ol className="flat-list">
-            <li>Open <Link to="/studio">Building</Link> to create or edit reports, dashboards, and workbook imports.</li>
+            <li>Open <Link to={buildHostedRoute("/studio")}>Building</Link> to create or edit reports, dashboards, and workbook imports.</li>
             <li>Start on the Building home. Use the `Quick start` row below the top workspace card when you want to create something new, use a template, or import a workbook. Use the browse section underneath when you want to open an existing item.</li>
             <li>Click an existing item to edit it, or choose `Add new report`, `Add new dashboard`, `Templates`, or `Import xlsx` to start something new.</li>
             <li>Choose `Shared` if everyone should see the object, or `Personal` if the object should stay private to you.</li>
@@ -144,7 +150,7 @@ export function HelpPage() {
             <span className="micro">Use the canvas without trial and error</span>
           </div>
           <ol className="flat-list">
-            <li>Open a dashboard in <Link to="/studio">Building</Link> and click the card you want to change. The selected-card panel always edits only that card.</li>
+            <li>Open a dashboard in <Link to={buildHostedRoute("/studio")}>Building</Link> and click the card you want to change. The selected-card panel always edits only that card.</li>
             <li>Drag the card on the canvas to move it. The preview highlights the destination row and shows when other cards will reflow.</li>
             <li>Use the size controls in the selected-card area when you need exact width, height, or x/y placement.</li>
             <li>Widgets stay inside the card size you set. If a chart or report feels cramped, increase that card’s width or height instead of expecting it to overlap nearby cards.</li>
@@ -172,7 +178,7 @@ export function HelpPage() {
             <span className="micro">How workbook reconstruction and export jobs behave</span>
           </div>
           <ol className="flat-list">
-            <li>Use `Import xlsx` inside <Link to="/studio">Building</Link> to reconstruct workbook sheets as editable platform objects.</li>
+            <li>Use `Import xlsx` inside <Link to={buildHostedRoute("/studio")}>Building</Link> to reconstruct workbook sheets as editable platform objects.</li>
             <li>After import, read the import review carefully. It tells you which sheets were imported, what headers were repaired, and which layouts or filters were inferred.</li>
             <li>If a sheet was skipped or repaired, the review tells you exactly what changed. The platform does not silently hide substitutions.</li>
             <li>Exports reflect the current saved object and the current dashboard runtime filters.</li>
@@ -203,12 +209,14 @@ export function HelpPage() {
             <li>If a report, chart, or dashboard needs to load or refresh source rows before it can open, the platform shows a full-screen loading overlay with progress, lets you cancel the refresh, and opens the object automatically when the refresh completes.</li>
             <li>If a field is missing, reload the app metadata or refresh the source report cache so new Quickbase fields become available.</li>
             <li>If a dashboard widget fails, open the source report from Studio or the reader to isolate the problem.</li>
-            <li>If you cannot find where to start building, go back to <Link to="/studio">Building</Link>. The first Building screen is the workspace home where you choose an existing item or create a new one.</li>
+            <li>If you cannot find where to start building, go back to <Link to={buildHostedRoute("/studio")}>Building</Link>. The first Building screen is the workspace home where you choose an existing item or create a new one.</li>
             <li>If the platform says the session expired, relaunch from Quickbase.</li>
             <li>If the platform says the launch is invalid, reopen it from the correct Quickbase realm and app button. A stale bookmark or the wrong user launch will be blocked on purpose.</li>
             <li>If an imported workbook does not look right, read the import review, fix the workbook, and import again.</li>
           </ol>
         </article>
+          </div>
+        </div>
       </div>
     </section>
   );

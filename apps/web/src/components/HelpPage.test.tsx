@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import { HelpPage } from "./HelpPage";
@@ -12,10 +12,12 @@ describe("HelpPage", () => {
     );
 
     expect(screen.getByRole("heading", { name: "Platform Manual" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Go to Home" }).getAttribute("href")).toMatch(/^#?\/$/);
-    expect(screen.getByRole("link", { name: "Go to Viewing" }).getAttribute("href")).toMatch(/^#?\/viewer$/);
-    expect(screen.getByRole("link", { name: "Go to Building" }).getAttribute("href")).toMatch(/^#?\/studio$/);
-    expect(screen.getByRole("link", { name: "First Day Setup" })).toHaveAttribute("href", "#first-day");
+    const sidebar = screen.getByRole("complementary");
+    expect(within(sidebar).getByRole("link", { name: "Home" }).getAttribute("href")).toMatch(/^#?\/$/);
+    expect(within(sidebar).getByRole("link", { name: "Browse content" }).getAttribute("href")).toMatch(/^#?\/viewer$/);
+    expect(within(sidebar).getByRole("link", { name: "Open building area" }).getAttribute("href")).toMatch(/^#?\/studio$/);
+    expect(screen.getByRole("navigation", { name: "Manual sections" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /First Day Setup/ })).toHaveAttribute("href", "#first-day");
     expect(screen.getByText(/Open the platform from your Quickbase dashboard button/i)).toBeInTheDocument();
     expect(screen.getByText(/you now land on a workspace home first/i)).toBeInTheDocument();
     expect(screen.getByText(/Large report tables scroll inside the report itself/i)).toBeInTheDocument();
