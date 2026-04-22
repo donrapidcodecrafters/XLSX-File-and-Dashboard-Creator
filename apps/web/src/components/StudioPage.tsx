@@ -2273,7 +2273,10 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
 
   useEffect(() => {
     if (!openSettingsSignal) return;
-    setDrawer("settings");
+    const handle = window.requestAnimationFrame(() => {
+      setDrawer("settings");
+    });
+    return () => window.cancelAnimationFrame(handle);
   }, [openSettingsSignal]);
 
   useEffect(() => {
@@ -2500,6 +2503,7 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
             templates={[...documentState.templates.layouts, ...documentState.templates.yaml]}
             openLinksInNewTab={openLinksInNewTab}
             onSave={saveRemote}
+            onOpenSettings={() => setDrawer("settings")}
             onCreateReport={() => openCreateModal("report")}
             onCreateDashboard={() => openCreateModal("dashboard")}
             onImportXlsx={() => importXlsxInputRef.current?.click()}

@@ -25,6 +25,7 @@ export function StudioWorkspaceHome({
   templates,
   openLinksInNewTab = false,
   onSave,
+  onOpenSettings,
   onCreateReport,
   onCreateDashboard,
   onImportXlsx,
@@ -50,6 +51,7 @@ export function StudioWorkspaceHome({
   templates: StudioTemplateRecord[];
   openLinksInNewTab?: boolean;
   onSave: () => void;
+  onOpenSettings: () => void;
   onCreateReport: () => void;
   onCreateDashboard: () => void;
   onImportXlsx: () => void;
@@ -70,6 +72,7 @@ export function StudioWorkspaceHome({
         </div>
         <div className="link-toolbar">
           <button onClick={onSave} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save"}</button>
+          <button onClick={onOpenSettings}>Settings</button>
         </div>
       </div>
 
