@@ -584,6 +584,19 @@ function remapImportedReportToSourceTable(
   };
 }
 
+function removeDeletedReportsFromDashboards(document: StudioDocument, reportIds: string[]) {
+  if (!reportIds.length) return document;
+  const reportIdSet = new Set(reportIds);
+  Object.values(document.bundle.objects).forEach((object) => {
+    if (object.type !== "dashboard") return;
+    object.tabs = object.tabs.map((tab) => ({
+      ...tab,
+      widgets: tab.widgets.filter((widget) => widget.mode === "copied" || !reportIdSet.has(widget.reportId))
+    }));
+  });
+  return document;
+}
+
 function rebuildPendingWorkbookImportObjects(
   baseObjects: Record<string, StudioObject>,
   importedTablesById: Record<string, TableDefinition>,
@@ -2177,13 +2190,20 @@ export function StudioPage({
     nextDocument.bundle.order = nextDocument.bundle.order.filter((item) => item !== objectId);
     nextDocument.favorites = nextDocument.favorites.filter((item) => item !== objectId);
     nextDocument.recent = nextDocument.recent.filter((item) => item !== objectId);
+    if (activeObject?.type === "report" || (bundle.objects[objectId]?.type === "report")) {
+      removeDeletedReportsFromDashboards(nextDocument, [objectId]);
+    }
 
     setHistory((previous) => [clone(documentState), ...previous].slice(0, 60));
     setFuture([]);
     setDocumentState(nextDocument);
     navigate(buildHostedRoute(`/studio/${nextDocument.bundle.order[0] || ""}`));
     pushToast("Object removed.", "warn");
-    await persistRemote(nextDocument);
+    try {
+      await persistRemote(nextDocument);
+    } catch (error) {
+      pushToast(error instanceof Error ? error.message : "Delete save failed after local removal.", "danger");
+    }
   }
 
   function toggleHomeReportSelection(reportId: string, selected: boolean) {
@@ -2218,6 +2238,7 @@ export function StudioPage({
       nextDocument.favorites = nextDocument.favorites.filter((item) => item !== reportId);
       nextDocument.recent = nextDocument.recent.filter((item) => item !== reportId);
     });
+    removeDeletedReportsFromDashboards(nextDocument, reportIds);
 
     setHistory((previous) => [clone(documentState), ...previous].slice(0, 60));
     setFuture([]);
@@ -2227,7 +2248,11 @@ export function StudioPage({
       navigate(buildHostedRoute("/studio"));
     }
     pushToast(`Deleted ${reportIds.length} report${reportIds.length === 1 ? "" : "s"}.`, "warn");
-    await persistRemote(nextDocument);
+    try {
+      await persistRemote(nextDocument);
+    } catch (error) {
+      pushToast(error instanceof Error ? error.message : "Bulk delete save failed after local removal.", "danger");
+    }
   }
 
   function toggleFavorite(objectId: string) {
