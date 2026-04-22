@@ -773,7 +773,7 @@ export function moveDashboardWidgetByDirection(
   return updateDashboardTab(dashboard, tabId, (tab) => {
     const targetPlacement = findDirectionalPlacement(tab, widgetId, direction);
     if (!targetPlacement) return tab;
-    const targetIndex = targetPlacement.index + (direction === "right" || direction === "down" ? 1 : 0);
+    const targetIndex = targetPlacement.index + (direction === "right" ? 1 : 0);
     return {
       ...(compactDashboardTabWidgets({
         ...tab,
@@ -797,10 +797,20 @@ export function moveDashboardWidgetByRow(
     const targetRowIndex = currentRowIndex + (direction === "up" ? -1 : 1);
     const targetRow = rows[targetRowIndex];
     if (!targetRow) return tab;
+    const currentRow = rows[currentRowIndex];
+    const targetIndex = direction === "down"
+      ? currentRow.endIndex + 1
+      : Math.max(0, currentRow.startIndex - 1);
     return {
       ...(compactDashboardTabWidgets({
         ...tab,
-        widgets: moveWidgetAtIndex(tab.widgets, widgetId, edge === "start" ? targetRow.startIndex : targetRow.endIndex + 1)
+        widgets: moveWidgetAtIndex(
+          tab.widgets,
+          widgetId,
+          edge === "start" && direction === "up"
+            ? targetRow.startIndex
+            : targetIndex
+        )
       }) || tab)
     };
   });

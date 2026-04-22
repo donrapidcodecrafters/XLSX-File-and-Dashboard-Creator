@@ -207,7 +207,6 @@ export async function registerStudioRoutes(app: FastifyInstance) {
 
   app.post("/api/studio/refresh/start", async (request, reply) => {
     try {
-      await studioStore.hydrateFromQuickbase();
       let activeJob = getActiveRefreshJob();
       if (isRefreshJobStale(activeJob)) {
         await cancelRefreshJob(activeJob!.id, "Previous refresh stalled.");
@@ -239,7 +238,6 @@ export async function registerStudioRoutes(app: FastifyInstance) {
   app.post("/api/studio/objects/:id/refresh/start", async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
-      await studioStore.hydrateFromQuickbase();
       let activeJob = getActiveRefreshJob();
       if (isRefreshJobStale(activeJob)) {
         await cancelRefreshJob(activeJob!.id, "Previous refresh stalled.");
@@ -270,7 +268,6 @@ export async function registerStudioRoutes(app: FastifyInstance) {
 
   app.get("/api/studio/refresh/jobs/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
-    await studioStore.hydrateFromQuickbase();
     const job = getTrackedRefreshJob(id);
     if (!job) {
       reply.code(404);

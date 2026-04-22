@@ -59,7 +59,12 @@ export function buildStudioBuilderDraft(
     selectedFieldIds: [],
     filterTree: createFilterGroup("and", []),
     sorts: [],
-    summaryMetrics: [],
+    summaryMetrics: [{
+      id: createId("metric"),
+      fieldId: "",
+      op: "count",
+      label: "Count rows"
+    }],
     view: {
       mode: "table",
       showChartInTable: false,

@@ -460,7 +460,6 @@ function assertRefreshNotCancelled(jobId: string, profileIds: string[] = []) {
 }
 
 export async function primeRefreshJob(jobId: string, options: { objectId?: string; profileId?: string; message?: string } = {}) {
-  await studioStore.hydrateFromQuickbase(true);
   const document = studioStore.getLiveDocument();
   const tableIds = options.objectId ? getObjectTableIds(document, options.objectId) : (
     options.profileId ? getRefreshTableIdsForProfile(document, options.profileId) : getUsedTableIds(document)
@@ -477,7 +476,6 @@ export async function primeRefreshJob(jobId: string, options: { objectId?: strin
 }
 
 export async function cancelRefreshJob(jobId: string, message = "Cancelling refresh…") {
-  await studioStore.hydrateFromQuickbase(true);
   const document = studioStore.getLiveDocument();
   const statuses = [
     document.sync.refreshStatus,

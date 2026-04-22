@@ -39,6 +39,7 @@ export function HomePage({
 }) {
   const [refreshJob, setRefreshJob] = useState<any>(null);
   const [startingRefresh, setStartingRefresh] = useState(false);
+  const [refreshFeedback, setRefreshFeedback] = useState<{ tone: "warn" | "danger"; message: string } | null>(null);
   const currentUserId = String(studioDocument?.session.currentUserId || "").trim();
   const catalogLookup = useMemo(
     () => buildStudioCatalogItemLookup(objects, studioDocument?.bundle.objects),
@@ -104,8 +105,19 @@ export function HomePage({
       fetchStudioRefreshJob(refreshJob.id)
         .then((response) => {
           setRefreshJob(response.job);
-          if (response.job.status === "complete" || response.job.status === "failed" || response.job.status === "cancelled") {
+          if (response.job.status === "complete") {
+            setRefreshFeedback(null);
             void onRefreshComplete();
+          } else if (response.job.status === "failed") {
+            setRefreshFeedback({
+              tone: "danger",
+              message: response.job.error || response.job.message || "Refresh failed."
+            });
+          } else if (response.job.status === "cancelled") {
+            setRefreshFeedback({
+              tone: "warn",
+              message: response.job.message || "Refresh cancelled."
+            });
           }
         })
         .catch(() => undefined);
@@ -120,9 +132,15 @@ export function HomePage({
 
   async function startFullRefresh() {
     setStartingRefresh(true);
+    setRefreshFeedback(null);
     try {
       const response = await startStudioRefresh();
       setRefreshJob(response.job);
+    } catch (error) {
+      setRefreshFeedback({
+        tone: "danger",
+        message: error instanceof Error ? error.message : "Refresh failed to start."
+      });
     } finally {
       window.setTimeout(() => setStartingRefresh(false), 700);
     }
@@ -135,6 +153,12 @@ export function HomePage({
       ) : null}
       {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" && refreshJob.status !== "cancelled" ? (
         <RefreshOverlay title="Refreshing all reports and dashboards" job={refreshJob} />
+      ) : null}
+      {refreshFeedback ? (
+        <div className="sync-status sync-status-warn">
+          <strong>{refreshFeedback.tone === "danger" ? "Refresh failed" : "Refresh stopped"}</strong>
+          <span>{refreshFeedback.message}</span>
+        </div>
       ) : null}
       <div className="home-shell">
         <section className="home-hero-panel">
