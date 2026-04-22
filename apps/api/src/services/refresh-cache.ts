@@ -95,8 +95,12 @@ function getSavedReportIdForTable(document: StudioDocument, table: TableDefiniti
   const profileId = table.quickbaseProfileId || "";
   if (!profileId) return "";
   const profile = document.quickbaseProfiles.find((item) => item.id === profileId);
-  const tableKey = getQuickbaseTableId(table);
-  return String(profile?.refreshSource?.reportIds?.[tableKey] || "");
+  const tableKeys = [getQuickbaseTableId(table), table.id].filter(Boolean);
+  for (const key of tableKeys) {
+    const value = String(profile?.refreshSource?.reportIds?.[key] || "").trim();
+    if (value) return value;
+  }
+  return "";
 }
 
 function getObjectOverrideReportIdForTable(document: StudioDocument, objectId: string, table: TableDefinition) {

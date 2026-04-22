@@ -611,6 +611,7 @@ export function App() {
   const location = useLocation();
   const hosted = useMemo(() => getHostedContext(), [location.key]);
   const lastSessionTouchAt = useRef(0);
+  const sessionTouchTimeoutRef = useRef<number | null>(null);
   const sessionPreview = useMemo(
     () => studioDocument && hosted.launchSource
       ? touchStudioSession(studioDocument.session, {
@@ -768,15 +769,26 @@ export function App() {
       setStudioDocument((current) => applySessionToDocument(current, nextSession));
       void persistSession(nextSession).catch(() => undefined);
     };
-    const handleVisibility = () => {
-      if (document.visibilityState === "visible") touch();
+    const scheduleTouch = () => {
+      if (sessionTouchTimeoutRef.current !== null) return;
+      sessionTouchTimeoutRef.current = window.setTimeout(() => {
+        sessionTouchTimeoutRef.current = null;
+        touch();
+      }, 0);
     };
-    window.addEventListener("pointerdown", touch, { passive: true });
-    window.addEventListener("keydown", touch);
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") scheduleTouch();
+    };
+    window.addEventListener("pointerdown", scheduleTouch, { passive: true });
+    window.addEventListener("keydown", scheduleTouch);
     document.addEventListener("visibilitychange", handleVisibility);
     return () => {
-      window.removeEventListener("pointerdown", touch);
-      window.removeEventListener("keydown", touch);
+      if (sessionTouchTimeoutRef.current !== null) {
+        window.clearTimeout(sessionTouchTimeoutRef.current);
+        sessionTouchTimeoutRef.current = null;
+      }
+      window.removeEventListener("pointerdown", scheduleTouch);
+      window.removeEventListener("keydown", scheduleTouch);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [persistSession, sessionPreview, sessionStatus?.valid, setStudioDocument, studioDocument]);
