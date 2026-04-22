@@ -34,11 +34,11 @@ function tableMatchesLaunchScope(table: TableDefinition | undefined, studioDocum
     return normalizeStudioRealmHostname(profile.quickbase.realmHostname) === launchRealmHostname
       && normalizeStudioAppId(profile.quickbase.appId) === launchAppId;
   }
-  if (!explicitTableAppId) {
-    return true;
+  if (explicitTableAppId) {
+    return normalizeStudioRealmHostname(studioDocument.quickbase.realmHostname) === launchRealmHostname
+      && explicitTableAppId === launchAppId;
   }
-  return normalizeStudioRealmHostname(studioDocument.quickbase.realmHostname) === launchRealmHostname
-    && explicitTableAppId === launchAppId;
+  return false;
 }
 
 export function getProfileIdsForObject(object: StudioObject | null, tables: TableDefinition[], studioDocument: StudioDocument | null) {
