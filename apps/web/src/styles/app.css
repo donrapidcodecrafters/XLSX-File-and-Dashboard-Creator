@@ -1869,12 +1869,26 @@ th {
   gap: 22px;
 }
 
+.studio-page-report .studio-canvas .studio-hero {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .studio-canvas .studio-hero .link-toolbar {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
   align-content: start;
   justify-content: flex-end;
+}
+
+.studio-page-report .studio-canvas .studio-hero .link-toolbar {
+  justify-content: flex-start;
+}
+
+.studio-page-report .studio-canvas .studio-hero h1,
+.studio-page-report .studio-canvas .studio-hero p,
+.studio-page-report .studio-canvas .studio-hero .micro-row {
+  max-width: min(100%, 1100px);
 }
 
 .studio-canvas .studio-hero .link-toolbar > * {
