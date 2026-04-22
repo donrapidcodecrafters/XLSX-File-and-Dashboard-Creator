@@ -534,6 +534,12 @@ async function fetchAllTableRows(
   const tableStartedAt = Date.now();
   const savedReportId = (options.objectId ? getObjectOverrideReportIdForTable(document, options.objectId, table) : "") || getSavedReportIdForTable(document, table);
   const profileIds = table.quickbaseProfileId ? [table.quickbaseProfileId] : [];
+  const hasQuickbaseSource = Boolean(
+    String(table.quickbaseTableId || "").trim()
+    && String(quickbase.realmHostname || "").trim()
+    && String(quickbase.userToken || "").trim()
+    && String(quickbase.appId || "").trim()
+  );
   if (savedReportId) {
     const pageSize = 1000;
     let skip = 0;
@@ -582,6 +588,14 @@ async function fetchAllTableRows(
       skip += page.rows.length;
     }
     return Array.from(merged.values());
+  }
+  if (hasQuickbaseSource) {
+    const tableLabel = table.name || table.quickbaseTableId || table.id;
+    throw new Error(
+      options.objectId
+        ? `No Quickbase source report ID is configured for ${tableLabel} in this object refresh. Configure the saved report ID before refreshing.`
+        : `No Quickbase source report ID is configured for ${tableLabel}. Configure the saved report ID before refreshing.`
+    );
   }
   const fieldIds = table.fields.map((field) => field.id).filter(Boolean);
   const chunks = chunk(fieldIds, 30);
