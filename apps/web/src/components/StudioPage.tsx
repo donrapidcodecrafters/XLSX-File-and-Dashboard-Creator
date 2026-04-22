@@ -2742,7 +2742,7 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
         ) : null}
 
         {activeReport && activeTable && (reportResult || liveReportLoading) ? (
-          <section className="surface stack">
+          <section className="surface stack studio-report-preview-panel">
             <div className="card-head">
               <strong>Report Preview</strong>
               <span className="micro">
@@ -2784,7 +2784,7 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
         ) : null}
 
         {activeDashboard && dashboardResult ? (
-          <section className="surface stack">
+          <section className="surface stack studio-dashboard-preview-panel">
                 <div className="card-head">
                   <strong>Dashboard Preview</strong>
                   <span className="micro">{activeDashboard.tabs.length} tabs</span>

@@ -1792,15 +1792,16 @@ th {
 }
 
 .studio-page {
-  display: grid;
-  grid-template-columns: minmax(260px, 290px) minmax(0, 1.1fr) minmax(320px, 380px);
+  display: flex;
+  flex-direction: column;
   gap: 20px;
   min-width: 0;
   align-items: stretch;
 }
 
 .studio-page-report {
-  grid-template-columns: minmax(0, 260px) minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
 }
 
 .studio-page > * {
@@ -1818,12 +1819,14 @@ th {
   display: grid;
   gap: 16px;
   align-content: start;
+  width: 100%;
 }
 
 .studio-canvas {
   display: grid;
   gap: 18px;
   align-content: start;
+  width: 100%;
 }
 
 .studio-section-head {
@@ -1854,6 +1857,24 @@ th {
     linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(246, 248, 242, 0.88));
   backdrop-filter: blur(14px);
   box-shadow: 0 16px 46px rgba(22, 39, 31, 0.08);
+}
+
+.studio-canvas .studio-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, auto);
+  gap: 22px;
+}
+
+.studio-canvas .studio-hero .link-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-content: start;
+  justify-content: flex-end;
+}
+
+.studio-canvas .studio-hero .link-toolbar > * {
+  flex: 0 0 auto;
 }
 
 .active-card {
@@ -1918,6 +1939,18 @@ th {
 .studio-library .field input,
 .studio-library .field select {
   min-height: 42px;
+}
+
+.studio-library {
+  order: 2;
+}
+
+.studio-canvas {
+  order: 1;
+}
+
+.studio-inspector {
+  order: 3;
 }
 
 .viewer-summary-row {
@@ -2007,14 +2040,104 @@ th {
 
 .studio-library > .surface,
 .studio-inspector > .surface {
-  position: sticky;
-  top: 16px;
-  max-height: calc(100vh - 32px);
-  overflow: auto;
+  position: static;
+  max-height: none;
+  overflow: visible;
 }
 
 .studio-canvas > .surface {
   min-height: calc(100vh - 32px);
+}
+
+.studio-report-preview-panel,
+.studio-dashboard-preview-panel {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.studio-report-preview-panel .studio-preview-stack,
+.studio-dashboard-preview-panel .studio-preview-stack {
+  min-height: 0;
+}
+
+.studio-report-preview-panel .preview-table-shell {
+  max-height: clamp(360px, 58vh, 780px);
+}
+
+.studio-dashboard-preview-panel .preview-widget-table-shell,
+.studio-dashboard-preview-panel .compact-table-shell .widget-table-shell {
+  max-height: clamp(220px, 38vh, 420px);
+}
+
+.studio-library .surface:first-child {
+  gap: 16px;
+  padding: 22px;
+}
+
+.studio-library .studio-section-head {
+  align-items: end;
+}
+
+.studio-library .studio-section-head h2 {
+  font-size: clamp(1.8rem, 3vw, 2.6rem);
+}
+
+.studio-library .studio-actions {
+  justify-content: flex-start;
+}
+
+.studio-library .filter-grid.compact-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.studio-library .toggle-row {
+  justify-content: space-between;
+}
+
+.studio-library .nav-list {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(240px, 320px);
+  gap: 14px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 4px 6px 10px 2px;
+  scrollbar-gutter: stable;
+}
+
+.studio-library .nav-card {
+  min-height: 150px;
+  align-content: start;
+  padding: 18px;
+  border-radius: 20px;
+}
+
+.studio-library .template-list {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(220px, 280px);
+  gap: 14px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 4px 6px 10px 2px;
+  scrollbar-gutter: stable;
+}
+
+.studio-library .link-toolbar {
+  justify-content: flex-start;
+}
+
+.studio-inspector .surface {
+  padding: 22px;
+}
+
+.studio-inspector .surface.stack {
+  gap: 18px;
+}
+
+.studio-inspector .card,
+.studio-inspector .widget-edit-card {
+  border-radius: 20px;
 }
 
 .picker-row,
@@ -2254,10 +2377,11 @@ th {
 
 .widget-picker-list {
   display: grid;
-  gap: 8px;
-  max-height: 340px;
-  overflow: auto;
-  padding-right: 4px;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  max-height: none;
+  overflow: visible;
+  padding-right: 0;
 }
 
 .widget-picker-button {
@@ -2310,13 +2434,13 @@ th {
 
 .widget-editor-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) 110px 110px auto;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
   align-items: end;
 }
 
 .studio-inspector .widget-editor-grid {
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
 .field-inline {
