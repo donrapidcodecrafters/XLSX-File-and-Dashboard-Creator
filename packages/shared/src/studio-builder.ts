@@ -49,8 +49,6 @@ export function buildStudioBuilderDraft(
   currentUserId = "",
   createId: (prefix: string) => string = (prefix) => `${prefix}-1`
 ): StudioBuilderDraft {
-  const firstFieldId = table?.fields[0]?.id || "";
-  const secondFieldId = table?.fields[1]?.id || firstFieldId;
   return {
     type,
     name: type === "report" ? "New Report" : "New Dashboard",
@@ -58,10 +56,10 @@ export function buildStudioBuilderDraft(
     ...normalizeStudioBuilderScopeOwner("global", currentUserId),
     tableId: table?.id || "",
     sourceReportOverrides: {},
-    selectedFieldIds: table?.fields.slice(0, 6).map((field) => field.id) || [],
+    selectedFieldIds: [],
     filterTree: createFilterGroup("and", []),
     sorts: [],
-    summaryMetrics: firstFieldId ? [{ id: createId("metric"), fieldId: firstFieldId, op: "count", label: "Rows" }] : [],
+    summaryMetrics: [],
     view: {
       mode: "table",
       showChartInTable: false,
@@ -71,7 +69,7 @@ export function buildStudioBuilderDraft(
       decimalPlaces: 2,
       chartType: "bar",
       chartOrientation: "vertical",
-      chartFieldId: firstFieldId,
+      chartFieldId: "",
       chartSeriesFieldId: "",
       chartValueFieldId: "",
       chartAggregation: "count",
@@ -91,7 +89,7 @@ export function buildStudioBuilderDraft(
       timelineEndField: "",
       calendarDateField: "",
       kanbanField: "",
-      titleFieldId: secondFieldId
+      titleFieldId: ""
     },
     displayLabels: {
       fields: {},

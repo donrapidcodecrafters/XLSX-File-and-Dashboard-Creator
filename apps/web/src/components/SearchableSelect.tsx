@@ -29,6 +29,7 @@ export function SearchableSelect({
   emptyOptionLabel?: string;
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [menuRect, setMenuRect] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null);
@@ -44,7 +45,8 @@ export function SearchableSelect({
 
   useEffect(() => {
     function handlePointerDown(event: MouseEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (!rootRef.current?.contains(target) && !menuRef.current?.contains(target)) {
         setOpen(false);
         setQuery(selectedOption?.label || "");
       }
@@ -96,6 +98,7 @@ export function SearchableSelect({
   const menu = open && menuRect ? createPortal(
     <div
       className="searchable-select-menu"
+      ref={menuRef}
       style={{
         position: "fixed",
         top: `${menuRect.top}px`,

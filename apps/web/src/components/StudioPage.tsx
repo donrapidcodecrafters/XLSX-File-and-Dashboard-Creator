@@ -936,7 +936,7 @@ function FilterGroupEditor({
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
-              onChange(addFilterRuleToGroup(group, group.id, table.fields[0]?.id || ""));
+              onChange(addFilterRuleToGroup(group, group.id, ""));
             }}
           >
             Add filter
@@ -971,7 +971,7 @@ function FilterGroupEditor({
             );
           }
           const rule = condition;
-          const field = table.fields.find((candidate) => candidate.id === rule.fieldId) || table.fields[0] || null;
+          const field = table.fields.find((candidate) => candidate.id === rule.fieldId) || null;
           const operatorOptions = filterOperatorOptionsForField(field);
           return (
             <div className="inline-edit-row filter-rule-row" key={rule.id}>
@@ -1038,13 +1038,13 @@ function ReportFiltersAndSortsEditor({
           <strong>Sorting</strong>
           <button
             type="button"
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              onChangeSorts([...sorts, { id: uid("sort"), fieldId: table.fields[0]?.id || "", direction: "asc" }]);
-            }}
-          >
-            Add sort
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onChangeSorts([...sorts, { id: uid("sort"), fieldId: "", direction: "asc" }]);
+              }}
+            >
+              Add sort
           </button>
         </div>
         <div className="stack-compact">
@@ -2020,10 +2020,10 @@ export function StudioPage({
       ...current,
       tableId: table.id,
       sourceReportOverrides: {},
-      selectedFieldIds: table.fields.slice(0, 6).map((field) => field.id),
+      selectedFieldIds: [],
       filterTree: createFilterGroup("and", []),
       sorts: [],
-      summaryMetrics: table.fields[0] ? [{ id: uid("metric"), fieldId: table.fields[0].id, op: "count", label: "Rows" }] : [],
+      summaryMetrics: [],
       view: {
         ...current.view,
         showChartInTable: false,
@@ -2032,7 +2032,7 @@ export function StudioPage({
         chartTitle: current.view.chartTitle || "",
         decimalPlaces: Number.isFinite(Number(current.view.decimalPlaces)) ? Math.max(0, Math.min(6, Number(current.view.decimalPlaces))) : 2,
         chartOrientation: "vertical",
-        chartFieldId: table.fields[0]?.id || "",
+        chartFieldId: "",
         chartSeriesFieldId: "",
         chartValueFieldId: "",
         chartAggregation: "count",
@@ -2048,7 +2048,7 @@ export function StudioPage({
         chartXAxisLabel: current.view.chartXAxisLabel || "",
         chartYAxisLabel: current.view.chartYAxisLabel || "",
         chartSecondaryYAxisLabel: current.view.chartSecondaryYAxisLabel || "",
-        titleFieldId: table.fields[1]?.id || table.fields[0]?.id || "",
+        titleFieldId: "",
         timelineDateField: "",
         timelineEndField: "",
         calendarDateField: "",
