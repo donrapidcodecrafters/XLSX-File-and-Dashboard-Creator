@@ -21,6 +21,7 @@ import {
   type TableDefinition
 } from "@studio/shared";
 import { ChartPreview } from "./ChartPreview";
+import { getChartAxisLabels } from "./studioReportUtils";
 
 function getFieldLabel(report: ReportDefinition, table: TableDefinition | null, fieldId: string) {
   return table ? getReportFieldLabel(report, table, fieldId) : fieldId;
@@ -493,6 +494,9 @@ export function StudioDashboardPreview({
                     ) : null}
                     {widget.status === "complete" && shouldShowWidgetChart(widget.widget, widget.report) ? (
                       <div className="mini-chart">
+                        {(() => {
+                          const axisLabels = getChartAxisLabels(widget.report, widgetTable);
+                          return (
                         <ChartPreview
                           chartType={widget.report.view.chartType}
                           data={widget.result.chartData}
@@ -500,12 +504,16 @@ export function StudioDashboardPreview({
                           decimalPlaces={widget.report.view.decimalPlaces}
                           chartColors={widget.report.view.chartColors}
                           chartOrientation={widget.report.view.chartOrientation}
-                          xAxisLabel={widget.report.view.chartXAxisLabel}
-                          yAxisLabel={widget.report.view.chartYAxisLabel}
+                          xAxisLabel={axisLabels.xAxisLabel}
+                          yAxisLabel={axisLabels.yAxisLabel}
+                          secondaryYAxisLabel={axisLabels.secondaryYAxisLabel}
+                          secondarySeriesType={widget.report.view.chartSecondarySeriesType}
                           compact
                           showLegend={widget.report.view.chartShowLegend}
                           showValues={widget.report.view.chartShowValues}
                         />
+                          );
+                        })()}
                       </div>
                     ) : null}
                     {widget.status === "complete" && (resolveDashboardWidgetDisplayMode(widget.widget) === "table" || widget.widget.showDetails) ? (
