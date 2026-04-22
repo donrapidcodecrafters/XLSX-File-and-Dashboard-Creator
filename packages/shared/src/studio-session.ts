@@ -48,6 +48,18 @@ function safeTimeoutHours(value: number) {
   return Number.isFinite(value) && value > 0 ? value : 24;
 }
 
+function safeGraceMinutes(value: number) {
+  return Number.isFinite(value) && value >= 0 ? value : 5;
+}
+
+function resolveSessionExpiry(lastActivityAt: number, inactivityTimeoutHours: number, inactivityGraceMinutes: number) {
+  return new Date(
+    lastActivityAt
+    + safeGraceMinutes(inactivityGraceMinutes) * 60 * 1000
+    + safeTimeoutHours(inactivityTimeoutHours) * 60 * 60 * 1000
+  ).toISOString();
+}
+
 export function touchStudioSession(
   session: StudioSession,
   options: {
@@ -59,11 +71,13 @@ export function touchStudioSession(
     relaunch?: boolean;
     requiresLaunch?: boolean;
     inactivityTimeoutHours?: number;
+    inactivityGraceMinutes?: number;
   } = {}
 ): StudioSession {
   const now = toDate(options.now);
   const nowIso = safeIso(now);
   const inactivityTimeoutHours = safeTimeoutHours(options.inactivityTimeoutHours ?? session.inactivityTimeoutHours);
+  const inactivityGraceMinutes = safeGraceMinutes(options.inactivityGraceMinutes ?? session.inactivityGraceMinutes);
   const launchSource = options.launchSource || session.launchSource || "local-dev";
   const launchRealmHostname = launchSource === "quickbase-button"
     ? normalizeStudioRealmHostname(options.launchRealmHostname ?? session.launchRealmHostname)
@@ -77,9 +91,13 @@ export function touchStudioSession(
     ? nowIso
     : String(session.lastActivityAt || launchedAt || nowIso);
   const existingExpiry = Date.parse(String(session.expiresAt || ""));
-  const derivedExpiry = new Date(Date.parse(lastActivityAt || launchedAt || nowIso) + inactivityTimeoutHours * 60 * 60 * 1000).toISOString();
+  const derivedExpiry = resolveSessionExpiry(
+    Date.parse(lastActivityAt || launchedAt || nowIso) || now.getTime(),
+    inactivityTimeoutHours,
+    inactivityGraceMinutes
+  );
   const expiresAt = shouldRefreshActivity
-    ? new Date(now.getTime() + inactivityTimeoutHours * 60 * 60 * 1000).toISOString()
+    ? resolveSessionExpiry(now.getTime(), inactivityTimeoutHours, inactivityGraceMinutes)
     : (Number.isNaN(existingExpiry) ? derivedExpiry : new Date(existingExpiry).toISOString());
   const lastValidatedAt = options.relaunch || launchSource === "quickbase-button"
     ? (shouldRefreshActivity ? nowIso : String(session.lastValidatedAt || nowIso))
@@ -92,6 +110,7 @@ export function touchStudioSession(
     launchRealmHostname,
     launchAppId,
     inactivityTimeoutHours,
+    inactivityGraceMinutes,
     requiresLaunch: options.requiresLaunch ?? session.requiresLaunch ?? true,
     launchedAt,
     lastActivityAt,
@@ -110,7 +129,11 @@ export function resolveStudioSessionStatus(
   const currentMs = current.getTime();
   const lastSeenAt = Date.parse(session.lastActivityAt || session.launchedAt || current.toISOString());
   const safeLastSeenAt = Number.isNaN(lastSeenAt) ? currentMs : lastSeenAt;
-  const derivedExpiry = new Date(safeLastSeenAt + safeTimeoutHours(session.inactivityTimeoutHours) * 60 * 60 * 1000).toISOString();
+  const derivedExpiry = resolveSessionExpiry(
+    safeLastSeenAt,
+    session.inactivityTimeoutHours,
+    session.inactivityGraceMinutes
+  );
   const fallbackExpiry = Date.parse(session.expiresAt || derivedExpiry);
   const expiresAt = Number.isNaN(fallbackExpiry) ? currentMs : fallbackExpiry;
   const remainingMs = Math.max(0, expiresAt - currentMs);

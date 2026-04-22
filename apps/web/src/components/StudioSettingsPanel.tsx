@@ -100,6 +100,35 @@ export function StudioSettingsPanel({
         />
         Open reports and dashboards in a new tab
       </label>
+      <label className="field">
+        <span>Session timeout after idle (hours)</span>
+        <input
+          type="number"
+          min="1"
+          step="1"
+          value={documentState.session.inactivityTimeoutHours}
+          onChange={(event) => applyDocumentUpdate((draft) => {
+            const nextValue = Math.max(1, Number(event.target.value) || 24);
+            draft.session.inactivityTimeoutHours = nextValue;
+          })}
+        />
+      </label>
+      <label className="field">
+        <span>Idle grace before timeout starts (minutes)</span>
+        <input
+          type="number"
+          min="0"
+          step="1"
+          value={documentState.session.inactivityGraceMinutes}
+          onChange={(event) => applyDocumentUpdate((draft) => {
+            const nextValue = Math.max(0, Number(event.target.value) || 5);
+            draft.session.inactivityGraceMinutes = nextValue;
+          })}
+        />
+      </label>
+      <div className="micro">
+        Users stay signed in while they are active. The timeout countdown only starts after this many idle minutes, and activity in another tab from the same browser keeps the same session alive.
+      </div>
       <div className="card">
         <div className="card-head">
           <strong>Quickbase app profiles</strong>

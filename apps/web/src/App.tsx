@@ -38,6 +38,36 @@ import { fetchStudioDocument, fetchStudioRefreshJob, saveStudioUserSettings, sta
 
 const SESSION_RECENT_KEY = "studio-session-recent";
 const SESSION_PERSIST_INTERVAL_MS = 5 * 60_000;
+const SHARED_BROWSER_SESSION_KEY = "studio-shared-browser-session-v1";
+const SESSION_ACTIVITY_TOUCH_INTERVAL_MS = 60_000;
+
+function parseSharedBrowserSession(raw: string | null) {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as { session?: StudioDocument["session"]; savedAt?: number };
+    return parsed?.session ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeSessionScopeKey(session: StudioDocument["session"] | null | undefined) {
+  if (!session) return "";
+  return JSON.stringify({
+    launchSource: session.launchSource || "",
+    currentUserId: String(session.currentUserId || "").trim(),
+    launchRealmHostname: String(session.launchRealmHostname || "").trim().toLowerCase(),
+    launchAppId: String(session.launchAppId || "").trim().toLowerCase()
+  });
+}
+
+function sessionIsNewer(left: StudioDocument["session"] | null | undefined, right: StudioDocument["session"] | null | undefined) {
+  const leftTime = Date.parse(String(left?.lastActivityAt || left?.lastValidatedAt || ""));
+  const rightTime = Date.parse(String(right?.lastActivityAt || right?.lastValidatedAt || ""));
+  const safeLeft = Number.isNaN(leftTime) ? 0 : leftTime;
+  const safeRight = Number.isNaN(rightTime) ? 0 : rightTime;
+  return safeLeft > safeRight;
+}
 
 function getQuickbaseLinkContextForTable(table: TableDefinition | undefined, studioDocument: StudioDocument | null): QuickbaseTableLinkContext | null {
   if (!table || !studioDocument) return null;
@@ -534,6 +564,10 @@ export function App() {
     [hosted.appId, hosted.launchSource, hosted.realmHostname, hosted.userId, studioDocument]
   );
   const currentUserId = String(sessionPreview?.currentUserId || "").trim();
+  const sessionScopeKey = useMemo(
+    () => normalizeSessionScopeKey(sessionPreview || studioDocument?.session || null),
+    [sessionPreview, studioDocument?.session]
+  );
   const hostedLaunchRequiredMessage = useMemo(() => {
     if (!hosted.hostedPortalRequiresLaunch) return "";
     if (hosted.hasCompleteQuickbaseLaunchContext) return "";
@@ -631,7 +665,7 @@ export function App() {
     if (!studioDocument || !sessionStatus?.valid) return;
     const touch = () => {
       const now = Date.now();
-      if (now - lastSessionTouchAt.current < 60_000) return;
+      if (now - lastSessionTouchAt.current < SESSION_ACTIVITY_TOUCH_INTERVAL_MS) return;
       lastSessionTouchAt.current = now;
       const nextSession = touchStudioSession(sessionPreview || studioDocument.session, { now });
       setStudioDocument((current) => current ? normalizeStudioDocument({ ...current, session: nextSession }) : current);
@@ -649,6 +683,39 @@ export function App() {
       document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [persistSession, sessionPreview, sessionStatus?.valid, setStudioDocument, studioDocument]);
+
+  useEffect(() => {
+    if (!sessionPreview || !sessionScopeKey) return;
+    try {
+      window.localStorage.setItem(SHARED_BROWSER_SESSION_KEY, JSON.stringify({
+        savedAt: Date.now(),
+        session: sessionPreview
+      }));
+    } catch {}
+  }, [sessionPreview, sessionScopeKey]);
+
+  useEffect(() => {
+    if (!studioDocument || !sessionScopeKey) return;
+    const stored = parseSharedBrowserSession(window.localStorage.getItem(SHARED_BROWSER_SESSION_KEY));
+    if (!stored?.session) return;
+    if (normalizeSessionScopeKey(stored.session) !== sessionScopeKey) return;
+    if (!sessionIsNewer(stored.session, sessionPreview || studioDocument.session)) return;
+    setStudioDocument((current) => current ? normalizeStudioDocument({ ...current, session: stored.session! }) : current);
+  }, [sessionPreview, sessionScopeKey, setStudioDocument, studioDocument]);
+
+  useEffect(() => {
+    if (!sessionScopeKey) return;
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== SHARED_BROWSER_SESSION_KEY || !event.newValue) return;
+      const stored = parseSharedBrowserSession(event.newValue);
+      if (!stored?.session) return;
+      if (normalizeSessionScopeKey(stored.session) !== sessionScopeKey) return;
+      if (!sessionIsNewer(stored.session, sessionPreview || studioDocument?.session || null)) return;
+      setStudioDocument((current) => current ? normalizeStudioDocument({ ...current, session: stored.session! }) : current);
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, [sessionPreview, sessionScopeKey, setStudioDocument, studioDocument?.session]);
 
   useEffect(() => {
     if (readerRoute) return;

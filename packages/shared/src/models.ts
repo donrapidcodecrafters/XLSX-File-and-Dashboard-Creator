@@ -494,6 +494,7 @@ export interface StudioDocument {
     launchRealmHostname: string;
     launchAppId: string;
     inactivityTimeoutHours: number;
+    inactivityGraceMinutes: number;
     requiresLaunch: boolean;
     launchedAt: string;
     lastActivityAt: string;

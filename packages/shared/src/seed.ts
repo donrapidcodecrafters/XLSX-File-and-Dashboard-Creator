@@ -477,6 +477,7 @@ export function buildStudioDocument(): StudioDocument {
         launchRealmHostname: "",
         launchAppId: "",
         inactivityTimeoutHours: 24,
+        inactivityGraceMinutes: 5,
         requiresLaunch: true,
         launchedAt: "",
         lastActivityAt: "",
@@ -487,6 +488,7 @@ export function buildStudioDocument(): StudioDocument {
         launchSource: "local-dev",
         currentUserId: "demo.user",
         inactivityTimeoutHours: 24,
+        inactivityGraceMinutes: 5,
         requiresLaunch: true
       })
     },
@@ -769,6 +771,7 @@ export function normalizeStudioDocument(input: Partial<StudioDocument> | null | 
         launchRealmHostname: String(source.session?.launchRealmHostname || defaults.session.launchRealmHostname || ""),
         launchAppId: String(source.session?.launchAppId || defaults.session.launchAppId || ""),
         inactivityTimeoutHours: Number(source.session?.inactivityTimeoutHours || defaults.session.inactivityTimeoutHours || 24),
+        inactivityGraceMinutes: Number(source.session?.inactivityGraceMinutes ?? defaults.session.inactivityGraceMinutes ?? 5),
         requiresLaunch: source.session?.requiresLaunch ?? defaults.session.requiresLaunch,
         launchedAt: String(source.session?.launchedAt || defaults.session.launchedAt || ""),
         lastActivityAt: String(source.session?.lastActivityAt || defaults.session.lastActivityAt || ""),
