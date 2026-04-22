@@ -93,6 +93,7 @@ import {
 } from "../lib/studioApi";
 import { downloadExportJob, fetchExportJobStatus, fetchExportJobs, startDashboardExportJob, startReportExportJob } from "../lib/api";
 import { applyLaunchScopeToDocument } from "../lib/catalog";
+import { buildHostedRoute } from "../lib/embed";
 import { ChartPreview } from "./ChartPreview";
 import { RefreshOverlay } from "./RefreshOverlay";
 import { StudioDraftReviewStep } from "./StudioDraftReviewStep";
@@ -1757,7 +1758,7 @@ export function StudioPage({
         draft.bundle.order.unshift(dashboard.id);
       });
       setCreateModalOpen(false);
-      navigate(`/studio/${dashboard.id}`);
+      navigate(buildHostedRoute(`/studio/${dashboard.id}`));
       pushToast("Dashboard created.");
       return;
     }
@@ -1804,7 +1805,7 @@ export function StudioPage({
     });
     setCreateModalOpen(false);
     setEditingReportId(null);
-    navigate(`/studio/${report.id}`);
+    navigate(buildHostedRoute(`/studio/${report.id}`));
     pushToast(existingReport ? "Report updated." : "Report created.");
   }
 
@@ -1818,7 +1819,7 @@ export function StudioPage({
         draft.bundle.objects[copy.id] = copy;
         draft.bundle.order.unshift(copy.id);
       });
-      navigate(`/studio/${copy.id}`);
+      navigate(buildHostedRoute(`/studio/${copy.id}`));
       pushToast("Object cloned.");
       return;
     }
@@ -1880,7 +1881,7 @@ export function StudioPage({
       draft.bundle.objects[dashboardCopy.id] = dashboardCopy;
       draft.bundle.order.unshift(dashboardCopy.id);
     });
-    navigate(`/studio/${dashboardCopy.id}`);
+    navigate(buildHostedRoute(`/studio/${dashboardCopy.id}`));
     pushToast(
       cloneReportsToo
         ? `Dashboard cloned with ${reportCloneMap.size} copied report${reportCloneMap.size === 1 ? "" : "s"}.`
@@ -1898,7 +1899,7 @@ export function StudioPage({
     setHistory((previous) => [clone(documentState), ...previous].slice(0, 60));
     setFuture([]);
     setDocumentState(nextDocument);
-    navigate(`/studio/${nextDocument.bundle.order[0] || ""}`);
+    navigate(buildHostedRoute(`/studio/${nextDocument.bundle.order[0] || ""}`));
     pushToast("Object removed.", "warn");
     await persistRemote(nextDocument);
   }
@@ -2297,8 +2298,14 @@ export function StudioPage({
     }
   }, [refreshJob]);
 
+  const lastOpenSettingsSignal = useRef(openSettingsSignal);
+
   useEffect(() => {
-    if (!openSettingsSignal) return;
+    if (!openSettingsSignal || openSettingsSignal <= lastOpenSettingsSignal.current) {
+      lastOpenSettingsSignal.current = openSettingsSignal;
+      return;
+    }
+    lastOpenSettingsSignal.current = openSettingsSignal;
     const handle = window.requestAnimationFrame(() => {
       setDrawer("settings");
     });
@@ -2378,7 +2385,7 @@ export function StudioPage({
       draft.bundle.objects[object.id] = object;
       draft.bundle.order.unshift(object.id);
     });
-    navigate(`/studio/${object.id}`);
+    navigate(buildHostedRoute(`/studio/${object.id}`));
     pushToast("Template applied.");
   }
 
@@ -2398,7 +2405,7 @@ export function StudioPage({
           draft.bundle.objects[object.id] = object;
           draft.bundle.order.unshift(object.id);
         });
-        navigate(`/studio/${object.id}`);
+        navigate(buildHostedRoute(`/studio/${object.id}`));
         pushToast("Object imported.");
       } else {
         pushToast("Unsupported JSON import payload.", "danger");
@@ -2418,7 +2425,7 @@ export function StudioPage({
         setDocumentState(scopeDocument(normalizeStudioDocument(response.document)));
         setLastWorkbookImportReview(response.review);
         if (response.primaryObjectId) {
-          navigate(`/studio/${response.primaryObjectId}`);
+          navigate(buildHostedRoute(`/studio/${response.primaryObjectId}`));
         }
         const importedType = response.review.dashboardCreated ? "dashboard workbook" : response.importedObjectIds.length > 1 ? "workbook" : "sheet";
         pushToast(`Imported ${importedType} from ${file.name}.`);
@@ -2550,7 +2557,7 @@ export function StudioPage({
             </div>
           </div>
           <div className="link-toolbar">
-            <Link className="ghost-button" to="/studio">Back to Building home</Link>
+            <Link className="ghost-button" to={buildHostedRoute("/studio")}>Back to Building home</Link>
             <button onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save"}</button>
             {!hasActiveObject ? <button onClick={() => openCreateModal("report")}>Create report</button> : null}
             {!hasActiveObject ? <button onClick={() => openCreateModal("dashboard")}>Create dashboard</button> : null}
@@ -2605,7 +2612,7 @@ export function StudioPage({
                 </div>
               </div>
               <div className="studio-actions">
-                <Link className="ghost-button" to="/help">Open manual</Link>
+                <Link className="ghost-button" to={buildHostedRoute("/help")}>Open manual</Link>
                 <button type="button" onClick={() => setLastWorkbookImportReview(null)}>Dismiss</button>
               </div>
             </div>
@@ -2811,7 +2818,7 @@ export function StudioPage({
                   window.open(`${window.location.origin}${import.meta.env.BASE_URL}#/studio/${reportId}`, "_blank", "noopener,noreferrer");
                   return;
                 }
-                navigate(`/studio/${reportId}`);
+                navigate(buildHostedRoute(`/studio/${reportId}`));
               }}
               onStartWidgetDrag={(tabId, widgetId) => setDraggingWidget({ tabId, widgetId })}
               onEndWidgetDrag={() => setDraggingWidget(null)}
@@ -3179,7 +3186,7 @@ export function StudioPage({
             <span className="micro">Open, share, save, and export this workspace.</span>
           </div>
           <div className="nav-list">
-            <Link className="nav-card" to={`/${activeObject.type}/${activeObject.id}`} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>
+            <Link className="nav-card" to={buildHostedRoute(`/${activeObject.type}/${activeObject.id}`)} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>
               <span className="badge">Full screen</span>
               <strong>Open full-screen view</strong>
               <span className="micro">{defaultUrl}</span>

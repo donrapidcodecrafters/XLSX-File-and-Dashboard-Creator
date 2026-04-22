@@ -32,11 +32,12 @@ import {
   toggleFavoriteIds,
   typeLabel
 } from "./lib/catalog";
-import { getHostedContext } from "./lib/embed";
+import { buildHostedRoute, getHostedContext } from "./lib/embed";
 import type { QuickbaseTableLinkContext } from "./lib/quickbaseLinks";
 import { cancelStudioRefreshJob, fetchStudioDocument, fetchStudioRefreshJob, saveStudioUserSettings, startStudioObjectRefresh, updateStudioSession } from "./lib/studioApi";
 
 const SESSION_RECENT_KEY = "studio-session-recent";
+const SESSION_PERSIST_INTERVAL_MS = 5 * 60_000;
 
 function getQuickbaseLinkContextForTable(table: TableDefinition | undefined, studioDocument: StudioDocument | null): QuickbaseTableLinkContext | null {
   if (!table || !studioDocument) return null;
@@ -55,6 +56,11 @@ function useCatalog() {
   const [objects, setObjects] = useState<CatalogSummaryItem[]>([]);
   const [tables, setTables] = useState<TableDefinition[]>([]);
   const [studioDocument, setStudioDocument] = useState<StudioDocument | null>(null);
+  const lastPersistedSessionKey = useRef("");
+  const lastPersistedSessionAt = useRef(0);
+  const sessionPersistPromise = useRef<Promise<void> | null>(null);
+  const queuedSessionPayload = useRef<Partial<StudioDocument["session"]> | null>(null);
+  const queuedSessionKey = useRef("");
   const [recentIds, setRecentIds] = useState<string[]>(() => {
     try {
       const raw = window.sessionStorage.getItem(SESSION_RECENT_KEY);
@@ -74,7 +80,10 @@ function useCatalog() {
     setObjects(catalogResponse.objects);
     setTables(tablesResponse.tables);
     if (studioResponse?.document) {
-      setStudioDocument(normalizeStudioDocument(studioResponse.document));
+      const normalized = normalizeStudioDocument(studioResponse.document);
+      lastPersistedSessionKey.current = JSON.stringify(normalized.session || {});
+      lastPersistedSessionAt.current = Date.now();
+      setStudioDocument(normalized);
     }
   }, []);
 
@@ -88,8 +97,41 @@ function useCatalog() {
   }, []);
 
   const persistSession = useCallback(async (session: Partial<StudioDocument["session"]>) => {
-    const response = await updateStudioSession(session);
-    setStudioDocument(normalizeStudioDocument(response.document));
+    const payloadKey = JSON.stringify(session || {});
+    const now = Date.now();
+    if (
+      payloadKey === lastPersistedSessionKey.current
+      && now - lastPersistedSessionAt.current < SESSION_PERSIST_INTERVAL_MS
+    ) {
+      return;
+    }
+    queuedSessionPayload.current = session;
+    queuedSessionKey.current = payloadKey;
+    if (sessionPersistPromise.current) {
+      return sessionPersistPromise.current;
+    }
+    sessionPersistPromise.current = (async () => {
+      while (queuedSessionPayload.current) {
+        const nextPayload = queuedSessionPayload.current;
+        const nextKey = queuedSessionKey.current;
+        queuedSessionPayload.current = null;
+        queuedSessionKey.current = "";
+        if (
+          nextKey === lastPersistedSessionKey.current
+          && Date.now() - lastPersistedSessionAt.current < SESSION_PERSIST_INTERVAL_MS
+        ) {
+          continue;
+        }
+        const response = await updateStudioSession(nextPayload);
+        const normalized = normalizeStudioDocument(response.document);
+        lastPersistedSessionKey.current = JSON.stringify(normalized.session || {});
+        lastPersistedSessionAt.current = Date.now();
+        setStudioDocument(normalized);
+      }
+    })().finally(() => {
+      sessionPersistPromise.current = null;
+    });
+    return sessionPersistPromise.current;
   }, []);
 
   const markObjectAsRecent = useCallback((objectId: string) => {
@@ -657,9 +699,9 @@ export function App() {
           </div>
           <div className="topbar-meta">
             <div className="topbar-nav">
-              <NavLink end className={({ isActive }) => `topbar-tab${isActive ? " active" : ""}`} to="/">Home</NavLink>
-              <NavLink className={({ isActive }) => `topbar-tab${isActive ? " active" : ""}`} to="/studio">Building</NavLink>
-              <NavLink className={({ isActive }) => `topbar-tab${isActive ? " active" : ""}`} to="/viewer">Viewing</NavLink>
+              <NavLink end className={({ isActive }) => `topbar-tab${isActive ? " active" : ""}`} to={buildHostedRoute("/")}>Home</NavLink>
+              <NavLink className={({ isActive }) => `topbar-tab${isActive ? " active" : ""}`} to={buildHostedRoute("/studio")}>Building</NavLink>
+              <NavLink className={({ isActive }) => `topbar-tab${isActive ? " active" : ""}`} to={buildHostedRoute("/viewer")}>Viewing</NavLink>
             </div>
             {studioRoute ? (
               <>
@@ -673,7 +715,7 @@ export function App() {
             {viewerRoute ? (
               <button className="ghost-button topbar-action" onClick={() => setViewerRefreshSignal((value) => value + 1)}>Refresh all</button>
             ) : null}
-            {!helpRoute ? <Link className="ghost-button topbar-action" to="/help">Help</Link> : null}
+            {!helpRoute ? <Link className="ghost-button topbar-action" to={buildHostedRoute("/help")}>Help</Link> : null}
             <span className="badge">{hosted.mode === "viewer" ? "Full-screen view" : navLabel}</span>
             <span className="badge brand">{visibleObjects.length} saved views</span>
           </div>
@@ -689,7 +731,7 @@ export function App() {
             </div>
             <nav className="nav-list">
               {visibleObjects.map((object) => (
-                <Link key={object.id} className="nav-card" to={`/${object.type}/${object.id}`} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>
+                <Link key={object.id} className="nav-card" to={buildHostedRoute(`/${object.type}/${object.id}`)} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>
                   <span className="badge">{typeLabel(object.type)}</span>
                   <span className="badge">{getStudioObjectScopeLabel(object)}</span>
                   <strong>{object.name}</strong>
@@ -724,7 +766,7 @@ export function App() {
             <Route path="/studio" element={<StudioPage openSettingsSignal={studioSettingsSignal} refreshAllSignal={studioRefreshSignal} launchContext={hosted} />} />
             <Route path="/studio/:objectId" element={<StudioPage openSettingsSignal={studioSettingsSignal} refreshAllSignal={studioRefreshSignal} launchContext={hosted} />} />
             <Route path="/:type/:objectId" element={<ObjectPage tables={scopedTables} platformName={platformName} studioDocument={displayDocument} launchContext={hosted} openLinksInNewTab={openLinksInNewTab} onObjectViewed={markObjectAsRecent} onUserSettingsChange={updateUserSettings} onToggleFavorite={toggleFavorite} />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="*" element={<Navigate to={buildHostedRoute("/")} replace />} />
           </Routes>
         </main>
       </div>
