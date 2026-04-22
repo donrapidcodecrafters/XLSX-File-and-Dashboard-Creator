@@ -346,6 +346,36 @@ async function fetchAllTableRows(
   return Array.from(merged.values());
 }
 
+export async function ensureTableRowsAvailable(tableId: string, options: { objectId?: string } = {}) {
+  await studioStore.hydrateFromQuickbase();
+  const document = studioStore.getLiveDocument();
+  const table = getTable(document, tableId);
+  if (!table) return [] as DataRow[];
+
+  const existing = document.bundle.data[table.id]
+    || (table.quickbaseTableId ? document.bundle.data[table.quickbaseTableId] : undefined)
+    || document.bundle.data[tableId]
+    || [];
+  if (existing.length) {
+    return existing;
+  }
+
+  const quickbase = getQuickbaseConfigForTable(document, table);
+  if (!quickbase.realmHostname || !quickbase.userToken || !quickbase.appId) {
+    return existing;
+  }
+
+  const rows = await fetchAllTableRows(document, table, undefined, options);
+  document.bundle.data[table.id] = rows;
+  if (table.quickbaseTableId) {
+    document.bundle.data[table.quickbaseTableId] = rows;
+    studioStore.touchCacheEntry(table.quickbaseTableId, rows.length);
+  }
+  studioStore.touchCacheEntry(table.id, rows.length);
+  studioStore.flushDocument(document, { markSavedAt: false });
+  return rows;
+}
+
 export function updateRefreshScheduleMetadata(document: StudioDocument) {
   const nextRuns: string[] = [];
   document.quickbaseProfiles = (document.quickbaseProfiles || []).map((profile) => ({

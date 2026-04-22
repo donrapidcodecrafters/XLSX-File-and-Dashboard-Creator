@@ -27,6 +27,7 @@ import {
 import { ExecutionCache } from "./execution-cache.js";
 import { objectStore } from "./object-store.js";
 import { fetchQuickbaseTablePage } from "./quickbase-storage.js";
+import { ensureTableRowsAvailable } from "./refresh-cache.js";
 import { studioStore } from "./studio-store.js";
 
 interface WorkerRequest {
@@ -109,6 +110,12 @@ function getQuickbaseConfigForTable(table: TableDefinition) {
 
 function getQuickbaseTableId(table: TableDefinition) {
   return table.quickbaseTableId || table.id;
+}
+
+async function getExecutionRows(table: TableDefinition, options: { objectId?: string } = {}) {
+  const existingRows = objectStore.getRows(table.id);
+  if (existingRows.length) return existingRows;
+  return ensureTableRowsAvailable(table.id, options);
 }
 
 function asNumber(value: unknown): number {
@@ -741,7 +748,7 @@ export async function executeReportPage(report: ReportDefinition, extraFilters: 
   }
 
   const full = await cache.getOrCreate(cacheKey(report, table, extraFilters), async () => {
-    const rows = objectStore.getRows(table.id);
+    const rows = await getExecutionRows(table, { objectId: report.id });
     const result = rows.length <= 1500
       ? runReport(report, table, rows, extraFilters)
       : await runReportWorker({ report, table, rows, extraFilters });
@@ -764,7 +771,7 @@ export async function fetchReportPage(report: ReportDefinition, extraFilters: Fi
   }
 
   const full = await cache.getOrCreate(cacheKey(report, table, extraFilters), async () => {
-    const rows = objectStore.getRows(table.id);
+    const rows = await getExecutionRows(table, { objectId: report.id });
     const result = rows.length <= 1500
       ? runReport(report, table, rows, extraFilters)
       : await runReportWorker({ report, table, rows, extraFilters });
@@ -842,7 +849,7 @@ export async function fetchReportExportBundle(
 
   onProgress?.(68, "Preparing export data");
   return cache.getOrCreate(cacheKey(report, table, extraFilters), async () => {
-    const rows = objectStore.getRows(table.id);
+    const rows = await getExecutionRows(table, { objectId: report.id });
     const result = rows.length <= 1500
       ? runReport(report, table, rows, extraFilters)
       : await runReportWorker({ report, table, rows, extraFilters });
@@ -949,9 +956,14 @@ export async function executeDashboard(
         try {
           let pending = executionCache.get(executionKey);
           if (!pending) {
-            pending = widgetNeedsAggregates(report, widget)
-              ? executeReport(report, extraFilters, { page: 1, pageSize: 100, includeRows: widgetNeedsRows(report, widget), forceLive: options.forceLive })
-              : fetchReportPage(report, extraFilters, { page: 1, pageSize: 100, forceLive: options.forceLive });
+            pending = (async () => {
+              if (!options.forceLive && !objectStore.getRows(report.sourceTableId).length) {
+                await ensureTableRowsAvailable(report.sourceTableId, { objectId: dashboard.id });
+              }
+              return widgetNeedsAggregates(report, widget)
+                ? executeReport(report, extraFilters, { page: 1, pageSize: 100, includeRows: widgetNeedsRows(report, widget), forceLive: options.forceLive })
+                : fetchReportPage(report, extraFilters, { page: 1, pageSize: 100, forceLive: options.forceLive });
+            })();
             executionCache.set(executionKey, pending);
           }
           const result = await pending;

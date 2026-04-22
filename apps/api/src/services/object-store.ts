@@ -23,18 +23,17 @@ export class ObjectStore {
 
   getRows(tableId: string) {
     const bundle = studioStore.getBundle();
-    if (bundle.data[tableId] && studioStore.isCacheFresh(tableId)) {
-      return bundle.data[tableId];
-    }
     const table = this.getTable(tableId);
-    if (!table) {
-      return [];
+    const keys = Array.from(new Set([tableId, table?.id || "", table?.quickbaseTableId || ""].filter(Boolean)));
+    for (const key of keys) {
+      if (bundle.data[key] && studioStore.isCacheFresh(key)) {
+        return bundle.data[key];
+      }
     }
-    if (bundle.data[table.id] && studioStore.isCacheFresh(table.id)) {
-      return bundle.data[table.id];
-    }
-    if (table.quickbaseTableId && bundle.data[table.quickbaseTableId] && studioStore.isCacheFresh(table.quickbaseTableId)) {
-      return bundle.data[table.quickbaseTableId];
+    for (const key of keys) {
+      if (bundle.data[key]) {
+        return bundle.data[key];
+      }
     }
     return [];
   }
