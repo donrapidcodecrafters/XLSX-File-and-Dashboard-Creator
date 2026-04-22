@@ -8,7 +8,7 @@ import {
   type CatalogSummaryItem,
   type StudioDocument
 } from "@studio/shared";
-import { cancelStudioRefreshJob, fetchStudioRefreshJob, startStudioRefresh } from "../lib/studioApi";
+import { fetchStudioRefreshJob, startStudioRefresh } from "../lib/studioApi";
 import { getProfileIdsForCatalogItem, typeLabel } from "../lib/catalog";
 import { buildHostedRoute } from "../lib/embed";
 import { CatalogCard } from "./CatalogCard";
@@ -122,17 +122,10 @@ export function HomePage({
     setRefreshJob(response.job);
   }
 
-  async function cancelRefresh() {
-    if (!refreshJob?.id) return;
-    const refreshJobId = refreshJob.id;
-    setRefreshJob(null);
-    await cancelStudioRefreshJob(refreshJobId).catch(() => undefined);
-  }
-
   return (
     <section className="surface home-page">
       {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" && refreshJob.status !== "cancelled" ? (
-        <RefreshOverlay title="Refreshing all reports and dashboards" job={refreshJob} onCancel={() => { void cancelRefresh(); }} />
+        <RefreshOverlay title="Refreshing all reports and dashboards" job={refreshJob} />
       ) : null}
       <div className="home-shell">
         <section className="home-hero-panel">

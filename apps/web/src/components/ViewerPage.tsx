@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { filterStudioLibraryItems, type CatalogSummaryItem, type StudioDocument } from "@studio/shared";
-import { cancelStudioRefreshJob, fetchStudioRefreshJob, startStudioRefresh } from "../lib/studioApi";
+import { fetchStudioRefreshJob, startStudioRefresh } from "../lib/studioApi";
 import { getProfileIdsForCatalogItem, getProfileLabelsForCatalogItem } from "../lib/catalog";
 import { buildHostedRoute } from "../lib/embed";
 import { CatalogCard } from "./CatalogCard";
@@ -80,17 +80,10 @@ export function ViewerPage({
     setRefreshJob(response.job);
   }
 
-  async function cancelRefresh() {
-    if (!refreshJob?.id) return;
-    const refreshJobId = refreshJob.id;
-    setRefreshJob(null);
-    await cancelStudioRefreshJob(refreshJobId).catch(() => undefined);
-  }
-
   return (
     <section className="surface stack viewer-page">
       {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" && refreshJob.status !== "cancelled" ? (
-        <RefreshOverlay title="Refreshing all reports and dashboards" job={refreshJob} onCancel={() => { void cancelRefresh(); }} />
+        <RefreshOverlay title="Refreshing all reports and dashboards" job={refreshJob} />
       ) : null}
       <div className="hero viewer-hero">
         <div>

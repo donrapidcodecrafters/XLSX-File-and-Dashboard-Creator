@@ -74,7 +74,6 @@ import {
   type TableDefinition
 } from "@studio/shared";
 import {
-  cancelStudioRefreshJob,
   createStudioSnapshot,
   fetchQuickbaseApps,
   fetchQuickbaseReportPreview,
@@ -2336,15 +2335,6 @@ export function StudioPage({
     }
   }
 
-  async function cancelRefreshNow() {
-    if (!refreshJob?.id) return;
-    const refreshJobId = refreshJob.id;
-    setRefreshJob(null);
-    setRefreshingCache(false);
-    pushToast("Cancelling refresh…", "warn");
-    await cancelStudioRefreshJob(refreshJobId).catch(() => undefined);
-  }
-
   async function restoreVersion(versionId: string) {
     if (!activeObject) return;
     try {
@@ -2475,7 +2465,7 @@ export function StudioPage({
     return (
       <>
         {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" && refreshJob.status !== "cancelled" ? (
-          <RefreshOverlay title="Refreshing all reports and dashboards" job={refreshJob} onCancel={() => { void cancelRefreshNow(); }} />
+          <RefreshOverlay title="Refreshing all reports and dashboards" job={refreshJob} />
         ) : null}
         <section className="studio-page studio-page-empty">
           <StudioWorkspaceEmptyState
@@ -2498,7 +2488,7 @@ export function StudioPage({
     return (
       <>
         {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" && refreshJob.status !== "cancelled" ? (
-          <RefreshOverlay title="Refreshing all reports and dashboards" job={refreshJob} onCancel={() => { void cancelRefreshNow(); }} />
+          <RefreshOverlay title="Refreshing all reports and dashboards" job={refreshJob} />
         ) : null}
         <section className="studio-page studio-page-home">
           <StudioWorkspaceHome
@@ -2542,7 +2532,7 @@ export function StudioPage({
   return (
     <>
       {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" && refreshJob.status !== "cancelled" ? (
-        <RefreshOverlay title="Refreshing all reports and dashboards" job={refreshJob} onCancel={() => { void cancelRefreshNow(); }} />
+        <RefreshOverlay title="Refreshing all reports and dashboards" job={refreshJob} />
       ) : null}
       <section className={`studio-page ${activeDashboard ? "studio-page-dashboard" : "studio-page-report"}`}>
       <div className="studio-canvas">
