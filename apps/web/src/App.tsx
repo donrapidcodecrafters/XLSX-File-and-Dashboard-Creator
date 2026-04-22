@@ -779,16 +779,17 @@ export function App() {
     const handleVisibility = () => {
       if (document.visibilityState === "visible") scheduleTouch();
     };
-    window.addEventListener("pointerdown", scheduleTouch, { passive: true });
-    window.addEventListener("keydown", scheduleTouch);
+    // Use post-action events so session touches do not steal or cancel real button clicks.
+    window.addEventListener("click", scheduleTouch);
+    window.addEventListener("keyup", scheduleTouch);
     document.addEventListener("visibilitychange", handleVisibility);
     return () => {
       if (sessionTouchTimeoutRef.current !== null) {
         window.clearTimeout(sessionTouchTimeoutRef.current);
         sessionTouchTimeoutRef.current = null;
       }
-      window.removeEventListener("pointerdown", scheduleTouch);
-      window.removeEventListener("keydown", scheduleTouch);
+      window.removeEventListener("click", scheduleTouch);
+      window.removeEventListener("keyup", scheduleTouch);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [persistSession, sessionPreview, sessionStatus?.valid, setStudioDocument, studioDocument]);
