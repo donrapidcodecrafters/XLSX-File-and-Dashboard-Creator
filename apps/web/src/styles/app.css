@@ -2120,16 +2120,43 @@ th {
 }
 
 .studio-home-object-card {
+  display: grid;
+  gap: 12px;
   min-height: 180px;
   align-content: start;
   padding: 18px;
   border-radius: 20px;
 }
 
+.studio-home-object-card.is-selected {
+  border-color: rgba(13, 124, 102, 0.42);
+  background: linear-gradient(180deg, rgba(243, 251, 247, 0.98), rgba(236, 247, 242, 0.96));
+  box-shadow:
+    0 16px 34px rgba(22, 39, 31, 0.1),
+    0 0 0 2px rgba(13, 124, 102, 0.12);
+}
+
+.studio-home-object-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 12px;
+}
+
 .studio-home-card-badges {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.studio-home-select-toggle {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.studio-home-object-card-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .studio-inspector {

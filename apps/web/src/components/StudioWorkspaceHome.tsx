@@ -23,6 +23,7 @@ export function StudioWorkspaceHome({
   onRecentOnlyChange,
   hasPersonalObjects,
   filteredObjects,
+  selectedReportIds,
   templates,
   openLinksInNewTab = false,
   onSave,
@@ -31,7 +32,11 @@ export function StudioWorkspaceHome({
   onCreateDashboard,
   onImportXlsx,
   onUseTemplate,
-  onApplyTemplate
+  onApplyTemplate,
+  onToggleReportSelection,
+  onSelectAllVisibleReports,
+  onClearReportSelection,
+  onDeleteSelectedReports
 }: {
   loadingRemote: boolean;
   lastSavedAt?: string;
@@ -49,6 +54,7 @@ export function StudioWorkspaceHome({
   onRecentOnlyChange: (value: boolean) => void;
   hasPersonalObjects: boolean;
   filteredObjects: StudioObject[];
+  selectedReportIds: string[];
   templates: StudioTemplateRecord[];
   openLinksInNewTab?: boolean;
   onSave: () => void;
@@ -58,7 +64,12 @@ export function StudioWorkspaceHome({
   onImportXlsx: () => void;
   onUseTemplate: () => void;
   onApplyTemplate: (template: StudioTemplateRecord) => void;
+  onToggleReportSelection: (reportId: string, selected: boolean) => void;
+  onSelectAllVisibleReports: () => void;
+  onClearReportSelection: () => void;
+  onDeleteSelectedReports: () => void;
 }) {
+  const visibleReports = filteredObjects.filter((object) => object.type === "report");
   const quickStartActions = [
     {
       id: "new-report",
@@ -132,6 +143,14 @@ export function StudioWorkspaceHome({
             <strong>Browse workspace items</strong>
             <div className="micro">Pick an existing report or dashboard before entering the builder.</div>
           </div>
+          {visibleReports.length ? (
+            <div className="studio-actions">
+              <span className="micro">{selectedReportIds.length} selected</span>
+              <button type="button" className="ghost-button" onClick={onSelectAllVisibleReports}>Select visible reports</button>
+              <button type="button" className="ghost-button" onClick={onClearReportSelection} disabled={!selectedReportIds.length}>Clear</button>
+              <button type="button" onClick={onDeleteSelectedReports} disabled={!selectedReportIds.length}>Delete selected reports</button>
+            </div>
+          ) : null}
         </div>
         <div className="filter-grid compact-grid studio-home-filter-grid">
           <label className="field">
@@ -182,21 +201,40 @@ export function StudioWorkspaceHome({
         {filteredObjects.length ? (
           <div className="studio-home-object-grid">
             {filteredObjects.map((object) => (
-              <Link
+              <article
                 key={object.id}
-                className="nav-card studio-home-object-card"
-                to={buildHostedRoute(`/studio/${object.id}`)}
-                target={openLinksInNewTab ? "_blank" : undefined}
-                rel={openLinksInNewTab ? "noreferrer" : undefined}
+                className={`nav-card studio-home-object-card${object.type === "report" && selectedReportIds.includes(object.id) ? " is-selected" : ""}`}
               >
-                <div className="studio-home-card-badges">
-                  <span className="badge">{typeLabel(object.type)}</span>
-                  <span className="badge">{object.scope === "personal" ? "Personal" : "Shared"}</span>
+                <div className="studio-home-object-card-head">
+                  <div className="studio-home-card-badges">
+                    <span className="badge">{typeLabel(object.type)}</span>
+                    <span className="badge">{object.scope === "personal" ? "Personal" : "Shared"}</span>
+                  </div>
+                  {object.type === "report" ? (
+                    <label className="toggle-row studio-home-select-toggle">
+                      <input
+                        type="checkbox"
+                        checked={selectedReportIds.includes(object.id)}
+                        onChange={(event) => onToggleReportSelection(object.id, event.target.checked)}
+                      />
+                      Select
+                    </label>
+                  ) : null}
                 </div>
                 <strong>{object.name}</strong>
                 <span>{object.description || "Open this item to edit its setup, layout, and output."}</span>
                 <span className="micro">{object.folder || "Workspace"} · {object.category || (object.type === "report" ? "Reporting" : "Dashboard")}</span>
-              </Link>
+                <div className="studio-home-object-card-actions">
+                  <Link
+                    className="ghost-button"
+                    to={buildHostedRoute(`/studio/${object.id}`)}
+                    target={openLinksInNewTab ? "_blank" : undefined}
+                    rel={openLinksInNewTab ? "noreferrer" : undefined}
+                  >
+                    Open
+                  </Link>
+                </div>
+              </article>
             ))}
           </div>
         ) : (

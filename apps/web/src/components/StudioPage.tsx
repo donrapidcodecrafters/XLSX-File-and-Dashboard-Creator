@@ -901,6 +901,7 @@ export function StudioPage({
   const [libraryScopeFilter, setLibraryScopeFilter] = useState<LibraryScopeFilter>("global");
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [recentOnly, setRecentOnly] = useState(false);
+  const [selectedHomeReportIds, setSelectedHomeReportIds] = useState<string[]>([]);
   const [dashboardInspectorTab, setDashboardInspectorTab] = useState<"design" | "filters">("design");
   const [activeTabId, setActiveTabId] = useState("");
   const [selectedWidgetId, setSelectedWidgetId] = useState("");
@@ -1531,6 +1532,10 @@ export function StudioPage({
       recentOnly
     });
   }, [currentUserId, visibleObjects, libraryQuery, libraryFilter, libraryScopeFilter, favoritesOnly, recentOnly, documentState.favorites, documentState.recent]);
+  const filteredHomeReportIds = useMemo(
+    () => filteredObjects.filter((object): object is ReportDefinition => object.type === "report").map((object) => object.id),
+    [filteredObjects]
+  );
 
   const localReportResult = useMemo(() => {
     if (!activeReport || !activeTable) return null;
@@ -1991,6 +1996,50 @@ export function StudioPage({
     setDocumentState(nextDocument);
     navigate(buildHostedRoute(`/studio/${nextDocument.bundle.order[0] || ""}`));
     pushToast("Object removed.", "warn");
+    await persistRemote(nextDocument);
+  }
+
+  function toggleHomeReportSelection(reportId: string, selected: boolean) {
+    setSelectedHomeReportIds((current) => (
+      selected
+        ? Array.from(new Set([...current, reportId]))
+        : current.filter((id) => id !== reportId)
+    ));
+  }
+
+  function selectAllVisibleHomeReports() {
+    setSelectedHomeReportIds(filteredHomeReportIds);
+  }
+
+  function clearHomeReportSelection() {
+    setSelectedHomeReportIds([]);
+  }
+
+  async function deleteSelectedHomeReports() {
+    const reportIds = selectedHomeReportIds.filter((id) => bundle.objects[id]?.type === "report");
+    if (!reportIds.length) {
+      pushToast("Select at least one report first.", "warn");
+      return;
+    }
+    const confirmed = window.confirm(`Delete ${reportIds.length} selected report${reportIds.length === 1 ? "" : "s"}?`);
+    if (!confirmed) return;
+
+    const nextDocument = clone(documentState);
+    reportIds.forEach((reportId) => {
+      delete nextDocument.bundle.objects[reportId];
+      nextDocument.bundle.order = nextDocument.bundle.order.filter((item) => item !== reportId);
+      nextDocument.favorites = nextDocument.favorites.filter((item) => item !== reportId);
+      nextDocument.recent = nextDocument.recent.filter((item) => item !== reportId);
+    });
+
+    setHistory((previous) => [clone(documentState), ...previous].slice(0, 60));
+    setFuture([]);
+    setSelectedHomeReportIds([]);
+    setDocumentState(nextDocument);
+    if (activeReport && reportIds.includes(activeReport.id)) {
+      navigate(buildHostedRoute("/studio"));
+    }
+    pushToast(`Deleted ${reportIds.length} report${reportIds.length === 1 ? "" : "s"}.`, "warn");
     await persistRemote(nextDocument);
   }
 
@@ -3090,6 +3139,7 @@ export function StudioPage({
             onRecentOnlyChange={setRecentOnly}
             hasPersonalObjects={visibleObjects.some((object) => object.scope === "personal")}
             filteredObjects={filteredObjects}
+            selectedReportIds={selectedHomeReportIds}
             templates={[...documentState.templates.layouts, ...documentState.templates.yaml]}
             openLinksInNewTab={openLinksInNewTab}
             onSave={saveRemote}
@@ -3099,6 +3149,10 @@ export function StudioPage({
             onImportXlsx={() => importXlsxInputRef.current?.click()}
             onUseTemplate={() => setDrawer("templates")}
             onApplyTemplate={applyTemplate}
+            onToggleReportSelection={toggleHomeReportSelection}
+            onSelectAllVisibleReports={selectAllVisibleHomeReports}
+            onClearReportSelection={clearHomeReportSelection}
+            onDeleteSelectedReports={deleteSelectedHomeReports}
           />
           <input ref={importInputRef} hidden type="file" accept="application/json" onChange={handleImportJson} />
           <input ref={importXlsxInputRef} hidden type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={handleImportXlsx} />
