@@ -27,6 +27,7 @@ import {
 import { ExecutionCache } from "./execution-cache.js";
 import { objectStore } from "./object-store.js";
 import { fetchQuickbaseTablePage } from "./quickbase-storage.js";
+import { ensureTableRowsAvailable } from "./refresh-cache.js";
 import { studioStore } from "./studio-store.js";
 
 interface WorkerRequest {
@@ -117,7 +118,8 @@ function getQuickbaseTableId(table: TableDefinition) {
 
 async function getExecutionRows(table: TableDefinition, options: { objectId?: string } = {}) {
   const existingRows = objectStore.getRows(table.id);
-  return existingRows;
+  if (existingRows.length) return existingRows;
+  return ensureTableRowsAvailable(table.id, options);
 }
 
 function asNumber(value: unknown): number {
@@ -1117,6 +1119,9 @@ async function executeDashboardUncached(
           let pending = executionCache.get(executionKey);
           if (!pending) {
             pending = (async () => {
+              if (!options.forceLive && !objectStore.getRows(report.sourceTableId).length) {
+                await ensureTableRowsAvailable(report.sourceTableId, { objectId: dashboard.id });
+              }
               return widgetNeedsAggregates(report, widget)
                 ? executeReport(report, extraFilters, { page: 1, pageSize: 100, includeRows: widgetNeedsRows(report, widget), forceLive: options.forceLive })
                 : fetchReportPage(report, extraFilters, { page: 1, pageSize: 100, forceLive: options.forceLive });

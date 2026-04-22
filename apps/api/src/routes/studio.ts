@@ -25,8 +25,11 @@ function isRefreshJobStale(job: { status?: string; updatedAt?: string; createdAt
 
 export async function registerStudioRoutes(app: FastifyInstance) {
   app.get("/api/studio/document", async () => {
-    const document = studioStore.getDocument();
-    updateRefreshScheduleMetadata(document);
+    await studioStore.hydrateFromQuickbase();
+    const hydrated = studioStore.getLiveDocument();
+    updateRefreshScheduleMetadata(hydrated);
+    const provisioned = await ensureQuickbaseStorageForProfiles(hydrated);
+    const document = studioStore.saveDocument(provisioned, { markSavedAt: false });
     return { document };
   });
 
@@ -132,6 +135,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
       return { message: "Workbook filename and base64 payload are required." };
     }
     try {
+      await studioStore.hydrateFromQuickbase();
       const current = studioStore.getLiveDocument();
       const imported = await importWorkbookIntoStudioDocument(
         current,
@@ -203,6 +207,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
 
   app.post("/api/studio/refresh/start", async (request, reply) => {
     try {
+      await studioStore.hydrateFromQuickbase();
       let activeJob = getActiveRefreshJob();
       if (isRefreshJobStale(activeJob)) {
         await cancelRefreshJob(activeJob!.id, "Previous refresh stalled.");
@@ -234,6 +239,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
   app.post("/api/studio/objects/:id/refresh/start", async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
+      await studioStore.hydrateFromQuickbase();
       let activeJob = getActiveRefreshJob();
       if (isRefreshJobStale(activeJob)) {
         await cancelRefreshJob(activeJob!.id, "Previous refresh stalled.");
@@ -264,6 +270,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
 
   app.get("/api/studio/refresh/jobs/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
+    await studioStore.hydrateFromQuickbase();
     const job = getTrackedRefreshJob(id);
     if (!job) {
       reply.code(404);

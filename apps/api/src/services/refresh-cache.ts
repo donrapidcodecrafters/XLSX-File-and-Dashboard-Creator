@@ -34,7 +34,7 @@ function getUsedTableIds(document: StudioDocument) {
       });
     });
   });
-  return Array.from(ids).filter(Boolean);
+  return Array.from(ids).filter((tableId) => Boolean(tableId) && isQuickbaseRefreshableTable(document, tableId));
 }
 
 function getObjectTableIds(document: StudioDocument, objectId: string) {
@@ -56,7 +56,7 @@ function getObjectTableIds(document: StudioDocument, objectId: string) {
       }
     });
   });
-  return Array.from(ids);
+  return Array.from(ids).filter((tableId) => isQuickbaseRefreshableTable(document, tableId));
 }
 
 function getTable(document: StudioDocument, tableId: string) {
@@ -73,10 +73,22 @@ function getQuickbaseTableId(table: TableDefinition) {
   return table.quickbaseTableId || table.id;
 }
 
+function isQuickbaseRefreshableTable(document: StudioDocument, tableId: string) {
+  const table = getTable(document, tableId);
+  if (!table) return false;
+  const quickbase = getQuickbaseConfigForTable(document, table);
+  return Boolean(
+    String(table.quickbaseTableId || "").trim()
+    && String(quickbase.realmHostname || "").trim()
+    && String(quickbase.userToken || "").trim()
+    && String(quickbase.appId || "").trim()
+  );
+}
+
 function getUsedTableIdsForProfile(document: StudioDocument, profileId: string) {
   return getUsedTableIds(document).filter((tableId) => {
     const table = getTable(document, tableId);
-    return table?.quickbaseProfileId === profileId;
+    return table?.quickbaseProfileId === profileId && isQuickbaseRefreshableTable(document, tableId);
   });
 }
 
@@ -88,7 +100,10 @@ function getRefreshTableIdsForProfile(document: StudioDocument, profileId: strin
   }
   return Array.from(new Set(
     configured.map((tableId) => getTable(document, tableId)?.id || tableId)
-  ));
+  )).filter((tableId) => {
+    const table = getTable(document, tableId);
+    return table?.quickbaseProfileId === profileId && isQuickbaseRefreshableTable(document, tableId);
+  });
 }
 
 function getSavedReportIdForTable(document: StudioDocument, table: TableDefinition) {
@@ -613,6 +628,7 @@ async function fetchAllTableRows(
 }
 
 export async function ensureTableRowsAvailable(tableId: string, options: { objectId?: string } = {}) {
+  await studioStore.hydrateFromQuickbase();
   const document = studioStore.getLiveDocument();
   const table = getTable(document, tableId);
   if (!table) return [] as DataRow[];
@@ -696,6 +712,11 @@ export async function refreshAllCachedData(reason: "manual" | "scheduled" = "man
       ? getRefreshTableIdsForProfile(latest, profileId)
       : latest.quickbaseProfiles.flatMap((profile) => getRefreshTableIdsForProfile(latest, profile.id));
     const tableIds = Array.from(new Set((profileTableIds.length ? profileTableIds : getUsedTableIds(latest)).filter(Boolean)));
+    if (!tableIds.length) {
+      throw new Error(profileId
+        ? "No Quickbase refresh source tables are configured for this app profile."
+        : "No Quickbase refresh source tables are configured for this platform.");
+    }
     const nextDocument = latest;
     let totalRows = 0;
     for (const tableId of tableIds) {
@@ -811,6 +832,11 @@ export async function refreshAllCachedDataWithProgress(
       ? getRefreshTableIdsForProfile(latest, profileId)
       : latest.quickbaseProfiles.flatMap((profile) => getRefreshTableIdsForProfile(latest, profile.id));
     const tableIds = Array.from(new Set((profileTableIds.length ? profileTableIds : getUsedTableIds(latest)).filter(Boolean)));
+    if (!tableIds.length) {
+      throw new Error(profileId
+        ? "No Quickbase refresh source tables are configured for this app profile."
+        : "No Quickbase refresh source tables are configured for this platform.");
+    }
     const nextDocument = latest;
     let totalRows = 0;
     const totalTables = Math.max(tableIds.length, 1);
@@ -987,6 +1013,9 @@ export async function refreshObjectCachedDataWithProgress(
   try {
     const latest = studioStore.getLiveDocument();
     const tableIds = getObjectTableIds(latest, objectId);
+    if (!tableIds.length) {
+      throw new Error("No Quickbase refresh source tables are configured for this object.");
+    }
     const affectedProfiles = getProfilesForTableIds(latest, tableIds);
     const nextDocument = latest;
     const totalTables = Math.max(tableIds.length, 1);

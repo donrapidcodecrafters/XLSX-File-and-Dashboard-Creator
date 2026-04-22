@@ -81,6 +81,68 @@ function loadPersistedDocument(): StudioDocument | null {
   }
 }
 
+function resolveCachedTableEntry(
+  document: StudioDocument,
+  cacheMeta: Record<string, PersistedCacheMetaEntry>,
+  table: StudioDocument["bundle"]["tables"][number]
+) {
+  const candidateKeys = [table.id, table.quickbaseTableId].filter((key): key is string => Boolean(key));
+  for (const key of candidateKeys) {
+    const rows = document.bundle.data[key];
+    const rowCount = Array.isArray(rows) ? rows.length : Number(cacheMeta[key]?.rowCount || 0);
+    if (rowCount > 0) {
+      return {
+        cacheKey: key,
+        rowCount,
+        cachedAt: String(cacheMeta[key]?.cachedAt || "")
+      };
+    }
+  }
+  return null;
+}
+
+function reconcileRefreshStatusWithCache(
+  document: StudioDocument,
+  cacheMeta: Record<string, PersistedCacheMetaEntry>
+) {
+  const quickbaseTables = (document.bundle.tables || []).filter((table) => table.quickbaseProfileId || table.quickbaseTableId);
+  const cachedEntries = quickbaseTables
+    .map((table) => {
+      const cache = resolveCachedTableEntry(document, cacheMeta, table);
+      return cache ? { table, cache } : null;
+    })
+    .filter((entry): entry is {
+      table: StudioDocument["bundle"]["tables"][number];
+      cache: { cacheKey: string; rowCount: number; cachedAt: string };
+    } => Boolean(entry));
+
+  const globalCachedTableIds = cachedEntries.map((entry) => entry.cache.cacheKey);
+  const globalCachedRowCount = cachedEntries.reduce((sum, entry) => sum + entry.cache.rowCount, 0);
+  const globalLastSuccessAt = cachedEntries
+    .map((entry) => Date.parse(entry.cache.cachedAt || ""))
+    .filter((value) => !Number.isNaN(value))
+    .sort((left, right) => right - left)[0];
+
+  document.sync.refreshStatus.cachedTableIds = globalCachedTableIds;
+  document.sync.refreshStatus.cachedRowCount = globalCachedRowCount;
+  if (!document.sync.refreshStatus.lastSuccessAt && globalLastSuccessAt) {
+    document.sync.refreshStatus.lastSuccessAt = new Date(globalLastSuccessAt).toISOString();
+  }
+
+  document.quickbaseProfiles.forEach((profile) => {
+    const profileEntries = cachedEntries.filter((entry) => entry.table.quickbaseProfileId === profile.id);
+    profile.refreshStatus.cachedTableIds = profileEntries.map((entry) => entry.cache.cacheKey);
+    profile.refreshStatus.cachedRowCount = profileEntries.reduce((sum, entry) => sum + entry.cache.rowCount, 0);
+    const profileLastSuccessAt = profileEntries
+      .map((entry) => Date.parse(entry.cache.cachedAt || ""))
+      .filter((value) => !Number.isNaN(value))
+      .sort((left, right) => right - left)[0];
+    if (!profile.refreshStatus.lastSuccessAt && profileLastSuccessAt) {
+      profile.refreshStatus.lastSuccessAt = new Date(profileLastSuccessAt).toISOString();
+    }
+  });
+}
+
 export class StudioStore {
   private document: StudioDocument;
   private cacheMeta: Record<string, PersistedCacheMetaEntry> = {};
@@ -91,6 +153,7 @@ export class StudioStore {
   constructor() {
     this.document = this.load();
     this.cacheMeta = loadPersistedCacheMeta();
+    reconcileRefreshStatusWithCache(this.document, this.cacheMeta);
     this.lastHydratedAt = Date.parse(this.document.sync?.lastLoadedAt || "") || 0;
     this.lastReloadedFromDiskAt = Date.now();
   }
@@ -105,6 +168,7 @@ export class StudioStore {
 
   private persist(document: StudioDocument) {
     mkdirSync(dirname(STORAGE_PATH), { recursive: true });
+    reconcileRefreshStatusWithCache(document, this.cacheMeta);
     writeFileSync(STORAGE_PATH, JSON.stringify(stripCachedRows(document), null, 2));
     writeFileSync(CACHE_PATH, JSON.stringify(document.bundle.data || {}, null, 2));
     writeFileSync(CACHE_META_PATH, JSON.stringify(this.cacheMeta || {}, null, 2));
@@ -120,6 +184,7 @@ export class StudioStore {
     if (!persisted) return;
     this.document = persisted;
     this.cacheMeta = loadPersistedCacheMeta();
+    reconcileRefreshStatusWithCache(this.document, this.cacheMeta);
     this.lastHydratedAt = Date.parse(this.document.sync?.lastLoadedAt || "") || this.lastHydratedAt;
   }
 
