@@ -1,25 +1,54 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type Dispatch, type PointerEvent as ReactPointerEvent, type SetStateAction } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
+  applyDashboardRowPreset as applyDashboardRowPresetInDefinition,
+  buildStudioBuilderDraft,
+  balanceDashboardLayout as balanceDashboardLayoutInDefinition,
+  balanceDashboardRow as balanceDashboardRowInDefinition,
+  balanceDashboardTabLayout as balanceDashboardTabLayoutInDefinition,
+  filterStudioLibraryItems,
   buildDashboardFilters,
   buildDashboardResult,
   buildStudioDocument,
+  clampDashboardWidgetHeight,
+  clampDashboardWidgetWidth,
+  copyDashboardWidgetToTab as copyDashboardWidgetToTabInDefinition,
   collectFilterFieldIds,
   createFilterGroup,
   createFilterRule,
+  duplicateDashboardWidget as duplicateDashboardWidgetInDefinition,
   filterNeedsValue,
   filterHasValue,
-  formatReportCellValue,
-  getReportFieldLabel,
+  getDashboardWidgetRows as getDashboardWidgetRowsInStudio,
+  getStudioBuilderDraftIssues,
+  getStudioBuilderStepDescription,
+  getStudioBuilderStepIssues,
+  getStudioBuilderStepLabel,
+  getStudioBuilderSteps,
+  isStudioItemVisibleToCurrentUser,
+  insertDashboardWidget,
+  placeDashboardWidgetAtPosition as placeDashboardWidgetAtPositionInDefinition,
+  moveDashboardWidgetByRow as moveDashboardWidgetByRowInDefinition,
+  moveDashboardWidgetByDirection as moveDashboardWidgetByDirectionInDefinition,
+  moveDashboardWidgetToTab as moveDashboardWidgetToTabInDefinition,
+  moveDashboardWidgetToEdge as moveDashboardWidgetToEdgeInDefinition,
+  normalizeStudioBuilderScopeOwner,
   normalizeStudioDocument,
+  removeDashboardWidget as removeDashboardWidgetInDefinition,
+  reorderDashboardWidgetByDropPosition as reorderDashboardWidgetByDropPositionInDefinition,
+  reorderDashboardWidgetToRowEdge as reorderDashboardWidgetToRowEdgeInDefinition,
+  reorderDashboardWidgetToIndex as reorderDashboardWidgetToIndexInDefinition,
+  resolveActiveDashboardTabId,
+  resolveSelectedDashboardWidgetId,
   runReport,
-  type ChartAggregation,
-  type ChartSeriesType,
-  type ChartSortMode,
-  type ChartType,
+  applyDashboardWidgetLayout,
+  toggleDashboardWidgetFullWidth as toggleDashboardWidgetFullWidthInDefinition,
   type DashboardDefinition,
+  type DashboardRowLayoutPreset,
   type DashboardRunResult,
-  type DataRow,
+  type DashboardWidgetDropPosition,
+  type DashboardWidgetRowEdge,
+  type DashboardWidgetMoveDirection,
   type ExportJobStatus,
   type FieldType,
   type FilterDefinition,
@@ -30,11 +59,14 @@ import {
   type QuickbaseConnectionConfig,
   type ReportDefinition,
   type ReportRunResult,
-  type ReportViewMode,
   type RefreshJobStatus,
   type SeedBundle,
+  type StudioBuilderDraft,
+  type StudioBuilderStep,
   type StudioDocument,
+  type StudioExportJob,
   type StudioObject,
+  type StudioObjectScope,
   type StudioTemplateRecord,
   type StudioTemplateType,
   type StudioVersionRecord,
@@ -47,68 +79,44 @@ import {
   fetchQuickbaseReportPreview,
   fetchQuickbaseSchema,
   fetchStudioDocument,
+  importStudioWorkbook,
   type QuickbaseRealmApp,
   type QuickbaseAppSchema,
   type QuickbaseSyncResult,
+  type StudioWorkbookImportResult,
   fetchStudioRefreshJob,
   fetchStudioVersions,
   restoreStudioVersion,
   startStudioRefresh,
   saveStudioDocument
 } from "../lib/studioApi";
-import { downloadExportJob, fetchExportJobStatus, startDashboardExportJob, startReportExportJob } from "../lib/api";
+import { downloadExportJob, fetchExportJobStatus, fetchExportJobs, startDashboardExportJob, startReportExportJob } from "../lib/api";
 import { ChartPreview } from "./ChartPreview";
+import { StudioDraftReviewStep } from "./StudioDraftReviewStep";
+import { StudioDashboardPreview } from "./StudioDashboardPreview";
+import { StudioLibrarySidebar } from "./StudioLibrarySidebar";
+import { StudioReportDraftDataStep } from "./StudioReportDraftDataStep";
+import { StudioReportDraftViewStep } from "./StudioReportDraftViewStep";
+import { StudioReportPreview } from "./StudioReportPreview";
+import { StudioSettingsPanel } from "./StudioSettingsPanel";
+import { StudioWorkspaceEmptyState } from "./StudioWorkspaceEmptyState";
+import {
+  DEFAULT_CHART_COLORS,
+  getChartAxisLabels,
+  reportShowsChart,
+  reportShowsDetails,
+  reportShowsSummary
+} from "./studioReportUtils";
 
 const STORAGE_KEY = "hosted-reporting-studio-v2";
-const DEFAULT_CHART_COLORS = ["#0d7c66", "#d88d3d", "#5b7cfa", "#9b59b6", "#e66f5c", "#3a9782", "#b7a26a", "#4f8fba"];
-const REPORT_VIEW_OPTIONS: ReportViewMode[] = ["table", "summary", "chart", "timeline", "calendar", "kanban"];
-const CHART_OPTIONS: ChartType[] = [
-  "bar",
-  "horizontal-bar",
-  "stacked-bar",
-  "horizontal-stacked-bar",
-  "column",
-  "stacked-column",
-  "line",
-  "line-bar",
-  "area",
-  "spline",
-  "area-spline",
-  "streamgraph",
-  "pie",
-  "donut",
-  "funnel",
-  "scatter",
-  "bubble",
-  "gauge",
-  "progress-bar",
-  "bullet",
-  "waterfall",
-  "radial-bar",
-  "variwide-bar",
-  "heatmap",
-  "radar",
-  "3d-bar",
-  "3d-stacked-bar",
-  "3d-area",
-  "3d-pie",
-  "3d-donut",
-  "3d-funnel",
-  "3d-scatter"
-];
-const CHART_AGGREGATION_OPTIONS: ChartAggregation[] = ["count", "sum", "avg", "min", "max"];
-const CHART_SERIES_TYPE_OPTIONS: Array<{ value: ChartSeriesType; label: string }> = [
-  { value: "line", label: "Line" },
-  { value: "area", label: "Area" },
-  { value: "bar", label: "Bar" },
-  { value: "column", label: "Column" }
-];
-const CHART_SORT_OPTIONS: Array<{ value: ChartSortMode; label: string }> = [
-  { value: "value-desc", label: "Value high to low" },
-  { value: "value-asc", label: "Value low to high" },
-  { value: "label-asc", label: "Label A to Z" },
-  { value: "label-desc", label: "Label Z to A" }
-];
+const WIDGET_LAYOUT_PRESETS = [
+  { id: "quarter", label: "Quarter", w: 3, h: 3 },
+  { id: "third", label: "Third", w: 4, h: 3 },
+  { id: "half", label: "Half", w: 6, h: 4 },
+  { id: "wide", label: "Wide", w: 8, h: 4 },
+  { id: "full", label: "Full", w: 12, h: 4 },
+  { id: "tall", label: "Tall", w: 6, h: 6 }
+] as const;
 const FILTER_OPERATOR_OPTIONS: Array<{ value: FilterOperator; label: string }> = [
   { value: "equals", label: "Equals" },
   { value: "not-equals", label: "Not equals" },
@@ -170,6 +178,7 @@ const TIMEZONE_OPTIONS = (() => {
 
 type DrawerKind = null | "settings" | "share" | "templates" | "export" | "versions";
 type LibraryFilter = "all" | "report" | "dashboard";
+type LibraryScopeFilter = "all" | "global" | "personal";
 type ToastTone = "ok" | "warn" | "danger";
 type CreateModalType = "report" | "dashboard";
 
@@ -179,19 +188,8 @@ interface ToastItem {
   message: string;
 }
 
-interface CreateObjectDraft {
-  type: CreateModalType;
-  name: string;
-  description: string;
-  tableId: string;
-  sourceReportOverrides: Record<string, string>;
-  selectedFieldIds: string[];
-  filterTree: FilterGroupDefinition;
-  sorts: ReportDefinition["sorts"];
-  summaryMetrics: SummaryMetric[];
-  view: ReportDefinition["view"];
-  displayLabels: ReportDefinition["displayLabels"];
-}
+type CreateStep = StudioBuilderStep;
+type CreateObjectDraft = StudioBuilderDraft;
 
 function buildDraftFromReport(report: ReportDefinition, table?: TableDefinition | null): CreateObjectDraft {
   const sourceTableId = table?.id || report.sourceTableId || "";
@@ -199,6 +197,8 @@ function buildDraftFromReport(report: ReportDefinition, table?: TableDefinition 
     type: "report",
     name: report.name,
     description: report.description,
+    scope: report.scope,
+    ownerUserId: report.ownerUserId || "",
     tableId: sourceTableId,
     sourceReportOverrides: clone(report.sourceReportOverrides || {}),
     selectedFieldIds: clone(report.selectedFieldIds || []),
@@ -284,14 +284,6 @@ function loadLocalDocument() {
 
 function saveLocalDocument(document: StudioDocument) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(document));
-}
-
-function formatCell(value: unknown, report?: ReportDefinition | null, table?: TableDefinition | null, fieldId?: string) {
-  if (report && table && fieldId) {
-    return formatReportCellValue(report, table, fieldId, value);
-  }
-  if (Array.isArray(value)) return value.join(", ");
-  return String(value ?? "");
 }
 
 function isFilterGroupNode(node: FilterNodeDefinition): node is FilterGroupDefinition {
@@ -472,57 +464,6 @@ function detectQuickbaseStorageConfig(schema: QuickbaseAppSchema) {
   return detected;
 }
 
-function buildCreateDraft(table?: TableDefinition | null, type: CreateModalType = "report"): CreateObjectDraft {
-  const firstFieldId = table?.fields[0]?.id || "";
-  const secondFieldId = table?.fields[1]?.id || firstFieldId;
-  return {
-    type,
-    name: type === "report" ? "New Report" : "New Dashboard",
-    description: "",
-    tableId: table?.id || "",
-    sourceReportOverrides: {},
-    selectedFieldIds: table?.fields.slice(0, 6).map((field) => field.id) || [],
-    filterTree: createFilterGroup("and", []),
-    sorts: [],
-    summaryMetrics: firstFieldId ? [{ id: uid("metric"), fieldId: firstFieldId, op: "count", label: "Rows" }] : [],
-    view: {
-      mode: "table",
-      showChartInTable: false,
-      showSummary: true,
-      showDetails: true,
-      chartTitle: "",
-      decimalPlaces: 2,
-      chartType: "bar",
-      chartOrientation: "vertical",
-      chartFieldId: firstFieldId,
-      chartSeriesFieldId: "",
-      chartValueFieldId: "",
-      chartAggregation: "count",
-      chartSecondaryValueFieldId: "",
-      chartSecondaryAggregation: "sum",
-      chartUseSecondaryAxis: false,
-      chartSecondarySeriesType: "line",
-      chartTopN: 12,
-      chartSort: "value-desc",
-      chartColors: [...DEFAULT_CHART_COLORS],
-      chartShowLegend: true,
-      chartShowValues: true,
-      chartXAxisLabel: "",
-      chartYAxisLabel: "",
-      chartSecondaryYAxisLabel: "",
-      timelineDateField: "",
-      timelineEndField: "",
-      calendarDateField: "",
-      kanbanField: "",
-      titleFieldId: secondFieldId
-    },
-    displayLabels: {
-      fields: {},
-      chartValues: {}
-    }
-  };
-}
-
 function collectReportFieldIds(report: ReportDefinition) {
   return Array.from(new Set(
     [
@@ -542,101 +483,6 @@ function collectReportFieldIds(report: ReportDefinition) {
       report.view.titleFieldId
     ].filter(Boolean).map(String)
   ));
-}
-
-function getFieldLabel(report: ReportDefinition, table: TableDefinition | null | undefined, fieldId: string) {
-  return table ? getReportFieldLabel(report, table, fieldId) : fieldId;
-}
-
-function reportShowsChart(report: Pick<ReportDefinition, "view">) {
-  return report.view.mode === "chart" || (report.view.mode === "table" && report.view.showChartInTable);
-}
-
-function reportShowsSummary(report: Pick<ReportDefinition, "view">) {
-  if (typeof report.view.showSummary === "boolean") return report.view.showSummary;
-  return report.view.mode === "table" || report.view.mode === "summary" || report.view.mode === "chart";
-}
-
-function reportShowsDetails(report: Pick<ReportDefinition, "view">) {
-  if (typeof report.view.showDetails === "boolean") return report.view.showDetails;
-  return report.view.mode === "table" || report.view.mode === "timeline" || report.view.mode === "calendar" || report.view.mode === "kanban";
-}
-
-function chartUsesAxes(chartType: ChartType) {
-  return [
-    "bar",
-    "horizontal-bar",
-    "column",
-    "stacked-bar",
-    "horizontal-stacked-bar",
-    "stacked-column",
-    "line",
-    "line-bar",
-    "area",
-    "spline",
-    "area-spline",
-    "streamgraph",
-    "scatter",
-    "bubble",
-    "waterfall",
-    "variwide-bar",
-    "bullet",
-    "progress-bar",
-    "3d-bar",
-    "3d-stacked-bar",
-    "3d-area",
-    "3d-scatter"
-  ].includes(chartType);
-}
-
-function chartSupportsSeries(chartType: ChartType) {
-  return [
-    "bar",
-    "horizontal-bar",
-    "column",
-    "stacked-bar",
-    "horizontal-stacked-bar",
-    "stacked-column",
-    "line",
-    "line-bar",
-    "area",
-    "spline",
-    "area-spline",
-    "streamgraph",
-    "scatter",
-    "bubble",
-    "radar",
-    "waterfall",
-    "variwide-bar",
-    "3d-bar",
-    "3d-stacked-bar",
-    "3d-area",
-    "3d-scatter"
-  ].includes(chartType);
-}
-
-function chartSupportsSecondaryAxis(chartType: ChartType) {
-  return [
-    "bar",
-    "horizontal-bar",
-    "column",
-    "stacked-bar",
-    "horizontal-stacked-bar",
-    "stacked-column",
-    "line",
-    "line-bar",
-    "area",
-    "spline",
-    "area-spline",
-    "streamgraph",
-    "scatter",
-    "bubble",
-    "variwide-bar",
-    "3d-bar",
-    "3d-stacked-bar",
-    "3d-area",
-    "3d-scatter"
-  ].includes(chartType);
 }
 
 function fieldSupportsDateOperators(field?: TableDefinition["fields"][number] | null) {
@@ -660,50 +506,75 @@ function filterOperatorOptionsForField(field?: TableDefinition["fields"][number]
   return FILTER_OPERATOR_OPTIONS;
 }
 
-function chartValueFieldLabel(chartType: ChartType) {
-  if (chartType === "scatter") return "Y axis field";
-  if (chartType === "bubble") return "Y axis field";
-  if (chartType === "gauge") return "Value field";
-  return "Primary Y axis field";
-}
-
-function getChartFieldId(report: ReportDefinition) {
-  return report.view.chartFieldId || report.groups[0]?.fieldId || report.selectedFieldIds[0] || "";
-}
-
-function getChartAxisLabels(report: ReportDefinition, table: TableDefinition | null | undefined) {
-  const xFieldId = getChartFieldId(report);
-  const primaryFieldLabel = report.view.chartValueFieldId
-    ? getFieldLabel(report, table, report.view.chartValueFieldId)
-    : "";
-  const secondaryFieldLabel = report.view.chartSecondaryValueFieldId
-    ? getFieldLabel(report, table, report.view.chartSecondaryValueFieldId)
-    : "";
+function createEmptyDashboardReportResult(reportId: string, tableId: string, warning: string): ReportRunResult {
   return {
-    xAxisLabel: report.view.chartXAxisLabel?.trim()
-      || (xFieldId ? getFieldLabel(report, table, xFieldId) : ""),
-    yAxisLabel: report.view.chartYAxisLabel?.trim()
-      || primaryFieldLabel
-      || (report.view.chartAggregation === "count" ? "Rows" : ""),
-    secondaryYAxisLabel: report.view.chartSecondaryYAxisLabel?.trim()
-      || (report.view.chartUseSecondaryAxis
-        ? (secondaryFieldLabel || (report.view.chartSecondaryAggregation === "count" ? "Rows" : ""))
-        : "")
+    reportId,
+    tableId,
+    totalRows: 0,
+    rows: [],
+    summary: [],
+    chartData: [],
+    warnings: warning ? [warning] : [],
+    page: 1,
+    pageSize: 100,
+    totalPages: 1,
+    hasNextPage: false
   };
 }
 
-function clampWidgetWidth(value: number) {
-  return Math.max(1, Math.min(12, Math.round(value || 1)));
-}
-
-function clampWidgetHeight(value: number) {
-  return Math.max(2, Math.min(10, Math.round(value || 2)));
-}
-
-function getWidgetLayoutStyle(layout: { w: number; h: number }) {
+function createUnavailableDashboardReport(widget: DashboardDefinition["tabs"][number]["widgets"][number], message: string): ReportDefinition {
   return {
-    gridColumn: `span ${clampWidgetWidth(layout.w)}`,
-    minHeight: `${clampWidgetHeight(layout.h) * 96}px`
+    id: widget.reportId || `${widget.id}-missing-report`,
+    type: "report",
+    schemaVersion: 1,
+    name: widget.title || "Unavailable report",
+    description: message,
+    folder: "Unavailable",
+    category: "Unavailable",
+    tags: [],
+    scope: "global",
+    ownerUserId: "",
+    updatedAt: new Date().toISOString(),
+    sourceTableId: "",
+    sourceReportOverrides: {},
+    selectedFieldIds: [],
+    filters: [],
+    filterTree: createFilterGroup("and", []),
+    groups: [],
+    sorts: [],
+    summaryMetrics: [],
+    view: {
+      mode: "table",
+      showChartInTable: false,
+      showSummary: false,
+      showDetails: true,
+      chartTitle: "",
+      decimalPlaces: 2,
+      chartType: "bar",
+      chartOrientation: "vertical",
+      chartFieldId: "",
+      chartSeriesFieldId: "",
+      chartValueFieldId: "",
+      chartAggregation: "count",
+      chartSecondaryValueFieldId: "",
+      chartSecondaryAggregation: "sum",
+      chartUseSecondaryAxis: false,
+      chartSecondarySeriesType: "line",
+      chartTopN: 12,
+      chartSort: "value-desc",
+      chartColors: DEFAULT_CHART_COLORS,
+      chartShowLegend: false,
+      chartShowValues: false,
+      chartXAxisLabel: "",
+      chartYAxisLabel: "",
+      chartSecondaryYAxisLabel: "",
+      timelineDateField: "",
+      timelineEndField: "",
+      calendarDateField: "",
+      kanbanField: "",
+      titleFieldId: ""
+    },
+    displayLabels: { fields: {}, chartValues: {} }
   };
 }
 
@@ -763,355 +634,6 @@ function validationMessages(object: StudioObject, table?: TableDefinition | null
     if (!object.tabs.some((tab) => tab.widgets.length)) messages.push("Add at least one card.");
   }
   return messages;
-}
-
-function ReportPreview({
-  report,
-  table,
-  result,
-  currentPage,
-  onPageChange,
-  pageSize = 100
-}: {
-  report: ReportDefinition;
-  table: TableDefinition;
-  result: ReportRunResult;
-  currentPage: number;
-  onPageChange: (page: number) => void;
-  pageSize?: number;
-}) {
-  const totalPages = Math.max(1, Math.ceil((result.totalRows || result.rows.length || 0) / pageSize));
-  const page = Math.min(Math.max(1, currentPage), totalPages);
-  const startIndex = (page - 1) * pageSize;
-  const visibleRows = result.rows.slice(startIndex, startIndex + pageSize);
-  const pager = result.totalRows > pageSize ? (
-    <div className="link-toolbar">
-      <button className="ghost-button" disabled={page <= 1} onClick={() => onPageChange(Math.max(1, page - 1))}>Previous</button>
-      <span className="micro">Page {page} of {totalPages}</span>
-      <button className="ghost-button" disabled={page >= totalPages} onClick={() => onPageChange(Math.min(totalPages, page + 1))}>Next</button>
-    </div>
-  ) : null;
-
-  if (report.view.mode === "summary") {
-    return (
-      <div className="studio-preview-stack">
-        {reportShowsSummary(report) ? (
-          <div className="summary-grid">
-            {result.summary.map((item) => (
-              <div className="summary-card" key={item.label}>
-                <strong>{item.value}</strong>
-                <span>{item.label}</span>
-              </div>
-            ))}
-          </div>
-        ) : null}
-        {reportShowsDetails(report) ? (
-          <>
-            {pager}
-            <div className="table-shell">
-              <table>
-                <thead>
-                  <tr>
-                    {report.selectedFieldIds.map((fieldId) => <th key={fieldId}>{getReportFieldLabel(report, table, fieldId)}</th>)}
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleRows.map((row, index) => (
-                    <tr key={index}>
-                      {report.selectedFieldIds.map((fieldId) => <td key={fieldId}>{formatCell(row[fieldId], report, table, fieldId)}</td>)}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
-        ) : null}
-      </div>
-    );
-  }
-
-  if (reportShowsChart(report)) {
-    const axisLabels = getChartAxisLabels(report, table);
-    return (
-      <div className="studio-preview-stack">
-        <ChartPreview
-          chartType={report.view.chartType}
-          data={result.chartData}
-          title={report.view.chartTitle}
-          decimalPlaces={report.view.decimalPlaces}
-          chartColors={report.view.chartColors}
-          chartOrientation={report.view.chartOrientation}
-          xAxisLabel={axisLabels.xAxisLabel}
-          yAxisLabel={axisLabels.yAxisLabel}
-          secondaryYAxisLabel={axisLabels.secondaryYAxisLabel}
-          showLegend={report.view.chartShowLegend}
-          showValues={report.view.chartShowValues}
-        />
-        {reportShowsDetails(report) ? (
-          <>
-            {pager}
-            <div className="table-shell">
-              <table>
-                <thead>
-                  <tr>
-                    {report.selectedFieldIds.map((fieldId) => <th key={fieldId}>{getReportFieldLabel(report, table, fieldId)}</th>)}
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleRows.map((row, index) => (
-                    <tr key={index}>
-                      {report.selectedFieldIds.map((fieldId) => <td key={fieldId}>{formatCell(row[fieldId], report, table, fieldId)}</td>)}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
-        ) : null}
-      </div>
-    );
-  }
-
-  if (report.view.mode === "timeline" || report.view.mode === "calendar") {
-    const dateFieldId = report.view.mode === "timeline" ? report.view.timelineDateField : report.view.calendarDateField;
-    const titleFieldId = report.view.titleFieldId || report.selectedFieldIds[0];
-    if (!reportShowsDetails(report)) {
-      return <div className="empty-hint">Detail cards are turned off for this report.</div>;
-    }
-    return (
-      <div className="studio-preview-stack">
-        {pager}
-        <div className="studio-card-grid">
-          {visibleRows.map((row, index) => (
-          <article className="studio-mini-card" key={index}>
-            <strong>{formatCell(row[titleFieldId], report, table, titleFieldId)}</strong>
-            <span>{table.fields.find((field) => field.id === dateFieldId)?.label || "Date"}: {formatCell(row[dateFieldId], report, table, dateFieldId)}</span>
-            {report.view.mode === "timeline" && report.view.timelineEndField ? <span>Ends: {formatCell(row[report.view.timelineEndField], report, table, report.view.timelineEndField)}</span> : null}
-          </article>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  if (report.view.mode === "kanban") {
-    const fieldId = report.view.kanbanField || report.selectedFieldIds[0];
-    const titleFieldId = report.view.titleFieldId || report.selectedFieldIds[0];
-    if (!reportShowsDetails(report)) {
-      return <div className="empty-hint">Detail cards are turned off for this report.</div>;
-    }
-    const columns = new Map<string, DataRow[]>();
-    result.rows.forEach((row) => {
-      const key = formatCell(row[fieldId], report, table, fieldId) || "Unassigned";
-      columns.set(key, [...(columns.get(key) || []), row]);
-    });
-    return (
-      <div className="studio-preview-stack">
-        {pager}
-        <div className="kanban-board">
-        {Array.from(new Map<string, DataRow[]>(
-          Array.from(columns.entries()).map(([key, rows]) => [key, rows.slice(startIndex, startIndex + pageSize)])
-        ).entries()).map(([key, rows]) => (
-          <section className="kanban-column" key={key}>
-            <div className="kanban-head">
-              <strong>{key}</strong>
-              <span>{rows.length}</span>
-            </div>
-            <div className="kanban-stack">
-              {rows.map((row, index) => (
-                <article className="studio-mini-card" key={index}>
-                  <strong>{formatCell(row[titleFieldId], report, table, titleFieldId)}</strong>
-                  {report.selectedFieldIds.slice(1, 4).map((fieldId) => <span key={fieldId}>{formatCell(row[fieldId], report, table, fieldId)}</span>)}
-                </article>
-              ))}
-            </div>
-          </section>
-        ))}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="studio-preview-stack">
-      {pager}
-      <div className="table-shell">
-        <table>
-          <thead>
-            <tr>
-              {report.selectedFieldIds.map((fieldId) => <th key={fieldId}>{getReportFieldLabel(report, table, fieldId)}</th>)}
-            </tr>
-          </thead>
-          <tbody>
-            {visibleRows.map((row, index) => (
-              <tr key={index}>
-                {report.selectedFieldIds.map((fieldId) => <td key={fieldId}>{formatCell(row[fieldId], report, table, fieldId)}</td>)}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function DashboardPreview({
-  dashboard,
-  result,
-  tables,
-  runtimeValues,
-  setRuntimeValues,
-  widgetSearch,
-  draggingWidget,
-  onOpenReport,
-  onStartWidgetDrag,
-  onEndWidgetDrag,
-  onDropWidget,
-  onToggleFullWidth,
-  onBeginResizeWidget,
-  onMoveWidget
-}: {
-  dashboard: DashboardDefinition;
-  result: DashboardRunResult;
-  tables: TableDefinition[];
-  runtimeValues: Record<string, string>;
-  setRuntimeValues: Dispatch<SetStateAction<Record<string, string>>>;
-  widgetSearch: string;
-  draggingWidget: { tabId: string; widgetId: string } | null;
-  onOpenReport: (reportId: string) => void;
-  onStartWidgetDrag: (tabId: string, widgetId: string) => void;
-  onEndWidgetDrag: () => void;
-  onDropWidget: (tabId: string, widgetId: string) => void;
-  onToggleFullWidth: (tabId: string, widgetId: string) => void;
-  onBeginResizeWidget: (event: ReactPointerEvent<HTMLButtonElement>, tabId: string, widgetId: string, layout: { w: number; h: number }) => void;
-  onMoveWidget: (tabId: string, widgetId: string, direction: -1 | 1) => void;
-}) {
-  const normalizedQuery = widgetSearch.trim().toLowerCase();
-  const resolveWidgetDisplayMode = (widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], reportMode: string) => {
-    if (widget.displayMode !== "inherit") return widget.displayMode;
-    if (reportMode === "summary") return "summary";
-    if (reportMode === "chart") return "chart";
-    return "table";
-  };
-  const shouldShowWidgetChart = (widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], report: ReportDefinition) =>
-    resolveWidgetDisplayMode(widget, report.view.mode) === "chart" ||
-    (resolveWidgetDisplayMode(widget, report.view.mode) === "table" && report.view.showChartInTable);
-  return (
-    <div className="studio-preview-stack">
-      {dashboard.runtimeFilters.length ? (
-        <section className="card">
-          <div className="card-head">
-            <strong>Filters</strong>
-            <span className="micro">Live dashboard controls</span>
-          </div>
-          <div className="filter-grid">
-            {dashboard.runtimeFilters.map((filter) => (
-              <label className="field" key={filter.id}>
-                <span>{filter.label}</span>
-                <input value={runtimeValues[filter.id] || ""} onChange={(event) => setRuntimeValues((current) => ({ ...current, [filter.id]: event.target.value }))} />
-              </label>
-            ))}
-          </div>
-        </section>
-      ) : null}
-      {result.tabs.map((tab) => {
-        const widgets = tab.widgets.filter((widget) => {
-          if (!normalizedQuery) return true;
-          return `${widget.report.name} ${widget.result.summary.map((item) => item.label).join(" ")}`.toLowerCase().includes(normalizedQuery);
-        });
-        return (
-          <section className="card" key={tab.id}>
-            <div className="card-head">
-              <strong>{tab.name}</strong>
-              <span className="micro">{widgets.length} cards</span>
-            </div>
-            <div className="widget-grid dashboard-layout-grid">
-              {widgets.map((widget) => {
-                const widgetTable = tables.find((table) => table.id === widget.report.sourceTableId) || null;
-                const isDragging = draggingWidget?.tabId === tab.id && draggingWidget?.widgetId === widget.widgetId;
-                return (
-                <article
-                  className={`widget-card dashboard-layout-item${isDragging ? " is-dragging" : ""}`}
-                  key={widget.widgetId}
-                  style={getWidgetLayoutStyle(widget.widget.layout)}
-                  draggable
-                  onDragStart={() => onStartWidgetDrag(tab.id, widget.widgetId)}
-                  onDragEnd={onEndWidgetDrag}
-                  onDragOver={(event) => event.preventDefault()}
-                  onDrop={() => onDropWidget(tab.id, widget.widgetId)}
-                >
-                  <div className="widget-head">
-                    <strong>{widget.widget.title || widget.report.name}</strong>
-                    <div className="widget-preview-controls">
-                      <button className="link-like" onClick={() => onMoveWidget(tab.id, widget.widgetId, -1)}>Move up</button>
-                      <button className="link-like" onClick={() => onMoveWidget(tab.id, widget.widgetId, 1)}>Move down</button>
-                      <button className="link-like" onClick={() => onToggleFullWidth(tab.id, widget.widgetId)}>
-                        {clampWidgetWidth(widget.widget.layout.w) >= 12 ? "Restore width" : "Full width"}
-                      </button>
-                      <button className="link-like" onClick={() => onOpenReport(widget.report.id)}>Edit report</button>
-                    </div>
-                  </div>
-                  {widget.widget.showSummary ? (
-                    <div className="widget-metrics">
-                      {widget.result.summary.map((item) => (
-                        <div className="mini-stat" key={item.label}>
-                          <strong>{item.value}</strong>
-                          <span>{item.label}</span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                  {shouldShowWidgetChart(widget.widget, widget.report) ? (
-                    <div className="mini-chart">
-                      <ChartPreview
-                        chartType={widget.report.view.chartType}
-                        data={widget.result.chartData}
-                        title={widget.report.view.chartTitle || widget.widget.title}
-                        decimalPlaces={widget.report.view.decimalPlaces}
-                        chartColors={widget.report.view.chartColors}
-                        chartOrientation={widget.report.view.chartOrientation}
-                        xAxisLabel={widget.report.view.chartXAxisLabel}
-                        yAxisLabel={widget.report.view.chartYAxisLabel}
-                        compact
-                        showLegend={widget.report.view.chartShowLegend}
-                        showValues={widget.report.view.chartShowValues}
-                      />
-                    </div>
-                  ) : null}
-                  {resolveWidgetDisplayMode(widget.widget, widget.report.view.mode) === "table" || widget.widget.showDetails ? (
-                    <div className="table-shell compact-table-shell">
-                      <table>
-                        <thead>
-                          <tr>
-                            {widget.report.selectedFieldIds.slice(0, 6).map((fieldId) => <th key={fieldId}>{getFieldLabel(widget.report, widgetTable, fieldId)}</th>)}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {widget.result.rows.slice(0, 8).map((row, index) => (
-                            <tr key={index}>
-                              {widget.report.selectedFieldIds.slice(0, 6).map((fieldId) => <td key={fieldId}>{formatCell(row[fieldId], widget.report, widgetTable, fieldId)}</td>)}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ) : null}
-                  <button
-                    type="button"
-                    className="widget-resize-handle"
-                    aria-label="Resize card"
-                    title="Drag to resize"
-                    onPointerDown={(event) => onBeginResizeWidget(event, tab.id, widget.widgetId, widget.widget.layout)}
-                  />
-                </article>
-                );
-              })}
-            </div>
-          </section>
-        );
-      })}
-    </div>
-  );
 }
 
 function FilterGroupEditor({
@@ -1292,6 +814,7 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
   const navigate = useNavigate();
   const params = useParams();
   const importInputRef = useRef<HTMLInputElement | null>(null);
+  const importXlsxInputRef = useRef<HTMLInputElement | null>(null);
   const schemaAutoloadedRef = useRef(false);
   const [documentState, setDocumentState] = useState<StudioDocument>(() => loadLocalDocument());
   const [loadingRemote, setLoadingRemote] = useState(true);
@@ -1300,11 +823,16 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
   const [future, setFuture] = useState<StudioDocument[]>([]);
   const [libraryQuery, setLibraryQuery] = useState("");
   const [libraryFilter, setLibraryFilter] = useState<LibraryFilter>("all");
+  const [libraryScopeFilter, setLibraryScopeFilter] = useState<LibraryScopeFilter>("global");
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [recentOnly, setRecentOnly] = useState(false);
   const [dashboardInspectorTab, setDashboardInspectorTab] = useState<"design" | "filters">("design");
   const [activeTabId, setActiveTabId] = useState("");
+  const [selectedWidgetId, setSelectedWidgetId] = useState("");
+  const [widgetTargetTabId, setWidgetTargetTabId] = useState("");
   const [widgetSearch, setWidgetSearch] = useState("");
+  const [createStep, setCreateStep] = useState<CreateStep>("basics");
+  const [createPreviewPage, setCreatePreviewPage] = useState(1);
   const [runtimeValues, setRuntimeValues] = useState<Record<string, string>>({});
   const [drawer, setDrawer] = useState<DrawerKind>(null);
   const [versionList, setVersionList] = useState<StudioVersionRecord[]>([]);
@@ -1316,6 +844,7 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
   const [refreshingCache, setRefreshingCache] = useState(false);
   const [refreshJob, setRefreshJob] = useState<RefreshJobStatus | null>(null);
   const [lastQuickbaseSync, setLastQuickbaseSync] = useState<QuickbaseSyncResult | null>(null);
+  const [lastWorkbookImportReview, setLastWorkbookImportReview] = useState<StudioWorkbookImportResult["review"] | null>(null);
   const activeQuickbaseProfile = useMemo(() => getActiveQuickbaseProfile(documentState), [documentState]);
   const activeQuickbaseConfig = activeQuickbaseProfile?.quickbase || documentState.quickbase;
   const activeProfileTables = useMemo(
@@ -1341,12 +870,17 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
   const [liveReportLoading, setLiveReportLoading] = useState(false);
   const [previewPage, setPreviewPage] = useState(1);
   const [exportJob, setExportJob] = useState<ExportJobStatus | null>(null);
+  const [liveExportJobs, setLiveExportJobs] = useState<ExportJobStatus[]>([]);
   const [downloadedJobId, setDownloadedJobId] = useState("");
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editingReportId, setEditingReportId] = useState<string | null>(null);
-  const [createDraft, setCreateDraft] = useState<CreateObjectDraft>(() => buildCreateDraft(loadLocalDocument().bundle.tables[0], "report"));
+  const [createDraft, setCreateDraft] = useState<CreateObjectDraft>(() => {
+    const document = loadLocalDocument();
+    return buildStudioBuilderDraft(document.bundle.tables[0], "report", String(document.session.currentUserId || "").trim(), uid);
+  });
   const [createFieldQuery, setCreateFieldQuery] = useState("");
   const [draggingWidget, setDraggingWidget] = useState<{ tabId: string; widgetId: string } | null>(null);
+  const [xlsxImporting, setXlsxImporting] = useState(false);
   const [resizeSession, setResizeSession] = useState<{
     tabId: string;
     widgetId: string;
@@ -1360,26 +894,49 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
   const resizeStartSnapshotRef = useRef<StudioDocument | null>(null);
 
   const bundle = documentState.bundle;
+  const currentUserId = String(documentState.session.currentUserId || "").trim();
   const objects = useMemo(() => bundle.order.map((id) => bundle.objects[id]).filter(Boolean), [bundle]);
-  const activeObjectId = params.objectId && bundle.objects[params.objectId] ? params.objectId : bundle.order[0];
+  const visibleObjects = useMemo(
+    () => filterStudioLibraryItems(objects, { currentUserId }),
+    [currentUserId, objects]
+  );
+  const activeObjectId = params.objectId && bundle.objects[params.objectId] && isStudioItemVisibleToCurrentUser(bundle.objects[params.objectId], currentUserId)
+    ? params.objectId
+    : visibleObjects[0]?.id;
   const hasActiveObject = Boolean(activeObjectId && bundle.objects[activeObjectId]);
   const activeObject = hasActiveObject
     ? bundle.objects[activeObjectId as string]
     : ({
         id: "",
         type: "dashboard",
+        schemaVersion: 1,
         name: "No reports or dashboards yet",
         description: "Create a report or dashboard, or open Settings to connect Quickbase and load workspace data.",
         folder: "",
         category: "",
         tags: [],
+        scope: "global",
+        ownerUserId: "",
         updatedAt: "",
         runtimeFilters: [],
         tabs: []
       } as StudioObject);
   const activeReport = hasActiveObject && activeObject.type === "report" ? activeObject : null;
   const activeDashboard = hasActiveObject && activeObject.type === "dashboard" ? activeObject : null;
-  const activeDashboardTab = activeDashboard?.tabs.find((tab) => tab.id === activeTabId) || activeDashboard?.tabs[0] || null;
+  const openLinksInNewTab = documentState.branding.openLinksInNewTab === true;
+  const resolvedActiveDashboardTabId = resolveActiveDashboardTabId(activeDashboard, activeTabId);
+  const activeDashboardTab = activeDashboard?.tabs.find((tab) => tab.id === resolvedActiveDashboardTabId) || null;
+  const resolvedSelectedDashboardWidgetId = resolveSelectedDashboardWidgetId(activeDashboardTab, selectedWidgetId);
+  const selectedDashboardWidget = activeDashboardTab?.widgets.find((widget) => widget.id === resolvedSelectedDashboardWidgetId) || null;
+  const activeDashboardRows = useMemo(
+    () => (activeDashboardTab ? getDashboardWidgetRowsInStudio(activeDashboardTab) : []),
+    [activeDashboardTab]
+  );
+  const selectedDashboardRowIndex = useMemo(
+    () => (selectedDashboardWidget ? activeDashboardRows.findIndex((row) => row.widgetIds.includes(selectedDashboardWidget.id)) : -1),
+    [activeDashboardRows, selectedDashboardWidget]
+  );
+  const selectedDashboardRow = selectedDashboardRowIndex >= 0 ? activeDashboardRows[selectedDashboardRowIndex] || null : null;
   const activeTable = activeReport ? bundle.tables.find((table) => table.id === activeReport.sourceTableId) || null : null;
   const activeDashboardRefreshTables = useMemo(() => {
     if (!activeDashboard) return [] as TableDefinition[];
@@ -1398,6 +955,16 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
     return tables;
   }, [activeDashboard, bundle.objects, bundle.tables]);
   const createDraftTable = bundle.tables.find((table) => table.id === createDraft.tableId) || bundle.tables[0] || null;
+  const createSteps = useMemo(() => getStudioBuilderSteps(createDraft.type), [createDraft.type]);
+  const activeCreateStep = createSteps.includes(createStep) ? createStep : createSteps[0];
+  const createDraftIssues = useMemo(
+    () => getStudioBuilderDraftIssues(createDraft, createDraftTable, currentUserId),
+    [createDraft, createDraftTable, currentUserId]
+  );
+  const createStepIssues = useMemo(
+    () => getStudioBuilderStepIssues(activeCreateStep, createDraft, createDraftTable, currentUserId),
+    [activeCreateStep, createDraft, createDraftTable, currentUserId]
+  );
   const validation = hasActiveObject ? validationMessages(activeObject, activeTable) : [];
   const visibleCreateFields = useMemo(() => {
     if (!createDraftTable) return [];
@@ -1405,19 +972,20 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
     if (!query) return createDraftTable.fields;
     return createDraftTable.fields.filter((field) => `${field.label} ${field.id} ${field.type}`.toLowerCase().includes(query));
   }, [createDraftTable, createFieldQuery]);
-  const createDraftPreview = useMemo(() => {
+  const createDraftPreviewReport = useMemo<ReportDefinition | null>(() => {
     if (createDraft.type !== "report" || !createDraftTable) return null;
-    const needsDetailFields = createDraft.view.showDetails;
-    const hasChartConfig = Boolean(createDraft.view.chartFieldId) && (createDraft.view.chartAggregation === "count" || Boolean(createDraft.view.chartValueFieldId));
-    if (!createDraft.selectedFieldIds.length && needsDetailFields && !hasChartConfig) return null;
-    const previewReport: ReportDefinition = {
+    const existingPreviewReport = editingReportId ? (bundle.objects[editingReportId] as ReportDefinition | undefined) : undefined;
+    return {
       id: editingReportId || "draft-report-preview",
       type: "report",
+      schemaVersion: existingPreviewReport?.schemaVersion || 1,
       name: createDraft.name || "Draft report",
       description: createDraft.description,
       folder: "Custom",
       category: "Reporting",
       tags: [],
+      scope: createDraft.scope,
+      ownerUserId: createDraft.ownerUserId,
       updatedAt: new Date().toISOString(),
       sourceTableId: createDraft.tableId,
       sourceReportOverrides: createDraft.sourceReportOverrides,
@@ -1430,13 +998,61 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
       view: createDraft.view,
       displayLabels: createDraft.displayLabels
     };
-    return runReport(previewReport, createDraftTable, bundle.data[createDraftTable.id] || []);
-  }, [bundle.data, createDraft, createDraftTable, editingReportId]);
+  }, [bundle.objects, createDraft, createDraftTable, editingReportId]);
+  const createDraftPreview = useMemo(() => {
+    if (!createDraftPreviewReport || !createDraftTable) return null;
+    const needsDetailFields = createDraft.view.showDetails;
+    const hasChartConfig = Boolean(createDraft.view.chartFieldId) && (createDraft.view.chartAggregation === "count" || Boolean(createDraft.view.chartValueFieldId));
+    if (!createDraft.selectedFieldIds.length && needsDetailFields && !hasChartConfig) return null;
+    return runReport(createDraftPreviewReport, createDraftTable, bundle.data[createDraftTable.id] || []);
+  }, [bundle.data, createDraft.selectedFieldIds.length, createDraft.view.chartAggregation, createDraft.view.chartFieldId, createDraft.view.chartValueFieldId, createDraft.view.showDetails, createDraftPreviewReport, createDraftTable]);
+  const createDraftFilterCount = useMemo(
+    () => createDraft.type === "report" ? flattenFilterTree(createDraft.filterTree).length : 0,
+    [createDraft]
+  );
   const chartValueLabelOptions = useMemo(() => {
     const previewLabels = createDraftPreview?.chartData.map((item) => item.label) || [];
     const existingLabels = Object.keys(createDraft.displayLabels.chartValues || {});
     return Array.from(new Set([...previewLabels, ...existingLabels]));
   }, [createDraft.displayLabels.chartValues, createDraftPreview?.chartData]);
+  const mergedExportJobs = useMemo(() => {
+    const liveById = new Map(liveExportJobs.map((job) => [job.id, job]));
+    const merged = documentState.exportJobs.map((job) => {
+      const live = (job.sourceJobId && liveById.get(job.sourceJobId)) || liveById.get(job.id);
+      if (!live) return job;
+      return {
+        ...job,
+        objectType: live.objectType,
+        status: live.status,
+        progress: live.progress,
+        message: live.message,
+        filename: live.filename || job.filename,
+        error: live.error,
+        updatedAt: live.updatedAt,
+        sourceJobId: live.id
+      } satisfies StudioExportJob;
+    });
+    liveExportJobs.forEach((job) => {
+      const exists = merged.some((item) => item.sourceJobId === job.id || item.id === job.id);
+      if (exists) return;
+      merged.unshift({
+        id: `live-${job.id}`,
+        objectId: job.objectId,
+        objectType: job.objectType,
+        format: job.format,
+        status: job.status,
+        progress: job.progress,
+        message: job.message,
+        filename: job.filename,
+        error: job.error,
+        updatedAt: job.updatedAt,
+        sourceJobId: job.id,
+        runtimeFilters: {},
+        createdAt: job.createdAt
+      });
+    });
+    return merged.sort((left, right) => new Date(right.updatedAt || right.createdAt).getTime() - new Date(left.updatedAt || left.createdAt).getTime());
+  }, [documentState.exportJobs, liveExportJobs]);
 
   function pushToast(message: string, tone: ToastTone = "ok") {
     const id = uid("toast");
@@ -1444,6 +1060,124 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
     window.setTimeout(() => {
       setToasts((current) => current.filter((item) => item.id !== id));
     }, 3500);
+  }
+
+  function upsertStudioExportJob(entry: StudioExportJob) {
+    applyDocumentUpdate((draft) => {
+      const currentIndex = draft.exportJobs.findIndex((job) =>
+        (entry.sourceJobId && job.sourceJobId === entry.sourceJobId)
+        || job.id === entry.id
+      );
+      if (currentIndex >= 0) {
+        draft.exportJobs[currentIndex] = {
+          ...draft.exportJobs[currentIndex],
+          ...entry
+        };
+      } else {
+        draft.exportJobs.unshift(entry);
+      }
+      draft.exportJobs = draft.exportJobs
+        .sort((left, right) => new Date(right.updatedAt || right.createdAt).getTime() - new Date(left.updatedAt || left.createdAt).getTime())
+        .slice(0, 30);
+    }, { skipHistory: true });
+  }
+
+  async function refreshExportJobs() {
+    try {
+      const response = await fetchExportJobs();
+      setLiveExportJobs(response.jobs);
+      response.jobs.forEach((job) => {
+        upsertStudioExportJob({
+          id: `history-${job.id}`,
+          objectId: job.objectId,
+          objectType: job.objectType,
+          format: job.format,
+          status: job.status,
+          progress: job.progress,
+          message: job.message,
+          filename: job.filename,
+          error: job.error,
+          updatedAt: job.updatedAt,
+          sourceJobId: job.id,
+          runtimeFilters: {},
+          createdAt: job.createdAt
+        });
+      });
+    } catch {
+      setLiveExportJobs([]);
+    }
+  }
+
+  async function startObjectExport(options?: { objectId?: string; runtimeFilters?: Record<string, string> }) {
+    const objectId = options?.objectId || activeObject?.id || "";
+    const object = objectId ? bundle.objects[objectId] : activeObject;
+    if (!object) {
+      pushToast("Open a report or dashboard before exporting.", "warn");
+      return null;
+    }
+    if (object.type === "report") {
+      const response = await startReportExportJob({ reportId: object.id });
+      const jobEntry: StudioExportJob = {
+        id: `history-${response.job.id}`,
+        objectId: object.id,
+        objectType: "report",
+        format: "xlsx",
+        status: response.job.status,
+        progress: response.job.progress,
+        message: response.job.message,
+        filename: response.job.filename,
+        error: response.job.error,
+        updatedAt: response.job.updatedAt,
+        sourceJobId: response.job.id,
+        runtimeFilters: {},
+        createdAt: response.job.createdAt
+      };
+      setExportJob(response.job);
+      setDownloadedJobId("");
+      upsertStudioExportJob(jobEntry);
+      return response.job;
+    }
+    const runtimeFilters = options?.runtimeFilters || {};
+    const response = await startDashboardExportJob({
+      dashboardId: object.id,
+      runtimeFilters
+    });
+    const jobEntry: StudioExportJob = {
+      id: `history-${response.job.id}`,
+      objectId: object.id,
+      objectType: "dashboard",
+      format: "xlsx",
+      status: response.job.status,
+      progress: response.job.progress,
+      message: response.job.message,
+      filename: response.job.filename,
+      error: response.job.error,
+      updatedAt: response.job.updatedAt,
+      sourceJobId: response.job.id,
+      runtimeFilters,
+      createdAt: response.job.createdAt
+    };
+    setExportJob(response.job);
+    setDownloadedJobId("");
+    upsertStudioExportJob(jobEntry);
+    return response.job;
+  }
+
+  async function retryExportJob(job: StudioExportJob) {
+    if (job.format === "json") {
+      exportJson();
+      return;
+    }
+    const targetObject = bundle.objects[job.objectId];
+    if (!targetObject || (targetObject.type !== "report" && targetObject.type !== "dashboard")) {
+      pushToast("The saved object for this export is no longer available.", "warn");
+      return;
+    }
+    await startObjectExport({
+      objectId: targetObject.id,
+      runtimeFilters: job.objectType === "dashboard" ? (job.runtimeFilters || {}) : {}
+    });
+    pushToast("Export restarted.");
   }
 
   function applyDocumentUpdate(updater: (draft: StudioDocument) => StudioDocument | void, options?: { skipHistory?: boolean }) {
@@ -1500,10 +1234,10 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
   ]);
 
   useEffect(() => {
-    if (!activeObjectId && bundle.order[0]) {
-      navigate(`/studio/${bundle.order[0]}`, { replace: true });
+    if (!activeObjectId && visibleObjects[0]) {
+      navigate(`/studio/${visibleObjects[0].id}`, { replace: true });
     }
-  }, [activeObjectId, bundle.order, navigate]);
+  }, [activeObjectId, navigate, visibleObjects]);
 
   useEffect(() => {
     if (!activeObjectId) return;
@@ -1514,13 +1248,40 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
 
   useEffect(() => {
     if (!activeDashboard) return;
-    setActiveTabId((current) => activeDashboard.tabs.some((tab) => tab.id === current) ? current : (activeDashboard.tabs[0]?.id || ""));
+    setActiveTabId((current) => resolveActiveDashboardTabId(activeDashboard, current));
     setRuntimeValues(Object.fromEntries(activeDashboard.runtimeFilters.map((filter) => [filter.id, filter.defaultValue || ""])));
   }, [activeDashboard?.id, activeDashboard?.tabs, activeDashboard?.runtimeFilters]);
 
   useEffect(() => {
+    const nextSelectedWidgetId = resolveSelectedDashboardWidgetId(activeDashboardTab, selectedWidgetId);
+    if (nextSelectedWidgetId !== selectedWidgetId) {
+      setSelectedWidgetId(nextSelectedWidgetId);
+    }
+  }, [activeDashboardTab, selectedWidgetId]);
+
+  useEffect(() => {
+    if (!activeDashboard?.tabs.length) {
+      setWidgetTargetTabId("");
+      return;
+    }
+    const candidateTabIds = activeDashboard.tabs.map((tab) => tab.id);
+    if (widgetTargetTabId && candidateTabIds.includes(widgetTargetTabId)) return;
+    const fallbackTarget = candidateTabIds.find((tabId) => tabId !== activeDashboardTab?.id) || candidateTabIds[0] || "";
+    setWidgetTargetTabId(fallbackTarget);
+  }, [activeDashboard?.id, activeDashboard?.tabs, activeDashboardTab?.id, widgetTargetTabId]);
+
+  useEffect(() => {
     setPreviewPage(1);
   }, [activeReport?.id, activeReport?.updatedAt]);
+
+  useEffect(() => {
+    if (createSteps.includes(createStep)) return;
+    setCreateStep(createSteps[0]);
+  }, [createStep, createSteps]);
+
+  useEffect(() => {
+    setCreatePreviewPage(1);
+  }, [createDraft]);
 
   useEffect(() => {
     let active = true;
@@ -1580,11 +1341,33 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
     if (!exportJob || exportJob.status === "complete" || exportJob.status === "failed") return;
     const handle = window.setInterval(() => {
       fetchExportJobStatus(exportJob.id)
-        .then((response) => setExportJob(response.job))
+        .then((response) => {
+          setExportJob(response.job);
+          void refreshExportJobs();
+        })
         .catch(() => undefined);
     }, 1000);
     return () => window.clearInterval(handle);
   }, [exportJob?.id, exportJob?.status]);
+
+  useEffect(() => {
+    if (!exportJob) return;
+    upsertStudioExportJob({
+      id: `history-${exportJob.id}`,
+      objectId: exportJob.objectId,
+      objectType: exportJob.objectType,
+      format: exportJob.format,
+      status: exportJob.status,
+      progress: exportJob.progress,
+      message: exportJob.message,
+      filename: exportJob.filename,
+      error: exportJob.error,
+      updatedAt: exportJob.updatedAt,
+      sourceJobId: exportJob.id,
+      runtimeFilters: activeDashboard && exportJob.objectType === "dashboard" && exportJob.objectId === activeDashboard.id ? runtimeValues : {},
+      createdAt: exportJob.createdAt
+    });
+  }, [activeDashboard, exportJob, runtimeValues]);
 
   useEffect(() => {
     if (!exportJob || exportJob.status !== "complete" || downloadedJobId === exportJob.id) return;
@@ -1594,12 +1377,23 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
   }, [downloadedJobId, exportJob]);
 
   useEffect(() => {
+    if (drawer !== "export") return;
+    void refreshExportJobs();
+    const hasRunningJob = mergedExportJobs.some((job) => job.status === "queued" || job.status === "running");
+    if (!hasRunningJob) return;
+    const handle = window.setInterval(() => {
+      void refreshExportJobs();
+    }, 1500);
+    return () => window.clearInterval(handle);
+  }, [drawer, mergedExportJobs]);
+
+  useEffect(() => {
     if (!resizeSession) return;
     const session = resizeSession;
 
     function handlePointerMove(event: PointerEvent) {
-      const nextW = clampWidgetWidth(session.startW + Math.round((event.clientX - session.startX) / 96));
-      const nextH = clampWidgetHeight(session.startH + Math.round((event.clientY - session.startY) / 88));
+      const nextW = clampDashboardWidgetWidth(session.startW + Math.round((event.clientX - session.startX) / 96));
+      const nextH = clampDashboardWidgetHeight(session.startH + Math.round((event.clientY - session.startY) / 88));
       if (nextW === session.nextW && nextH === session.nextH) return;
       setResizeSession((current) => (current ? { ...current, nextW, nextH } : current));
       updateActiveDashboardWidget(
@@ -1622,6 +1416,9 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
       if (changed && resizeStartSnapshotRef.current) {
         setHistory((current) => [resizeStartSnapshotRef.current as StudioDocument, ...current].slice(0, 60));
         setFuture([]);
+        if (activeDashboard) {
+          writeObject(balanceDashboardTabLayoutInDefinition(activeDashboard, session.tabId), { skipHistory: true });
+        }
       }
       resizeStartSnapshotRef.current = null;
       setResizeSession(null);
@@ -1636,15 +1433,17 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
   }, [resizeSession, activeDashboard?.id]);
 
   const filteredObjects = useMemo(() => {
-    const query = libraryQuery.trim().toLowerCase();
-    return objects.filter((object) => {
-      if (libraryFilter !== "all" && object.type !== libraryFilter) return false;
-      if (favoritesOnly && !documentState.favorites.includes(object.id)) return false;
-      if (recentOnly && !documentState.recent.includes(object.id)) return false;
-      if (!query) return true;
-      return [object.name, object.description, object.folder, object.category, object.tags.join(" ")].join(" ").toLowerCase().includes(query);
+    return filterStudioLibraryItems(visibleObjects, {
+      currentUserId,
+      favorites: documentState.favorites,
+      recentIds: documentState.recent,
+      query: libraryQuery,
+      typeFilter: libraryFilter,
+      scopeFilter: libraryScopeFilter,
+      favoritesOnly,
+      recentOnly
     });
-  }, [objects, libraryQuery, libraryFilter, favoritesOnly, recentOnly, documentState.favorites, documentState.recent]);
+  }, [currentUserId, visibleObjects, libraryQuery, libraryFilter, libraryScopeFilter, favoritesOnly, recentOnly, documentState.favorites, documentState.recent]);
 
   const localReportResult = useMemo(() => {
     if (!activeReport || !activeTable) return null;
@@ -1658,16 +1457,41 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
     const widgets = activeDashboard.tabs.flatMap((tab) =>
       tab.widgets.map((widget) => {
         const report = widget.mode === "copied" && widget.snapshot ? widget.snapshot : (bundle.objects[widget.reportId] as ReportDefinition | undefined);
-        if (!report) return null;
+        if (!report) {
+          const message = "Linked report is unavailable.";
+          const fallbackReport = createUnavailableDashboardReport(widget, message);
+          return {
+            widgetId: widget.id,
+            widget,
+            report: fallbackReport,
+            result: createEmptyDashboardReportResult(fallbackReport.id, fallbackReport.sourceTableId, message),
+            status: "failed" as const,
+            message,
+            error: message
+          };
+        }
         const table = bundle.tables.find((item) => item.id === report.sourceTableId);
-        if (!table) return null;
+        if (!table) {
+          const message = "Source table is unavailable.";
+          return {
+            widgetId: widget.id,
+            widget,
+            report,
+            result: createEmptyDashboardReportResult(report.id, report.sourceTableId, message),
+            status: "failed" as const,
+            message,
+            error: message
+          };
+        }
         return {
           widgetId: widget.id,
           widget,
           report,
-          result: runReport(report, table, bundle.data[report.sourceTableId] || [], buildDashboardFilters(activeDashboard, report.id, runtimeValues))
+          result: runReport(report, table, bundle.data[report.sourceTableId] || [], buildDashboardFilters(activeDashboard, report.id, runtimeValues)),
+          status: "complete" as const,
+          message: "Preview ready"
         };
-      }).filter((item): item is { widgetId: string; widget: typeof tab.widgets[number]; report: ReportDefinition; result: ReportRunResult } => Boolean(item))
+      })
     );
     return buildDashboardResult(activeDashboard, widgets);
   }, [activeDashboard, bundle, runtimeValues]);
@@ -1708,40 +1532,119 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
     writeObject(nextDashboard, options);
   }
 
-  function moveDashboardWidget(tabId: string, widgetId: string, direction: -1 | 1) {
+  function moveDashboardWidget(tabId: string, widgetId: string, direction: DashboardWidgetMoveDirection) {
     if (!activeDashboard) return;
-    const nextDashboard = clone(activeDashboard);
-    const tab = nextDashboard.tabs.find((item) => item.id === tabId);
-    if (!tab) return;
-    const currentIndex = tab.widgets.findIndex((item) => item.id === widgetId);
-    const nextIndex = currentIndex + direction;
-    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= tab.widgets.length) return;
-    const [widget] = tab.widgets.splice(currentIndex, 1);
-    tab.widgets.splice(nextIndex, 0, widget);
-    writeObject(nextDashboard);
+    writeObject(moveDashboardWidgetByDirectionInDefinition(activeDashboard, tabId, widgetId, direction));
   }
 
-  function reorderDashboardWidget(tabId: string, sourceWidgetId: string, targetWidgetId: string) {
-    if (!activeDashboard || sourceWidgetId === targetWidgetId) return;
-    const nextDashboard = clone(activeDashboard);
-    const tab = nextDashboard.tabs.find((item) => item.id === tabId);
+  function moveDashboardWidgetByRow(tabId: string, widgetId: string, direction: "up" | "down") {
+    if (!activeDashboard) return;
+    writeObject(moveDashboardWidgetByRowInDefinition(activeDashboard, tabId, widgetId, direction));
+  }
+
+  function moveDashboardWidgetToRowEdge(tabId: string, widgetId: string, edge: DashboardWidgetRowEdge) {
+    if (!activeDashboard) return;
+    const tab = activeDashboard.tabs.find((candidate) => candidate.id === tabId);
     if (!tab) return;
-    const fromIndex = tab.widgets.findIndex((item) => item.id === sourceWidgetId);
-    const toIndex = tab.widgets.findIndex((item) => item.id === targetWidgetId);
-    if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return;
-    const [widget] = tab.widgets.splice(fromIndex, 1);
-    tab.widgets.splice(toIndex, 0, widget);
-    writeObject(nextDashboard);
+    const rowIndex = (() => {
+      const rows = resolveDashboardRowsForTab(tabId);
+      return rows.findIndex((row) => row.widgetIds.includes(widgetId));
+    })();
+    if (rowIndex < 0) return;
+    writeObject(reorderDashboardWidgetToRowEdgeInDefinition(activeDashboard, tabId, widgetId, rowIndex, edge));
+  }
+
+  function removeDashboardWidget(tabId: string, widgetId: string) {
+    if (!activeDashboard) return;
+    writeObject(removeDashboardWidgetInDefinition(activeDashboard, tabId, widgetId));
+  }
+
+  function moveDashboardWidgetToEdge(tabId: string, widgetId: string, edge: "start" | "end") {
+    if (!activeDashboard) return;
+    writeObject(moveDashboardWidgetToEdgeInDefinition(activeDashboard, tabId, widgetId, edge));
+  }
+
+  function applyDashboardWidgetPreset(tabId: string, widgetId: string, layout: { w: number; h: number }) {
+    if (!activeDashboard) return;
+    writeObject(applyDashboardWidgetLayout(activeDashboard, tabId, widgetId, layout));
+  }
+
+  function placeDashboardWidget(tabId: string, widgetId: string, position: { x: number; y: number }) {
+    if (!activeDashboard) return;
+    writeObject(placeDashboardWidgetAtPositionInDefinition(activeDashboard, tabId, widgetId, position));
+  }
+
+  function duplicateDashboardWidget(tabId: string, widgetId: string) {
+    if (!activeDashboard) return;
+    const duplicated = duplicateDashboardWidgetInDefinition(activeDashboard, tabId, widgetId, () => uid("widget"));
+    writeObject(duplicated.dashboard);
+    if (duplicated.widgetId) setSelectedWidgetId(duplicated.widgetId);
+  }
+
+  function moveDashboardWidgetToTab(tabId: string, widgetId: string, targetTabId: string) {
+    if (!activeDashboard || !targetTabId) return;
+    writeObject(moveDashboardWidgetToTabInDefinition(activeDashboard, tabId, widgetId, targetTabId));
+    setActiveTabId(targetTabId);
+    setSelectedWidgetId(widgetId);
+  }
+
+  function copyDashboardWidgetToTab(tabId: string, widgetId: string, targetTabId: string) {
+    if (!activeDashboard || !targetTabId) return;
+    const copied = copyDashboardWidgetToTabInDefinition(activeDashboard, tabId, widgetId, targetTabId, () => uid("widget"));
+    writeObject(copied.dashboard);
+    if (copied.widgetId) {
+      setActiveTabId(targetTabId);
+      setSelectedWidgetId(copied.widgetId);
+    }
+  }
+
+  function addDashboardWidget(tabId: string, reportId: string, afterWidgetId?: string) {
+    if (!activeDashboard) return;
+    const report = objects.find((object): object is ReportDefinition => object.type === "report" && object.id === reportId);
+    if (!report) return;
+    const widgetId = uid("widget");
+    const newWidget = {
+      id: widgetId,
+      title: report.name,
+      mode: "linked" as const,
+      displayMode: "inherit" as const,
+      showDetails: false,
+      showSummary: true,
+      reportId: report.id,
+      layout: { w: 6, h: 4 }
+    };
+    writeObject(insertDashboardWidget(activeDashboard, tabId, newWidget, afterWidgetId));
+    setSelectedWidgetId(widgetId);
   }
 
   function toggleDashboardWidgetFullWidth(tabId: string, widgetId: string) {
-    updateActiveDashboardWidget(tabId, widgetId, (widget) => ({
-      ...widget,
-      layout: {
-        ...widget.layout,
-        w: clampWidgetWidth(widget.layout.w) >= 12 ? 6 : 12
-      }
-    }));
+    if (!activeDashboard) return;
+    writeObject(toggleDashboardWidgetFullWidthInDefinition(activeDashboard, tabId, widgetId));
+  }
+
+  function balanceActiveDashboardTab(tabId: string) {
+    if (!activeDashboard) return;
+    writeObject(balanceDashboardTabLayoutInDefinition(activeDashboard, tabId));
+  }
+
+  function balanceAllDashboardTabs() {
+    if (!activeDashboard) return;
+    writeObject(balanceDashboardLayoutInDefinition(activeDashboard));
+  }
+
+  function balanceDashboardRow(tabId: string, rowIndex: number) {
+    if (!activeDashboard || rowIndex < 0) return;
+    writeObject(balanceDashboardRowInDefinition(activeDashboard, tabId, rowIndex));
+  }
+
+  function applyDashboardRowPreset(tabId: string, rowIndex: number, preset: DashboardRowLayoutPreset) {
+    if (!activeDashboard || rowIndex < 0) return;
+    writeObject(applyDashboardRowPresetInDefinition(activeDashboard, tabId, rowIndex, preset));
+  }
+
+  function resolveDashboardRowsForTab(tabId: string) {
+    const tab = activeDashboard?.tabs.find((candidate) => candidate.id === tabId);
+    return tab ? getDashboardWidgetRowsInStudio(tab) : [];
   }
 
   function beginWidgetResize(event: ReactPointerEvent<HTMLButtonElement>, tabId: string, widgetId: string, layout: { w: number; h: number }) {
@@ -1753,10 +1656,10 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
       widgetId,
       startX: event.clientX,
       startY: event.clientY,
-      startW: clampWidgetWidth(layout.w),
-      startH: clampWidgetHeight(layout.h),
-      nextW: clampWidgetWidth(layout.w),
-      nextH: clampWidgetHeight(layout.h)
+      startW: clampDashboardWidgetWidth(layout.w),
+      startH: clampDashboardWidgetHeight(layout.h),
+      nextW: clampDashboardWidgetWidth(layout.w),
+      nextH: clampDashboardWidgetHeight(layout.h)
     });
   }
 
@@ -1768,9 +1671,11 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
         nextTable = activeQuickbaseProfile ? convertQuickbaseSchemaToTables(schema, activeQuickbaseProfile)[0] || nextTable : nextTable;
       }
     }
-    setCreateDraft(buildCreateDraft(nextTable, type));
+    setCreateDraft(buildStudioBuilderDraft(nextTable, type, currentUserId, uid));
     setEditingReportId(null);
     setCreateFieldQuery("");
+    setCreateStep(getStudioBuilderSteps(type)[0]);
+    setCreatePreviewPage(1);
     setCreateModalOpen(true);
   }
 
@@ -1779,6 +1684,8 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
     setCreateDraft(buildDraftFromReport(report, table));
     setEditingReportId(report.id);
     setCreateFieldQuery("");
+    setCreateStep("basics");
+    setCreatePreviewPage(1);
     setCreateModalOpen(true);
   }
 
@@ -1832,18 +1739,22 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
 
   function createFromDraft() {
     if (createDraft.type === "dashboard") {
+      const sharing = normalizeStudioBuilderScopeOwner(createDraft.scope, currentUserId, createDraft.ownerUserId);
       const dashboard: DashboardDefinition = {
         id: uid("dashboard"),
         type: "dashboard",
+        schemaVersion: 1,
         name: createDraft.name.trim() || "New Dashboard",
         description: createDraft.description.trim(),
         folder: "Custom",
         category: "Dashboard",
         tags: [],
-      updatedAt: new Date().toISOString(),
-      runtimeFilters: [],
-      sourceReportOverrides: {},
-      tabs: [{ id: uid("tab"), name: "Overview", widgets: [] }]
+        scope: sharing.scope,
+        ownerUserId: sharing.ownerUserId,
+        updatedAt: new Date().toISOString(),
+        runtimeFilters: [],
+        sourceReportOverrides: {},
+        tabs: [{ id: uid("tab"), name: "Overview", widgets: [] }]
       };
       applyDocumentUpdate((draft) => {
         draft.bundle.objects[dashboard.id] = dashboard;
@@ -1865,14 +1776,18 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
       return;
     }
     const existingReport = editingReportId ? (bundle.objects[editingReportId] as ReportDefinition | undefined) : undefined;
+    const sharing = normalizeStudioBuilderScopeOwner(createDraft.scope, currentUserId, createDraft.ownerUserId);
     const report: ReportDefinition = {
       id: existingReport?.id || uid("report"),
       type: "report",
+      schemaVersion: existingReport?.schemaVersion || 1,
       name: createDraft.name.trim() || "New Report",
       description: createDraft.description.trim(),
       folder: existingReport?.folder || "Custom",
       category: existingReport?.category || "Reporting",
       tags: existingReport?.tags || [],
+      scope: sharing.scope,
+      ownerUserId: sharing.ownerUserId,
       updatedAt: new Date().toISOString(),
       sourceTableId: table.id,
       sourceReportOverrides: clone(createDraft.sourceReportOverrides),
@@ -1898,16 +1813,83 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
   }
 
   function cloneObject(object: StudioObject) {
-    const copy = clone(object);
-    copy.id = uid(object.type);
-    copy.name = `${object.name} Copy`;
-    copy.updatedAt = new Date().toISOString();
+    if (object.type !== "dashboard") {
+      const copy = clone(object);
+      copy.id = uid(object.type);
+      copy.name = `${object.name} Copy`;
+      copy.updatedAt = new Date().toISOString();
+      applyDocumentUpdate((draft) => {
+        draft.bundle.objects[copy.id] = copy;
+        draft.bundle.order.unshift(copy.id);
+      });
+      navigate(`/studio/${copy.id}`);
+      pushToast("Object cloned.");
+      return;
+    }
+
+    const cloneReportsToo = window.confirm(
+      "Do you want to clone the reports and charts used in this dashboard too?\n\nChoose OK to clone the dashboard and its reports.\nChoose Cancel to clone only the dashboard and keep it connected to the original reports."
+    );
+    const reportCloneMap = new Map<string, ReportDefinition>();
+    const dashboardCopy = clone(object);
+    dashboardCopy.id = uid("dashboard");
+    dashboardCopy.name = `${object.name} Copy`;
+    dashboardCopy.updatedAt = new Date().toISOString();
+
+    if (cloneReportsToo) {
+      dashboardCopy.tabs = dashboardCopy.tabs.map((tab) => ({
+        ...tab,
+        widgets: tab.widgets.map((widget) => {
+          const sourceReport = widget.mode === "copied" && widget.snapshot
+            ? widget.snapshot
+            : (bundle.objects[widget.reportId] as ReportDefinition | undefined);
+          if (!sourceReport) {
+            return widget;
+          }
+
+          const mapKey = widget.mode === "copied" && widget.snapshot
+            ? `snapshot:${widget.id}`
+            : `report:${sourceReport.id}`;
+
+          let reportCopy = reportCloneMap.get(mapKey);
+          if (!reportCopy) {
+            reportCopy = clone(sourceReport);
+            reportCopy.id = uid("report");
+            reportCopy.name = `${sourceReport.name} Copy`;
+            reportCopy.updatedAt = new Date().toISOString();
+            reportCloneMap.set(mapKey, reportCopy);
+          }
+
+          return {
+            ...widget,
+            reportId: reportCopy.id,
+            snapshot: widget.mode === "copied" ? clone(reportCopy) : undefined
+          };
+        })
+      }));
+
+      dashboardCopy.runtimeFilters = dashboardCopy.runtimeFilters.map((filter) => ({
+        ...filter,
+        targetReportIds: filter.targetReportIds.map((reportId) => reportCloneMap.get(`report:${reportId}`)?.id || reportId)
+      }));
+    }
+
     applyDocumentUpdate((draft) => {
-      draft.bundle.objects[copy.id] = copy;
-      draft.bundle.order.unshift(copy.id);
+      if (cloneReportsToo) {
+        Array.from(reportCloneMap.values()).forEach((reportCopy) => {
+          draft.bundle.objects[reportCopy.id] = reportCopy;
+          draft.bundle.order.unshift(reportCopy.id);
+        });
+      }
+      draft.bundle.objects[dashboardCopy.id] = dashboardCopy;
+      draft.bundle.order.unshift(dashboardCopy.id);
     });
-    navigate(`/studio/${copy.id}`);
-    pushToast("Object cloned.");
+    navigate(`/studio/${dashboardCopy.id}`);
+    pushToast(
+      cloneReportsToo
+        ? `Dashboard cloned with ${reportCloneMap.size} copied report${reportCloneMap.size === 1 ? "" : "s"}.`
+        : "Dashboard cloned and left connected to the original reports."
+    );
   }
 
   async function deleteObject(objectId: string) {
@@ -2414,49 +2396,58 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
     });
   }
 
+  function handleImportXlsx(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setXlsxImporting(true);
+    importStudioWorkbook(file)
+      .then((response) => {
+        setDocumentState(normalizeStudioDocument(response.document));
+        setLastWorkbookImportReview(response.review);
+        if (response.primaryObjectId) {
+          navigate(`/studio/${response.primaryObjectId}`);
+        }
+        const importedType = response.review.dashboardCreated ? "dashboard workbook" : response.importedObjectIds.length > 1 ? "workbook" : "sheet";
+        pushToast(`Imported ${importedType} from ${file.name}.`);
+        if (response.warnings.length) {
+          pushToast(`${response.warnings.length} import note${response.warnings.length === 1 ? "" : "s"} recorded. Review the import summary for details.`, "warn");
+        }
+      })
+      .catch((error) => {
+        pushToast(error instanceof Error ? error.message : "XLSX import failed.", "danger");
+      })
+      .finally(() => {
+        setXlsxImporting(false);
+        if (event.target) event.target.value = "";
+      });
+  }
+
   function exportJson() {
     downloadFile("studio-document.json", JSON.stringify(documentState, null, 2));
-    applyDocumentUpdate((draft) => {
-      draft.exportJobs.unshift({
-        id: uid("job"),
-        objectId: activeObject?.id || "studio",
-        format: "json",
-        status: "complete",
-        createdAt: new Date().toISOString()
-      });
-    }, { skipHistory: true });
+    const timestamp = new Date().toISOString();
+    upsertStudioExportJob({
+      id: uid("job"),
+      objectId: activeObject?.id || "studio",
+      objectType: activeObject?.type || "studio",
+      format: "json",
+      status: "complete",
+      progress: 100,
+      message: "JSON export downloaded",
+      updatedAt: timestamp,
+      createdAt: timestamp
+    });
     pushToast("Studio JSON exported.");
   }
 
   async function exportWorkbook() {
-    if (activeReport && activeTable && reportResult) {
-      const response = await startReportExportJob({
-        reportId: activeReport.id,
-        report: activeReport,
-        table: activeTable
-      });
-      setExportJob(response.job);
-      setDownloadedJobId("");
-    } else if (activeDashboard && dashboardResult) {
-      const response = await startDashboardExportJob({
-        dashboardId: activeDashboard.id,
-        runtimeFilters: runtimeValues
-      });
-      setExportJob(response.job);
-      setDownloadedJobId("");
-    } else {
+    if (!(activeReport && reportResult) && !(activeDashboard && dashboardResult)) {
       pushToast("Open a report or dashboard before exporting.", "warn");
       return;
     }
-    applyDocumentUpdate((draft) => {
-      draft.exportJobs.unshift({
-        id: uid("job"),
-        objectId: activeObject?.id || "studio",
-        format: "xlsx",
-        status: "complete",
-        createdAt: new Date().toISOString()
-      });
-    }, { skipHistory: true });
+    await startObjectExport({
+      objectId: activeObject?.id || "",
+      runtimeFilters: activeDashboard ? runtimeValues : {}
+    });
     pushToast("Workbook export started.");
   }
 
@@ -2479,118 +2470,45 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
           </div>
         ) : null}
         <section className="studio-page studio-page-empty">
-          <aside className="studio-library">
-            <div className="surface stack">
-              <div className="studio-section-head">
-                <div>
-                  <div className="eyebrow">{documentState.branding.homeLabel}</div>
-                  <h2>{documentState.branding.navigationLabel}</h2>
-                </div>
-                <div className="studio-actions">
-                  <button onClick={() => openCreateModal("report")}>New report</button>
-                  <button onClick={() => openCreateModal("dashboard")}>New dashboard</button>
-                </div>
-              </div>
-              <label className="field">
-                <span>Search</span>
-                <input
-                  id="studio-library-search-empty"
-                  name="studioLibrarySearchEmpty"
-                  value={libraryQuery}
-                  onChange={(event) => setLibraryQuery(event.target.value)}
-                  placeholder="Search reports, dashboards, fields, tags"
-                />
-              </label>
-              <div className="filter-grid compact-grid">
-                <label className="field">
-                  <span>Type</span>
-                  <select
-                    id="studio-library-type-empty"
-                    name="studioLibraryTypeEmpty"
-                    value={libraryFilter}
-                    onChange={(event) => setLibraryFilter(event.target.value as LibraryFilter)}
-                  >
-                    <option value="all">All</option>
-                    <option value="report">Reports</option>
-                    <option value="dashboard">Dashboards</option>
-                  </select>
-                </label>
-                <label className="toggle-row"><input type="checkbox" checked={favoritesOnly} onChange={(event) => setFavoritesOnly(event.target.checked)} /> Favorites</label>
-                <label className="toggle-row"><input type="checkbox" checked={recentOnly} onChange={(event) => setRecentOnly(event.target.checked)} /> Recent</label>
-              </div>
-              <div className="nav-list">
-                {filteredObjects.length ? filteredObjects.map((object) => (
-                  <Link key={object.id} className="nav-card" to={`/studio/${object.id}`} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>
-                    <span className="badge">{typeLabel(object.type)}</span>
-                    <strong>{object.name}</strong>
-                    <span className="micro">{object.folder} · {object.category}</span>
-                  </Link>
-                )) : <div className="empty-hint">No reports or dashboards are saved yet. Create one to get started.</div>}
-              </div>
-            </div>
+          <StudioLibrarySidebar
+            homeLabel={documentState.branding.homeLabel}
+            navigationLabel={documentState.branding.navigationLabel}
+            openLinksInNewTab={openLinksInNewTab}
+            libraryQuery={libraryQuery}
+            onLibraryQueryChange={setLibraryQuery}
+            libraryFilter={libraryFilter}
+            onLibraryFilterChange={setLibraryFilter}
+            libraryScopeFilter={libraryScopeFilter}
+            onLibraryScopeFilterChange={setLibraryScopeFilter}
+            favoritesOnly={favoritesOnly}
+            onFavoritesOnlyChange={setFavoritesOnly}
+            recentOnly={recentOnly}
+            onRecentOnlyChange={setRecentOnly}
+            hasPersonalObjects={visibleObjects.some((object) => object.scope === "personal")}
+            filteredObjects={filteredObjects}
+            templates={[...documentState.templates.layouts, ...documentState.templates.yaml]}
+            xlsxImporting={xlsxImporting}
+            importInputRef={importInputRef}
+            importXlsxInputRef={importXlsxInputRef}
+            onImportJsonChange={handleImportJson}
+            onImportXlsxChange={handleImportXlsx}
+            onApplyTemplate={applyTemplate}
+            onOpenCreateReport={() => openCreateModal("report")}
+            onOpenCreateDashboard={() => openCreateModal("dashboard")}
+            onOpenTemplates={() => setDrawer("templates")}
+          />
 
-            <div className="surface stack">
-              <div className="card-head">
-                <strong>Templates</strong>
-                <button onClick={() => setDrawer("templates")}>Manage</button>
-              </div>
-              <div className="template-list">
-                {[...documentState.templates.layouts, ...documentState.templates.yaml].slice(0, 4).map((template) => (
-                  <button className="template-card-button" key={template.id} onClick={() => applyTemplate(template)}>
-                    <strong>{template.name}</strong>
-                    <span>{template.type}</span>
-                  </button>
-                ))}
-              </div>
-              <button onClick={() => importInputRef.current?.click()}>Import JSON</button>
-              <input ref={importInputRef} hidden type="file" accept="application/json" onChange={handleImportJson} />
-            </div>
-          </aside>
-
-          <div className="studio-canvas">
-            <div className="hero studio-hero">
-              <div>
-                <span className="badge brand">Workspace</span>
-                <h1>No reports or dashboards yet</h1>
-                <p>Create a report or dashboard, import an existing setup, or apply a template. You should always be able to build from an empty workspace.</p>
-                <div className="micro-row">
-                  <span>{loadingRemote ? "Loading saved workspace…" : "Workspace ready"}</span>
-                  <span>{documentState.sync.lastSavedAt ? `Last saved ${new Date(documentState.sync.lastSavedAt).toLocaleString()}` : "Not saved yet"}</span>
-                </div>
-              </div>
-              <div className="link-toolbar">
-                <button onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save"}</button>
-                <button onClick={() => openCreateModal("report")}>Create report</button>
-                <button onClick={() => openCreateModal("dashboard")}>Create dashboard</button>
-                <button onClick={() => setDrawer("templates")}>Use template</button>
-              </div>
-            </div>
-
-            <section className="surface stack">
-              <div className="card-head">
-                <strong>Start here</strong>
-                <span className="micro">Nothing is blocked just because the workspace is empty.</span>
-              </div>
-              <div className="summary-grid">
-                <button className="template-card-button" onClick={() => openCreateModal("report")}>
-                  <strong>Create a report</strong>
-                  <span>Choose a table, fields, filters, and view.</span>
-                </button>
-                <button className="template-card-button" onClick={() => openCreateModal("dashboard")}>
-                  <strong>Create a dashboard</strong>
-                  <span>Start a blank dashboard and add report widgets.</span>
-                </button>
-                <button className="template-card-button" onClick={() => setDrawer("templates")}>
-                  <strong>Use a template</strong>
-                  <span>Apply a saved layout or report template.</span>
-                </button>
-                <button className="template-card-button" onClick={() => importInputRef.current?.click()}>
-                  <strong>Import JSON</strong>
-                  <span>Load a saved workspace file.</span>
-                </button>
-              </div>
-            </section>
-          </div>
+          <StudioWorkspaceEmptyState
+            loadingRemote={loadingRemote}
+            lastSavedAt={documentState.sync.lastSavedAt}
+            savingRemote={savingRemote}
+            xlsxImporting={xlsxImporting}
+            onSave={saveRemote}
+            onCreateReport={() => openCreateModal("report")}
+            onCreateDashboard={() => openCreateModal("dashboard")}
+            onImportXlsx={() => importXlsxInputRef.current?.click()}
+            onUseTemplate={() => setDrawer("templates")}
+          />
         </section>
       </>
     );
@@ -2599,7 +2517,6 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
   const defaultUrl = `${window.location.origin}${import.meta.env.BASE_URL}#/${activeObject.type}/${activeObject.id}`;
   const viewerUrl = `${window.location.origin}${import.meta.env.BASE_URL}?mode=viewer#/${activeObject.type}/${activeObject.id}`;
   const embedUrl = `${window.location.origin}${import.meta.env.BASE_URL}?embed=1&mode=viewer#/${activeObject.type}/${activeObject.id}`;
-  const openLinksInNewTab = documentState.branding.openLinksInNewTab === true;
 
   return (
     <>
@@ -2619,73 +2536,34 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
         </div>
       ) : null}
       <section className={`studio-page ${activeDashboard ? "studio-page-dashboard" : "studio-page-report"}`}>
-      <aside className="studio-library">
-        <div className="surface stack">
-          <div className="studio-section-head">
-            <div>
-              <div className="eyebrow">{documentState.branding.homeLabel}</div>
-              <h2>{documentState.branding.navigationLabel}</h2>
-            </div>
-            <div className="studio-actions">
-              <button onClick={() => openCreateModal("report")}>New report</button>
-              <button onClick={() => openCreateModal("dashboard")}>New dashboard</button>
-            </div>
-          </div>
-          <label className="field">
-            <span>Search</span>
-            <input
-              id="studio-library-search"
-              name="studioLibrarySearch"
-              value={libraryQuery}
-              onChange={(event) => setLibraryQuery(event.target.value)}
-              placeholder="Search reports, dashboards, fields, tags"
-            />
-          </label>
-          <div className="filter-grid compact-grid">
-            <label className="field">
-              <span>Type</span>
-              <select
-                id="studio-library-type"
-                name="studioLibraryType"
-                value={libraryFilter}
-                onChange={(event) => setLibraryFilter(event.target.value as LibraryFilter)}
-              >
-                <option value="all">All</option>
-                <option value="report">Reports</option>
-                <option value="dashboard">Dashboards</option>
-              </select>
-            </label>
-            <label className="toggle-row"><input type="checkbox" checked={favoritesOnly} onChange={(event) => setFavoritesOnly(event.target.checked)} /> Favorites</label>
-            <label className="toggle-row"><input type="checkbox" checked={recentOnly} onChange={(event) => setRecentOnly(event.target.checked)} /> Recent</label>
-          </div>
-          <div className="nav-list">
-            {filteredObjects.map((object) => (
-              <Link key={object.id} className={`nav-card ${object.id === activeObject.id ? "active-card" : ""}`} to={`/studio/${object.id}`} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>
-                <span className="badge">{typeLabel(object.type)}</span>
-                <strong>{object.name}</strong>
-                <span className="micro">{object.folder} · {object.category}</span>
-              </Link>
-            ))}
-          </div>
-        </div>
-
-        <div className="surface stack">
-          <div className="card-head">
-            <strong>Templates</strong>
-            <button onClick={() => setDrawer("templates")}>Manage</button>
-          </div>
-          <div className="template-list">
-            {[...documentState.templates.layouts, ...documentState.templates.yaml].slice(0, 4).map((template) => (
-              <button className="template-card-button" key={template.id} onClick={() => applyTemplate(template)}>
-                <strong>{template.name}</strong>
-                <span>{template.type}</span>
-              </button>
-            ))}
-          </div>
-          <button onClick={() => importInputRef.current?.click()}>Import JSON</button>
-          <input ref={importInputRef} hidden type="file" accept="application/json" onChange={handleImportJson} />
-        </div>
-      </aside>
+        <StudioLibrarySidebar
+          homeLabel={documentState.branding.homeLabel}
+          navigationLabel={documentState.branding.navigationLabel}
+          openLinksInNewTab={openLinksInNewTab}
+          libraryQuery={libraryQuery}
+          onLibraryQueryChange={setLibraryQuery}
+          libraryFilter={libraryFilter}
+          onLibraryFilterChange={setLibraryFilter}
+          libraryScopeFilter={libraryScopeFilter}
+          onLibraryScopeFilterChange={setLibraryScopeFilter}
+          favoritesOnly={favoritesOnly}
+          onFavoritesOnlyChange={setFavoritesOnly}
+          recentOnly={recentOnly}
+          onRecentOnlyChange={setRecentOnly}
+          hasPersonalObjects={visibleObjects.some((object) => object.scope === "personal")}
+          filteredObjects={filteredObjects}
+          activeObjectId={activeObject.id}
+          templates={[...documentState.templates.layouts, ...documentState.templates.yaml]}
+          xlsxImporting={xlsxImporting}
+          importInputRef={importInputRef}
+          importXlsxInputRef={importXlsxInputRef}
+          onImportJsonChange={handleImportJson}
+          onImportXlsxChange={handleImportXlsx}
+          onApplyTemplate={applyTemplate}
+          onOpenCreateReport={() => openCreateModal("report")}
+          onOpenCreateDashboard={() => openCreateModal("dashboard")}
+          onOpenTemplates={() => setDrawer("templates")}
+        />
 
       <div className="studio-canvas">
         <div className="hero studio-hero">
@@ -2702,6 +2580,7 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
             <button onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save"}</button>
             {!hasActiveObject ? <button onClick={() => openCreateModal("report")}>Create report</button> : null}
             {!hasActiveObject ? <button onClick={() => openCreateModal("dashboard")}>Create dashboard</button> : null}
+            {!hasActiveObject ? <button onClick={() => importXlsxInputRef.current?.click()} disabled={xlsxImporting}>{xlsxImporting ? "Importing xlsx…" : "Import xlsx"}</button> : null}
             {activeReport ? <button onClick={() => openEditReportModal(activeReport)}>Edit report</button> : null}
             {activeReport ? <button onClick={() => deleteObject(activeReport.id)}>Delete report</button> : null}
             {hasActiveObject ? <button onClick={() => toggleFavorite(activeObject.id)}>{documentState.favorites.includes(activeObject.id) ? "Unfavorite" : "Favorite"}</button> : null}
@@ -2742,6 +2621,126 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
           </section>
         ) : null}
 
+        {lastWorkbookImportReview ? (
+          <section className="card import-review-card">
+            <div className="card-head">
+              <div>
+                <strong>Last Workbook Import</strong>
+                <div className="micro">
+                  {lastWorkbookImportReview.workbookName} · {lastWorkbookImportReview.importedSheetCount} imported · {lastWorkbookImportReview.skippedSheetCount} skipped · {new Date(lastWorkbookImportReview.importedAt).toLocaleString()}
+                </div>
+              </div>
+              <div className="studio-actions">
+                <Link className="ghost-button" to="/help">Open manual</Link>
+                <button type="button" onClick={() => setLastWorkbookImportReview(null)}>Dismiss</button>
+              </div>
+            </div>
+            {lastWorkbookImportReview.dashboardCreated ? (
+              <div className="sync-status sync-status-ok">
+                <strong>Dashboard candidate created</strong>
+                <span>Multiple sheets were reconstructed into native reports and a dashboard candidate.</span>
+              </div>
+            ) : null}
+            <div className="import-review-grid">
+              {lastWorkbookImportReview.sheets.map((sheet) => (
+                <article className={`import-review-sheet ${sheet.status === "skipped" ? "import-review-sheet-skipped" : ""}`} key={sheet.sheetName}>
+                  <div className="card-head">
+                    <strong>{sheet.sheetName}</strong>
+                    <span className="badge">{sheet.status === "imported" ? "Imported" : "Skipped"}</span>
+                  </div>
+                  <div className="micro">
+                    Header row: {sheet.headerRowNumber || "Not found"} · {sheet.columnCount} columns · {sheet.rowCount} rows
+                  </div>
+                  {sheet.layout ? (
+                    <>
+                      {sheet.layout.title ? (
+                        <div className="micro">Source title: {sheet.layout.title}</div>
+                      ) : null}
+                      <div className="import-review-hints">
+                        {sheet.layout.state !== "visible" ? <span className="badge">{sheet.layout.state}</span> : null}
+                        {sheet.layout.headerSource === "table" ? <span className="badge">Header from table</span> : null}
+                        {sheet.layout.headerSource === "auto-filter" ? <span className="badge">Header from filter</span> : null}
+                        {sheet.layout.tableName ? <span className="badge">Workbook table</span> : null}
+                        {sheet.layout.tableFocused ? <span className="badge">Table focused</span> : null}
+                        {sheet.layout.viewStyle !== "normal" ? <span className="badge">{sheet.layout.viewStyle}</span> : null}
+                        {!sheet.layout.showGridLines ? <span className="badge">Gridlines hidden</span> : null}
+                        {sheet.layout.wideLayout ? <span className="badge">Wide layout</span> : null}
+                        {sheet.layout.landscape ? <span className="badge">Landscape</span> : null}
+                        {sheet.layout.mergedTitle ? <span className="badge">Merged title</span> : null}
+                        {sheet.layout.imageCount ? <span className="badge">{sheet.layout.imageCount} image{sheet.layout.imageCount === 1 ? "" : "s"}</span> : null}
+                        {sheet.layout.frozenRows || sheet.layout.frozenColumns ? (
+                          <span className="badge">Frozen {sheet.layout.frozenRows}r / {sheet.layout.frozenColumns}c</span>
+                        ) : null}
+                        {sheet.layout.hiddenRowCount ? (
+                          <span className="badge">{sheet.layout.hiddenRowCount} hidden row{sheet.layout.hiddenRowCount === 1 ? "" : "s"}</span>
+                        ) : null}
+                        {sheet.layout.hiddenColumnCount ? (
+                          <span className="badge">{sheet.layout.hiddenColumnCount} hidden column{sheet.layout.hiddenColumnCount === 1 ? "" : "s"}</span>
+                        ) : null}
+                      </div>
+                      {sheet.layout.hiddenFieldLabels.length ? (
+                        <div className="micro">Hidden source fields: {sheet.layout.hiddenFieldLabels.join(", ")}</div>
+                      ) : null}
+                      {sheet.layout.tabColor ? (
+                        <div className="micro">Tab color: {sheet.layout.tabColor}</div>
+                      ) : null}
+                      {sheet.layout.accentColor ? (
+                        <div className="micro">Accent color: {sheet.layout.accentColor}</div>
+                      ) : null}
+                      {sheet.layout.tableName ? (
+                        <div className="micro">
+                          Workbook table: {sheet.layout.tableName}
+                          {sheet.layout.tableRange ? ` · ${sheet.layout.tableRange}` : ""}
+                          {sheet.layout.tableStyle ? ` · ${sheet.layout.tableStyle}` : ""}
+                        </div>
+                      ) : null}
+                      {sheet.layout.totalsRow ? (
+                        <div className="micro">Workbook table includes a totals row.</div>
+                      ) : null}
+                      {sheet.layout.viewStyle !== "normal" || !sheet.layout.showGridLines || sheet.layout.zoomScale !== 100 ? (
+                        <div className="micro">
+                          View: {sheet.layout.viewStyle}
+                          {!sheet.layout.showGridLines ? " · gridlines hidden" : ""}
+                          {sheet.layout.zoomScale !== 100 ? ` · zoom ${sheet.layout.zoomScale}%` : ""}
+                        </div>
+                      ) : null}
+                      {sheet.layout.centeredHorizontally || sheet.layout.centeredVertically || sheet.layout.fitToWidth || sheet.layout.fitToHeight ? (
+                        <div className="micro">
+                          Page fit: {sheet.layout.fitToWidth || "auto"}w × {sheet.layout.fitToHeight || "auto"}h
+                          {sheet.layout.centeredHorizontally ? " · centered horizontally" : ""}
+                          {sheet.layout.centeredVertically ? " · centered vertically" : ""}
+                        </div>
+                      ) : null}
+                      {sheet.layout.headerFooterText ? (
+                        <div className="micro">Header/footer: {sheet.layout.headerFooterText}</div>
+                      ) : null}
+                      {sheet.layout.autoFilterRange ? (
+                        <div className="micro">Auto filter: {sheet.layout.autoFilterRange}</div>
+                      ) : null}
+                      {sheet.layout.printArea ? (
+                        <div className="micro">Print area: {sheet.layout.printArea}</div>
+                      ) : null}
+                    </>
+                  ) : null}
+                  {sheet.notes.length ? (
+                    <ul className="flat-list import-review-list">
+                      {sheet.notes.map((note) => <li key={note}>{note}</li>)}
+                    </ul>
+                  ) : null}
+                  {sheet.substitutions.length ? (
+                    <>
+                      <strong className="micro">Repairs and substitutions</strong>
+                      <ul className="flat-list import-review-list">
+                        {sheet.substitutions.map((note) => <li key={note}>{note}</li>)}
+                      </ul>
+                    </>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
         {activeReport && activeTable && (reportResult || liveReportLoading) ? (
           <section className="surface stack">
             <div className="card-head">
@@ -2762,7 +2761,15 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
                     ))}
                   </div>
                 ) : null}
-                <ReportPreview
+                {reportResult.warnings.length ? (
+                  <div className="sync-status sync-status-warn">
+                    <strong>Report warnings</strong>
+                    <ul className="flat-list import-review-list">
+                      {reportResult.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+                    </ul>
+                  </div>
+                ) : null}
+                <StudioReportPreview
                   report={activeReport}
                   table={activeTable}
                   result={reportResult}
@@ -2782,6 +2789,19 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
                   <strong>Dashboard Preview</strong>
                   <span className="micro">{activeDashboard.tabs.length} tabs</span>
                 </div>
+                {dashboardResult.tabs.some((tab) => tab.widgets.some((widget) => widget.status === "failed" || widget.result.warnings.length)) ? (
+                  <div className="sync-status sync-status-warn">
+                    <strong>Dashboard warnings</strong>
+                    <ul className="flat-list import-review-list">
+                      {dashboardResult.tabs.flatMap((tab) =>
+                        tab.widgets.flatMap((widget) => [
+                          ...(widget.status === "failed" ? [`${tab.name} / ${widget.widget.title || widget.report.name}: ${widget.error || widget.message}`] : []),
+                          ...widget.result.warnings.map((warning) => `${tab.name} / ${widget.widget.title || widget.report.name}: ${warning}`)
+                        ])
+                      ).map((warning) => <li key={warning}>{warning}</li>)}
+                    </ul>
+                  </div>
+                ) : null}
                 <div className="filter-grid compact-grid">
                   <label className="field">
                     <span>Card search</span>
@@ -2799,14 +2819,19 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
                 <button key={tab.id} className={tab.id === activeTabId ? "active-tab" : ""} onClick={() => setActiveTabId(tab.id)}>{tab.name}</button>
               ))}
             </div>
-            <DashboardPreview
+            <StudioDashboardPreview
               dashboard={{ ...activeDashboard, tabs: activeDashboard.tabs.filter((tab) => !activeTabId || tab.id === activeTabId) }}
               result={{ ...dashboardResult, tabs: dashboardResult.tabs.filter((tab) => !activeTabId || tab.id === activeTabId) }}
               tables={bundle.tables}
               runtimeValues={runtimeValues}
               setRuntimeValues={setRuntimeValues}
               widgetSearch={widgetSearch}
+              selectedWidgetId={selectedWidgetId}
               draggingWidget={draggingWidget}
+              onSelectWidget={(tabId, widgetId) => {
+                setActiveTabId(tabId);
+                setSelectedWidgetId(widgetId);
+              }}
               onOpenReport={(reportId) => {
                 if (openLinksInNewTab) {
                   window.open(`${window.location.origin}${import.meta.env.BASE_URL}#/studio/${reportId}`, "_blank", "noopener,noreferrer");
@@ -2816,9 +2841,28 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
               }}
               onStartWidgetDrag={(tabId, widgetId) => setDraggingWidget({ tabId, widgetId })}
               onEndWidgetDrag={() => setDraggingWidget(null)}
-              onDropWidget={(tabId, widgetId) => {
+              onDropWidget={(tabId, widgetId, position: DashboardWidgetDropPosition) => {
                 if (draggingWidget?.tabId === tabId) {
-                  reorderDashboardWidget(tabId, draggingWidget.widgetId, widgetId);
+                  writeObject(reorderDashboardWidgetByDropPositionInDefinition(activeDashboard, tabId, draggingWidget.widgetId, widgetId, position));
+                }
+                setDraggingWidget(null);
+              }}
+              onDropWidgetToRow={(tabId, rowIndex, edge) => {
+                if (draggingWidget?.tabId === tabId) {
+                  writeObject(reorderDashboardWidgetToRowEdgeInDefinition(activeDashboard, tabId, draggingWidget.widgetId, rowIndex, edge));
+                }
+                setDraggingWidget(null);
+              }}
+              onDropWidgetToTabEnd={(tabId) => {
+                if (draggingWidget?.tabId === tabId) {
+                  const tab = activeDashboard.tabs.find((item) => item.id === tabId);
+                  writeObject(reorderDashboardWidgetToIndexInDefinition(activeDashboard, tabId, draggingWidget.widgetId, tab?.widgets.length || 0));
+                }
+                setDraggingWidget(null);
+              }}
+              onDropWidgetToGridPosition={(tabId, position) => {
+                if (draggingWidget?.tabId === tabId) {
+                  placeDashboardWidget(tabId, draggingWidget.widgetId, position);
                 }
                 setDraggingWidget(null);
               }}
@@ -2849,6 +2893,32 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
                 <label className="field"><span>Description</span><input value={activeDashboard.description} onChange={(event) => updateObject({ ...activeDashboard, description: event.target.value })} /></label>
                 <div className="card">
                   <div className="card-head">
+                    <strong>Sharing</strong>
+                    <span className="micro">Shared dashboards appear in the global library. Personal dashboards stay private to the current session user.</span>
+                  </div>
+                  <label className="field">
+                    <span>Scope</span>
+                    <select
+                      value={activeDashboard.scope}
+                      onChange={(event) => updateObject({
+                        ...activeDashboard,
+                        ...normalizeStudioBuilderScopeOwner(event.target.value as StudioObjectScope, currentUserId, activeDashboard.ownerUserId)
+                      })}
+                    >
+                      <option value="global">Shared</option>
+                      <option value="personal">Personal</option>
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>Owner</span>
+                    <input
+                      readOnly
+                      value={activeDashboard.scope === "personal" ? (activeDashboard.ownerUserId || currentUserId || "No active user") : "Shared with everyone in this workspace"}
+                    />
+                  </label>
+                </div>
+                <div className="card">
+                  <div className="card-head">
                     <strong>Tabs</strong>
                     <button
                       onClick={() => {
@@ -2873,6 +2943,8 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
                     <div className="card-head">
                       <strong>{activeDashboardTab.name}</strong>
                       <div className="studio-actions">
+                        <button onClick={() => balanceActiveDashboardTab(activeDashboardTab.id)}>Balance tab</button>
+                        <button onClick={balanceAllDashboardTabs}>Balance dashboard</button>
                         <button
                           disabled={activeDashboard.tabs.length <= 1}
                           onClick={() => {
@@ -2900,63 +2972,180 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
                       </div>
                     </div>
                     <label className="field"><span>Tab name</span><input value={activeDashboardTab.name} onChange={(event) => updateObject({ ...activeDashboard, tabs: activeDashboard.tabs.map((item) => item.id === activeDashboardTab.id ? { ...item, name: event.target.value } : item) })} /></label>
-                    <div className="stack-compact">
-                      {activeDashboardTab.widgets.filter((widget) => !widgetSearch || `${widget.title} ${widget.reportId}`.toLowerCase().includes(widgetSearch.toLowerCase())).map((widget) => (
-                        <div className="widget-edit-card" key={widget.id}>
-                          <label className="field"><span>Title</span><input value={widget.title} onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, widget.id, (candidate) => ({ ...candidate, title: event.target.value }))} /></label>
-                          <div className="widget-editor-grid">
-                            <label className="field">
-                              <span>Report</span>
-                              <select value={widget.reportId} onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, widget.id, (candidate) => ({ ...candidate, reportId: event.target.value, snapshot: undefined, mode: "linked" }))}>{objects.filter((object): object is ReportDefinition => object.type === "report").map((report) => <option key={report.id} value={report.id}>{report.name}</option>)}</select>
-                            </label>
-                            <label className="field">
-                              <span>Connection</span>
-                              <select value={widget.mode} onChange={(event) => {
-                                const report = bundle.objects[widget.reportId] as ReportDefinition | undefined;
-                                updateActiveDashboardWidget(activeDashboardTab.id, widget.id, (candidate) => ({
-                                  ...candidate,
-                                  mode: event.target.value as "linked" | "copied",
-                                  snapshot: event.target.value === "copied" && report ? clone(report) : undefined
-                                }));
-                              }}>
-                                <option value="linked">Live report</option>
-                                <option value="copied">Saved copy</option>
-                              </select>
-                            </label>
-                            <label className="field">
-                              <span>Display</span>
-                              <select value={widget.displayMode} onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, widget.id, (candidate) => ({ ...candidate, displayMode: event.target.value as "inherit" | "table" | "summary" | "chart" }))}>
-                                <option value="inherit">Inherit report view</option>
-                                <option value="table">Table only</option>
-                                <option value="summary">Summary only</option>
-                                <option value="chart">Chart/graph</option>
-                              </select>
-                            </label>
-                            <label className="toggle-row"><input type="checkbox" checked={widget.showSummary} onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, widget.id, (candidate) => ({ ...candidate, showSummary: event.target.checked }))} /> Show summary</label>
-                            <label className="toggle-row"><input type="checkbox" checked={widget.showDetails} onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, widget.id, (candidate) => ({ ...candidate, showDetails: event.target.checked }))} /> Show details</label>
-                            <label className="toggle-row"><input type="checkbox" checked={clampWidgetWidth(widget.layout.w) >= 12} onChange={() => toggleDashboardWidgetFullWidth(activeDashboardTab.id, widget.id)} /> Full width</label>
-                            <label className="field-inline"><span>Width</span><input type="number" min="1" max="12" value={widget.layout.w} onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, widget.id, (candidate) => ({ ...candidate, layout: { ...candidate.layout, w: clampWidgetWidth(Number(event.target.value)) } }))} /></label>
-                            <label className="field-inline"><span>Height</span><input type="number" min="2" max="10" value={widget.layout.h} onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, widget.id, (candidate) => ({ ...candidate, layout: { ...candidate.layout, h: clampWidgetHeight(Number(event.target.value)) } }))} /></label>
-                          </div>
-                          <div className="widget-edit-actions">
-                            <button onClick={() => moveDashboardWidget(activeDashboardTab.id, widget.id, -1)}>Move up</button>
-                            <button onClick={() => moveDashboardWidget(activeDashboardTab.id, widget.id, 1)}>Move down</button>
-                            <button onClick={() => toggleDashboardWidgetFullWidth(activeDashboardTab.id, widget.id)}>
-                              {clampWidgetWidth(widget.layout.w) >= 12 ? "Restore width" : "Make full width"}
-                            </button>
-                            <button onClick={() => updateObject({ ...activeDashboard, tabs: activeDashboard.tabs.map((item) => item.id === activeDashboardTab.id ? { ...item, widgets: item.widgets.filter((candidate) => candidate.id !== widget.id) } : item) })}>Remove card</button>
-                          </div>
+                    <div className="card widget-picker-card">
+                      <div className="card-head">
+                        <strong>Cards on this tab</strong>
+                        <div className="studio-actions">
+                          <span className="micro">{activeDashboardTab.widgets.length} total</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const report = objects.find((object): object is ReportDefinition => object.type === "report");
+                              if (!report) return;
+                              addDashboardWidget(activeDashboardTab.id, report.id, selectedDashboardWidget?.id);
+                            }}
+                          >
+                            Add card
+                          </button>
                         </div>
-                      ))}
+                      </div>
+                      <div className="widget-picker-list">
+                        {activeDashboardTab.widgets.filter((widget) => !widgetSearch || `${widget.title} ${widget.reportId}`.toLowerCase().includes(widgetSearch.toLowerCase())).map((widget) => (
+                          <button
+                            type="button"
+                            className={`widget-picker-button${selectedDashboardWidget?.id === widget.id ? " active-card" : ""}`}
+                            key={widget.id}
+                            onClick={() => setSelectedWidgetId(widget.id)}
+                          >
+                            <strong>{widget.title || "Untitled card"}</strong>
+                            <span>{widget.reportId}</span>
+                          </button>
+                        ))}
+                        {!activeDashboardTab.widgets.filter((widget) => !widgetSearch || `${widget.title} ${widget.reportId}`.toLowerCase().includes(widgetSearch.toLowerCase())).length ? (
+                          <div className="empty-hint">No cards match this search.</div>
+                        ) : null}
+                      </div>
                     </div>
-                    <button onClick={() => {
-                      const report = objects.find((object): object is ReportDefinition => object.type === "report");
-                      if (!report) return;
-                      updateObject({
-                        ...activeDashboard,
-                        tabs: activeDashboard.tabs.map((item) => item.id === activeDashboardTab.id ? { ...item, widgets: [...item.widgets, { id: uid("widget"), title: report.name, mode: "linked", displayMode: "inherit", showDetails: false, showSummary: true, reportId: report.id, layout: { w: 6, h: 4 } }] } : item)
-                      });
-                    }}>Add card</button>
+                    {selectedDashboardWidget ? (
+                      <div className="widget-edit-card">
+                        <div className="card-head">
+                          <strong>Selected card</strong>
+                          <span className="micro">{selectedDashboardWidget.title || selectedDashboardWidget.reportId}</span>
+                        </div>
+                        <label className="field"><span>Title</span><input value={selectedDashboardWidget.title} onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, (candidate) => ({ ...candidate, title: event.target.value }))} /></label>
+                        <div className="widget-editor-grid">
+                          <label className="field">
+                            <span>Report</span>
+                            <select value={selectedDashboardWidget.reportId} onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, (candidate) => ({ ...candidate, reportId: event.target.value, snapshot: undefined, mode: "linked" }))}>{objects.filter((object): object is ReportDefinition => object.type === "report").map((report) => <option key={report.id} value={report.id}>{report.name}</option>)}</select>
+                          </label>
+                          <label className="field">
+                            <span>Connection</span>
+                            <select value={selectedDashboardWidget.mode} onChange={(event) => {
+                              const report = bundle.objects[selectedDashboardWidget.reportId] as ReportDefinition | undefined;
+                              updateActiveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, (candidate) => ({
+                                ...candidate,
+                                mode: event.target.value as "linked" | "copied",
+                                snapshot: event.target.value === "copied" && report ? clone(report) : undefined
+                              }));
+                            }}>
+                              <option value="linked">Live report</option>
+                              <option value="copied">Saved copy</option>
+                            </select>
+                          </label>
+                          <label className="field">
+                            <span>Display</span>
+                            <select value={selectedDashboardWidget.displayMode} onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, (candidate) => ({ ...candidate, displayMode: event.target.value as "inherit" | "table" | "summary" | "chart" }))}>
+                              <option value="inherit">Inherit report view</option>
+                              <option value="table">Table only</option>
+                              <option value="summary">Summary only</option>
+                              <option value="chart">Chart/graph</option>
+                            </select>
+                          </label>
+                          <label className="toggle-row"><input type="checkbox" checked={selectedDashboardWidget.showSummary} onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, (candidate) => ({ ...candidate, showSummary: event.target.checked }))} /> Show summary</label>
+                          <label className="toggle-row"><input type="checkbox" checked={selectedDashboardWidget.showDetails} onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, (candidate) => ({ ...candidate, showDetails: event.target.checked }))} /> Show details</label>
+                          <label className="toggle-row"><input type="checkbox" checked={clampDashboardWidgetWidth(selectedDashboardWidget.layout.w) >= 12} onChange={() => toggleDashboardWidgetFullWidth(activeDashboardTab.id, selectedDashboardWidget.id)} /> Full width</label>
+                          <label className="field-inline"><span>Width</span><input type="number" min="1" max="12" value={selectedDashboardWidget.layout.w} onChange={(event) => applyDashboardWidgetPreset(activeDashboardTab.id, selectedDashboardWidget.id, { w: Number(event.target.value), h: selectedDashboardWidget.layout.h })} /></label>
+                          <label className="field-inline"><span>Height</span><input type="number" min="2" max="10" value={selectedDashboardWidget.layout.h} onChange={(event) => applyDashboardWidgetPreset(activeDashboardTab.id, selectedDashboardWidget.id, { w: selectedDashboardWidget.layout.w, h: Number(event.target.value) })} /></label>
+                          <label className="field-inline"><span>X</span><input type="number" min="1" max="12" value={selectedDashboardWidget.layout.x || 1} onChange={(event) => placeDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, { x: Number(event.target.value), y: selectedDashboardWidget.layout.y || 1 })} /></label>
+                          <label className="field-inline"><span>Y</span><input type="number" min="1" max="99" value={selectedDashboardWidget.layout.y || 1} onChange={(event) => placeDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, { x: selectedDashboardWidget.layout.x || 1, y: Number(event.target.value) })} /></label>
+                        </div>
+                        <div className="widget-layout-presets">
+                          {WIDGET_LAYOUT_PRESETS.map((preset) => (
+                            <button
+                              key={preset.id}
+                              type="button"
+                              className={`widget-layout-preset-button${clampDashboardWidgetWidth(selectedDashboardWidget.layout.w) === preset.w && clampDashboardWidgetHeight(selectedDashboardWidget.layout.h) === preset.h ? " active-card" : ""}`}
+                              onClick={() => applyDashboardWidgetPreset(activeDashboardTab.id, selectedDashboardWidget.id, preset)}
+                            >
+                              {preset.label}
+                            </button>
+                          ))}
+                        </div>
+                        {selectedDashboardRow ? (
+                          <div className="card">
+                            <div className="card-head">
+                              <strong>Selected row</strong>
+                              <span className="micro">Row {selectedDashboardRow.rowIndex + 1} · {selectedDashboardRow.widgetIds.length} cards · {selectedDashboardRow.remainingColumns} open columns</span>
+                            </div>
+                            <div className="widget-layout-presets">
+                              <button type="button" onClick={() => balanceDashboardRow(activeDashboardTab.id, selectedDashboardRow.rowIndex)}>
+                                Balance row
+                              </button>
+                              {selectedDashboardRow.widgetIds.length <= 3 ? (
+                                <>
+                                  <button type="button" onClick={() => applyDashboardRowPreset(activeDashboardTab.id, selectedDashboardRow.rowIndex, "equal")}>
+                                    Split evenly
+                                  </button>
+                                  {selectedDashboardRow.widgetIds.length >= 2 ? (
+                                    <>
+                                      <button type="button" onClick={() => applyDashboardRowPreset(activeDashboardTab.id, selectedDashboardRow.rowIndex, "wide-left")}>
+                                        Emphasize first
+                                      </button>
+                                      <button type="button" onClick={() => applyDashboardRowPreset(activeDashboardTab.id, selectedDashboardRow.rowIndex, "wide-right")}>
+                                        Emphasize last
+                                      </button>
+                                    </>
+                                  ) : null}
+                                </>
+                              ) : null}
+                            </div>
+                            <div className="micro">Row presets apply to the current row only and keep the rest of the tab intact.</div>
+                          </div>
+                        ) : null}
+                        {activeDashboard.tabs.length > 1 ? (
+                          <div className="widget-tab-actions">
+                            <label className="field">
+                              <span>Target tab</span>
+                              <select value={widgetTargetTabId} onChange={(event) => setWidgetTargetTabId(event.target.value)}>
+                                {activeDashboard.tabs.map((tab) => (
+                                  <option key={tab.id} value={tab.id}>
+                                    {tab.name}{tab.id === activeDashboardTab.id ? " (current)" : ""}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <div className="widget-edit-actions">
+                              <button
+                                type="button"
+                                disabled={!widgetTargetTabId || widgetTargetTabId === activeDashboardTab.id}
+                                onClick={() => copyDashboardWidgetToTab(activeDashboardTab.id, selectedDashboardWidget.id, widgetTargetTabId)}
+                              >
+                                Copy to tab
+                              </button>
+                              <button
+                                type="button"
+                                disabled={!widgetTargetTabId || widgetTargetTabId === activeDashboardTab.id}
+                                onClick={() => moveDashboardWidgetToTab(activeDashboardTab.id, selectedDashboardWidget.id, widgetTargetTabId)}
+                              >
+                                Move to tab
+                              </button>
+                            </div>
+                          </div>
+                        ) : null}
+                        <div className="widget-edit-actions">
+                          <button onClick={() => balanceActiveDashboardTab(activeDashboardTab.id)}>Balance tab</button>
+                          <button onClick={balanceAllDashboardTabs}>Balance dashboard</button>
+                          <button onClick={() => moveDashboardWidgetByRow(activeDashboardTab.id, selectedDashboardWidget.id, "up")}>Move up a row</button>
+                          <button onClick={() => moveDashboardWidgetByRow(activeDashboardTab.id, selectedDashboardWidget.id, "down")}>Move down a row</button>
+                          <button onClick={() => moveDashboardWidgetToRowEdge(activeDashboardTab.id, selectedDashboardWidget.id, "start")}>Move to row start</button>
+                          <button onClick={() => moveDashboardWidgetToRowEdge(activeDashboardTab.id, selectedDashboardWidget.id, "end")}>Move to row end</button>
+                          <button onClick={() => moveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, "left")}>Move left</button>
+                          <button onClick={() => moveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, "right")}>Move right</button>
+                          <button onClick={() => moveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, "up")}>Move up</button>
+                          <button onClick={() => moveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, "down")}>Move down</button>
+                          <button onClick={() => moveDashboardWidgetToEdge(activeDashboardTab.id, selectedDashboardWidget.id, "start")}>Move to top</button>
+                          <button onClick={() => moveDashboardWidgetToEdge(activeDashboardTab.id, selectedDashboardWidget.id, "end")}>Move to bottom</button>
+                          <button onClick={() => duplicateDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id)}>Duplicate</button>
+                          <button onClick={() => toggleDashboardWidgetFullWidth(activeDashboardTab.id, selectedDashboardWidget.id)}>
+                            {clampDashboardWidgetWidth(selectedDashboardWidget.layout.w) >= 12 ? "Restore width" : "Make full width"}
+                          </button>
+                          <button onClick={() => removeDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id)}>Remove card</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="empty-hint">Select a card on the canvas or in the list to edit it.</div>
+                    )}
+                    <div className="micro">New cards are inserted after the current selection so placement stays tied to the active canvas context.</div>
                   </div>
                 ) : null}
                 {activeDashboardRefreshTables.length ? (
@@ -3043,421 +3232,182 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
             </div>
 
             <div className="stack">
-              <div className="filter-grid compact-grid">
-                <label className="field">
-                  <span>Type</span>
-                  <select value={createDraft.type} onChange={(event) => setCreateDraft(buildCreateDraft(bundle.tables[0] || null, event.target.value as CreateModalType))}>
-                    <option value="report">Report</option>
-                    <option value="dashboard">Dashboard</option>
-                  </select>
-                </label>
-                <label className="field">
-                  <span>Name</span>
-                  <input value={createDraft.name} onChange={(event) => setCreateDraft((current) => ({ ...current, name: event.target.value }))} />
-                </label>
+              <div className="builder-stepper">
+                {createSteps.map((step, index) => (
+                  <button
+                    key={step}
+                    type="button"
+                    className={`builder-step-button${step === activeCreateStep ? " active-tab" : ""}${createSteps.indexOf(activeCreateStep) > index ? " builder-step-complete" : ""}`}
+                    onClick={() => setCreateStep(step)}
+                  >
+                    <span className="badge">{index + 1}</span>
+                    <strong>{getStudioBuilderStepLabel(step)}</strong>
+                  </button>
+                ))}
               </div>
-              <label className="field">
-                <span>Description</span>
-                <input value={createDraft.description} onChange={(event) => setCreateDraft((current) => ({ ...current, description: event.target.value }))} />
-              </label>
 
-              {createDraft.type === "report" && createDraftTable ? (
+              <div className="sync-status">
+                <strong>{getStudioBuilderStepLabel(activeCreateStep)}</strong>
+                <span>{getStudioBuilderStepDescription(activeCreateStep, createDraft.type)}</span>
+              </div>
+
+              {createStepIssues.length ? (
+                <div className="sync-status sync-status-warn">
+                  <strong>Resolve before continuing</strong>
+                  <ul className="flat-list import-review-list">
+                    {createStepIssues.map((issue) => <li key={issue}>{issue}</li>)}
+                  </ul>
+                </div>
+              ) : null}
+
+              {activeCreateStep === "basics" ? (
                 <>
-                  <div className="card">
-                    <div className="card-head">
-                      <strong>Source table</strong>
-                      <span className="micro">Pick the Quickbase table first, then choose fields and report behavior.</span>
-                    </div>
+                  <div className="filter-grid compact-grid">
                     <label className="field">
-                      <span>Table</span>
-                      <select value={createDraft.tableId} onChange={(event) => updateCreateDraftTable(event.target.value)}>
-                        {bundle.tables.map((table) => <option key={table.id} value={table.id}>{table.name}</option>)}
+                      <span>Type</span>
+                      <select
+                        value={createDraft.type}
+                        onChange={(event) => {
+                          const nextType = event.target.value as CreateModalType;
+                          setCreateDraft(buildStudioBuilderDraft(bundle.tables[0] || null, nextType, currentUserId, uid));
+                          setCreateStep(getStudioBuilderSteps(nextType)[0]);
+                        }}
+                      >
+                        <option value="report">Report</option>
+                        <option value="dashboard">Dashboard</option>
                       </select>
                     </label>
                     <label className="field">
-                      <span>Source report override</span>
-                      <input
-                        value={createDraft.sourceReportOverrides[createDraftTable.quickbaseTableId || createDraftTable.id] || ""}
-                        onChange={(event) => {
-                          const tableKey = createDraftTable.quickbaseTableId || createDraftTable.id;
-                          const value = event.target.value.trim();
-                          setCreateDraft((current) => ({
-                            ...current,
-                            sourceReportOverrides: value
-                              ? { ...current.sourceReportOverrides, [tableKey]: value }
-                              : Object.fromEntries(Object.entries(current.sourceReportOverrides).filter(([key]) => key !== tableKey))
-                          }));
-                        }}
-                        placeholder="Optional Quickbase report ID for this report only"
-                      />
-                      <span className="micro">Optional. Leave blank to use the app default from Settings during refresh.</span>
+                      <span>Name</span>
+                      <input value={createDraft.name} onChange={(event) => setCreateDraft((current) => ({ ...current, name: event.target.value }))} />
                     </label>
                   </div>
-
+                  <label className="field">
+                    <span>Description</span>
+                    <input value={createDraft.description} onChange={(event) => setCreateDraft((current) => ({ ...current, description: event.target.value }))} />
+                  </label>
                   <div className="card">
                     <div className="card-head">
-                      <strong>Fields</strong>
-                      <span className="micro">{createDraft.selectedFieldIds.length} selected</span>
+                      <strong>Sharing</strong>
+                      <span className="micro">Choose whether this object is shared with everyone or only visible for the active user.</span>
                     </div>
                     <label className="field">
-                      <span>Find fields</span>
-                      <input value={createFieldQuery} onChange={(event) => setCreateFieldQuery(event.target.value)} placeholder="Search field name, FID, or type" />
+                      <span>Scope</span>
+                      <select
+                        value={createDraft.scope}
+                        onChange={(event) => setCreateDraft((current) => ({
+                          ...current,
+                          ...normalizeStudioBuilderScopeOwner(event.target.value as StudioObjectScope, currentUserId, current.ownerUserId)
+                        }))}
+                      >
+                        <option value="global">Shared</option>
+                        <option value="personal">Personal</option>
+                      </select>
                     </label>
-                    <div className="picker-list modal-picker-list">
-                      {visibleCreateFields.map((field) => (
-                        <label className="picker-row" key={field.id}>
-                          <input
-                            type="checkbox"
-                            checked={createDraft.selectedFieldIds.includes(field.id)}
-                            onChange={(event) => setCreateDraft((current) => ({
-                              ...current,
-                              selectedFieldIds: event.target.checked
-                                ? [...current.selectedFieldIds, field.id]
-                                : current.selectedFieldIds.filter((item) => item !== field.id)
-                            }))}
-                          />
-                          <span>{field.label}</span>
-                          <em>FID {field.id} · {field.type}</em>
-                        </label>
-                      ))}
-                      {!visibleCreateFields.length ? <div className="empty-hint">No matching fields.</div> : null}
-                    </div>
-                  </div>
-
-                  <div className="card">
-                    <div className="card-head">
-                      <strong>Display labels</strong>
-                      <span className="micro">Override field headers and chart labels for client-facing names.</span>
-                    </div>
-                    <div className="stack-compact">
-                      {createDraft.selectedFieldIds.length ? createDraft.selectedFieldIds.map((fieldId) => {
-                        const field = createDraftTable.fields.find((item) => item.id === fieldId);
-                        if (!field) return null;
-                        return (
-                          <label className="field" key={fieldId}>
-                            <span>{field.label}</span>
-                            <input
-                              value={createDraft.displayLabels.fields[fieldId] || ""}
-                              onChange={(event) => setCreateDraft((current) => ({
-                                ...current,
-                                displayLabels: {
-                                  ...current.displayLabels,
-                                  fields: {
-                                    ...current.displayLabels.fields,
-                                    [fieldId]: event.target.value
-                                  }
-                                }
-                              }))}
-                              placeholder={`Use "${field.label}"`}
-                            />
-                          </label>
-                        );
-                      }) : <div className="empty-hint">Select fields first to set custom headers.</div>}
-                    </div>
-                    {reportShowsChart({ view: createDraft.view }) ? (
-                      <div className="stack-compact">
-                        <div className="micro">Chart value labels</div>
-                        {chartValueLabelOptions.length ? chartValueLabelOptions.map((label) => (
-                          <label className="field" key={label}>
-                            <span>{label}</span>
-                            <input
-                              value={createDraft.displayLabels.chartValues[label] || ""}
-                              onChange={(event) => setCreateDraft((current) => ({
-                                ...current,
-                                displayLabels: {
-                                  ...current.displayLabels,
-                                  chartValues: {
-                                    ...current.displayLabels.chartValues,
-                                    [label]: event.target.value
-                                  }
-                                }
-                              }))}
-                              placeholder={`Use "${label}"`}
-                            />
-                          </label>
-                        )) : <div className="empty-hint">Chart value overrides will appear once the chart has labels to rename.</div>}
-                      </div>
-                    ) : null}
-                  </div>
-
-                  <ReportFiltersAndSortsEditor
-                    table={createDraftTable}
-                    filterTree={createDraft.filterTree}
-                    sorts={createDraft.sorts}
-                    onChangeFilterTree={(filterTree) => setCreateDraft((current) => ({ ...current, filterTree }))}
-                    onChangeSorts={(sorts) => setCreateDraft((current) => ({ ...current, sorts }))}
-                  />
-
-                  <div className="card">
-                    <div className="card-head">
-                      <strong>View</strong>
-                      <span className="micro">Choose how the report should render by default.</span>
-                    </div>
-                    <div className="view-layout-grid">
-                      <section className="builder-subsection">
-                        <div className="builder-subsection-head">
-                          <strong>Basics</strong>
-                          <span className="micro">Start with the overall layout and formatting.</span>
-                        </div>
-                        <div className="builder-subsection-grid">
-                          <label className="field">
-                            <span>Mode</span>
-                            <select
-                              value={createDraft.view.mode}
-                              onChange={(event) => setCreateDraft((current) => {
-                                const nextMode = event.target.value as ReportViewMode;
-                                return {
-                                  ...current,
-                                  view: {
-                                    ...current.view,
-                                    mode: nextMode,
-                                    showChartInTable: nextMode === "table" ? current.view.showChartInTable : false,
-                                    showSummary: nextMode === "table" || nextMode === "summary" || nextMode === "chart",
-                                    showDetails: nextMode === "table" || nextMode === "timeline" || nextMode === "calendar" || nextMode === "kanban"
-                                  }
-                                };
-                              })}
-                            >
-                              {REPORT_VIEW_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
-                            </select>
-                          </label>
-                          <label className="field">
-                            <span>Record title field</span>
-                            <select value={createDraft.view.titleFieldId} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, titleFieldId: event.target.value } }))}>
-                              {createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}
-                            </select>
-                          </label>
-                          <label className="field">
-                            <span>Decimal places</span>
-                            <input type="number" min="0" max="6" value={createDraft.view.decimalPlaces} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, decimalPlaces: Math.max(0, Math.min(6, Number(event.target.value) || 0)) } }))} />
-                          </label>
-                          <label className="toggle-row builder-subsection-toggle">
-                            <input
-                              type="checkbox"
-                              checked={createDraft.view.showSummary ?? reportShowsSummary({ view: createDraft.view })}
-                              onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, showSummary: event.target.checked } }))}
-                            />
-                            Show summary metrics
-                          </label>
-                          <label className="toggle-row builder-subsection-toggle">
-                            <input
-                              type="checkbox"
-                              checked={createDraft.view.showDetails ?? reportShowsDetails({ view: createDraft.view })}
-                              onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, showDetails: event.target.checked } }))}
-                            />
-                            {createDraft.view.mode === "chart" || createDraft.view.mode === "summary"
-                              ? "Include detail rows"
-                              : createDraft.view.mode === "kanban" || createDraft.view.mode === "timeline" || createDraft.view.mode === "calendar"
-                                ? "Show detail cards"
-                                : "Show detail rows"}
-                          </label>
-                          {createDraft.view.mode === "table" ? (
-                            <label className="toggle-row builder-subsection-toggle">
-                              <input type="checkbox" checked={createDraft.view.showChartInTable} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, showChartInTable: event.target.checked } }))} />
-                              Include chart above table
-                            </label>
-                          ) : null}
-                        </div>
-                        <div className="micro">The record title field is used for row, card, timeline, and calendar labels. It does not control the chart heading.</div>
-                      </section>
-
-                      {reportShowsChart({ view: createDraft.view }) ? (
-                        <section className="builder-subsection">
-                          <div className="builder-subsection-head">
-                            <strong>Chart Setup</strong>
-                            <span className="micro">Only shown when this view includes a chart.</span>
-                          </div>
-                          <div className="builder-subsection-grid">
-                            <label className="field"><span>Chart title</span><input value={createDraft.view.chartTitle} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartTitle: event.target.value } }))} placeholder="Optional custom chart title" /></label>
-                            <label className="field"><span>Chart type</span><select value={createDraft.view.chartType} onChange={(event) => setCreateDraft((current) => {
-                              const nextChartType = event.target.value as ChartType;
-                              const nextSupportsSecondary = chartSupportsSecondaryAxis(nextChartType);
-                              const nextSupportsSeries = chartSupportsSeries(nextChartType);
-                              return {
-                                ...current,
-                                view: {
-                                  ...current.view,
-                                  chartType: nextChartType,
-                                  chartSeriesFieldId: nextSupportsSeries ? current.view.chartSeriesFieldId : "",
-                                  chartUseSecondaryAxis: nextSupportsSecondary ? current.view.chartUseSecondaryAxis : false,
-                                  chartSecondaryValueFieldId: nextSupportsSecondary ? current.view.chartSecondaryValueFieldId : "",
-                                  chartSecondaryYAxisLabel: nextSupportsSecondary ? current.view.chartSecondaryYAxisLabel : ""
-                                }
-                              };
-                            })}>{CHART_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
-                            {(createDraft.view.chartType === "bar" || createDraft.view.chartType === "stacked-bar") ? (
-                              <label className="field"><span>Bar direction</span><select value={createDraft.view.chartOrientation} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartOrientation: event.target.value as "vertical" | "horizontal" } }))}><option value="vertical">Vertical</option><option value="horizontal">Horizontal</option></select></label>
-                            ) : null}
-                            <label className="field"><span>X axis field</span><select value={createDraft.view.chartFieldId} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartFieldId: event.target.value } }))}>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>
-                            {chartSupportsSeries(createDraft.view.chartType) ? (
-                              <label className="field">
-                                <span>Series field</span>
-                                <select value={createDraft.view.chartSeriesFieldId} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartSeriesFieldId: event.target.value } }))}>
-                                  <option value="">Single series</option>
-                                  {createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}
-                                </select>
-                              </label>
-                            ) : null}
-                            <label className="field"><span>{chartValueFieldLabel(createDraft.view.chartType)}</span><select value={createDraft.view.chartValueFieldId} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartValueFieldId: event.target.value } }))}><option value="">Count rows</option>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>
-                            <label className="field"><span>Primary aggregation</span><select value={createDraft.view.chartAggregation} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartAggregation: event.target.value as ChartAggregation, chartValueFieldId: event.target.value === "count" ? "" : current.view.chartValueFieldId } }))}>{CHART_AGGREGATION_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
-                            <label className="field"><span>Chart sort</span><select value={createDraft.view.chartSort} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartSort: event.target.value as ChartSortMode } }))}>{CHART_SORT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-                            <label className="field"><span>Top results</span><input type="number" min="0" value={createDraft.view.chartTopN} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartTopN: Math.max(0, Number(event.target.value) || 0) } }))} /></label>
-                            {chartUsesAxes(createDraft.view.chartType) ? (
-                              <>
-                                <label className="field"><span>X axis label</span><input value={createDraft.view.chartXAxisLabel} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartXAxisLabel: event.target.value } }))} placeholder="Optional custom x axis label" /></label>
-                                <label className="field"><span>Y axis label</span><input value={createDraft.view.chartYAxisLabel} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartYAxisLabel: event.target.value } }))} placeholder="Optional custom y axis label" /></label>
-                              </>
-                            ) : null}
-                            {chartSupportsSecondaryAxis(createDraft.view.chartType) ? (
-                              <>
-                                <label className="toggle-row builder-subsection-toggle">
-                                  <input
-                                    type="checkbox"
-                                    checked={createDraft.view.chartUseSecondaryAxis}
-                                    onChange={(event) => setCreateDraft((current) => ({
-                                      ...current,
-                                      view: {
-                                        ...current.view,
-                                        chartUseSecondaryAxis: event.target.checked,
-                                        chartSecondaryValueFieldId: event.target.checked ? current.view.chartSecondaryValueFieldId : "",
-                                        chartSecondaryYAxisLabel: event.target.checked ? current.view.chartSecondaryYAxisLabel : ""
-                                      }
-                                    }))}
-                                  />
-                                  Use a secondary Y axis
-                                </label>
-                                {createDraft.view.chartUseSecondaryAxis ? (
-                                  <>
-                                    <label className="field">
-                                      <span>Secondary series type</span>
-                                      <select value={createDraft.view.chartSecondarySeriesType} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartSecondarySeriesType: event.target.value as ChartSeriesType } }))}>
-                                        {CHART_SERIES_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                                      </select>
-                                    </label>
-                                    <label className="field">
-                                      <span>Secondary Y axis field</span>
-                                      <select value={createDraft.view.chartSecondaryValueFieldId} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartSecondaryValueFieldId: event.target.value } }))}>
-                                        <option value="">Count rows</option>
-                                        {createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}
-                                      </select>
-                                    </label>
-                                    <label className="field">
-                                      <span>Secondary aggregation</span>
-                                      <select value={createDraft.view.chartSecondaryAggregation} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartSecondaryAggregation: event.target.value as ChartAggregation, chartSecondaryValueFieldId: event.target.value === "count" ? "" : current.view.chartSecondaryValueFieldId } }))}>
-                                        {CHART_AGGREGATION_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
-                                      </select>
-                                    </label>
-                                    <label className="field">
-                                      <span>Secondary Y axis label</span>
-                                      <input value={createDraft.view.chartSecondaryYAxisLabel} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartSecondaryYAxisLabel: event.target.value } }))} placeholder="Optional secondary axis label" />
-                                    </label>
-                                  </>
-                                ) : null}
-                              </>
-                            ) : null}
-                            <div className="field" style={{ gridColumn: "1 / -1" }}>
-                              <span>Chart colors</span>
-                              <div className="micro">These colors are used in preview, dashboards, and full-screen charts in the order shown.</div>
-                              <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", marginTop: "8px" }}>
-                                {(createDraft.view.chartColors?.length ? createDraft.view.chartColors : DEFAULT_CHART_COLORS).map((color, index) => (
-                                  <label key={`chart-color-${index}`} className="field" style={{ width: "84px" }}>
-                                    <span>Color {index + 1}</span>
-                                    <input
-                                      type="color"
-                                      value={color}
-                                      onChange={(event) => setCreateDraft((current) => {
-                                        const nextColors = [...(current.view.chartColors?.length ? current.view.chartColors : DEFAULT_CHART_COLORS)];
-                                        nextColors[index] = event.target.value;
-                                        return {
-                                          ...current,
-                                          view: {
-                                            ...current.view,
-                                            chartColors: nextColors
-                                          }
-                                        };
-                                      })}
-                                    />
-                                  </label>
-                                ))}
-                              </div>
-                              <div style={{ display: "flex", gap: "10px", marginTop: "10px", flexWrap: "wrap" }}>
-                                <button
-                                  type="button"
-                                  className="ghost-button"
-                                  onClick={() => setCreateDraft((current) => ({
-                                    ...current,
-                                    view: {
-                                      ...current.view,
-                                      chartColors: [...(current.view.chartColors?.length ? current.view.chartColors : DEFAULT_CHART_COLORS), "#0d7c66"].slice(0, 12)
-                                    }
-                                  }))}
-                                  disabled={(createDraft.view.chartColors?.length || DEFAULT_CHART_COLORS.length) >= 12}
-                                >
-                                  Add color
-                                </button>
-                                <button
-                                  type="button"
-                                  className="ghost-button"
-                                  onClick={() => setCreateDraft((current) => ({
-                                    ...current,
-                                    view: {
-                                      ...current.view,
-                                      chartColors: current.view.chartColors?.length && current.view.chartColors.length > 1
-                                        ? current.view.chartColors.slice(0, -1)
-                                        : [...DEFAULT_CHART_COLORS]
-                                    }
-                                  }))}
-                                >
-                                  Remove last color
-                                </button>
-                                <button
-                                  type="button"
-                                  className="ghost-button"
-                                  onClick={() => setCreateDraft((current) => ({
-                                    ...current,
-                                    view: {
-                                      ...current.view,
-                                      chartColors: [...DEFAULT_CHART_COLORS]
-                                    }
-                                  }))}
-                                >
-                                  Reset colors
-                                </button>
-                              </div>
-                            </div>
-                            <label className="toggle-row builder-subsection-toggle"><input type="checkbox" checked={createDraft.view.chartShowLegend} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartShowLegend: event.target.checked } }))} /> Show legend</label>
-                            <label className="toggle-row builder-subsection-toggle"><input type="checkbox" checked={createDraft.view.chartShowValues} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartShowValues: event.target.checked } }))} /> Show values</label>
-                          </div>
-                        </section>
-                      ) : null}
-
-                      {createDraft.view.mode === "kanban" || createDraft.view.mode === "timeline" || createDraft.view.mode === "calendar" ? (
-                        <section className="builder-subsection">
-                          <div className="builder-subsection-head">
-                            <strong>Mode-specific fields</strong>
-                            <span className="micro">Only the fields needed for the selected layout are shown here.</span>
-                          </div>
-                          <div className="builder-subsection-grid">
-                            {createDraft.view.mode === "kanban" ? <label className="field"><span>Kanban field</span><select value={createDraft.view.kanbanField} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, kanbanField: event.target.value } }))}><option value="">Select a field</option>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label> : null}
-                            {createDraft.view.mode === "timeline" ? (
-                              <>
-                                <label className="field"><span>Timeline start</span><select value={createDraft.view.timelineDateField} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, timelineDateField: event.target.value } }))}><option value="">Select a field</option>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>
-                                <label className="field"><span>Timeline end</span><select value={createDraft.view.timelineEndField} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, timelineEndField: event.target.value } }))}><option value="">Select a field</option>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>
-                              </>
-                            ) : null}
-                            {createDraft.view.mode === "calendar" ? <label className="field"><span>Calendar date</span><select value={createDraft.view.calendarDateField} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, calendarDateField: event.target.value } }))}><option value="">Select a field</option>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label> : null}
-                          </div>
-                        </section>
-                      ) : null}
-                    </div>
+                    <label className="field">
+                      <span>Owner</span>
+                      <input
+                        readOnly
+                        value={createDraft.scope === "personal" ? (createDraft.ownerUserId || currentUserId || "No active user") : "Shared with everyone in this workspace"}
+                      />
+                    </label>
                   </div>
                 </>
               ) : null}
 
+              {activeCreateStep === "data" && createDraft.type === "report" && createDraftTable ? (
+                <StudioReportDraftDataStep
+                  tables={bundle.tables}
+                  createDraft={createDraft}
+                  createDraftTable={createDraftTable}
+                  createFieldQuery={createFieldQuery}
+                  setCreateFieldQuery={setCreateFieldQuery}
+                  visibleCreateFields={visibleCreateFields}
+                  chartValueLabelOptions={chartValueLabelOptions}
+                  setCreateDraft={setCreateDraft}
+                  updateCreateDraftTable={updateCreateDraftTable}
+                />
+              ) : null}
+
+              {activeCreateStep === "filters" && createDraft.type === "report" && createDraftTable ? (
+                <ReportFiltersAndSortsEditor
+                  table={createDraftTable}
+                  filterTree={createDraft.filterTree}
+                  sorts={createDraft.sorts}
+                  onChangeFilterTree={(filterTree) => setCreateDraft((current) => ({ ...current, filterTree }))}
+                  onChangeSorts={(sorts) => setCreateDraft((current) => ({ ...current, sorts }))}
+                />
+              ) : null}
+
+              {activeCreateStep === "view" && createDraft.type === "report" && createDraftTable ? (
+                <StudioReportDraftViewStep
+                  createDraft={createDraft}
+                  createDraftTable={createDraftTable}
+                  setCreateDraft={setCreateDraft}
+                />
+              ) : null}
+
+              {activeCreateStep === "layout" && createDraft.type === "dashboard" ? (
+                <>
+                  <div className="card">
+                    <div className="card-head">
+                      <strong>Dashboard starter</strong>
+                      <span className="micro">New dashboards start with one clean tab so you can keep layout work on the canvas after saving.</span>
+                    </div>
+                    <div className="summary-grid">
+                      <div className="summary-card">
+                        <strong>1</strong>
+                        <span>Starter tab</span>
+                      </div>
+                      <div className="summary-card">
+                        <strong>0</strong>
+                        <span>Cards at creation</span>
+                      </div>
+                      <div className="summary-card">
+                        <strong>Canvas first</strong>
+                        <span>Add and arrange cards after save</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="sync-status sync-status-ok">
+                    <strong>What happens next</strong>
+                    <span>After saving, the dashboard opens directly in Studio so you can add tabs, add cards to the active tab, resize them, and move or copy them across tabs from the selected-card inspector.</span>
+                  </div>
+                </>
+              ) : null}
+
+              {activeCreateStep === "review" ? (
+                <StudioDraftReviewStep
+                  createDraft={createDraft}
+                  createDraftTable={createDraftTable}
+                  createDraftIssues={createDraftIssues}
+                  filterCount={createDraftFilterCount}
+                  previewReport={createDraftPreviewReport}
+                  previewResult={createDraftPreview}
+                  currentPreviewPage={createPreviewPage}
+                  onPreviewPageChange={setCreatePreviewPage}
+                />
+              ) : null}
+
               <div className="studio-actions modal-actions">
-                <button onClick={createFromDraft}>
-                  {editingReportId ? "Save report" : createDraft.type === "report" ? "Create report" : "Create dashboard"}
-                </button>
+                {createSteps.indexOf(activeCreateStep) > 0 ? (
+                  <button type="button" className="ghost-button" onClick={() => setCreateStep(createSteps[Math.max(0, createSteps.indexOf(activeCreateStep) - 1)])}>
+                    Back
+                  </button>
+                ) : null}
+                {activeCreateStep !== "review" ? (
+                  <button
+                    type="button"
+                    onClick={() => setCreateStep(createSteps[Math.min(createSteps.length - 1, createSteps.indexOf(activeCreateStep) + 1)])}
+                    disabled={createStepIssues.length > 0}
+                  >
+                    Next
+                  </button>
+                ) : (
+                  <button onClick={createFromDraft} disabled={createDraftIssues.length > 0}>
+                    {editingReportId ? "Save report" : createDraft.type === "report" ? "Create report" : "Create dashboard"}
+                  </button>
+                )}
               </div>
             </div>
           </section>
@@ -3473,321 +3423,41 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
             </div>
 
             {drawer === "settings" ? (
-              <div className="stack">
-                <div className="summary-grid">
-                  <div className="summary-card"><strong>{documentState.sync.providerMode === "api" ? "Connected" : "Local draft"}</strong><span>Connection</span></div>
-                  <div className="summary-card"><strong>{documentState.sync.lastLoadedAt ? new Date(documentState.sync.lastLoadedAt).toLocaleTimeString() : "n/a"}</strong><span>Last load</span></div>
-                  <div className="summary-card"><strong>{documentState.sync.lastSavedAt ? new Date(documentState.sync.lastSavedAt).toLocaleTimeString() : "n/a"}</strong><span>Last save</span></div>
-                  <div className="summary-card"><strong>{activeQuickbaseProfile?.refreshStatus.lastSuccessAt ? new Date(activeQuickbaseProfile.refreshStatus.lastSuccessAt).toLocaleString() : "Not refreshed"}</strong><span>Last app refresh</span></div>
-                  <div className="summary-card"><strong>{activeQuickbaseProfile?.refreshStatus.nextRunAt ? new Date(activeQuickbaseProfile.refreshStatus.nextRunAt).toLocaleString() : "Not scheduled"}</strong><span>Next app refresh</span></div>
-                  <div className="summary-card"><strong>{savedRowsForApp.toLocaleString()}</strong><span>Rows saved for faster loading</span></div>
-                </div>
-                <label className="field">
-                  <span>Platform name</span>
-                  <input value={documentState.branding.platformName} onChange={(event) => applyDocumentUpdate((draft) => { draft.branding.platformName = event.target.value; })} />
-                </label>
-                <label className="field">
-                  <span>Navigation label</span>
-                  <input value={documentState.branding.navigationLabel} onChange={(event) => applyDocumentUpdate((draft) => { draft.branding.navigationLabel = event.target.value; })} />
-                </label>
-                <label className="field">
-                  <span>Home label</span>
-                  <input value={documentState.branding.homeLabel} onChange={(event) => applyDocumentUpdate((draft) => { draft.branding.homeLabel = event.target.value; })} />
-                </label>
-                <label className="toggle-row">
-                  <input
-                    type="checkbox"
-                    checked={documentState.branding.openLinksInNewTab === true}
-                    onChange={(event) => applyDocumentUpdate((draft) => { draft.branding.openLinksInNewTab = event.target.checked; })}
-                  />
-                  Open reports and dashboards in a new tab
-                </label>
-                <div className="card">
-                  <div className="card-head">
-                    <strong>Quickbase app profiles</strong>
-                    <span className="micro">Connect several Quickbase apps in the same realm and keep their DBIDs, FIDs, schedules, and refresh source reports separate.</span>
-                  </div>
-                  <label className="field">
-                    <span>Active app profile</span>
-                    <select value={documentState.activeQuickbaseProfileId} onChange={(event) => setActiveQuickbaseProfile(event.target.value)}>
-                      {documentState.quickbaseProfiles.map((profile) => (
-                        <option key={profile.id} value={profile.id}>{profile.label || profile.quickbase.appId || profile.id}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="field">
-                    <span>Profile label</span>
-                    <input value={activeQuickbaseProfile?.label || ""} onChange={(event) => updateQuickbaseProfileLabel(event.target.value)} placeholder="Claims app" />
-                  </label>
-                  <label className="toggle-row">
-                    <input
-                      type="checkbox"
-                      checked={activeQuickbaseProfile?.liveMode === true}
-                      onChange={(event) => updateQuickbaseProfileLiveMode(event.target.checked)}
-                    />
-                    Live mode for this app
-                  </label>
-                  <div className="micro">
-                    Warning: live mode refreshes the specific report or dashboard automatically when it opens in viewing or embed mode, and it can take significantly longer to load.
-                  </div>
-                  <div className="studio-actions">
-                    <button onClick={addQuickbaseProfile}>Add app profile</button>
-                    <button onClick={() => activeQuickbaseProfile ? removeQuickbaseProfile(activeQuickbaseProfile.id) : undefined} disabled={documentState.quickbaseProfiles.length <= 1}>
-                      Remove app profile
-                    </button>
-                  </div>
-                </div>
-                <div className="card">
-                  <div className="card-head">
-                    <strong>Quickbase connection for this app</strong>
-                    <span className="micro">Load the app schema first, then choose the refresh-source tables and report IDs for this app.</span>
-                  </div>
-                  <label className="field">
-                    <span>Realm hostname</span>
-                    <input value={activeQuickbaseConfig.realmHostname} onChange={(event) => updateQuickbaseField("realmHostname", event.target.value)} placeholder="yourrealm.quickbase.com" />
-                  </label>
-                  <label className="field">
-                    <span>User token</span>
-                    <input value={activeQuickbaseConfig.userToken} onChange={(event) => updateQuickbaseField("userToken", event.target.value)} placeholder="QB-USER-TOKEN ..." />
-                  </label>
-                  <label className="field">
-                    <span>App token</span>
-                    <input value={activeQuickbaseConfig.appToken} onChange={(event) => updateQuickbaseField("appToken", event.target.value)} placeholder="Optional app token" />
-                  </label>
-                  <label className="field">
-                    <span>App ID</span>
-                    <input value={activeQuickbaseConfig.appId} onChange={(event) => updateQuickbaseField("appId", event.target.value)} placeholder="App DBID" />
-                  </label>
-                  <label className="field">
-                    <span>Choose from your Quickbase apps</span>
-                    <div className="inline-actions">
-                      <select value={activeQuickbaseConfig.appId} onChange={(event) => applyQuickbaseAppSelection(event.target.value)}>
-                        <option value="">Select an app from this realm</option>
-                        {realmApps.map((item) => (
-                          <option key={item.id} value={item.id}>{item.name} ({item.id})</option>
-                        ))}
-                      </select>
-                      <button onClick={() => { void loadRealmApps(); }} disabled={realmAppsLoading}>
-                        {realmAppsLoading ? "Finding apps…" : "Find apps"}
-                      </button>
-                    </div>
-                  </label>
-                  <label className="field">
-                    <span>API base URL</span>
-                    <input value={activeQuickbaseConfig.apiBaseUrl} onChange={(event) => updateQuickbaseField("apiBaseUrl", event.target.value)} placeholder="https://api.quickbase.com/v1" />
-                  </label>
-                  <div className="studio-actions">
-                    <button onClick={() => { void loadQuickbaseMetadata(); }} disabled={quickbaseSchemaLoading}>
-                      {quickbaseSchemaLoading ? "Loading tables and fields…" : "Load tables and fields"}
-                    </button>
-                    {quickbaseSchema ? <button onClick={autoDetectQuickbaseMappings}>Auto-detect storage fields</button> : null}
-                  </div>
-                  <div className="micro">
-                    Tip: use <strong>Find apps</strong> to see the Quickbase apps you can access in this realm, then pick the one you want instead of typing the App ID manually.
-                  </div>
-                  {quickbaseSchema ? (
-                    <div className="card">
-                      <div className="card-head">
-                        <strong>{quickbaseSchema.name}</strong>
-                        <span className="micro">{quickbaseSchema.tables.length} tables loaded</span>
-                      </div>
-                      <div className="micro">{quickbaseSchema.description || "Quickbase schema loaded for this app profile."}</div>
-                    </div>
-                  ) : null}
-                </div>
-                <div className="card">
-                  <div className="card-head">
-                    <strong>Schedule refresh for this app</strong>
-                    <span className="micro">This schedule applies to the active app profile and refreshes all selected refresh-source tables for that app. Individual report and dashboard pages still have object-scoped refresh.</span>
-                  </div>
-                  <label className="field">
-                    <span>Enable scheduled refresh</span>
-                    <select value={activeQuickbaseProfile?.refreshSchedule.enabled ? "enabled" : "disabled"} onChange={(event) => updateRefreshScheduleField("enabled", event.target.value === "enabled")}>
-                      <option value="disabled">Disabled</option>
-                      <option value="enabled">Enabled</option>
-                    </select>
-                  </label>
-                  <div className="filter-grid compact-grid">
-                    <label className="field">
-                      <span>Cadence</span>
-                      <select value={activeQuickbaseProfile?.refreshSchedule.cadence || "daily"} onChange={(event) => updateRefreshScheduleField("cadence", event.target.value as StudioDocument["sync"]["refreshSchedule"]["cadence"])}>
-                        <option value="daily">Nightly / daily</option>
-                        <option value="weekly">Weekly</option>
-                        <option value="monthly">Monthly</option>
-                      </select>
-                    </label>
-                    <label className="field">
-                      <span>Time</span>
-                      <input type="time" value={activeQuickbaseProfile?.refreshSchedule.timeOfDay || "02:00"} onChange={(event) => updateRefreshScheduleField("timeOfDay", event.target.value)} />
-                    </label>
-                  </div>
-                  {activeQuickbaseProfile?.refreshSchedule.cadence === "weekly" ? (
-                    <label className="field">
-                      <span>Day of week</span>
-                      <select value={String(activeQuickbaseProfile?.refreshSchedule.dayOfWeek || 0)} onChange={(event) => updateRefreshScheduleField("dayOfWeek", Number(event.target.value))}>
-                        {WEEKDAY_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>{option.label}</option>
-                        ))}
-                      </select>
-                    </label>
-                  ) : null}
-                  {activeQuickbaseProfile?.refreshSchedule.cadence === "monthly" ? (
-                    <label className="field">
-                      <span>Day of month</span>
-                      <input type="number" min={1} max={31} value={activeQuickbaseProfile?.refreshSchedule.dayOfMonth || 1} onChange={(event) => updateRefreshScheduleField("dayOfMonth", Math.max(1, Math.min(31, Number(event.target.value) || 1)))} />
-                    </label>
-                  ) : null}
-                  <label className="field">
-                    <span>Timezone</span>
-                    <select value={activeQuickbaseProfile?.refreshSchedule.timeZone || "America/Denver"} onChange={(event) => updateRefreshScheduleField("timeZone", event.target.value)}>
-                      {TIMEZONE_OPTIONS.map((timeZone) => (
-                        <option key={timeZone} value={timeZone}>{timeZone}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <div className="card">
-                    <div className="card-head">
-                      <strong>Refresh source reports</strong>
-                      <span className="micro">Choose the Quickbase tables this app profile should refresh from cache, then enter the full-source report ID for each selected table.</span>
-                    </div>
-                    <div className="field">
-                      <span>Tables to refresh</span>
-                      <div className="picker-list modal-picker-list">
-                        {activeProfileTables.map((table) => {
-                          const tableId = table.quickbaseTableId || table.id;
-                          const selected = (activeQuickbaseProfile?.refreshSource.tableIds || []).includes(tableId);
-                          return (
-                            <label className="picker-row" key={table.id}>
-                              <input
-                                type="checkbox"
-                                checked={selected}
-                                onChange={(event) => {
-                                  const current = new Set(activeQuickbaseProfile?.refreshSource.tableIds || []);
-                                  if (event.target.checked) {
-                                    current.add(tableId);
-                                  } else {
-                                    current.delete(tableId);
-                                  }
-                                  updateRefreshSourceTables(Array.from(current));
-                                }}
-                              />
-                              <span>{table.name}</span>
-                              <em>{tableId}</em>
-                            </label>
-                          );
-                        })}
-                        {!activeProfileTables.length ? <div className="empty-hint">Load tables and fields for this app first.</div> : null}
-                      </div>
-                    </div>
-                  <div className="micro">
-                    Create one Quickbase source report per selected table that returns every record and every field needed by this platform. Then enter that report ID here, for example `125`.
-                  </div>
-                    {activeQuickbaseProfile?.refreshSource.tableIds.length ? (
-                      <div className="stack-compact">
-                        {activeQuickbaseProfile.refreshSource.tableIds.map((tableId) => {
-                          const table = activeProfileTables.find((candidate) => (candidate.quickbaseTableId || candidate.id) === tableId);
-                          return (
-                            <label className="field" key={tableId}>
-                              <span>{table?.name || tableId} report ID</span>
-                              <input
-                                value={activeQuickbaseProfile.refreshSource.reportIds?.[tableId] || ""}
-                                onChange={(event) => updateRefreshSourceReportId(tableId, event.target.value)}
-                                placeholder="Quickbase report ID / qid"
-                              />
-                            </label>
-                          );
-                        })}
-                      </div>
-                    ) : null}
-                  <div className="micro">
-                    Requirement: every selected table must have a report ID. Scheduled refresh for this app uses all of the selected table/report ID pairs.
-                  </div>
-                  </div>
-                  <div className="studio-actions">
-                    <button onClick={saveRemote} disabled={savingRemote || refreshingCache}>
-                      {savingRemote ? "Saving settings…" : "Save schedule settings"}
-                    </button>
-                    <button onClick={() => { void refreshAllNow(); }} disabled={refreshingCache}>
-                      {refreshingCache ? "Refreshing all reports…" : "Refresh all now"}
-                    </button>
-                  </div>
-                  <div className="micro">
-                    This app schedule is saved with the rest of the system settings JSON in Quickbase.
-                  </div>
-                  <div className={`sync-status ${activeQuickbaseProfile?.refreshStatus.lastError ? "sync-status-warn" : "sync-status-ok"}`}>
-                    <strong>{refreshStatusTitle}</strong>
-                    <span>{refreshStatusDetail}</span>
-                  </div>
-                </div>
-                <div className="studio-actions">
-                  <button onClick={reloadRemote}>Load from server</button>
-                  <button onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save to Quickbase and server"}</button>
-                </div>
-                {lastQuickbaseSync ? (
-                  <div className={`sync-status ${lastQuickbaseSync.ok ? "sync-status-ok" : "sync-status-warn"}`}>
-                    <strong>{lastQuickbaseSync.ok ? "Quickbase save succeeded" : "Quickbase save needs attention"}</strong>
-                    <span>{lastQuickbaseSync.message}</span>
-                    <span>
-                      {lastQuickbaseSync.savedObjects} saved reports or dashboards · {lastQuickbaseSync.savedSettings} user settings rows · {lastQuickbaseSync.savedVersions} version rows
-                    </span>
-                  </div>
-                ) : null}
-                <div className="card">
-                  <div className="card-head">
-                    <strong>Saved reports and dashboards</strong>
-                    <span className="micro">Type the DBID and field FIDs for the table that stores report and dashboard definitions.</span>
-                  </div>
-                  <label className="field"><span>Table DBID</span><input value={activeQuickbaseConfig.objectTableId} onChange={(event) => updateQuickbaseField("objectTableId", event.target.value)} placeholder="Table DBID for saved reports and dashboards" /></label>
-                  <div className="filter-grid compact-grid">
-                    <label className="field"><span>Item key field FID</span><input value={activeQuickbaseConfig.objectKeyFieldId} onChange={(event) => updateQuickbaseField("objectKeyFieldId", event.target.value)} placeholder="FID" /></label>
-                    <label className="field"><span>Type field FID</span><input value={activeQuickbaseConfig.objectTypeFieldId} onChange={(event) => updateQuickbaseField("objectTypeFieldId", event.target.value)} placeholder="FID" /></label>
-                  </div>
-                  <div className="filter-grid compact-grid">
-                    <label className="field"><span>Name field FID</span><input value={activeQuickbaseConfig.objectNameFieldId} onChange={(event) => updateQuickbaseField("objectNameFieldId", event.target.value)} placeholder="FID" /></label>
-                    <label className="field"><span>JSON field FID</span><input value={activeQuickbaseConfig.objectConfigFieldId} onChange={(event) => updateQuickbaseField("objectConfigFieldId", event.target.value)} placeholder="FID" /></label>
-                  </div>
-                  <div className="filter-grid compact-grid">
-                    <label className="field"><span>Owner field FID</span><input value={activeQuickbaseConfig.objectOwnerFieldId} onChange={(event) => updateQuickbaseField("objectOwnerFieldId", event.target.value)} placeholder="Optional FID" /></label>
-                    <label className="field"><span>Updated at field FID</span><input value={activeQuickbaseConfig.objectUpdatedAtFieldId} onChange={(event) => updateQuickbaseField("objectUpdatedAtFieldId", event.target.value)} placeholder="Optional FID" /></label>
-                  </div>
-                  <label className="field"><span>Updated by field FID</span><input value={activeQuickbaseConfig.objectUpdatedByFieldId} onChange={(event) => updateQuickbaseField("objectUpdatedByFieldId", event.target.value)} placeholder="Optional FID" /></label>
-                </div>
-                <div className="card">
-                  <div className="card-head">
-                    <strong>User settings</strong>
-                    <span className="micro">Type the DBID and field FIDs for the table that stores per-user settings and storage configuration.</span>
-                  </div>
-                  <label className="field"><span>Table DBID</span><input value={activeQuickbaseConfig.settingsTableId} onChange={(event) => updateQuickbaseField("settingsTableId", event.target.value)} placeholder="Table DBID for user settings" /></label>
-                  <div className="filter-grid compact-grid">
-                    <label className="field"><span>User field FID</span><input value={activeQuickbaseConfig.settingsUserFieldId} onChange={(event) => updateQuickbaseField("settingsUserFieldId", event.target.value)} placeholder="FID" /></label>
-                    <label className="field"><span>Object record field FID</span><input value={activeQuickbaseConfig.settingsObjectFieldId} onChange={(event) => updateQuickbaseField("settingsObjectFieldId", event.target.value)} placeholder="Optional FID" /></label>
-                  </div>
-                  <div className="filter-grid compact-grid">
-                    <label className="field"><span>Object key field FID</span><input value={activeQuickbaseConfig.settingsObjectKeyFieldId} onChange={(event) => updateQuickbaseField("settingsObjectKeyFieldId", event.target.value)} placeholder="FID" /></label>
-                    <label className="field"><span>Updated by field FID</span><input value={activeQuickbaseConfig.settingsUpdatedByFieldId} onChange={(event) => updateQuickbaseField("settingsUpdatedByFieldId", event.target.value)} placeholder="Optional FID" /></label>
-                  </div>
-                  <label className="field"><span>Settings JSON field FID</span><input value={activeQuickbaseConfig.settingsJsonFieldId} onChange={(event) => updateQuickbaseField("settingsJsonFieldId", event.target.value)} placeholder="FID" /></label>
-                </div>
-                <div className="card">
-                  <div className="card-head">
-                    <strong>Version history</strong>
-                    <span className="micro">Type the DBID and field FIDs for the table that stores version history and snapshots.</span>
-                  </div>
-                  <label className="field"><span>Table DBID</span><input value={activeQuickbaseConfig.versionTableId} onChange={(event) => updateQuickbaseField("versionTableId", event.target.value)} placeholder="Table DBID for version history" /></label>
-                  <div className="filter-grid compact-grid">
-                    <label className="field"><span>Object record field FID</span><input value={activeQuickbaseConfig.versionObjectFieldId} onChange={(event) => updateQuickbaseField("versionObjectFieldId", event.target.value)} placeholder="Optional FID" /></label>
-                    <label className="field"><span>Object key field FID</span><input value={activeQuickbaseConfig.versionObjectKeyFieldId} onChange={(event) => updateQuickbaseField("versionObjectKeyFieldId", event.target.value)} placeholder="FID" /></label>
-                  </div>
-                  <div className="filter-grid compact-grid">
-                    <label className="field"><span>Snapshot JSON field FID</span><input value={activeQuickbaseConfig.versionSnapshotFieldId} onChange={(event) => updateQuickbaseField("versionSnapshotFieldId", event.target.value)} placeholder="FID" /></label>
-                    <label className="field"><span>Changed at field FID</span><input value={activeQuickbaseConfig.versionChangedAtFieldId} onChange={(event) => updateQuickbaseField("versionChangedAtFieldId", event.target.value)} placeholder="FID" /></label>
-                  </div>
-                  <div className="filter-grid compact-grid">
-                    <label className="field"><span>Changed by field FID</span><input value={activeQuickbaseConfig.versionChangedByFieldId} onChange={(event) => updateQuickbaseField("versionChangedByFieldId", event.target.value)} placeholder="Optional FID" /></label>
-                    <label className="field"><span>Updated by field FID</span><input value={activeQuickbaseConfig.versionUpdatedByFieldId} onChange={(event) => updateQuickbaseField("versionUpdatedByFieldId", event.target.value)} placeholder="Optional FID" /></label>
-                  </div>
-                </div>
-              </div>
+              <StudioSettingsPanel
+                documentState={documentState}
+                activeQuickbaseProfile={activeQuickbaseProfile}
+                activeQuickbaseConfig={activeQuickbaseConfig}
+                activeProfileTables={activeProfileTables}
+                savedRowsForApp={savedRowsForApp}
+                refreshStatusTitle={refreshStatusTitle}
+                refreshStatusDetail={refreshStatusDetail}
+                realmApps={realmApps}
+                realmAppsLoading={realmAppsLoading}
+                quickbaseSchema={quickbaseSchema}
+                quickbaseSchemaLoading={quickbaseSchemaLoading}
+                savingRemote={savingRemote}
+                refreshingCache={refreshingCache}
+                lastQuickbaseSync={lastQuickbaseSync}
+                weekdayOptions={WEEKDAY_OPTIONS}
+                timezoneOptions={TIMEZONE_OPTIONS}
+                applyDocumentUpdate={applyDocumentUpdate}
+                setActiveQuickbaseProfile={setActiveQuickbaseProfile}
+                updateQuickbaseProfileLabel={updateQuickbaseProfileLabel}
+                updateQuickbaseProfileLiveMode={updateQuickbaseProfileLiveMode}
+                addQuickbaseProfile={addQuickbaseProfile}
+                removeQuickbaseProfile={removeQuickbaseProfile}
+                updateQuickbaseField={updateQuickbaseField}
+                applyQuickbaseAppSelection={applyQuickbaseAppSelection}
+                loadRealmApps={loadRealmApps}
+                loadQuickbaseMetadata={() => loadQuickbaseMetadata()}
+                autoDetectQuickbaseMappings={autoDetectQuickbaseMappings}
+                updateRefreshScheduleField={updateRefreshScheduleField}
+                updateRefreshSourceTables={updateRefreshSourceTables}
+                updateRefreshSourceReportId={updateRefreshSourceReportId}
+                saveRemote={saveRemote}
+                refreshAllNow={refreshAllNow}
+                reloadRemote={reloadRemote}
+              />
             ) : null}
 
             {drawer === "share" ? (
@@ -3823,17 +3493,39 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
                 <div className="studio-actions">
                   <button onClick={exportWorkbook}>Download Excel file</button>
                   <button onClick={exportJson}>Download JSON file</button>
+                  <button onClick={() => { void refreshExportJobs(); }}>Refresh status</button>
                 </div>
                 <div className="stack-compact">
-                  {documentState.exportJobs.map((job) => (
+                  {mergedExportJobs.map((job) => {
+                    const matchingLiveJob = job.sourceJobId ? liveExportJobs.find((item) => item.id === job.sourceJobId) : null;
+                    const object = bundle.objects[job.objectId];
+                    return (
                     <div className="card" key={job.id}>
                       <div className="card-head">
-                        <strong>{bundle.objects[job.objectId]?.name || job.objectId}</strong>
-                        <span className="micro">{job.format}</span>
+                        <strong>{object?.name || job.objectId}</strong>
+                        <span className="micro">{job.format} · {job.status}</span>
                       </div>
                       <div className="micro">{new Date(job.createdAt).toLocaleString()}</div>
+                      <div className="micro">{job.message}{job.error ? ` · ${job.error}` : ""}</div>
+                      {job.format === "xlsx" ? (
+                        <div className="progress-meter" aria-hidden="true">
+                          <div className="progress-meter-fill" style={{ width: `${job.progress}%` }} />
+                        </div>
+                      ) : null}
+                      <div className="studio-actions">
+                        {job.format === "xlsx" && matchingLiveJob?.status === "complete" && job.sourceJobId ? (
+                          <button onClick={() => downloadExportJob(job.sourceJobId || "")}>Download again</button>
+                        ) : null}
+                        {job.format === "xlsx" ? (
+                          <button onClick={() => { void retryExportJob(job); }}>
+                            {job.status === "failed" ? "Retry" : "Run again"}
+                          </button>
+                        ) : null}
+                        {job.format === "json" ? <button onClick={exportJson}>Download again</button> : null}
+                      </div>
                     </div>
-                  ))}
+                  );})}
+                  {!mergedExportJobs.length ? <div className="empty">No exports yet.</div> : null}
                 </div>
               </div>
             ) : null}
