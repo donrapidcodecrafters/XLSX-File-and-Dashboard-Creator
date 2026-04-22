@@ -94,7 +94,6 @@ import { downloadExportJob, fetchExportJobStatus, fetchExportJobs, startDashboar
 import { ChartPreview } from "./ChartPreview";
 import { StudioDraftReviewStep } from "./StudioDraftReviewStep";
 import { StudioDashboardPreview } from "./StudioDashboardPreview";
-import { StudioLibrarySidebar } from "./StudioLibrarySidebar";
 import { StudioReportDraftDataStep } from "./StudioReportDraftDataStep";
 import { StudioReportDraftViewStep } from "./StudioReportDraftViewStep";
 import { StudioReportPreview } from "./StudioReportPreview";
@@ -2536,35 +2535,6 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
         </div>
       ) : null}
       <section className={`studio-page ${activeDashboard ? "studio-page-dashboard" : "studio-page-report"}`}>
-        <StudioLibrarySidebar
-          homeLabel={documentState.branding.homeLabel}
-          navigationLabel={documentState.branding.navigationLabel}
-          openLinksInNewTab={openLinksInNewTab}
-          libraryQuery={libraryQuery}
-          onLibraryQueryChange={setLibraryQuery}
-          libraryFilter={libraryFilter}
-          onLibraryFilterChange={setLibraryFilter}
-          libraryScopeFilter={libraryScopeFilter}
-          onLibraryScopeFilterChange={setLibraryScopeFilter}
-          favoritesOnly={favoritesOnly}
-          onFavoritesOnlyChange={setFavoritesOnly}
-          recentOnly={recentOnly}
-          onRecentOnlyChange={setRecentOnly}
-          hasPersonalObjects={visibleObjects.some((object) => object.scope === "personal")}
-          filteredObjects={filteredObjects}
-          activeObjectId={activeObject.id}
-          templates={[...documentState.templates.layouts, ...documentState.templates.yaml]}
-          xlsxImporting={xlsxImporting}
-          importInputRef={importInputRef}
-          importXlsxInputRef={importXlsxInputRef}
-          onImportJsonChange={handleImportJson}
-          onImportXlsxChange={handleImportXlsx}
-          onApplyTemplate={applyTemplate}
-          onOpenCreateReport={() => openCreateModal("report")}
-          onOpenCreateDashboard={() => openCreateModal("dashboard")}
-          onOpenTemplates={() => setDrawer("templates")}
-        />
-
       <div className="studio-canvas">
         <div className="hero studio-hero">
           <div>
@@ -2577,6 +2547,7 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
             </div>
           </div>
           <div className="link-toolbar">
+            <Link className="ghost-button" to="/studio">Back to Building home</Link>
             <button onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save"}</button>
             {!hasActiveObject ? <button onClick={() => openCreateModal("report")}>Create report</button> : null}
             {!hasActiveObject ? <button onClick={() => openCreateModal("dashboard")}>Create dashboard</button> : null}
