@@ -1,5 +1,14 @@
 type HostedLaunchSource = "quickbase-button" | "local-dev" | null;
 
+function isLocalHostname(hostname: string) {
+  const value = String(hostname || "").trim().toLowerCase();
+  return !value
+    || value === "localhost"
+    || value === "127.0.0.1"
+    || value === "::1"
+    || value.endsWith(".local");
+}
+
 export function normalizeHostedSearch(rawSearch: string) {
   return String(rawSearch || "")
     .replace(/^\?/, "")
@@ -11,9 +20,17 @@ export function getHostedContext() {
   const realmHostname = String(params.get("realm") || params.get("realmHostname") || "").trim().toLowerCase();
   const appId = String(params.get("dbid") || params.get("appId") || "").trim();
   const userId = String(params.get("userId") || params.get("userid") || "").trim();
-  const hasQuickbaseLaunchContext = Boolean(realmHostname || appId || userId);
+  const hasAnyQuickbaseLaunchContext = Boolean(realmHostname || appId || userId);
+  const hasCompleteQuickbaseLaunchContext = Boolean(realmHostname && appId && userId);
+  const missingQuickbaseLaunchFields = [
+    realmHostname ? "" : "realm",
+    appId ? "" : "appId",
+    userId ? "" : "userId"
+  ].filter(Boolean);
   const rawMode = String(params.get("mode") || "").trim().toLowerCase();
-  const launchSource: HostedLaunchSource = params.get("launch") === "quickbase" || params.get("qbLaunch") === "1" || hasQuickbaseLaunchContext
+  const hostname = String(window.location.hostname || "").trim().toLowerCase();
+  const hostedPortalRequiresLaunch = !isLocalHostname(hostname);
+  const launchSource: HostedLaunchSource = params.get("launch") === "quickbase" || params.get("qbLaunch") === "1" || hasCompleteQuickbaseLaunchContext
     ? "quickbase-button"
     : params.get("launch") === "local"
       ? "local-dev"
@@ -25,7 +42,11 @@ export function getHostedContext() {
     launchSource,
     userId,
     realmHostname,
-    appId
+    appId,
+    hasAnyQuickbaseLaunchContext,
+    hasCompleteQuickbaseLaunchContext,
+    missingQuickbaseLaunchFields,
+    hostedPortalRequiresLaunch
   };
 }
 

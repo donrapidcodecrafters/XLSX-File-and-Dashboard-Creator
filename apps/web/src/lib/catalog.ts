@@ -19,7 +19,8 @@ export function resolveTableDefinition(tables: TableDefinition[], tableId: strin
 function isQuickbaseLaunchScoped(launchContext: StudioLaunchContext | null | undefined) {
   return launchContext?.launchSource === "quickbase-button"
     && Boolean(normalizeStudioRealmHostname(launchContext.launchRealmHostname))
-    && Boolean(normalizeStudioAppId(launchContext.launchAppId));
+    && Boolean(normalizeStudioAppId(launchContext.launchAppId))
+    && Boolean(String(launchContext.currentUserId || "").trim());
 }
 
 function tableMatchesLaunchScope(table: TableDefinition | undefined, studioDocument: StudioDocument | null, launchContext: StudioLaunchContext | null | undefined) {

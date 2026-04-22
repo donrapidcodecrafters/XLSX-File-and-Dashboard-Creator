@@ -129,7 +129,13 @@ export function resolveStudioSessionStatus(
   if (valid && session.requiresLaunch && session.launchSource === "quickbase-button") {
     if (currentLaunchSource !== "quickbase-button") {
       valid = false;
-      message = "Open this platform from the Quickbase button for the correct realm and app.";
+      message = "Open this platform from the Quickbase button with realm, app, and user context.";
+    } else if (!currentRealmHostname) {
+      valid = false;
+      message = "Quickbase launch context is missing the realm. Relaunch from the Quickbase button.";
+    } else if (!currentAppId) {
+      valid = false;
+      message = "Quickbase launch context is missing the app id. Relaunch from the Quickbase button.";
     } else if (!currentUserId) {
       valid = false;
       message = "Quickbase launch context is missing the user id. Relaunch from the Quickbase button.";

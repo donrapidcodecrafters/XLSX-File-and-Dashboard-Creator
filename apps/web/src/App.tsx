@@ -534,6 +534,14 @@ export function App() {
     [hosted.appId, hosted.launchSource, hosted.realmHostname, hosted.userId, studioDocument]
   );
   const currentUserId = String(sessionPreview?.currentUserId || "").trim();
+  const hostedLaunchRequiredMessage = useMemo(() => {
+    if (!hosted.hostedPortalRequiresLaunch) return "";
+    if (hosted.hasCompleteQuickbaseLaunchContext) return "";
+    const missingFields = hosted.missingQuickbaseLaunchFields.length
+      ? hosted.missingQuickbaseLaunchFields.join(", ")
+      : "realm, appId, userId";
+    return `Open this platform from the Quickbase button with all required launch values. Missing: ${missingFields}.`;
+  }, [hosted.hasCompleteQuickbaseLaunchContext, hosted.hostedPortalRequiresLaunch, hosted.missingQuickbaseLaunchFields]);
   const sessionStatus = useMemo(
     () => sessionPreview ? resolveStudioSessionStatus(sessionPreview, Date.now(), {
       launchSource: hosted.launchSource,
@@ -663,16 +671,16 @@ export function App() {
     document.title = platformName;
   }, [helpRoute, homeRoute, location.pathname, platformName, readerRoute, studioRoute, viewerRoute]);
 
-  if (studioDocument && sessionStatus && !sessionStatus.valid) {
+  if (hostedLaunchRequiredMessage || (studioDocument && sessionStatus && !sessionStatus.valid)) {
     return (
       <div className="app-shell">
         <main className="content">
           <div className="empty-page">
-            <h1>{sessionStatus.expired ? "Session expired" : "Launch required"}</h1>
-            <p>{sessionStatus.message}</p>
-            <p>Last activity: {formatTimestamp(studioDocument.session.lastActivityAt)}</p>
-            <p>Expired: {formatTimestamp(sessionStatus.expiresAt)}</p>
-            {studioDocument.session.launchSource === "local-dev" ? (
+            <h1>{sessionStatus?.expired ? "Session expired" : "Launch required"}</h1>
+            <p>{hostedLaunchRequiredMessage || sessionStatus?.message}</p>
+            {studioDocument ? <p>Last activity: {formatTimestamp(studioDocument.session.lastActivityAt)}</p> : null}
+            {studioDocument && sessionStatus ? <p>Expired: {formatTimestamp(sessionStatus.expiresAt)}</p> : null}
+            {studioDocument && !hostedLaunchRequiredMessage && studioDocument.session.launchSource === "local-dev" ? (
               <button
                 onClick={() => {
                   const nextSession = touchStudioSession(studioDocument.session, {
@@ -688,7 +696,7 @@ export function App() {
                 Resume local session
               </button>
             ) : null}
-            <p className="micro">Production relaunches should come from the Quickbase dashboard button so the platform receives fresh launch context.</p>
+            <p className="micro">Production access is only allowed when the URL includes the matching Quickbase realm, app, and user context from the launch button.</p>
           </div>
         </main>
       </div>

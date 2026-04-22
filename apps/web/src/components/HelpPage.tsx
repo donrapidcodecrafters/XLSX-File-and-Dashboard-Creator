@@ -61,6 +61,7 @@ export function HelpPage() {
           </div>
           <ol className="flat-list">
             <li>Open the platform from your Quickbase dashboard button. Do not try to start from an expired bookmarked tab.</li>
+            <li>The launched URL must include the matching `realm`, `appId` or `dbid`, and `userId`. If any of those are missing, the platform blocks access until you relaunch from Quickbase.</li>
             <li>The launch realm, app, and user decide which workspace you are allowed to see. Shared and personal content do not cross Quickbase realms, and personal items only open for the launched user.</li>
             <li>When the top bar appears, use `Home` if you want guided starting points, `Viewing` if you want to open existing work, or `Building` if you need to create something new.</li>
             <li>When you open `Building`, you now land on a workspace home first. The first large card shows the workspace status, and the `Quick start` row directly under it is the only place for `Add new report`, `Add new dashboard`, `Use a template`, and `Import xlsx`.</li>
@@ -213,7 +214,7 @@ export function HelpPage() {
             <li>If a dashboard widget fails, open the source report from Studio or the reader to isolate the problem.</li>
             <li>If you cannot find where to start building, go back to <Link to={buildHostedRoute("/studio")}>Building</Link>. The first Building screen is the workspace home where you choose an existing item or create a new one.</li>
             <li>If the platform says the session expired, relaunch from Quickbase.</li>
-            <li>If the platform says the launch is invalid, reopen it from the correct Quickbase realm and app button. A stale bookmark or the wrong user launch will be blocked on purpose.</li>
+            <li>If the platform says the launch is invalid, reopen it from the correct Quickbase realm and app button. A stale bookmark, missing launch values, or the wrong user launch will be blocked on purpose.</li>
             <li>If an imported workbook does not look right, read the import review, fix the workbook, and import again.</li>
           </ol>
         </article>
