@@ -8,6 +8,7 @@ import type {
 } from "@studio/shared";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "http://localhost:3001").replace(/\/$/, "");
+const REQUEST_TIMEOUT_MS = 20_000;
 
 function parseDownloadFilename(contentDisposition: string | null, fallback: string) {
   if (!contentDisposition) return fallback;
@@ -88,12 +89,22 @@ function submitDownload(path: string, payload: unknown) {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const controller = new AbortController();
+  const timeoutHandle = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const response = await fetch(API_BASE + path, {
     headers: {
       "Content-Type": "application/json",
       ...(init?.headers || {})
     },
-    ...init
+    ...init,
+    signal: controller.signal
+  }).catch((error: unknown) => {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("Request timed out");
+    }
+    throw error;
+  }).finally(() => {
+    window.clearTimeout(timeoutHandle);
   });
   if (!response.ok) {
     throw new Error("Request failed with status " + response.status);

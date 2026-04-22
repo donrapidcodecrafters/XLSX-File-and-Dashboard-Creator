@@ -106,6 +106,7 @@ export function HelpPage() {
             <li>Open a report from <Link to={buildHostedRoute("/viewer")}>Viewing</Link> or <Link to={buildHostedRoute("/")}>Home</Link>.</li>
             <li>Check the freshness banner near the top of the page before sharing or exporting. This tells you whether you are looking at cached or live data.</li>
             <li>Use `Save view` to keep your own preferred page or focus mode without changing the shared report for everyone else.</li>
+            <li>`Summary`, `Chart`, and `Details` view buttons only appear when that alternate view is actually available and different from the default layout.</li>
             <li>Use `Focus chart` or `Focus details` when you need a larger reading surface.</li>
             <li>Large report tables scroll inside the report itself. You should not need to scroll the entire page just to read more rows.</li>
             <li>Use `Download xlsx` to export the report you are currently viewing. Wait until the export status says the file is ready.</li>
@@ -207,6 +208,7 @@ export function HelpPage() {
           <ol className="flat-list">
             <li>If content looks stale, use `Refresh now` on the current object or `Refresh all` from settings when you are responsible for the app cache.</li>
             <li>If a report, chart, or dashboard needs to load or refresh source rows before it can open, the platform shows a full-screen loading overlay with progress and opens the object automatically when the refresh completes.</li>
+            <li>If the Quickbase launch is slow, the app now keeps loading with partial platform data instead of hanging on a blank page waiting for every endpoint to finish.</li>
             <li>If a field is missing, reload the app metadata or refresh the source report cache so new Quickbase fields become available.</li>
             <li>If a dashboard widget fails, open the source report from Studio or the reader to isolate the problem.</li>
             <li>If you cannot find where to start building, go back to <Link to={buildHostedRoute("/studio")}>Building</Link>. The first Building screen is the workspace home where you choose an existing item or create a new one.</li>

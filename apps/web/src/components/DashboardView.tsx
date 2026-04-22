@@ -58,9 +58,27 @@ function widgetRenderMode(widget: DashboardRunResult["tabs"][number]["widgets"][
   return report.view.mode;
 }
 
+function formatFallbackFieldLabel(fieldId: string) {
+  const trimmed = String(fieldId || "").trim();
+  if (!trimmed) return "";
+  if (/^\d+$/.test(trimmed)) return "";
+  return trimmed
+    .replace(/[_-]+/g, " ")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
 function getFieldLabel(tables: TableDefinition[] | undefined, report: DashboardRunResult["tabs"][number]["widgets"][number]["report"], fieldId: string) {
   const table = tables?.find((item) => item.id === report.sourceTableId || item.quickbaseTableId === report.sourceTableId);
-  return table ? getReportFieldLabel(report, table, fieldId) : fieldId;
+  const displayLabel = report.displayLabels?.fields?.[fieldId]?.trim();
+  if (displayLabel) return displayLabel;
+  if (table) {
+    const tableLabel = getReportFieldLabel(report, table, fieldId);
+    if (tableLabel && tableLabel !== fieldId) return tableLabel;
+  }
+  return formatFallbackFieldLabel(fieldId);
 }
 
 function getChartFieldId(report: DashboardRunResult["tabs"][number]["widgets"][number]["report"]) {

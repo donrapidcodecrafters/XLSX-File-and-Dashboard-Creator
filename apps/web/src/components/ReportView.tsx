@@ -65,17 +65,39 @@ function getChartFieldId(report: ReportDefinition) {
   return report.view.chartFieldId || report.groups[0]?.fieldId || report.selectedFieldIds[0] || "";
 }
 
+function formatFallbackFieldLabel(fieldId: string) {
+  const trimmed = String(fieldId || "").trim();
+  if (!trimmed) return "";
+  if (/^\d+$/.test(trimmed)) return "";
+  return trimmed
+    .replace(/[_-]+/g, " ")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function getReadableFieldLabel(report: ReportDefinition, fieldId: string, table?: TableDefinition) {
+  const displayLabel = report.displayLabels?.fields?.[fieldId]?.trim();
+  if (displayLabel) return displayLabel;
+  if (table) {
+    const tableLabel = getReportFieldLabel(report, table, fieldId);
+    if (tableLabel && tableLabel !== fieldId) return tableLabel;
+  }
+  return formatFallbackFieldLabel(fieldId);
+}
+
 function getChartAxisLabels(report: ReportDefinition, table?: TableDefinition) {
   const xFieldId = getChartFieldId(report);
   const primaryFieldLabel = report.view.chartValueFieldId
-    ? (table ? getReportFieldLabel(report, table, report.view.chartValueFieldId) : report.view.chartValueFieldId)
+    ? getReadableFieldLabel(report, report.view.chartValueFieldId, table)
     : "";
   const secondaryFieldLabel = report.view.chartSecondaryValueFieldId
-    ? (table ? getReportFieldLabel(report, table, report.view.chartSecondaryValueFieldId) : report.view.chartSecondaryValueFieldId)
+    ? getReadableFieldLabel(report, report.view.chartSecondaryValueFieldId, table)
     : "";
   return {
     xAxisLabel: report.view.chartXAxisLabel?.trim()
-      || (xFieldId ? (table ? getReportFieldLabel(report, table, xFieldId) : xFieldId) : ""),
+      || (xFieldId ? getReadableFieldLabel(report, xFieldId, table) : ""),
     yAxisLabel: report.view.chartYAxisLabel?.trim()
       || primaryFieldLabel
       || (report.view.chartAggregation === "count" ? "Rows" : ""),
@@ -86,16 +108,38 @@ function getChartAxisLabels(report: ReportDefinition, table?: TableDefinition) {
   };
 }
 
-function availableReportFocusModes(report: ReportDefinition): ReportFocusMode[] {
+function availableReportFocusModes(
+  report: ReportDefinition,
+  options: {
+    summaryAvailable?: boolean;
+    chartAvailable?: boolean;
+    detailsAvailable?: boolean;
+  } = {}
+): ReportFocusMode[] {
   const modes: ReportFocusMode[] = ["default"];
-  if (reportShowsSummary(report)) modes.push("summary");
-  if (reportShowsChart(report)) modes.push("chart");
-  if (reportShowsDetails(report)) modes.push("details");
+  const summaryAvailable = options.summaryAvailable ?? reportShowsSummary(report);
+  const chartAvailable = options.chartAvailable ?? reportShowsChart(report);
+  const detailsAvailable = options.detailsAvailable ?? reportShowsDetails(report);
+  const defaultShowsSummary = summaryAvailable && reportShowsSummary(report);
+  const defaultShowsChart = chartAvailable && reportShowsChart(report);
+  const defaultShowsDetails = detailsAvailable && reportShowsDetails(report);
+  const defaultSectionCount = [defaultShowsSummary, defaultShowsChart, defaultShowsDetails].filter(Boolean).length;
+  if (summaryAvailable && !(defaultSectionCount === 1 && defaultShowsSummary)) modes.push("summary");
+  if (chartAvailable && !(defaultSectionCount === 1 && defaultShowsChart)) modes.push("chart");
+  if (detailsAvailable && !(defaultSectionCount === 1 && defaultShowsDetails)) modes.push("details");
   return modes;
 }
 
-function normalizeReportFocusMode(report: ReportDefinition, candidate?: ReportFocusMode): ReportFocusMode {
-  const modes = availableReportFocusModes(report);
+function normalizeReportFocusMode(
+  report: ReportDefinition,
+  candidate?: ReportFocusMode,
+  options: {
+    summaryAvailable?: boolean;
+    chartAvailable?: boolean;
+    detailsAvailable?: boolean;
+  } = {}
+): ReportFocusMode {
+  const modes = availableReportFocusModes(report, options);
   return candidate && modes.includes(candidate) ? candidate : "default";
 }
 
@@ -124,12 +168,24 @@ export function ReportView({
   const [exportJob, setExportJob] = useState<ExportJobStatus | null>(null);
   const [downloadedJobId, setDownloadedJobId] = useState("");
   const [exportPopup, setExportPopup] = useState<Window | null>(null);
-  const [focusMode, setFocusMode] = useState<ReportFocusMode>(normalizeReportFocusMode(report, initialFocusMode));
+  const summaryAvailable = reportShowsSummary(report) && Boolean(result?.summary?.length);
+  const chartAvailable = reportShowsChart(report) && (loading || Boolean(result?.chartData?.length));
+  const detailsAvailable = reportShowsDetails(report) && (
+    loading
+      || Boolean(result?.rows?.length)
+      || Number(result?.totalRows || 0) > 0
+  );
+  const [focusMode, setFocusMode] = useState<ReportFocusMode>(
+    normalizeReportFocusMode(report, initialFocusMode, { summaryAvailable, chartAvailable, detailsAvailable })
+  );
   const [focusedSection, setFocusedSection] = useState<"" | "chart" | "details">(initialFocusedSection);
   const chartFieldId = getChartFieldId(report);
   const axisLabels = getChartAxisLabels(report, table);
   const quickbaseFilterTree = buildQuickbaseReportFilterTree(report);
-  const focusModes = useMemo(() => availableReportFocusModes(report), [report]);
+  const focusModes = useMemo(
+    () => availableReportFocusModes(report, { summaryAvailable, chartAvailable, detailsAvailable }),
+    [chartAvailable, detailsAvailable, report, summaryAvailable]
+  );
   const skipStateBroadcastRef = useRef(true);
   const lastBroadcastStateRef = useRef("");
 
@@ -139,8 +195,8 @@ export function ReportView({
   }, [report.id]);
 
   useEffect(() => {
-    setFocusMode(normalizeReportFocusMode(report, initialFocusMode));
-  }, [initialFocusMode, report]);
+    setFocusMode(normalizeReportFocusMode(report, initialFocusMode, { summaryAvailable, chartAvailable, detailsAvailable }));
+  }, [chartAvailable, detailsAvailable, initialFocusMode, report, summaryAvailable]);
 
   useEffect(() => {
     setFocusedSection(initialFocusedSection || "");
@@ -150,7 +206,7 @@ export function ReportView({
     if (!onStateChange) return;
     const nextState = JSON.stringify({
       currentPage: Math.max(1, currentPage),
-      focusMode: normalizeReportFocusMode(report, focusMode),
+      focusMode: normalizeReportFocusMode(report, focusMode, { summaryAvailable, chartAvailable, detailsAvailable }),
       focusedSection
     });
     if (skipStateBroadcastRef.current) {
@@ -163,12 +219,12 @@ export function ReportView({
       lastBroadcastStateRef.current = nextState;
       onStateChange({
         currentPage: Math.max(1, currentPage),
-        focusMode: normalizeReportFocusMode(report, focusMode),
+        focusMode: normalizeReportFocusMode(report, focusMode, { summaryAvailable, chartAvailable, detailsAvailable }),
         focusedSection
       });
     }, 250);
     return () => window.clearTimeout(handle);
-  }, [currentPage, focusMode, focusedSection, onStateChange, report]);
+  }, [chartAvailable, currentPage, detailsAvailable, focusMode, focusedSection, onStateChange, report, summaryAvailable]);
 
   useEffect(() => {
     if (!exportJob || exportJob.status === "complete" || exportJob.status === "failed") return;
@@ -206,10 +262,10 @@ export function ReportView({
     return "Local fallback data";
   }
 
-  const resolvedFocusMode = normalizeReportFocusMode(report, focusMode);
-  const showSummary = reportShowsSummary(report) && (resolvedFocusMode === "default" || resolvedFocusMode === "summary");
-  const showChart = reportShowsChart(report) && (resolvedFocusMode === "default" || resolvedFocusMode === "chart");
-  const showDetails = reportShowsDetails(report) && (resolvedFocusMode === "default" || resolvedFocusMode === "details");
+  const resolvedFocusMode = normalizeReportFocusMode(report, focusMode, { summaryAvailable, chartAvailable, detailsAvailable });
+  const showSummary = summaryAvailable && (resolvedFocusMode === "default" || resolvedFocusMode === "summary");
+  const showChart = chartAvailable && (resolvedFocusMode === "default" || resolvedFocusMode === "chart");
+  const showDetails = detailsAvailable && (resolvedFocusMode === "default" || resolvedFocusMode === "details");
 
   function resetView() {
     onPageChange(1);
@@ -233,7 +289,7 @@ export function ReportView({
 
   function applySavedView(view: NonNullable<ReportViewProps["savedViews"]>[number]) {
     onPageChange(Math.max(1, view.currentPage || 1));
-    setFocusMode(normalizeReportFocusMode(report, view.focusMode));
+    setFocusMode(normalizeReportFocusMode(report, view.focusMode, { summaryAvailable, chartAvailable, detailsAvailable }));
     setFocusedSection(view.focusedSection || "");
   }
 
@@ -248,7 +304,7 @@ export function ReportView({
           {rows.map((row, index) => (
             <article className="studio-mini-card" key={index}>
               <strong>{table ? formatReportCellValue(report, table, titleFieldId, row[titleFieldId]) : String(row[titleFieldId] ?? "")}</strong>
-              <span>{table ? getReportFieldLabel(report, table, dateFieldId) : "Date"}: {table ? formatReportCellValue(report, table, dateFieldId, row[dateFieldId]) : String(row[dateFieldId] ?? "")}</span>
+              <span>{getReadableFieldLabel(report, dateFieldId, table) || "Date"}: {table ? formatReportCellValue(report, table, dateFieldId, row[dateFieldId]) : String(row[dateFieldId] ?? "")}</span>
               {report.view.mode === "timeline" && report.view.timelineEndField ? (
                 <span>Ends: {table ? formatReportCellValue(report, table, report.view.timelineEndField, row[report.view.timelineEndField]) : String(row[report.view.timelineEndField] ?? "")}</span>
               ) : null}
@@ -295,7 +351,7 @@ export function ReportView({
             <tr>
               {quickbaseLinkContext ? <th className="table-action-col">Quickbase</th> : null}
               {report.selectedFieldIds.map((fieldId) => (
-                <th key={fieldId}>{table ? getReportFieldLabel(report, table, fieldId) : fieldId}</th>
+                <th key={fieldId}>{getReadableFieldLabel(report, fieldId, table) || "Value"}</th>
               ))}
             </tr>
           </thead>

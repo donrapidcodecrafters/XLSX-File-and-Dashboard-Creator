@@ -56,6 +56,8 @@ function useCatalog() {
   const [objects, setObjects] = useState<CatalogSummaryItem[]>([]);
   const [tables, setTables] = useState<TableDefinition[]>([]);
   const [studioDocument, setStudioDocument] = useState<StudioDocument | null>(null);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState("");
   const lastPersistedSessionKey = useRef("");
   const lastPersistedSessionAt = useRef(0);
   const sessionPersistPromise = useRef<Promise<void> | null>(null);
@@ -72,19 +74,35 @@ function useCatalog() {
   });
 
   const reloadCatalog = useCallback(async () => {
-    const [catalogResponse, tablesResponse, studioResponse] = await Promise.all([
+    setCatalogLoading(true);
+    setCatalogError("");
+    const [catalogResponse, tablesResponse, studioResponse] = await Promise.allSettled([
       fetchCatalog(),
       fetchTables(),
       fetchStudioDocument().catch(() => null)
     ]);
-    setObjects(catalogResponse.objects);
-    setTables(tablesResponse.tables);
-    if (studioResponse?.document) {
-      const normalized = normalizeStudioDocument(studioResponse.document);
+    if (catalogResponse.status === "fulfilled") {
+      setObjects(catalogResponse.value.objects);
+    } else {
+      setObjects([]);
+    }
+    if (tablesResponse.status === "fulfilled") {
+      setTables(tablesResponse.value.tables);
+    } else {
+      setTables([]);
+    }
+    if (studioResponse.status === "fulfilled" && studioResponse.value?.document) {
+      const normalized = normalizeStudioDocument(studioResponse.value.document);
       lastPersistedSessionKey.current = JSON.stringify(normalized.session || {});
       lastPersistedSessionAt.current = Date.now();
       setStudioDocument(normalized);
+    } else if (studioResponse.status === "rejected") {
+      setStudioDocument(null);
     }
+    if (catalogResponse.status === "rejected" || tablesResponse.status === "rejected") {
+      setCatalogError("Some platform data took too long to load. The app is using what it could load and you can retry with Refresh all.");
+    }
+    setCatalogLoading(false);
   }, []);
 
   const updateUserSettings = useCallback(async (payload: {
@@ -150,7 +168,7 @@ function useCatalog() {
     void reloadCatalog();
   }, []);
 
-  return { objects, tables, studioDocument, recentIds, reloadCatalog, markObjectAsRecent, updateUserSettings, persistSession, setStudioDocument };
+  return { objects, tables, studioDocument, recentIds, reloadCatalog, markObjectAsRecent, updateUserSettings, persistSession, setStudioDocument, catalogLoading, catalogError };
 }
 
 function formatTimestamp(value?: string) {
@@ -499,7 +517,7 @@ function ObjectPage({
 }
 
 export function App() {
-  const { objects, tables, studioDocument, recentIds, reloadCatalog, markObjectAsRecent, updateUserSettings, persistSession, setStudioDocument } = useCatalog();
+  const { objects, tables, studioDocument, recentIds, reloadCatalog, markObjectAsRecent, updateUserSettings, persistSession, setStudioDocument, catalogLoading, catalogError } = useCatalog();
   const location = useLocation();
   const hosted = useMemo(() => getHostedContext(), [location.key]);
   const lastSessionTouchAt = useRef(0);
@@ -584,10 +602,6 @@ export function App() {
     const next = toggleFavoriteIds(studioDocument.favorites || [], objectId);
     await updateUserSettings({ favorites: next });
   }, [studioDocument, updateUserSettings]);
-
-  useEffect(() => {
-    void reloadCatalog();
-  }, [location.pathname, reloadCatalog]);
 
   useEffect(() => {
     if (!studioDocument || !hosted.launchSource) return;
@@ -735,6 +749,18 @@ export function App() {
         )}
 
         <main className={`content ${readerRoute ? "reader-content" : ""}`}>
+          {catalogLoading && !objects.length && !tables.length && !studioDocument ? (
+            <section className="sync-status">
+              <strong>Loading platform content</strong>
+              <span>Connecting to saved reports, dashboards, and table definitions…</span>
+            </section>
+          ) : null}
+          {catalogError ? (
+            <section className="sync-status sync-status-warn">
+              <strong>Some content did not load cleanly</strong>
+              <span>{catalogError}</span>
+            </section>
+          ) : null}
           {bootstrapIssues.length ? (
             <section className={`sync-status ${bootstrapIssues.some((profile) => profile.bootstrap.error || !profile.bootstrap.ready) ? "sync-status-warn" : "sync-status-ok"}`}>
               <strong>{bootstrapIssues.some((profile) => profile.bootstrap.error || !profile.bootstrap.ready) ? "Quickbase setup needs attention" : "Quickbase setup updated"}</strong>
