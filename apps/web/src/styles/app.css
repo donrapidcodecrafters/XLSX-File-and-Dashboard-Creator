@@ -435,6 +435,79 @@ input {
   text-align: center;
 }
 
+.reader-hero {
+  margin-bottom: 4px;
+}
+
+.reader-page-shell {
+  display: grid;
+  grid-template-columns: minmax(68px, 272px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.reader-page-content {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.reader-sidebar {
+  position: sticky;
+  top: 16px;
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  padding: 14px;
+  border: 1px solid rgba(23, 49, 38, 0.1);
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(250, 251, 247, 0.96), rgba(244, 247, 241, 0.9));
+  box-shadow: 0 16px 36px rgba(22, 39, 31, 0.06);
+}
+
+.reader-sidebar.collapsed {
+  padding: 12px;
+}
+
+.reader-sidebar-toggle {
+  width: 100%;
+}
+
+.reader-sidebar-stack {
+  display: grid;
+  gap: 14px;
+}
+
+.reader-sidebar-section {
+  display: grid;
+  gap: 10px;
+}
+
+.reader-sidebar-section strong {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+}
+
+.reader-sidebar-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.reader-sidebar-actions .ghost-button,
+.reader-sidebar-actions button,
+.reader-sidebar-actions .link-toolbar .ghost-button,
+.reader-sidebar-actions .link-toolbar button {
+  width: 100%;
+  justify-content: center;
+}
+
+.reader-sidebar .link-toolbar {
+  display: grid;
+  gap: 8px;
+}
+
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -2932,6 +3005,14 @@ select {
 @media (max-width: 920px) {
   .dashboard-layout-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .reader-page-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .reader-sidebar {
+    position: static;
   }
 
   .dashboard-layout-item {

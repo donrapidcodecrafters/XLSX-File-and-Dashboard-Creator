@@ -60,6 +60,8 @@ describe("ReportView", () => {
       </MemoryRouter>
     );
 
+    await user.click(screen.getByRole("button", { name: "Show tools" }));
+
     await user.click(screen.getByRole("button", { name: "Save view" }));
     expect(onSaveView).toHaveBeenCalledWith(expect.objectContaining({ name: "Chart Bookmark" }));
 

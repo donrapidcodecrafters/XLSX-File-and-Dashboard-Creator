@@ -73,6 +73,8 @@ describe("DashboardView", () => {
       expect(screen.getAllByRole("button", { name: "Focus card" }).length).toBeGreaterThan(0);
     });
 
+    await user.click(screen.getByRole("button", { name: "Show tools" }));
+
     await user.click(screen.getByRole("button", { name: "Status: Done" }));
     expect((screen.getByLabelText("Status") as HTMLInputElement).value).toBe("Done");
 

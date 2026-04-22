@@ -168,6 +168,7 @@ export function ReportView({
   const [exportJob, setExportJob] = useState<ExportJobStatus | null>(null);
   const [downloadedJobId, setDownloadedJobId] = useState("");
   const [exportPopup, setExportPopup] = useState<Window | null>(null);
+  const [toolbarCollapsed, setToolbarCollapsed] = useState(true);
   const summaryAvailable = reportShowsSummary(report) && Boolean(result?.summary?.length);
   const chartAvailable = reportShowsChart(report) && (loading || Boolean(result?.chartData?.length));
   const detailsAvailable = reportShowsDetails(report) && (
@@ -395,57 +396,86 @@ export function ReportView({
         />
       ) : null}
       <section className="surface stack">
-      <div className="hero">
-        <div>
-          <span className="badge brand">Report</span>
-          <h1>{report.name}</h1>
-          <p>{report.description || "Full-screen report view with live data, summaries, charts, and detail rows."}</p>
-        </div>
-        <div className="stack-compact reader-actions">
-          <div className="link-toolbar">
-            {hosted.embed ? (
-              <button className="ghost-button" onClick={() => window.open(fullScreenUrl, "_blank", "noopener,noreferrer")}>Open full-screen</button>
-            ) : (
-              <>
-                <button className="ghost-button" onClick={() => window.history.back()}>Back</button>
-                <Link className="ghost-button" to={buildHostedRoute("/")}>Home</Link>
-                <Link className="ghost-button" to={buildHostedRoute("/help")}>Open manual</Link>
-                <Link className="ghost-button" to={buildHostedRoute(`/studio/${report.id}`)} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>Open in building area</Link>
-              </>
-            )}
-            {onToggleFavorite ? (
-              <button className="ghost-button" onClick={onToggleFavorite}>
-                {isFavorite ? "Unfavorite" : "Favorite"}
-              </button>
-            ) : null}
-            <button className="ghost-button" onClick={() => { void beginExport(); }} disabled={!result || exportJob?.status === "queued" || exportJob?.status === "running"}>
-              {exportJob?.status === "queued" || exportJob?.status === "running"
-                ? `Exporting ${exportJob.progress}%`
-                : "Download xlsx"}
-            </button>
-            <button className="ghost-button" onClick={onRefresh} disabled={loading}>
-              {loading ? "Refreshing…" : "Refresh now"}
-            </button>
-            <button className="ghost-button" onClick={resetView}>Reset view</button>
-            {onSaveView ? <button className="ghost-button" onClick={saveCurrentView}>Save view</button> : null}
+        <div className="hero reader-hero">
+          <div>
+            <span className="badge brand">Report</span>
+            <h1>{report.name}</h1>
+            <p>{report.description || "Full-screen report view with live data, summaries, charts, and detail rows."}</p>
           </div>
-          {focusModes.length > 1 ? (
-            <div className="link-toolbar">
-              {focusModes.map((mode) => (
-                <button
-                  key={mode}
-                  className={`ghost-button ${resolvedFocusMode === mode ? "active-tab" : ""}`}
-                  onClick={() => setFocusMode(mode)}
-                >
-                  {mode === "default" ? "Default layout" : mode === "summary" ? "Summary" : mode === "chart" ? "Chart" : "Details"}
-                </button>
-              ))}
-            </div>
-          ) : null}
-          {hosted.embed ? null : <LinkToolbar type="report" id={report.id} />}
         </div>
-      </div>
 
+        <div className="reader-page-shell">
+          <aside className={`reader-sidebar ${toolbarCollapsed ? "collapsed" : ""}`}>
+            <button className="ghost-button reader-sidebar-toggle" onClick={() => setToolbarCollapsed((current) => !current)}>
+              {toolbarCollapsed ? "Show tools" : "Hide tools"}
+            </button>
+            {toolbarCollapsed ? null : (
+              <div className="reader-sidebar-stack">
+                <div className="reader-sidebar-section">
+                  <strong>Navigation</strong>
+                  <div className="reader-sidebar-actions">
+                    {hosted.embed ? (
+                      <button className="ghost-button" onClick={() => window.open(fullScreenUrl, "_blank", "noopener,noreferrer")}>Open full-screen</button>
+                    ) : (
+                      <>
+                        <button className="ghost-button" onClick={() => window.history.back()}>Back</button>
+                        <Link className="ghost-button" to={buildHostedRoute("/")}>Home</Link>
+                        <Link className="ghost-button" to={buildHostedRoute("/help")}>Open manual</Link>
+                        <Link className="ghost-button" to={buildHostedRoute(`/studio/${report.id}`)} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>Open in building area</Link>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div className="reader-sidebar-section">
+                  <strong>Actions</strong>
+                  <div className="reader-sidebar-actions">
+                    {onToggleFavorite ? (
+                      <button className="ghost-button" onClick={onToggleFavorite}>
+                        {isFavorite ? "Unfavorite" : "Favorite"}
+                      </button>
+                    ) : null}
+                    <button className="ghost-button" onClick={() => { void beginExport(); }} disabled={!result || exportJob?.status === "queued" || exportJob?.status === "running"}>
+                      {exportJob?.status === "queued" || exportJob?.status === "running"
+                        ? `Exporting ${exportJob.progress}%`
+                        : "Download xlsx"}
+                    </button>
+                    <button className="ghost-button" onClick={onRefresh} disabled={loading}>
+                      {loading ? "Refreshing…" : "Refresh now"}
+                    </button>
+                    <button className="ghost-button" onClick={resetView}>Reset view</button>
+                    {onSaveView ? <button className="ghost-button" onClick={saveCurrentView}>Save view</button> : null}
+                  </div>
+                </div>
+
+                {focusModes.length > 1 ? (
+                  <div className="reader-sidebar-section">
+                    <strong>View</strong>
+                    <div className="reader-sidebar-actions">
+                      {focusModes.map((mode) => (
+                        <button
+                          key={mode}
+                          className={`ghost-button ${resolvedFocusMode === mode ? "active-tab" : ""}`}
+                          onClick={() => setFocusMode(mode)}
+                        >
+                          {mode === "default" ? "Default layout" : mode === "summary" ? "Summary" : mode === "chart" ? "Chart" : "Details"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {hosted.embed ? null : (
+                  <div className="reader-sidebar-section">
+                    <strong>Links</strong>
+                    <LinkToolbar type="report" id={report.id} />
+                  </div>
+                )}
+              </div>
+            )}
+          </aside>
+
+          <div className="reader-page-content">
       {savedViews.length ? (
         <div className="card">
           <div className="card-head">
@@ -598,6 +628,8 @@ export function ReportView({
           </div>
         </div>
       ) : null}
+          </div>
+        </div>
       </section>
     </>
   );

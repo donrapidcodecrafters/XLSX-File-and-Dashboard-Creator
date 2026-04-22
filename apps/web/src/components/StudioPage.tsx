@@ -2461,6 +2461,343 @@ export function StudioPage({
     pushToast("Workbook export started.");
   }
 
+  function renderStudioOverlays() {
+    return (
+      <>
+        {createModalOpen ? (
+          <div className="studio-modal-backdrop" onClick={() => setCreateModalOpen(false)}>
+            <section className="studio-modal" onClick={(event) => event.stopPropagation()}>
+              <div className="card-head">
+                <div>
+                  <strong>{editingReportId ? "Edit Report" : `Create ${createDraft.type === "report" ? "Report" : "Dashboard"}`}</strong>
+                  <div className="micro">{editingReportId ? "Update the report configuration here. Changes stay in the modal instead of moving into a side setup column." : "Start fresh with the same field, filter, and sorting controls from the legacy builder."}</div>
+                </div>
+                <button onClick={() => setCreateModalOpen(false)}>Close</button>
+              </div>
+
+              <div className="stack">
+                <div className="builder-stepper">
+                  {createSteps.map((step, index) => (
+                    <button
+                      key={step}
+                      type="button"
+                      className={`builder-step-button${step === activeCreateStep ? " active-tab" : ""}${createSteps.indexOf(activeCreateStep) > index ? " builder-step-complete" : ""}`}
+                      onClick={() => setCreateStep(step)}
+                    >
+                      <span className="badge">{index + 1}</span>
+                      <strong>{getStudioBuilderStepLabel(step)}</strong>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="sync-status">
+                  <strong>{getStudioBuilderStepLabel(activeCreateStep)}</strong>
+                  <span>{getStudioBuilderStepDescription(activeCreateStep, createDraft.type)}</span>
+                </div>
+
+                {createStepIssues.length ? (
+                  <div className="sync-status sync-status-warn">
+                    <strong>Resolve before continuing</strong>
+                    <ul className="flat-list import-review-list">
+                      {createStepIssues.map((issue) => <li key={issue}>{issue}</li>)}
+                    </ul>
+                  </div>
+                ) : null}
+
+                {activeCreateStep === "basics" ? (
+                  <>
+                    <div className="filter-grid compact-grid">
+                      <label className="field">
+                        <span>Type</span>
+                        <select
+                          value={createDraft.type}
+                          onChange={(event) => {
+                            const nextType = event.target.value as CreateModalType;
+                            setCreateDraft(buildStudioBuilderDraft(bundle.tables[0] || null, nextType, currentUserId, uid));
+                            setCreateStep(getStudioBuilderSteps(nextType)[0]);
+                          }}
+                        >
+                          <option value="report">Report</option>
+                          <option value="dashboard">Dashboard</option>
+                        </select>
+                      </label>
+                      <label className="field">
+                        <span>Name</span>
+                        <input value={createDraft.name} onChange={(event) => setCreateDraft((current) => ({ ...current, name: event.target.value }))} />
+                      </label>
+                    </div>
+                    <label className="field">
+                      <span>Description</span>
+                      <input value={createDraft.description} onChange={(event) => setCreateDraft((current) => ({ ...current, description: event.target.value }))} />
+                    </label>
+                    <div className="card">
+                      <div className="card-head">
+                        <strong>Sharing</strong>
+                        <span className="micro">Choose whether this object is shared with everyone or only visible for the active user.</span>
+                      </div>
+                      <label className="field">
+                        <span>Scope</span>
+                        <select
+                          value={createDraft.scope}
+                          onChange={(event) => setCreateDraft((current) => ({
+                            ...current,
+                            ...normalizeStudioBuilderScopeOwner(event.target.value as StudioObjectScope, currentUserId, current.ownerUserId)
+                          }))}
+                        >
+                          <option value="global">Shared</option>
+                          <option value="personal">Personal</option>
+                        </select>
+                      </label>
+                      <label className="field">
+                        <span>Owner</span>
+                        <input
+                          readOnly
+                          value={createDraft.scope === "personal" ? (createDraft.ownerUserId || currentUserId || "No active user") : "Shared with everyone in this workspace"}
+                        />
+                      </label>
+                    </div>
+                  </>
+                ) : null}
+
+                {activeCreateStep === "data" && createDraft.type === "report" && createDraftTable ? (
+                  <StudioReportDraftDataStep
+                    tables={bundle.tables}
+                    createDraft={createDraft}
+                    createDraftTable={createDraftTable}
+                    createFieldQuery={createFieldQuery}
+                    setCreateFieldQuery={setCreateFieldQuery}
+                    visibleCreateFields={visibleCreateFields}
+                    chartValueLabelOptions={chartValueLabelOptions}
+                    setCreateDraft={setCreateDraft}
+                    updateCreateDraftTable={updateCreateDraftTable}
+                  />
+                ) : null}
+
+                {activeCreateStep === "filters" && createDraft.type === "report" && createDraftTable ? (
+                  <ReportFiltersAndSortsEditor
+                    table={createDraftTable}
+                    filterTree={createDraft.filterTree}
+                    sorts={createDraft.sorts}
+                    onChangeFilterTree={(filterTree) => setCreateDraft((current) => ({ ...current, filterTree }))}
+                    onChangeSorts={(sorts) => setCreateDraft((current) => ({ ...current, sorts }))}
+                  />
+                ) : null}
+
+                {activeCreateStep === "view" && createDraft.type === "report" && createDraftTable ? (
+                  <StudioReportDraftViewStep
+                    createDraft={createDraft}
+                    createDraftTable={createDraftTable}
+                    setCreateDraft={setCreateDraft}
+                  />
+                ) : null}
+
+                {activeCreateStep === "layout" && createDraft.type === "dashboard" ? (
+                  <>
+                    <div className="card">
+                      <div className="card-head">
+                        <strong>Dashboard starter</strong>
+                        <span className="micro">New dashboards start with one clean tab so you can keep layout work on the canvas after saving.</span>
+                      </div>
+                      <div className="summary-grid">
+                        <div className="summary-card">
+                          <strong>1</strong>
+                          <span>Starter tab</span>
+                        </div>
+                        <div className="summary-card">
+                          <strong>0</strong>
+                          <span>Cards at creation</span>
+                        </div>
+                        <div className="summary-card">
+                          <strong>Canvas first</strong>
+                          <span>Add and arrange cards after save</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="sync-status sync-status-ok">
+                      <strong>What happens next</strong>
+                      <span>After saving, the dashboard opens directly in Studio so you can add tabs, add cards to the active tab, resize them, and move or copy them across tabs from the selected-card inspector.</span>
+                    </div>
+                  </>
+                ) : null}
+
+                {activeCreateStep === "review" ? (
+                  <StudioDraftReviewStep
+                    createDraft={createDraft}
+                    createDraftTable={createDraftTable}
+                    createDraftIssues={createDraftIssues}
+                    filterCount={createDraftFilterCount}
+                    previewReport={createDraftPreviewReport}
+                    previewResult={createDraftPreview}
+                    currentPreviewPage={createPreviewPage}
+                    onPreviewPageChange={setCreatePreviewPage}
+                  />
+                ) : null}
+
+                <div className="studio-actions modal-actions">
+                  {createSteps.indexOf(activeCreateStep) > 0 ? (
+                    <button type="button" className="ghost-button" onClick={() => setCreateStep(createSteps[Math.max(0, createSteps.indexOf(activeCreateStep) - 1)])}>
+                      Back
+                    </button>
+                  ) : null}
+                  {activeCreateStep !== "review" ? (
+                    <button
+                      type="button"
+                      onClick={() => setCreateStep(createSteps[Math.min(createSteps.length - 1, createSteps.indexOf(activeCreateStep) + 1)])}
+                      disabled={createStepIssues.length > 0}
+                    >
+                      Next
+                    </button>
+                  ) : (
+                    <button onClick={createFromDraft} disabled={createDraftIssues.length > 0}>
+                      {editingReportId ? "Save report" : createDraft.type === "report" ? "Create report" : "Create dashboard"}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </section>
+          </div>
+        ) : null}
+
+        {drawer ? (
+          <div className={drawer === "settings" ? "studio-modal-backdrop" : "studio-drawer-backdrop"} onClick={() => setDrawer(null)}>
+            <section className={drawer === "settings" ? "studio-modal studio-settings-modal" : "studio-drawer"} onClick={(event) => event.stopPropagation()}>
+              <div className="card-head">
+                <strong>{drawer === "settings" ? "System Settings" : drawer === "share" ? "Share" : drawer === "templates" ? "Templates" : drawer === "export" ? "Export" : "History"}</strong>
+                <button onClick={() => setDrawer(null)}>Close</button>
+              </div>
+
+              {drawer === "settings" ? (
+                <StudioSettingsPanel
+                  documentState={documentState}
+                  activeQuickbaseProfile={activeQuickbaseProfile}
+                  activeQuickbaseConfig={activeQuickbaseConfig}
+                  activeProfileTables={activeProfileTables}
+                  savedRowsForApp={savedRowsForApp}
+                  refreshStatusTitle={refreshStatusTitle}
+                  refreshStatusDetail={refreshStatusDetail}
+                  realmApps={realmApps}
+                  realmAppsLoading={realmAppsLoading}
+                  quickbaseSchema={quickbaseSchema}
+                  quickbaseSchemaLoading={quickbaseSchemaLoading}
+                  savingRemote={savingRemote}
+                  refreshingCache={refreshingCache}
+                  lastQuickbaseSync={lastQuickbaseSync}
+                  weekdayOptions={WEEKDAY_OPTIONS}
+                  timezoneOptions={TIMEZONE_OPTIONS}
+                  applyDocumentUpdate={applyDocumentUpdate}
+                  setActiveQuickbaseProfile={setActiveQuickbaseProfile}
+                  updateQuickbaseProfileLabel={updateQuickbaseProfileLabel}
+                  updateQuickbaseProfileLiveMode={updateQuickbaseProfileLiveMode}
+                  addQuickbaseProfile={addQuickbaseProfile}
+                  removeQuickbaseProfile={removeQuickbaseProfile}
+                  updateQuickbaseField={updateQuickbaseField}
+                  applyQuickbaseAppSelection={applyQuickbaseAppSelection}
+                  loadRealmApps={loadRealmApps}
+                  loadQuickbaseMetadata={() => loadQuickbaseMetadata()}
+                  autoDetectQuickbaseMappings={autoDetectQuickbaseMappings}
+                  updateRefreshScheduleField={updateRefreshScheduleField}
+                  updateRefreshSourceTables={updateRefreshSourceTables}
+                  updateRefreshSourceReportId={updateRefreshSourceReportId}
+                  saveRemote={saveRemote}
+                  refreshAllNow={refreshAllNow}
+                  reloadRemote={reloadRemote}
+                />
+              ) : null}
+
+              {drawer === "share" ? (
+                <div className="stack">
+                  <label className="field"><span>Default URL</span><input readOnly value={defaultUrl} /></label>
+                  <label className="field"><span>Viewer URL</span><input readOnly value={viewerUrl} /></label>
+                  <label className="field"><span>Embed URL</span><input readOnly value={embedUrl} /></label>
+                </div>
+              ) : null}
+
+              {drawer === "templates" ? (
+                <div className="stack">
+                  <div className="studio-actions">
+                    <button onClick={() => addTemplate("layout")}>Save layout template</button>
+                    <button onClick={() => addTemplate("yaml")}>Save report template</button>
+                    <button onClick={() => addTemplate("upload")}>Save upload mapping</button>
+                  </div>
+                  {[...documentState.templates.layouts, ...documentState.templates.yaml, ...documentState.templates.upload].map((template) => (
+                    <div className="card" key={template.id}>
+                      <div className="card-head">
+                        <strong>{template.name}</strong>
+                        <span className="micro">{template.type}</span>
+                      </div>
+                      {template.columnMap ? <div className="micro">{Object.entries(template.columnMap).map(([key, value]) => `${key} -> ${value}`).join(", ")}</div> : null}
+                      {template.object ? <button onClick={() => applyTemplate(template)}>Apply template</button> : null}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              {drawer === "export" ? (
+                <div className="stack">
+                  <div className="studio-actions">
+                    <button onClick={exportWorkbook}>Download Excel file</button>
+                    <button onClick={exportJson}>Download JSON file</button>
+                    <button onClick={() => { void refreshExportJobs(); }}>Refresh status</button>
+                  </div>
+                  <div className="stack-compact">
+                    {mergedExportJobs.map((job) => {
+                      const matchingLiveJob = job.sourceJobId ? liveExportJobs.find((item) => item.id === job.sourceJobId) : null;
+                      const object = bundle.objects[job.objectId];
+                      return (
+                        <div className="card" key={job.id}>
+                          <div className="card-head">
+                            <strong>{object?.name || job.objectId}</strong>
+                            <span className="micro">{job.format} · {job.status}</span>
+                          </div>
+                          <div className="micro">{new Date(job.createdAt).toLocaleString()}</div>
+                          <div className="micro">{job.message}{job.error ? ` · ${job.error}` : ""}</div>
+                          {job.format === "xlsx" ? (
+                            <div className="progress-meter" aria-hidden="true">
+                              <div className="progress-meter-fill" style={{ width: `${job.progress}%` }} />
+                            </div>
+                          ) : null}
+                          <div className="studio-actions">
+                            {job.format === "xlsx" && matchingLiveJob?.status === "complete" && job.sourceJobId ? (
+                              <button onClick={() => downloadExportJob(job.sourceJobId || "")}>Download again</button>
+                            ) : null}
+                            {job.format === "xlsx" ? (
+                              <button onClick={() => { void retryExportJob(job); }}>
+                                {job.status === "failed" ? "Retry" : "Run again"}
+                              </button>
+                            ) : null}
+                            {job.format === "json" ? <button onClick={exportJson}>Download again</button> : null}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {!mergedExportJobs.length ? <div className="empty">No exports yet.</div> : null}
+                  </div>
+                </div>
+              ) : null}
+
+              {drawer === "versions" ? (
+                <div className="stack">
+                  <div className="studio-actions">
+                    <button onClick={snapshotCurrentObject}>Save current version</button>
+                  </div>
+                  {versionList.length ? versionList.map((version) => (
+                    <div className="card" key={version.id}>
+                      <div className="card-head">
+                        <strong>{version.label}</strong>
+                        <span className="micro">{new Date(version.savedAt).toLocaleString()}</span>
+                      </div>
+                      <button onClick={() => restoreVersion(version.id)}>Restore this version</button>
+                    </div>
+                  )) : <div className="empty">No saved versions yet.</div>}
+                </div>
+              ) : null}
+            </section>
+          </div>
+        ) : null}
+      </>
+    );
+  }
+
   if (!activeObject && !visibleObjects.length) {
     return (
       <>
@@ -2480,6 +2817,7 @@ export function StudioPage({
             onUseTemplate={() => setDrawer("templates")}
           />
         </section>
+        {renderStudioOverlays()}
       </>
     );
   }
@@ -2521,6 +2859,7 @@ export function StudioPage({
           <input ref={importInputRef} hidden type="file" accept="application/json" onChange={handleImportJson} />
           <input ref={importXlsxInputRef} hidden type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={handleImportXlsx} />
         </section>
+        {renderStudioOverlays()}
       </>
     );
   }
