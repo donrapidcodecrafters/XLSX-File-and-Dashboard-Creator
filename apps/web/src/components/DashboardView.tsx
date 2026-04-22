@@ -4,6 +4,7 @@ import { buildDashboardFilters, formatReportCellValue, getDashboardWidgetLayoutS
 import { downloadExportJob, fetchExportJobStatus, renderDashboard, runReportPage, startDashboardExportJob } from "../lib/api";
 import { LinkToolbar } from "./LinkToolbar";
 import { ChartPreview } from "./ChartPreview";
+import { RefreshOverlay } from "./RefreshOverlay";
 import { buildObjectUrl, getHostedContext } from "../lib/embed";
 import { buildQuickbaseChartDatumUrl, buildQuickbaseRecordEditUrl, buildQuickbaseReportFilterTree, type QuickbaseTableLinkContext } from "../lib/quickbaseLinks";
 
@@ -416,7 +417,17 @@ export function DashboardView({
   }
 
   return (
-    <section className="surface stack">
+    <>
+      {loading && !activeTabResult ? (
+        <RefreshOverlay
+          title="Loading this dashboard"
+          indeterminate
+          job={{
+            message: "Rendering dashboard and loading rows for the active tab if needed…"
+          }}
+        />
+      ) : null}
+      <section className="surface stack">
       <div className="hero">
         <div>
           <span className="badge brand">Dashboard</span>
@@ -875,6 +886,7 @@ export function DashboardView({
           </div>
         </div>
       ) : null}
-    </section>
+      </section>
+    </>
   );
 }

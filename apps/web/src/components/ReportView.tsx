@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { formatReportCellValue, getReportFieldLabel, type ExportJobStatus, type ReportDefinition, type ReportFocusMode, type ReportRunResult, type TableDefinition } from "@studio/shared";
 import { LinkToolbar } from "./LinkToolbar";
 import { ChartPreview } from "./ChartPreview";
+import { RefreshOverlay } from "./RefreshOverlay";
 import { downloadExportJob, fetchExportJobStatus, startReportExportJob } from "../lib/api";
 import { buildObjectUrl, getHostedContext } from "../lib/embed";
 import { buildQuickbaseChartDatumUrl, buildQuickbaseRecordEditUrl, buildQuickbaseReportFilterTree, type QuickbaseTableLinkContext } from "../lib/quickbaseLinks";
@@ -327,7 +328,17 @@ export function ReportView({
   }
 
   return (
-    <section className="surface stack">
+    <>
+      {loading ? (
+        <RefreshOverlay
+          title="Loading this report"
+          indeterminate
+          job={{
+            message: result ? "Refreshing report results…" : "Rendering report and loading rows if needed…"
+          }}
+        />
+      ) : null}
+      <section className="surface stack">
       <div className="hero">
         <div>
           <span className="badge brand">Report</span>
@@ -531,6 +542,7 @@ export function ReportView({
           </div>
         </div>
       ) : null}
-    </section>
+      </section>
+    </>
   );
 }
