@@ -1156,11 +1156,11 @@ export function StudioPage({
   const [downloadedJobId, setDownloadedJobId] = useState("");
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editingReportId, setEditingReportId] = useState<string | null>(null);
+  const [importEditingReportId, setImportEditingReportId] = useState<string | null>(null);
   const [createDraft, setCreateDraft] = useState<CreateObjectDraft>(() => {
     const document = scopeDocument(loadLocalDocument());
     return buildStudioBuilderDraft(document.bundle.tables[0], "report", String(document.session.currentUserId || "").trim(), uid);
   });
-  const [createFieldQuery, setCreateFieldQuery] = useState("");
   const [draggingWidget, setDraggingWidget] = useState<{ tabId: string; widgetId: string } | null>(null);
   const [xlsxImporting, setXlsxImporting] = useState(false);
   const [resizeSession, setResizeSession] = useState<{
@@ -1272,18 +1272,15 @@ export function StudioPage({
     [activeCreateStep, createDraft, createDraftTable, currentUserId]
   );
   const validation = activeObject ? validationMessages(activeObject, activeTable) : [];
-  const visibleCreateFields = useMemo(() => {
-    if (!createDraftTable) return [];
-    const sortedFields = getSortedFieldOptions(createDraftTable).map((option) =>
-      createDraftTable.fields.find((field) => field.id === option.value)
-    ).filter((field): field is NonNullable<typeof createDraftTable.fields[number]> => Boolean(field));
-    const query = createFieldQuery.trim().toLowerCase();
-    if (!query) return sortedFields;
-    return sortedFields.filter((field) => `${field.label} ${field.id} ${field.type}`.toLowerCase().includes(query));
-  }, [createDraftTable, createFieldQuery]);
   const createDraftPreviewReport = useMemo<ReportDefinition | null>(() => {
     if (createDraft.type !== "report" || !createDraftTable) return null;
-    const existingPreviewReport = editingReportId ? (bundle.objects[editingReportId] as ReportDefinition | undefined) : undefined;
+    const existingPreviewReport = editingReportId
+      ? (
+        (importEditingReportId && pendingWorkbookImport?.currentObjects[editingReportId]?.type === "report"
+          ? pendingWorkbookImport.currentObjects[editingReportId]
+          : bundle.objects[editingReportId]) as ReportDefinition | undefined
+      )
+      : undefined;
     return {
       id: editingReportId || "draft-report-preview",
       type: "report",
@@ -1307,7 +1304,7 @@ export function StudioPage({
       view: createDraft.view,
       displayLabels: createDraft.displayLabels
     };
-  }, [bundle.objects, createDraft, createDraftTable, editingReportId]);
+  }, [bundle.objects, createDraft, createDraftTable, editingReportId, importEditingReportId, pendingWorkbookImport]);
   const createDraftPreview = useMemo(() => {
     if (!createDraftPreviewReport || !createDraftTable) return null;
     const needsDetailFields = createDraft.view.showDetails;
@@ -1981,7 +1978,7 @@ export function StudioPage({
     }
     setCreateDraft(buildStudioBuilderDraft(nextTable, type, currentUserId, uid));
     setEditingReportId(null);
-    setCreateFieldQuery("");
+    setImportEditingReportId(null);
     setCreateStep(getStudioBuilderSteps(type)[0]);
     setCreatePreviewPage(1);
     setCreateModalOpen(true);
@@ -1991,10 +1988,29 @@ export function StudioPage({
     const table = bundle.tables.find((item) => item.id === report.sourceTableId) || null;
     setCreateDraft(buildDraftFromReport(report, table));
     setEditingReportId(report.id);
-    setCreateFieldQuery("");
+    setImportEditingReportId(null);
     setCreateStep("basics");
     setCreatePreviewPage(1);
     setCreateModalOpen(true);
+  }
+
+  function openImportedReviewReportModal(report: ReportDefinition, table: TableDefinition | null) {
+    if (!table) {
+      pushToast("Choose the source table for this workbook first.", "warn");
+      return;
+    }
+    setCreateDraft(buildDraftFromReport(report, table));
+    setEditingReportId(report.id);
+    setImportEditingReportId(report.id);
+    setCreateStep("data");
+    setCreatePreviewPage(1);
+    setCreateModalOpen(true);
+  }
+
+  function closeCreateModal() {
+    setCreateModalOpen(false);
+    setEditingReportId(null);
+    setImportEditingReportId(null);
   }
 
   function updateCreateDraftTable(tableId: string) {
@@ -2068,7 +2084,7 @@ export function StudioPage({
         draft.bundle.objects[dashboard.id] = dashboard;
         draft.bundle.order.unshift(dashboard.id);
       });
-      setCreateModalOpen(false);
+      closeCreateModal();
       navigate(buildHostedRoute(`/studio/${dashboard.id}`));
       pushToast("Dashboard created.");
       return;
@@ -2083,7 +2099,13 @@ export function StudioPage({
       pushToast("Pick at least one detail field or turn off detail rows.", "warn");
       return;
     }
-    const existingReport = editingReportId ? (bundle.objects[editingReportId] as ReportDefinition | undefined) : undefined;
+    const existingReport = editingReportId
+      ? (
+        (importEditingReportId && pendingWorkbookImport?.currentObjects[editingReportId]?.type === "report"
+          ? pendingWorkbookImport.currentObjects[editingReportId]
+          : bundle.objects[editingReportId]) as ReportDefinition | undefined
+      )
+      : undefined;
     const sharing = normalizeStudioBuilderScopeOwner(createDraft.scope, currentUserId, createDraft.ownerUserId);
     const report: ReportDefinition = {
       id: existingReport?.id || uid("report"),
@@ -2108,14 +2130,19 @@ export function StudioPage({
       view: clone(createDraft.view),
       displayLabels: clone(createDraft.displayLabels)
     };
+    if (importEditingReportId) {
+      updateImportedReviewReport(importEditingReportId, () => report);
+      closeCreateModal();
+      pushToast("Imported report setup updated.");
+      return;
+    }
     applyDocumentUpdate((draft) => {
       draft.bundle.objects[report.id] = report;
       if (!draft.bundle.order.includes(report.id)) {
         draft.bundle.order.unshift(report.id);
       }
     });
-    setCreateModalOpen(false);
-    setEditingReportId(null);
+    closeCreateModal();
     navigate(buildHostedRoute(`/studio/${report.id}`));
     pushToast(existingReport ? "Report updated." : "Report created.");
   }
@@ -2875,18 +2902,6 @@ export function StudioPage({
     updateObject(updater(clone(current)));
   }
 
-  function toggleImportedReviewSelectedField(reportId: string, fieldId: string, selected: boolean) {
-    updateImportedReviewReport(reportId, (report) => {
-      const selectedFieldIds = new Set(report.selectedFieldIds);
-      if (selected) selectedFieldIds.add(fieldId);
-      else selectedFieldIds.delete(fieldId);
-      return {
-        ...report,
-        selectedFieldIds: Array.from(selectedFieldIds)
-      };
-    });
-  }
-
   function closeImportReviewModal() {
     setImportReviewModalOpen(false);
     if (pendingWorkbookImport) {
@@ -2996,7 +3011,6 @@ export function StudioPage({
 
               <div className="stack">
                 {importedReviewReports.map(({ report, table }) => {
-                  const fieldOptions = table ? getSortedFieldOptions(table) : [];
                   const tableFieldIds = new Set((table?.fields || []).map((field) => field.id));
                   const referencedFieldIds = collectReportImportReferencedFieldIds(report);
                   const matchedReferencedCount = referencedFieldIds.filter((fieldId) => tableFieldIds.has(fieldId)).length;
@@ -3029,75 +3043,30 @@ export function StudioPage({
                         </div>
                       )}
 
-                      {table ? (
-                        <>
-                          <div className="field">
-                            <span>Selected fields</span>
-                            <div className="import-review-field-grid">
-                              {fieldOptions.map((option) => (
-                                <label className="toggle-row import-review-field-option" key={`${report.id}-${option.value}`}>
-                                  <input
-                                    type="checkbox"
-                                    checked={report.selectedFieldIds.includes(option.value)}
-                                    onChange={(event) => toggleImportedReviewSelectedField(report.id, option.value, event.target.checked)}
-                                  />
-                                  <span>{option.label}</span>
-                                </label>
-                              ))}
-                            </div>
-                          </div>
+                      <div className="summary-grid import-review-summary-grid">
+                        <div className="summary-card">
+                          <strong>{matchedReferencedCount}</strong>
+                          <span>Matched referenced fields</span>
+                        </div>
+                        <div className="summary-card">
+                          <strong>{Math.max(referencedFieldIds.length - matchedReferencedCount, 0)}</strong>
+                          <span>Fields still needing attention</span>
+                        </div>
+                        <div className="summary-card">
+                          <strong>{report.selectedFieldIds.length}</strong>
+                          <span>Selected detail fields</span>
+                        </div>
+                      </div>
 
-                          {reportShowsChart(report) ? (
-                            <div className="filter-grid compact-grid">
-                              <label className="field">
-                                <span>X axis field</span>
-                                <SearchableSelect value={report.view.chartFieldId} options={fieldOptions} allowEmpty emptyOptionLabel="Select a field" onChange={(value) => updateImportedReviewReport(report.id, (current) => ({ ...current, view: { ...current.view, chartFieldId: value } }))} />
-                              </label>
-                              <label className="field">
-                                <span>Value field</span>
-                                <SearchableSelect value={report.view.chartValueFieldId} options={fieldOptions} allowEmpty emptyOptionLabel="Count rows" onChange={(value) => updateImportedReviewReport(report.id, (current) => ({ ...current, view: { ...current.view, chartValueFieldId: value } }))} />
-                              </label>
-                              <label className="field">
-                                <span>Series field</span>
-                                <SearchableSelect value={report.view.chartSeriesFieldId} options={fieldOptions} allowEmpty emptyOptionLabel="Single series" onChange={(value) => updateImportedReviewReport(report.id, (current) => ({ ...current, view: { ...current.view, chartSeriesFieldId: value } }))} />
-                              </label>
-                              {report.view.chartUseSecondaryAxis ? (
-                                <label className="field">
-                                  <span>Secondary value field</span>
-                                  <SearchableSelect value={report.view.chartSecondaryValueFieldId} options={fieldOptions} allowEmpty emptyOptionLabel="Count rows" onChange={(value) => updateImportedReviewReport(report.id, (current) => ({ ...current, view: { ...current.view, chartSecondaryValueFieldId: value } }))} />
-                                </label>
-                              ) : null}
-                            </div>
-                          ) : null}
+                      <div className="studio-actions">
+                        <button type="button" onClick={() => openImportedReviewReportModal(report, table)}>
+                          Open full report setup
+                        </button>
+                      </div>
 
-                          {report.view.mode === "timeline" ? (
-                            <div className="filter-grid compact-grid">
-                              <label className="field">
-                                <span>Timeline start</span>
-                                <SearchableSelect value={report.view.timelineDateField} options={fieldOptions} allowEmpty emptyOptionLabel="Select a field" onChange={(value) => updateImportedReviewReport(report.id, (current) => ({ ...current, view: { ...current.view, timelineDateField: value } }))} />
-                              </label>
-                              <label className="field">
-                                <span>Timeline end</span>
-                                <SearchableSelect value={report.view.timelineEndField} options={fieldOptions} allowEmpty emptyOptionLabel="Select a field" onChange={(value) => updateImportedReviewReport(report.id, (current) => ({ ...current, view: { ...current.view, timelineEndField: value } }))} />
-                              </label>
-                            </div>
-                          ) : null}
-
-                          {report.view.mode === "calendar" ? (
-                            <label className="field">
-                              <span>Calendar date field</span>
-                              <SearchableSelect value={report.view.calendarDateField} options={fieldOptions} allowEmpty emptyOptionLabel="Select a field" onChange={(value) => updateImportedReviewReport(report.id, (current) => ({ ...current, view: { ...current.view, calendarDateField: value } }))} />
-                            </label>
-                          ) : null}
-
-                          {report.view.mode === "kanban" ? (
-                            <label className="field">
-                              <span>Kanban grouping field</span>
-                              <SearchableSelect value={report.view.kanbanField} options={fieldOptions} allowEmpty emptyOptionLabel="Select a field" onChange={(value) => updateImportedReviewReport(report.id, (current) => ({ ...current, view: { ...current.view, kanbanField: value } }))} />
-                            </label>
-                          ) : null}
-                        </>
-                      ) : null}
+                      <div className="micro">
+                        Use the full report builder to map fields, reorder columns, set filters, sorts, summaries, chart axes, series fields, and any secondary-axis settings before applying the workbook import.
+                      </div>
                     </article>
                   );
                 })}
@@ -3119,14 +3088,14 @@ export function StudioPage({
           </div>
         ) : null}
         {createModalOpen ? (
-          <div className="studio-modal-backdrop" onClick={() => setCreateModalOpen(false)}>
+          <div className="studio-modal-backdrop" onClick={closeCreateModal}>
             <section className="studio-modal" onClick={(event) => event.stopPropagation()}>
               <div className="card-head">
                 <div>
-                  <strong>{editingReportId ? "Edit Report" : `Create ${createDraft.type === "report" ? "Report" : "Dashboard"}`}</strong>
-                  <div className="micro">{editingReportId ? "Update the report configuration here. Changes stay in the modal instead of moving into a side setup column." : "Start fresh with the same field, filter, and sorting controls from the legacy builder."}</div>
+                  <strong>{importEditingReportId ? "Edit Imported Report Setup" : editingReportId ? "Edit Report" : `Create ${createDraft.type === "report" ? "Report" : "Dashboard"}`}</strong>
+                  <div className="micro">{importEditingReportId ? "Use the same builder workflow as a normal report: fields, filters, sorts, and chart setup all stay together here before the workbook import is applied." : editingReportId ? "Update the report configuration here. Changes stay in the modal instead of moving into a side setup column." : "Start fresh with the same field, filter, and sorting controls from the legacy builder."}</div>
                 </div>
-                <button onClick={() => setCreateModalOpen(false)}>Close</button>
+                <button onClick={closeCreateModal}>Close</button>
               </div>
 
               <div className="stack">
@@ -3165,6 +3134,7 @@ export function StudioPage({
                         <span>Type</span>
                         <select
                           value={createDraft.type}
+                          disabled={Boolean(editingReportId)}
                           onChange={(event) => {
                             const nextType = event.target.value as CreateModalType;
                             setCreateDraft(buildStudioBuilderDraft(bundle.tables[0] || null, nextType, currentUserId, uid));
@@ -3218,9 +3188,6 @@ export function StudioPage({
                     tables={bundle.tables}
                     createDraft={createDraft}
                     createDraftTable={createDraftTable}
-                    createFieldQuery={createFieldQuery}
-                    setCreateFieldQuery={setCreateFieldQuery}
-                    visibleCreateFields={visibleCreateFields}
                     chartValueLabelOptions={chartValueLabelOptions}
                     setCreateDraft={setCreateDraft}
                     updateCreateDraftTable={updateCreateDraftTable}
@@ -3303,7 +3270,7 @@ export function StudioPage({
                     </button>
                   ) : (
                     <button onClick={createFromDraft} disabled={createDraftIssues.length > 0}>
-                      {editingReportId ? "Save report" : createDraft.type === "report" ? "Create report" : "Create dashboard"}
+                      {importEditingReportId ? "Save imported report setup" : editingReportId ? "Save report" : createDraft.type === "report" ? "Create report" : "Create dashboard"}
                     </button>
                   )}
                 </div>
@@ -4124,14 +4091,14 @@ export function StudioPage({
       ) : null}
 
       {createModalOpen ? (
-        <div className="studio-modal-backdrop" onClick={() => setCreateModalOpen(false)}>
+        <div className="studio-modal-backdrop" onClick={closeCreateModal}>
           <section className="studio-modal" onClick={(event) => event.stopPropagation()}>
             <div className="card-head">
               <div>
-                <strong>{editingReportId ? "Edit Report" : `Create ${createDraft.type === "report" ? "Report" : "Dashboard"}`}</strong>
-                <div className="micro">{editingReportId ? "Update the report configuration here. Changes stay in the modal instead of moving into a side setup column." : "Start fresh with the same field, filter, and sorting controls from the legacy builder."}</div>
+                <strong>{importEditingReportId ? "Edit Imported Report Setup" : editingReportId ? "Edit Report" : `Create ${createDraft.type === "report" ? "Report" : "Dashboard"}`}</strong>
+                <div className="micro">{importEditingReportId ? "Use the same builder workflow as a normal report: fields, filters, sorts, and chart setup all stay together here before the workbook import is applied." : editingReportId ? "Update the report configuration here. Changes stay in the modal instead of moving into a side setup column." : "Start fresh with the same field, filter, and sorting controls from the legacy builder."}</div>
               </div>
-              <button onClick={() => setCreateModalOpen(false)}>Close</button>
+              <button onClick={closeCreateModal}>Close</button>
             </div>
 
             <div className="stack">
@@ -4170,6 +4137,7 @@ export function StudioPage({
                       <span>Type</span>
                       <select
                         value={createDraft.type}
+                        disabled={Boolean(editingReportId)}
                         onChange={(event) => {
                           const nextType = event.target.value as CreateModalType;
                           setCreateDraft(buildStudioBuilderDraft(bundle.tables[0] || null, nextType, currentUserId, uid));
@@ -4223,9 +4191,6 @@ export function StudioPage({
                   tables={bundle.tables}
                   createDraft={createDraft}
                   createDraftTable={createDraftTable}
-                  createFieldQuery={createFieldQuery}
-                  setCreateFieldQuery={setCreateFieldQuery}
-                  visibleCreateFields={visibleCreateFields}
                   chartValueLabelOptions={chartValueLabelOptions}
                   setCreateDraft={setCreateDraft}
                   updateCreateDraftTable={updateCreateDraftTable}
@@ -4308,7 +4273,7 @@ export function StudioPage({
                   </button>
                 ) : (
                   <button onClick={createFromDraft} disabled={createDraftIssues.length > 0}>
-                    {editingReportId ? "Save report" : createDraft.type === "report" ? "Create report" : "Create dashboard"}
+                    {importEditingReportId ? "Save imported report setup" : editingReportId ? "Save report" : createDraft.type === "report" ? "Create report" : "Create dashboard"}
                   </button>
                 )}
               </div>

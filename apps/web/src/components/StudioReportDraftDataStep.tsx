@@ -1,14 +1,12 @@
 import { type Dispatch, type SetStateAction } from "react";
 import type { StudioBuilderDraft, TableDefinition } from "@studio/shared";
 import { reportShowsChart } from "./studioReportUtils";
+import { FieldTransferPicker } from "./FieldTransferPicker";
 
 export function StudioReportDraftDataStep({
   tables,
   createDraft,
   createDraftTable,
-  createFieldQuery,
-  setCreateFieldQuery,
-  visibleCreateFields,
   chartValueLabelOptions,
   setCreateDraft,
   updateCreateDraftTable
@@ -16,9 +14,6 @@ export function StudioReportDraftDataStep({
   tables: TableDefinition[];
   createDraft: StudioBuilderDraft;
   createDraftTable: TableDefinition;
-  createFieldQuery: string;
-  setCreateFieldQuery: Dispatch<SetStateAction<string>>;
-  visibleCreateFields: TableDefinition["fields"];
   chartValueLabelOptions: string[];
   setCreateDraft: Dispatch<SetStateAction<StudioBuilderDraft>>;
   updateCreateDraftTable: (tableId: string) => void;
@@ -61,29 +56,14 @@ export function StudioReportDraftDataStep({
           <strong>Fields</strong>
           <span className="micro">{createDraft.selectedFieldIds.length} selected</span>
         </div>
-        <label className="field">
-          <span>Find fields</span>
-          <input value={createFieldQuery} onChange={(event) => setCreateFieldQuery(event.target.value)} placeholder="Search field name, FID, or type" />
-        </label>
-        <div className="picker-list modal-picker-list">
-          {visibleCreateFields.map((field) => (
-            <label className="picker-row" key={field.id}>
-              <input
-                type="checkbox"
-                checked={createDraft.selectedFieldIds.includes(field.id)}
-                onChange={(event) => setCreateDraft((current) => ({
-                  ...current,
-                  selectedFieldIds: event.target.checked
-                    ? [...current.selectedFieldIds, field.id]
-                    : current.selectedFieldIds.filter((item) => item !== field.id)
-                }))}
-              />
-              <span>{field.label}</span>
-              <em>FID {field.id} · {field.type}</em>
-            </label>
-          ))}
-          {!visibleCreateFields.length ? <div className="empty-hint">No matching fields.</div> : null}
-        </div>
+        <FieldTransferPicker
+          table={createDraftTable}
+          selectedFieldIds={createDraft.selectedFieldIds}
+          onChange={(selectedFieldIds) => setCreateDraft((current) => ({
+            ...current,
+            selectedFieldIds
+          }))}
+        />
       </div>
 
       <div className="card">

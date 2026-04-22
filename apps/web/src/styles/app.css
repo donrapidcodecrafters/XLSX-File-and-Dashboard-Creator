@@ -2317,6 +2317,10 @@ th {
   background: rgba(247, 248, 243, 0.94);
 }
 
+.import-review-summary-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
 .import-review-field-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
@@ -2330,6 +2334,78 @@ th {
   border: 1px solid rgba(18, 47, 39, 0.12);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.84);
+}
+
+.field-transfer-picker {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.field-transfer-column {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.field-transfer-list {
+  display: grid;
+  gap: 8px;
+  min-height: 220px;
+  max-height: 360px;
+  overflow: auto;
+  padding: 10px;
+  border-radius: 16px;
+  border: 1px solid rgba(18, 47, 39, 0.12);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.field-transfer-item {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 12px 14px;
+  text-align: left;
+  border-radius: 14px;
+  border: 1px solid rgba(18, 47, 39, 0.12);
+  background: rgba(247, 248, 243, 0.92);
+}
+
+.field-transfer-item.selected {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+}
+
+.field-transfer-item strong,
+.field-transfer-main strong {
+  display: block;
+}
+
+.field-transfer-item span,
+.field-transfer-main span {
+  font-size: 0.84rem;
+  color: var(--muted);
+}
+
+.field-transfer-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  text-align: left;
+}
+
+.field-transfer-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+@media (max-width: 860px) {
+  .field-transfer-picker {
+    grid-template-columns: 1fr;
+  }
 }
 
 .studio-library > .surface,
