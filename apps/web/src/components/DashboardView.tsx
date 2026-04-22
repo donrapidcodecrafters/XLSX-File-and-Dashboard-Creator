@@ -220,6 +220,7 @@ export function DashboardView({
     return new Map((tab ? getDashboardWidgetPlacements(tab) : []).map((placement) => [placement.widgetId, placement]));
   }, [dashboard.tabs, resolvedActiveTabId]);
   const loading = Boolean(tabLoading[resolvedActiveTabId]);
+  const shouldPreloadRemainingTabs = dashboard.tabs.length <= 4;
 
   useEffect(() => {
     skipStateBroadcastRef.current = true;
@@ -306,6 +307,7 @@ export function DashboardView({
   }, [dashboard.id, forceLive, onRefreshJobDetected, resolvedActiveTabId, runtimeFilters, tabReloadNonce]);
 
   useEffect(() => {
+    if (!shouldPreloadRemainingTabs) return;
     if (!activeTabResult) return;
     let cancelled = false;
     window.setTimeout(() => {
@@ -341,7 +343,7 @@ export function DashboardView({
     return () => {
       cancelled = true;
     };
-  }, [activeTabResult, dashboard.id, dashboard.tabs, forceLive, resolvedActiveTabId, runtimeFilters, tabReloadNonce]);
+  }, [activeTabResult, dashboard.id, dashboard.tabs, forceLive, resolvedActiveTabId, runtimeFilters, shouldPreloadRemainingTabs, tabReloadNonce]);
 
   useEffect(() => {
     if (!exportJob || exportJob.status === "complete" || exportJob.status === "failed") return;

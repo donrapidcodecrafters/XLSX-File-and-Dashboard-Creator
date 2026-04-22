@@ -1043,6 +1043,8 @@ function buildImportedDashboard(
   importedAt: string,
   existingIds: Set<string>
 ) : ImportedDashboardBuildResult {
+  const MAX_OVERVIEW_SUMMARY_WIDGETS = 6;
+  const MAX_OVERVIEW_SPOTLIGHTS = 2;
   const dashboardId = uniqueId("dashboard", workbookName, existingIds);
   const notes: string[] = [];
   const visibleReports = reports.filter((report) => {
@@ -1051,7 +1053,8 @@ function buildImportedDashboard(
   });
   const supportReports = reports.filter((report) => !visibleReports.includes(report));
   const overviewReports = visibleReports.length ? visibleReports : reports;
-  const overviewWidgets = overviewReports.map((report, index) => ({
+  const overviewSummaryReports = overviewReports.slice(0, MAX_OVERVIEW_SUMMARY_WIDGETS);
+  const overviewWidgets = overviewSummaryReports.map((report, index) => ({
     id: uniqueId("widget", `${report.name}-overview-${index + 1}`, existingIds),
     title: layoutHintsByReportId[report.id]?.title || report.name,
     layout: {
@@ -1076,7 +1079,7 @@ function buildImportedDashboard(
       };
       return score(left) - score(right) || left.report.name.localeCompare(right.report.name);
     })
-    .slice(0, Math.min(2, overviewReports.length))
+    .slice(0, Math.min(MAX_OVERVIEW_SPOTLIGHTS, overviewReports.length))
     .map(({ report }, index) => ({
       id: uniqueId("widget", `${report.name}-overview-spotlight-${index + 1}`, existingIds),
       title: report.name,
@@ -1233,6 +1236,9 @@ function buildImportedDashboard(
     sourceReportOverrides: {}
   };
   notes.push(`Created an overview tab with ${overviewWidgets.length} summary card${overviewWidgets.length === 1 ? "" : "s"}.`);
+  if (overviewReports.length > overviewSummaryReports.length) {
+    notes.push(`Limited the overview tab to the first ${overviewSummaryReports.length} summary cards so large workbook dashboards open faster.`);
+  }
   if (overviewSpotlights.length) {
     notes.push(`Added ${overviewSpotlights.length} overview spotlight widget${overviewSpotlights.length === 1 ? "" : "s"} for the strongest inferred report sections.`);
   }

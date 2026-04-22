@@ -136,6 +136,17 @@ function asNumber(value: unknown): number {
   return Number.isFinite(numeric) ? numeric : 0;
 }
 
+function normalizeChartGroupValue(value: unknown): string {
+  if (Array.isArray(value)) {
+    const normalized = value
+      .map((entry) => String(entry ?? "").trim())
+      .filter(Boolean);
+    return normalized.join(", ");
+  }
+  const text = String(value ?? "").trim();
+  return text;
+}
+
 function isDateLike(value: unknown) {
   if (value === null || value === undefined || String(value).trim() === "") return false;
   return parseDateValue(value) !== null;
@@ -316,18 +327,23 @@ function isContinuousChartType(report: ReportDefinition) {
     || report.view.chartType === "line-bar"
     || report.view.chartType === "spline"
     || report.view.chartType === "area-spline"
-    || report.view.chartType === "streamgraph";
+    || report.view.chartType === "streamgraph"
+    || report.view.chartType === "scatter"
+    || report.view.chartType === "bubble"
+    || report.view.chartType === "3d-scatter";
 }
 
 function compareChartCategories(report: ReportDefinition, left: string, right: string) {
+  const leftRaw = String(left ?? "").trim();
+  const rightRaw = String(right ?? "").trim();
   const leftLabel = getChartLabel(report, left);
   const rightLabel = getChartLabel(report, right);
-  const leftTime = Date.parse(leftLabel);
-  const rightTime = Date.parse(rightLabel);
+  const leftTime = Date.parse(leftRaw) || Date.parse(leftLabel);
+  const rightTime = Date.parse(rightRaw) || Date.parse(rightLabel);
   if (Number.isFinite(leftTime) && Number.isFinite(rightTime)) {
     return leftTime - rightTime;
   }
-  return leftLabel.localeCompare(rightLabel, undefined, { numeric: true });
+  return (leftRaw || leftLabel).localeCompare((rightRaw || rightLabel), undefined, { numeric: true });
 }
 
 function chartRows(rows: DataRow[], report: ReportDefinition): ChartDatum[] {
@@ -340,8 +356,8 @@ function chartRows(rows: DataRow[], report: ReportDefinition): ChartDatum[] {
   const secondaryAggregation = report.view.chartSecondaryAggregation || "sum";
   const groups = new Map<string, { primary: number[]; secondary: number[] }>();
   for (const row of rows) {
-    const categoryKey = String(row[fieldId] ?? "Unassigned");
-    const seriesKey = seriesFieldId ? String(row[seriesFieldId] ?? "Unassigned") : "";
+    const categoryKey = normalizeChartGroupValue(row[fieldId]);
+    const seriesKey = seriesFieldId ? normalizeChartGroupValue(row[seriesFieldId]) : "";
     const key = `${categoryKey}::${seriesKey}`;
     const current = groups.get(key) || { primary: [], secondary: [] };
     current.primary.push(aggregation === "count" ? 1 : asNumber(row[valueFieldId]));

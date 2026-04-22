@@ -148,7 +148,7 @@ function xTickLabel(label: string, _index: number, length: number, compact: bool
 
 function formatCategoryTickLabel(label: string) {
   const trimmed = label.trim();
-  if (!trimmed) return "Unassigned";
+  if (!trimmed) return "";
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
     const date = new Date(`${trimmed}T00:00:00`);
     if (!Number.isNaN(date.getTime())) {
@@ -211,6 +211,34 @@ function chartLabelNumericValue(rawLabel: string, index: number) {
   const dateValue = Date.parse(trimmed);
   if (Number.isFinite(dateValue)) return dateValue;
   return index;
+}
+
+type ScatterAxisTick = {
+  rawLabel: string;
+  label: string;
+  numericValue: number;
+};
+
+function buildScatterAxisTicks(items: ChartDatum[]) {
+  const encountered = new Map<string, ScatterAxisTick>();
+  items.forEach((item, index) => {
+    const rawLabel = String(item.rawLabel ?? item.label ?? "").trim();
+    if (encountered.has(rawLabel)) return;
+    encountered.set(rawLabel, {
+      rawLabel,
+      label: String(item.label ?? item.rawLabel ?? "").trim(),
+      numericValue: chartLabelNumericValue(rawLabel || String(item.label ?? ""), index)
+    });
+  });
+  const ticks = Array.from(encountered.values());
+  if (ticks.length <= 1) return ticks;
+  const ordered = [...ticks].sort((left, right) => left.numericValue - right.numericValue);
+  const firstEncountered = ticks[0];
+  const lastEncountered = ticks[ticks.length - 1];
+  if (firstEncountered.numericValue > lastEncountered.numericValue) {
+    ordered.reverse();
+  }
+  return ordered;
 }
 
 function axisTickTextWidth(ticks: number[], decimalPlaces: number, compact: boolean) {
@@ -1322,17 +1350,29 @@ export function ChartPreview({
   }
 
   if (normalizedChartType === "scatter") {
-    const xNumbers = items.map((item, index) => chartLabelNumericValue(String(item.rawLabel ?? item.label ?? ""), index));
+    const plotLeft = 48;
+    const plotRight = 380;
+    const plotBottom = 196;
+    const plotTop = 40;
+    const plotHeight = plotBottom - plotTop;
+    const axisTicks = buildScatterAxisTicks(items);
+    const xNumbers = axisTicks.map((tick) => tick.numericValue);
     const xMin = Math.min(...xNumbers);
     const xMax = Math.max(...xNumbers);
     const xRange = Math.max(1, xMax - xMin);
     const { ticks, axisMax } = axisMaxFor(items.map((item) => item.value), compact);
     const yAxisWidth = axisTickTextWidth(ticks, decimalPlaces, compact);
     const axisLayoutColumns = `${yAxisLabel ? "auto " : ""}minmax(0, 1fr)`;
+    const reverseAxis = axisTicks.length > 1 && axisTicks[0].numericValue > axisTicks[axisTicks.length - 1].numericValue;
+    const resolveX = (numericValue: number) => {
+      if (axisTicks.length <= 1) return plotLeft + (plotRight - plotLeft) / 2;
+      const ratio = reverseAxis ? (xMax - numericValue) / xRange : (numericValue - xMin) / xRange;
+      return plotLeft + ratio * (plotRight - plotLeft);
+    };
     const points = items.map((item, index) => {
       const rawX = chartLabelNumericValue(String(item.rawLabel ?? item.label ?? ""), index);
-      const x = items.length === 1 ? 200 : 30 + ((rawX - xMin) / xRange) * 340;
-      const y = 190 - (item.value / axisMax) * 150;
+      const x = resolveX(rawX);
+      const y = plotBottom - (item.value / axisMax) * plotHeight;
       const sizeMatch = secondaryItems.find((entry) =>
         String(entry.rawLabel ?? entry.label ?? "") === String(item.rawLabel ?? item.label ?? "")
         && String(entry.rawSeries || entry.series || "") === String(item.rawSeries || item.series || "")
@@ -1352,16 +1392,16 @@ export function ChartPreview({
             <div className="line-chart axis-chart">
               <svg viewBox="0 0 400 220" preserveAspectRatio="xMidYMid meet" style={{ width: "100%", height: "auto", aspectRatio: "400 / 220" }}>
                 {ticks.map((tick) => {
-                  const y = 190 - (tick / axisMax) * 150;
+                  const y = plotBottom - (tick / axisMax) * plotHeight;
                   return (
                     <g key={`scatter-${tick}`}>
-                      <line x1="48" y1={y} x2="380" y2={y} className="chart-grid-svg-line" />
+                      <line x1={plotLeft} y1={y} x2={plotRight} y2={y} className="chart-grid-svg-line" />
                       <text x="40" y={y + 4} textAnchor="end" className="chart-svg-tick">{formatAxisValue(tick, decimalPlaces)}</text>
                     </g>
                   );
                 })}
-                <line x1="48" y1="16" x2="48" y2="196" className="chart-axis-svg-line" />
-                <line x1="48" y1="196" x2="380" y2="196" className="chart-axis-svg-line" />
+                <line x1={plotLeft} y1="16" x2={plotLeft} y2={plotBottom} className="chart-axis-svg-line" />
+                <line x1={plotLeft} y1={plotBottom} x2={plotRight} y2={plotBottom} className="chart-axis-svg-line" />
                 {points.map((point, index) => {
                   const href = getDatumHref?.(point.item) || "";
                   const content = (
@@ -1391,14 +1431,27 @@ export function ChartPreview({
                     </a>
                   ) : content;
                 })}
+                {axisTicks.map((tick, index) => {
+                  const x = resolveX(tick.numericValue);
+                  const tickLabel = formatCategoryTickLabel(tick.label || tick.rawLabel);
+                  const rotate = axisTicks.length >= 12 ? -30 : axisTicks.length >= 8 ? -22 : 0;
+                  const textAnchor = rotate ? "end" : "middle";
+                  return (
+                    <g key={`scatter-x-tick-${tick.rawLabel || index}`}>
+                      <line x1={x} y1={plotBottom} x2={x} y2={plotBottom + 6} className="chart-axis-svg-line" />
+                      <text
+                        x={x}
+                        y={214}
+                        textAnchor={textAnchor}
+                        className="chart-svg-tick"
+                        transform={rotate ? `rotate(${rotate} ${x} 214)` : undefined}
+                      >
+                        {tickLabel}
+                      </text>
+                    </g>
+                  );
+                })}
               </svg>
-            </div>
-            <div className="chart-x-axis-labels" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
-              {items.map((item, index) => (
-                <span className="chart-x-tick" key={`${item.label}-${index}`}>
-                  {formatCategoryTickLabel(item.label || item.rawLabel || "")}
-                </span>
-              ))}
             </div>
             {xAxisLabel ? <div className="chart-axis-title chart-axis-title-bottom">{xAxisLabel}</div> : null}
           </div>
