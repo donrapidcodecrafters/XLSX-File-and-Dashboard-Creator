@@ -183,8 +183,8 @@ export function HelpPage() {
           </div>
           <ol className="flat-list">
             <li>Use `Import xlsx` inside <Link to={buildHostedRoute("/studio")}>Building</Link> to reconstruct workbook sheets as editable platform objects.</li>
-            <li>After import, read the import review carefully. It tells you which sheets were imported, what headers were repaired, and which layouts or filters were inferred.</li>
-            <li>If a sheet was skipped or repaired, the review tells you exactly what changed. The platform does not silently hide substitutions.</li>
+            <li>After import, use the workbook review modal. It is organized by imported report, not raw worksheet internals, so you can see whether the important fields matched and fix selected fields or chart fields right there.</li>
+            <li>If the workbook produced a dashboard candidate, review the imported reports first, then return to the dashboard canvas once the fields look right.</li>
             <li>Exports reflect the current saved object and the current dashboard runtime filters.</li>
             <li>Dashboard exports preserve visuals, summaries, and warnings instead of flattening everything into raw rows only.</li>
           </ol>

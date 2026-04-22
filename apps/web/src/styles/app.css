@@ -2241,6 +2241,10 @@ th {
   gap: 16px;
 }
 
+.studio-import-review-modal {
+  width: min(1120px, calc(100vw - 36px));
+}
+
 .import-review-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
@@ -2274,6 +2278,30 @@ th {
 
 .import-review-hints .badge {
   background: rgba(255, 255, 255, 0.86);
+}
+
+.import-review-report-card {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(247, 248, 243, 0.94);
+}
+
+.import-review-field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+
+.import-review-field-option {
+  align-items: start;
+  min-height: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(18, 47, 39, 0.12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.84);
 }
 
 .studio-library > .surface,

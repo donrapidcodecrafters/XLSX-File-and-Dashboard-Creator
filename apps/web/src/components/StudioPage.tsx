@@ -376,6 +376,63 @@ function mapQuickbaseFieldType(fieldType: string, baseType: string): FieldType {
   return "text";
 }
 
+function collectReportImportReferencedFieldIds(report: ReportDefinition) {
+  const referenced = [
+    ...report.selectedFieldIds,
+    report.view.titleFieldId,
+    report.view.chartFieldId,
+    report.view.chartSeriesFieldId,
+    report.view.chartValueFieldId,
+    report.view.chartSecondaryValueFieldId,
+    report.view.timelineDateField,
+    report.view.timelineEndField,
+    report.view.calendarDateField,
+    report.view.kanbanField
+  ].filter(Boolean);
+  return Array.from(new Set(referenced));
+}
+
+function collectReportImportIssues(report: ReportDefinition, table: TableDefinition | null | undefined) {
+  if (!table) {
+    return ["The imported source fields are unavailable because the source table is missing."];
+  }
+  const fieldIds = new Set(table.fields.map((field) => field.id));
+  const issues: string[] = [];
+  const missingSelectedFields = report.selectedFieldIds.filter((fieldId) => !fieldIds.has(fieldId));
+  if (missingSelectedFields.length) {
+    issues.push(`${missingSelectedFields.length} selected field${missingSelectedFields.length === 1 ? "" : "s"} could not be matched.`);
+  }
+  if (reportShowsChart(report)) {
+    if (report.view.chartFieldId && !fieldIds.has(report.view.chartFieldId)) {
+      issues.push("The chart X axis field could not be matched.");
+    }
+    if (report.view.chartValueFieldId && !fieldIds.has(report.view.chartValueFieldId)) {
+      issues.push("The chart value field could not be matched.");
+    }
+    if (report.view.chartSeriesFieldId && !fieldIds.has(report.view.chartSeriesFieldId)) {
+      issues.push("The chart series field could not be matched.");
+    }
+    if (report.view.chartSecondaryValueFieldId && !fieldIds.has(report.view.chartSecondaryValueFieldId)) {
+      issues.push("The chart secondary value field could not be matched.");
+    }
+  }
+  if (report.view.mode === "timeline") {
+    if (report.view.timelineDateField && !fieldIds.has(report.view.timelineDateField)) {
+      issues.push("The timeline start field could not be matched.");
+    }
+    if (report.view.timelineEndField && !fieldIds.has(report.view.timelineEndField)) {
+      issues.push("The timeline end field could not be matched.");
+    }
+  }
+  if (report.view.mode === "calendar" && report.view.calendarDateField && !fieldIds.has(report.view.calendarDateField)) {
+    issues.push("The calendar date field could not be matched.");
+  }
+  if (report.view.mode === "kanban" && report.view.kanbanField && !fieldIds.has(report.view.kanbanField)) {
+    issues.push("The kanban grouping field could not be matched.");
+  }
+  return issues;
+}
+
 function convertQuickbaseSchemaToTables(schema: QuickbaseAppSchema, profile: QuickbaseAppProfile): TableDefinition[] {
   return schema.tables.map((table) => ({
     id: `${profile.id}:${table.id}`,
@@ -863,6 +920,8 @@ export function StudioPage({
   const [refreshJob, setRefreshJob] = useState<RefreshJobStatus | null>(null);
   const [lastQuickbaseSync, setLastQuickbaseSync] = useState<QuickbaseSyncResult | null>(null);
   const [lastWorkbookImportReview, setLastWorkbookImportReview] = useState<StudioWorkbookImportResult["review"] | null>(null);
+  const [lastWorkbookImportObjectIds, setLastWorkbookImportObjectIds] = useState<string[]>([]);
+  const [importReviewModalOpen, setImportReviewModalOpen] = useState(false);
   const activeQuickbaseProfile = useMemo(() => getActiveQuickbaseProfile(documentState), [documentState]);
   const activeQuickbaseConfig = activeQuickbaseProfile?.quickbase || documentState.quickbase;
   const activeProfileTables = useMemo(
@@ -914,6 +973,22 @@ export function StudioPage({
   const bundle = documentState.bundle;
   const currentUserId = String(documentState.session.currentUserId || "").trim();
   const objects = useMemo(() => bundle.order.map((id) => bundle.objects[id]).filter(Boolean), [bundle]);
+  const importedReviewReports = useMemo(
+    () => lastWorkbookImportObjectIds
+      .map((id) => bundle.objects[id])
+      .filter((object): object is ReportDefinition => Boolean(object) && object.type === "report")
+      .map((report) => ({
+        report,
+        table: bundle.tables.find((table) => table.id === report.sourceTableId) || null
+      })),
+    [bundle.objects, bundle.tables, lastWorkbookImportObjectIds]
+  );
+  const importedReviewDashboardCount = useMemo(
+    () => lastWorkbookImportObjectIds
+      .map((id) => bundle.objects[id])
+      .filter((object) => object?.type === "dashboard").length,
+    [bundle.objects, lastWorkbookImportObjectIds]
+  );
   const dashboardFieldOptions = useMemo(() => getSortedDashboardFieldOptions(bundle.tables), [bundle.tables]);
   const reportObjectOptions = useMemo(
     () => objects
@@ -2430,6 +2505,8 @@ export function StudioPage({
       .then((response) => {
         setDocumentState(scopeDocument(normalizeStudioDocument(response.document)));
         setLastWorkbookImportReview(response.review);
+        setLastWorkbookImportObjectIds(response.importedObjectIds);
+        setImportReviewModalOpen(true);
         if (response.primaryObjectId) {
           navigate(buildHostedRoute(`/studio/${response.primaryObjectId}`));
         }
@@ -2477,9 +2554,160 @@ export function StudioPage({
     pushToast("Workbook export started.");
   }
 
+  function updateImportedReviewReport(reportId: string, updater: (report: ReportDefinition) => ReportDefinition) {
+    const current = bundle.objects[reportId];
+    if (!current || current.type !== "report") return;
+    updateObject(updater(clone(current)));
+  }
+
+  function toggleImportedReviewSelectedField(reportId: string, fieldId: string, selected: boolean) {
+    updateImportedReviewReport(reportId, (report) => {
+      const selectedFieldIds = new Set(report.selectedFieldIds);
+      if (selected) selectedFieldIds.add(fieldId);
+      else selectedFieldIds.delete(fieldId);
+      return {
+        ...report,
+        selectedFieldIds: Array.from(selectedFieldIds)
+      };
+    });
+  }
+
   function renderStudioOverlays() {
     return (
       <>
+        {importReviewModalOpen && lastWorkbookImportReview ? (
+          <div className="studio-modal-backdrop" onClick={() => setImportReviewModalOpen(false)}>
+            <section className="studio-modal studio-import-review-modal" onClick={(event) => event.stopPropagation()}>
+              <div className="card-head">
+                <div>
+                  <strong>Imported workbook review</strong>
+                  <div className="micro">
+                    {lastWorkbookImportReview.workbookName} · {importedReviewReports.length} report{importedReviewReports.length === 1 ? "" : "s"}
+                    {importedReviewDashboardCount ? ` · ${importedReviewDashboardCount} dashboard candidate${importedReviewDashboardCount === 1 ? "" : "s"}` : ""}
+                  </div>
+                </div>
+                <button type="button" onClick={() => setImportReviewModalOpen(false)}>Close</button>
+              </div>
+
+              {lastWorkbookImportReview.dashboardCreated ? (
+                <div className="sync-status sync-status-ok">
+                  <strong>Dashboard candidate ready</strong>
+                  <span>The workbook was reconstructed into native reports and dashboard tabs. Review each imported report here and fix any fields that still need attention.</span>
+                </div>
+              ) : null}
+
+              <div className="stack">
+                {importedReviewReports.map(({ report, table }) => {
+                  const fieldOptions = table ? getSortedFieldOptions(table) : [];
+                  const tableFieldIds = new Set((table?.fields || []).map((field) => field.id));
+                  const referencedFieldIds = collectReportImportReferencedFieldIds(report);
+                  const matchedReferencedCount = referencedFieldIds.filter((fieldId) => tableFieldIds.has(fieldId)).length;
+                  const issues = collectReportImportIssues(report, table);
+                  return (
+                    <article className="import-review-report-card" key={report.id}>
+                      <div className="card-head">
+                        <div>
+                          <strong>{report.name}</strong>
+                          <div className="micro">
+                            {report.view.mode === "chart" ? report.view.chartType : report.view.mode} · {table?.name || "Missing source table"}
+                          </div>
+                        </div>
+                        <span className={`badge${issues.length ? "" : " brand"}`}>
+                          {issues.length ? `${issues.length} need review` : `${matchedReferencedCount}/${Math.max(referencedFieldIds.length, matchedReferencedCount || 1)} matched`}
+                        </span>
+                      </div>
+
+                      {issues.length ? (
+                        <div className="sync-status sync-status-warn">
+                          <strong>Needs attention</strong>
+                          <ul className="flat-list import-review-list">
+                            {issues.map((issue) => <li key={issue}>{issue}</li>)}
+                          </ul>
+                        </div>
+                      ) : (
+                        <div className="sync-status sync-status-ok">
+                          <strong>Fields matched</strong>
+                          <span>This report already has usable field assignments. Adjust them here only if you want a different setup.</span>
+                        </div>
+                      )}
+
+                      {table ? (
+                        <>
+                          <div className="field">
+                            <span>Selected fields</span>
+                            <div className="import-review-field-grid">
+                              {fieldOptions.map((option) => (
+                                <label className="toggle-row import-review-field-option" key={`${report.id}-${option.value}`}>
+                                  <input
+                                    type="checkbox"
+                                    checked={report.selectedFieldIds.includes(option.value)}
+                                    onChange={(event) => toggleImportedReviewSelectedField(report.id, option.value, event.target.checked)}
+                                  />
+                                  <span>{option.label}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+
+                          {reportShowsChart(report) ? (
+                            <div className="filter-grid compact-grid">
+                              <label className="field">
+                                <span>X axis field</span>
+                                <SearchableSelect value={report.view.chartFieldId} options={fieldOptions} allowEmpty emptyOptionLabel="Select a field" onChange={(value) => updateImportedReviewReport(report.id, (current) => ({ ...current, view: { ...current.view, chartFieldId: value } }))} />
+                              </label>
+                              <label className="field">
+                                <span>Value field</span>
+                                <SearchableSelect value={report.view.chartValueFieldId} options={fieldOptions} allowEmpty emptyOptionLabel="Count rows" onChange={(value) => updateImportedReviewReport(report.id, (current) => ({ ...current, view: { ...current.view, chartValueFieldId: value } }))} />
+                              </label>
+                              <label className="field">
+                                <span>Series field</span>
+                                <SearchableSelect value={report.view.chartSeriesFieldId} options={fieldOptions} allowEmpty emptyOptionLabel="Single series" onChange={(value) => updateImportedReviewReport(report.id, (current) => ({ ...current, view: { ...current.view, chartSeriesFieldId: value } }))} />
+                              </label>
+                              {report.view.chartUseSecondaryAxis ? (
+                                <label className="field">
+                                  <span>Secondary value field</span>
+                                  <SearchableSelect value={report.view.chartSecondaryValueFieldId} options={fieldOptions} allowEmpty emptyOptionLabel="Count rows" onChange={(value) => updateImportedReviewReport(report.id, (current) => ({ ...current, view: { ...current.view, chartSecondaryValueFieldId: value } }))} />
+                                </label>
+                              ) : null}
+                            </div>
+                          ) : null}
+
+                          {report.view.mode === "timeline" ? (
+                            <div className="filter-grid compact-grid">
+                              <label className="field">
+                                <span>Timeline start</span>
+                                <SearchableSelect value={report.view.timelineDateField} options={fieldOptions} allowEmpty emptyOptionLabel="Select a field" onChange={(value) => updateImportedReviewReport(report.id, (current) => ({ ...current, view: { ...current.view, timelineDateField: value } }))} />
+                              </label>
+                              <label className="field">
+                                <span>Timeline end</span>
+                                <SearchableSelect value={report.view.timelineEndField} options={fieldOptions} allowEmpty emptyOptionLabel="Select a field" onChange={(value) => updateImportedReviewReport(report.id, (current) => ({ ...current, view: { ...current.view, timelineEndField: value } }))} />
+                              </label>
+                            </div>
+                          ) : null}
+
+                          {report.view.mode === "calendar" ? (
+                            <label className="field">
+                              <span>Calendar date field</span>
+                              <SearchableSelect value={report.view.calendarDateField} options={fieldOptions} allowEmpty emptyOptionLabel="Select a field" onChange={(value) => updateImportedReviewReport(report.id, (current) => ({ ...current, view: { ...current.view, calendarDateField: value } }))} />
+                            </label>
+                          ) : null}
+
+                          {report.view.mode === "kanban" ? (
+                            <label className="field">
+                              <span>Kanban grouping field</span>
+                              <SearchableSelect value={report.view.kanbanField} options={fieldOptions} allowEmpty emptyOptionLabel="Select a field" onChange={(value) => updateImportedReviewReport(report.id, (current) => ({ ...current, view: { ...current.view, kanbanField: value } }))} />
+                            </label>
+                          ) : null}
+                        </>
+                      ) : null}
+                    </article>
+                  );
+                })}
+                {!importedReviewReports.length ? <div className="empty-hint">No imported reports are available to review.</div> : null}
+              </div>
+            </section>
+          </div>
+        ) : null}
         {createModalOpen ? (
           <div className="studio-modal-backdrop" onClick={() => setCreateModalOpen(false)}>
             <section className="studio-modal" onClick={(event) => event.stopPropagation()}>
@@ -2957,112 +3185,35 @@ export function StudioPage({
                 </div>
               </div>
               <div className="studio-actions">
+                <button type="button" onClick={() => setImportReviewModalOpen(true)}>Review imported reports</button>
                 <Link className="ghost-button" to={buildHostedRoute("/help")}>Open manual</Link>
-                <button type="button" onClick={() => setLastWorkbookImportReview(null)}>Dismiss</button>
+                <button type="button" onClick={() => {
+                  setLastWorkbookImportReview(null);
+                  setLastWorkbookImportObjectIds([]);
+                  setImportReviewModalOpen(false);
+                }}
+                >
+                  Dismiss
+                </button>
               </div>
             </div>
-            {lastWorkbookImportReview.dashboardCreated ? (
-              <div className="sync-status sync-status-ok">
-                <strong>Dashboard candidate created</strong>
-                <span>Multiple sheets were reconstructed into native reports and a dashboard candidate.</span>
+            <div className="summary-grid">
+              <div className="summary-card">
+                <strong>{importedReviewReports.length}</strong>
+                <span>Imported reports</span>
               </div>
-            ) : null}
-            <div className="import-review-grid">
-              {lastWorkbookImportReview.sheets.map((sheet) => (
-                <article className={`import-review-sheet ${sheet.status === "skipped" ? "import-review-sheet-skipped" : ""}`} key={sheet.sheetName}>
-                  <div className="card-head">
-                    <strong>{sheet.sheetName}</strong>
-                    <span className="badge">{sheet.status === "imported" ? "Imported" : "Skipped"}</span>
-                  </div>
-                  <div className="micro">
-                    Header row: {sheet.headerRowNumber || "Not found"} · {sheet.columnCount} columns · {sheet.rowCount} rows
-                  </div>
-                  {sheet.layout ? (
-                    <>
-                      {sheet.layout.title ? (
-                        <div className="micro">Source title: {sheet.layout.title}</div>
-                      ) : null}
-                      <div className="import-review-hints">
-                        {sheet.layout.state !== "visible" ? <span className="badge">{sheet.layout.state}</span> : null}
-                        {sheet.layout.headerSource === "table" ? <span className="badge">Header from table</span> : null}
-                        {sheet.layout.headerSource === "auto-filter" ? <span className="badge">Header from filter</span> : null}
-                        {sheet.layout.tableName ? <span className="badge">Workbook table</span> : null}
-                        {sheet.layout.tableFocused ? <span className="badge">Table focused</span> : null}
-                        {sheet.layout.viewStyle !== "normal" ? <span className="badge">{sheet.layout.viewStyle}</span> : null}
-                        {!sheet.layout.showGridLines ? <span className="badge">Gridlines hidden</span> : null}
-                        {sheet.layout.wideLayout ? <span className="badge">Wide layout</span> : null}
-                        {sheet.layout.landscape ? <span className="badge">Landscape</span> : null}
-                        {sheet.layout.mergedTitle ? <span className="badge">Merged title</span> : null}
-                        {sheet.layout.imageCount ? <span className="badge">{sheet.layout.imageCount} image{sheet.layout.imageCount === 1 ? "" : "s"}</span> : null}
-                        {sheet.layout.frozenRows || sheet.layout.frozenColumns ? (
-                          <span className="badge">Frozen {sheet.layout.frozenRows}r / {sheet.layout.frozenColumns}c</span>
-                        ) : null}
-                        {sheet.layout.hiddenRowCount ? (
-                          <span className="badge">{sheet.layout.hiddenRowCount} hidden row{sheet.layout.hiddenRowCount === 1 ? "" : "s"}</span>
-                        ) : null}
-                        {sheet.layout.hiddenColumnCount ? (
-                          <span className="badge">{sheet.layout.hiddenColumnCount} hidden column{sheet.layout.hiddenColumnCount === 1 ? "" : "s"}</span>
-                        ) : null}
-                      </div>
-                      {sheet.layout.hiddenFieldLabels.length ? (
-                        <div className="micro">Hidden source fields: {sheet.layout.hiddenFieldLabels.join(", ")}</div>
-                      ) : null}
-                      {sheet.layout.tabColor ? (
-                        <div className="micro">Tab color: {sheet.layout.tabColor}</div>
-                      ) : null}
-                      {sheet.layout.accentColor ? (
-                        <div className="micro">Accent color: {sheet.layout.accentColor}</div>
-                      ) : null}
-                      {sheet.layout.tableName ? (
-                        <div className="micro">
-                          Workbook table: {sheet.layout.tableName}
-                          {sheet.layout.tableRange ? ` · ${sheet.layout.tableRange}` : ""}
-                          {sheet.layout.tableStyle ? ` · ${sheet.layout.tableStyle}` : ""}
-                        </div>
-                      ) : null}
-                      {sheet.layout.totalsRow ? (
-                        <div className="micro">Workbook table includes a totals row.</div>
-                      ) : null}
-                      {sheet.layout.viewStyle !== "normal" || !sheet.layout.showGridLines || sheet.layout.zoomScale !== 100 ? (
-                        <div className="micro">
-                          View: {sheet.layout.viewStyle}
-                          {!sheet.layout.showGridLines ? " · gridlines hidden" : ""}
-                          {sheet.layout.zoomScale !== 100 ? ` · zoom ${sheet.layout.zoomScale}%` : ""}
-                        </div>
-                      ) : null}
-                      {sheet.layout.centeredHorizontally || sheet.layout.centeredVertically || sheet.layout.fitToWidth || sheet.layout.fitToHeight ? (
-                        <div className="micro">
-                          Page fit: {sheet.layout.fitToWidth || "auto"}w × {sheet.layout.fitToHeight || "auto"}h
-                          {sheet.layout.centeredHorizontally ? " · centered horizontally" : ""}
-                          {sheet.layout.centeredVertically ? " · centered vertically" : ""}
-                        </div>
-                      ) : null}
-                      {sheet.layout.headerFooterText ? (
-                        <div className="micro">Header/footer: {sheet.layout.headerFooterText}</div>
-                      ) : null}
-                      {sheet.layout.autoFilterRange ? (
-                        <div className="micro">Auto filter: {sheet.layout.autoFilterRange}</div>
-                      ) : null}
-                      {sheet.layout.printArea ? (
-                        <div className="micro">Print area: {sheet.layout.printArea}</div>
-                      ) : null}
-                    </>
-                  ) : null}
-                  {sheet.notes.length ? (
-                    <ul className="flat-list import-review-list">
-                      {sheet.notes.map((note) => <li key={note}>{note}</li>)}
-                    </ul>
-                  ) : null}
-                  {sheet.substitutions.length ? (
-                    <>
-                      <strong className="micro">Repairs and substitutions</strong>
-                      <ul className="flat-list import-review-list">
-                        {sheet.substitutions.map((note) => <li key={note}>{note}</li>)}
-                      </ul>
-                    </>
-                  ) : null}
-                </article>
-              ))}
+              <div className="summary-card">
+                <strong>{importedReviewDashboardCount}</strong>
+                <span>Dashboard candidates</span>
+              </div>
+              <div className="summary-card">
+                <strong>{lastWorkbookImportReview.sheets.filter((sheet) => sheet.status === "skipped").length}</strong>
+                <span>Skipped sections</span>
+              </div>
+            </div>
+            <div className="sync-status">
+              <strong>Review imported reports in the modal</strong>
+              <span>The review modal is organized by report so you can confirm field matches and fix any selected fields or chart fields without sorting through worksheet internals.</span>
             </div>
           </section>
         ) : null}

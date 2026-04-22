@@ -98,6 +98,13 @@ interface ImportedWorkbookReview {
   sheets: ImportedWorkbookSheetReview[];
 }
 
+interface WorksheetRegion {
+  candidateName: string;
+  rows: WorksheetRowSnapshot[];
+  columnNumbers: number[];
+  structuredTable: WorksheetStructuredTableHints | null;
+}
+
 type WorksheetReadResult =
   | ({
       sheetName: string;
@@ -313,12 +320,12 @@ function extractRowValuesByColumnNumbers(values: Array<string | number | boolean
   return columnNumbers.map((columnNumber) => values[columnNumber - 1] ?? null);
 }
 
-function getWorksheetStructuredTableHints(worksheet: ExcelJS.Worksheet): WorksheetStructuredTableHints | null {
+function getWorksheetStructuredTableHintsList(worksheet: ExcelJS.Worksheet): WorksheetStructuredTableHints[] {
   const tables = typeof worksheet.getTables === "function"
     ? worksheet.getTables().map((entry) => Array.isArray(entry) ? entry[0] : entry)
     : [];
-  if (!Array.isArray(tables) || !tables.length) return null;
-  const candidates = tables
+  if (!Array.isArray(tables) || !tables.length) return [];
+  return tables
     .map((table) => {
       const runtimeTable = table as unknown as { table?: Record<string, unknown>; model?: Record<string, unknown> };
       const model = runtimeTable.table || runtimeTable.model || null;
@@ -333,28 +340,197 @@ function getWorksheetStructuredTableHints(worksheet: ExcelJS.Worksheet): Workshe
       };
     })
     .filter((candidate): candidate is { model: Record<string, unknown>; parsedRange: NonNullable<ReturnType<typeof parseRangeRef>>; area: number } => Boolean(candidate))
-    .sort((left, right) => right.area - left.area);
-  if (!candidates.length) return null;
-  const primary = candidates[0];
-  const style = typeof primary.model.style === "object" && primary.model.style && "theme" in primary.model.style
-    ? String((primary.model.style as { theme?: string }).theme || "")
-    : "";
-  const startColumnNumber = decodeColumnRef(primary.parsedRange.start.columnRef);
-  const endColumnNumber = decodeColumnRef(primary.parsedRange.end.columnRef);
-  const totalsRow = Boolean(primary.model.totalsRow);
-  return {
-    name: String(primary.model.name || "").trim(),
-    range: `${primary.parsedRange.start.columnRef}${primary.parsedRange.start.rowNumber}:${primary.parsedRange.end.columnRef}${primary.parsedRange.end.rowNumber}`,
-    headerRowNumber: primary.parsedRange.start.rowNumber,
-    startColumnNumber,
-    endColumnNumber,
-    endRowNumber: primary.parsedRange.end.rowNumber,
-    dataEndRowNumber: totalsRow ? Math.max(primary.parsedRange.start.rowNumber, primary.parsedRange.end.rowNumber - 1) : primary.parsedRange.end.rowNumber,
-    style,
-    totalsRow,
-    rowStripes: Boolean(typeof primary.model.style === "object" && primary.model.style && "showRowStripes" in primary.model.style && (primary.model.style as { showRowStripes?: boolean }).showRowStripes),
-    columnStripes: Boolean(typeof primary.model.style === "object" && primary.model.style && "showColumnStripes" in primary.model.style && (primary.model.style as { showColumnStripes?: boolean }).showColumnStripes)
-  };
+    .sort((left, right) => right.area - left.area)
+    .map((primary) => {
+      const style = typeof primary.model.style === "object" && primary.model.style && "theme" in primary.model.style
+        ? String((primary.model.style as { theme?: string }).theme || "")
+        : "";
+      const startColumnNumber = decodeColumnRef(primary.parsedRange.start.columnRef);
+      const endColumnNumber = decodeColumnRef(primary.parsedRange.end.columnRef);
+      const totalsRow = Boolean(primary.model.totalsRow);
+      return {
+        name: String(primary.model.name || "").trim(),
+        range: `${primary.parsedRange.start.columnRef}${primary.parsedRange.start.rowNumber}:${primary.parsedRange.end.columnRef}${primary.parsedRange.end.rowNumber}`,
+        headerRowNumber: primary.parsedRange.start.rowNumber,
+        startColumnNumber,
+        endColumnNumber,
+        endRowNumber: primary.parsedRange.end.rowNumber,
+        dataEndRowNumber: totalsRow ? Math.max(primary.parsedRange.start.rowNumber, primary.parsedRange.end.rowNumber - 1) : primary.parsedRange.end.rowNumber,
+        style,
+        totalsRow,
+        rowStripes: Boolean(typeof primary.model.style === "object" && primary.model.style && "showRowStripes" in primary.model.style && (primary.model.style as { showRowStripes?: boolean }).showRowStripes),
+        columnStripes: Boolean(typeof primary.model.style === "object" && primary.model.style && "showColumnStripes" in primary.model.style && (primary.model.style as { showColumnStripes?: boolean }).showColumnStripes)
+      };
+    });
+}
+
+function getWorksheetStructuredTableHints(worksheet: ExcelJS.Worksheet) {
+  return getWorksheetStructuredTableHintsList(worksheet)[0] || null;
+}
+
+function splitNumberSeriesIntoBands(values: number[], minimumGap = 1) {
+  const sorted = Array.from(new Set(values.filter((value) => value > 0))).sort((left, right) => left - right);
+  if (!sorted.length) return [];
+  const bands: Array<{ start: number; end: number }> = [];
+  let start = sorted[0];
+  let previous = sorted[0];
+  for (let index = 1; index < sorted.length; index += 1) {
+    const value = sorted[index];
+    if (value - previous > minimumGap) {
+      bands.push({ start, end: previous });
+      start = value;
+    }
+    previous = value;
+  }
+  bands.push({ start, end: previous });
+  return bands;
+}
+
+function deriveWorksheetRegionName(sheetName: string, rows: WorksheetRowSnapshot[], index: number, total: number) {
+  if (total <= 1) return sheetName;
+  const ignoreValues = new Set(["all", "total", "grand total", "column labels", "row labels", "sum of ar"]);
+  for (const row of rows.slice(0, 3)) {
+    const nonBlankValues = row.values.map((value) => String(value ?? "").trim()).filter(Boolean);
+    if (!nonBlankValues.length) continue;
+    const firstValue = nonBlankValues[0] || "";
+    if (firstValue && !ignoreValues.has(firstValue.toLowerCase())) {
+      if (nonBlankValues.length === 1) {
+        return `${sheetName} · ${firstValue}`;
+      }
+      const remainder = nonBlankValues.slice(1);
+      const remainderLooksAxisLike = remainder.every((value) =>
+        isNumericLikeString(value)
+        || isDateLikeString(value)
+        || /^[A-Za-z]{3,12}$/.test(value)
+      );
+      if (remainderLooksAxisLike) {
+        return `${sheetName} · ${firstValue}`;
+      }
+    }
+  }
+  return `${sheetName} · Section ${index + 1}`;
+}
+
+function buildWorksheetRegions(
+  worksheet: ExcelJS.Worksheet,
+  rows: WorksheetRowSnapshot[]
+): WorksheetRegion[] {
+  const structuredTables = getWorksheetStructuredTableHintsList(worksheet);
+  if (structuredTables.length) {
+    return structuredTables.map((structuredTable, index) => {
+      const absoluteColumnNumbers = Array.from(
+        { length: structuredTable.endColumnNumber - structuredTable.startColumnNumber + 1 },
+        (_, offset) => structuredTable.startColumnNumber + offset
+      );
+      const tableRows = rows
+        .filter((row) => row.rowNumber <= structuredTable.dataEndRowNumber)
+        .map((row) => ({
+          rowNumber: row.rowNumber,
+          values: extractRowValuesByColumnNumbers(row.values, absoluteColumnNumbers)
+        }))
+        .filter((row) => row.values.some((value) => !isBlankCell(value)));
+      return {
+        candidateName: structuredTable.name
+          ? (structuredTables.length > 1 ? `${worksheet.name} · ${structuredTable.name}` : worksheet.name)
+          : deriveWorksheetRegionName(worksheet.name, tableRows, index, structuredTables.length),
+        rows: tableRows,
+        columnNumbers: Array.from({ length: absoluteColumnNumbers.length }, (_, offset) => offset + 1),
+        structuredTable
+      };
+    }).filter((region) => region.rows.length);
+  }
+
+  const autoFilterRange = normalizeAutoFilterRange(worksheet.autoFilter);
+  const autoFilterParsedRange = parseRangeRef(autoFilterRange);
+  if (autoFilterParsedRange) {
+    const absoluteColumnNumbers = Array.from(
+      { length: decodeColumnRef(autoFilterParsedRange.end.columnRef) - decodeColumnRef(autoFilterParsedRange.start.columnRef) + 1 },
+      (_, offset) => decodeColumnRef(autoFilterParsedRange.start.columnRef) + offset
+    );
+    const regionRows = rows
+      .filter((row) => row.rowNumber <= autoFilterParsedRange.end.rowNumber)
+      .map((row) => ({
+        rowNumber: row.rowNumber,
+        values: extractRowValuesByColumnNumbers(row.values, absoluteColumnNumbers)
+      }))
+      .filter((row) => row.values.some((value) => !isBlankCell(value)));
+    if (regionRows.length) {
+      return [{
+        candidateName: worksheet.name,
+        rows: regionRows,
+        columnNumbers: Array.from({ length: absoluteColumnNumbers.length }, (_, offset) => offset + 1),
+        structuredTable: null
+      }];
+    }
+  }
+
+  const rowBands = rows.reduce<WorksheetRowSnapshot[][]>((bands, row) => {
+    const currentBand = bands[bands.length - 1];
+    if (!currentBand || row.rowNumber - currentBand[currentBand.length - 1].rowNumber > 1) {
+      bands.push([row]);
+      return bands;
+    }
+    currentBand.push(row);
+    return bands;
+  }, []);
+  const normalizedRowBands = rowBands.reduce<WorksheetRowSnapshot[][]>((bands, rowBand) => {
+    const previousBand = bands[bands.length - 1];
+    const previousMaxNonBlank = previousBand
+      ? previousBand.reduce((max, row) => Math.max(max, row.values.filter((value) => !isBlankCell(value)).length), 0)
+      : 0;
+    const currentMaxNonBlank = rowBand.reduce((max, row) => Math.max(max, row.values.filter((value) => !isBlankCell(value)).length), 0);
+    const previousLooksLikeMetadata = Boolean(previousBand && previousBand.length <= 2 && previousMaxNonBlank <= 2);
+    const currentLooksLikeMainData = rowBand.length >= 2 && currentMaxNonBlank >= 2;
+    if (previousBand && previousLooksLikeMetadata && currentLooksLikeMainData) {
+      previousBand.push(...rowBand);
+      return bands;
+    }
+    bands.push([...rowBand]);
+    return bands;
+  }, []);
+
+  const regions: WorksheetRegion[] = [];
+  normalizedRowBands.forEach((rowBand) => {
+    const occupiedColumns = rowBand.flatMap((row) =>
+      row.values
+        .map((value, index) => (!isBlankCell(value) ? index + 1 : 0))
+        .filter((columnNumber) => columnNumber > 0)
+    );
+    const columnBands = splitNumberSeriesIntoBands(occupiedColumns, 2);
+    columnBands.forEach((band) => {
+      const columnNumbers = Array.from(
+        { length: band.end - band.start + 1 },
+        (_, offset) => band.start + offset
+      );
+      const bandRows = rowBand
+        .map((row) => ({
+          rowNumber: row.rowNumber,
+          values: extractRowValuesByColumnNumbers(row.values, columnNumbers)
+        }))
+        .filter((row) => row.values.some((value) => !isBlankCell(value)));
+      if (!bandRows.length) return;
+      const maxNonBlankCells = bandRows.reduce((max, row) => Math.max(max, row.values.filter((value) => !isBlankCell(value)).length), 0);
+      if (bandRows.length < 2 && maxNonBlankCells < 2) return;
+      regions.push({
+        candidateName: "",
+        rows: bandRows,
+        columnNumbers: Array.from({ length: columnNumbers.length }, (_, offset) => offset + 1),
+        structuredTable: null
+      });
+    });
+  });
+
+  const filteredRegions = regions.filter((region, _, currentRegions) => {
+    if (currentRegions.length <= 1 || region.structuredTable) return true;
+    const maxNonBlankCells = region.rows.reduce((max, row) => Math.max(max, row.values.filter((value) => !isBlankCell(value)).length), 0);
+    const looksLikeMetadataOnly = region.rows.length <= 2 && maxNonBlankCells <= 2;
+    return !looksLikeMetadataOnly;
+  });
+
+  return filteredRegions.map((region, index) => ({
+    ...region,
+    candidateName: deriveWorksheetRegionName(worksheet.name, region.rows, index, filteredRegions.length)
+  }));
 }
 
 function mergedRangeTouchesRow(range: string, rowNumber: number) {
@@ -1351,22 +1527,19 @@ function inferImportedRuntimeFilters(
     }));
 }
 
-function readWorksheet(worksheet: ExcelJS.Worksheet): WorksheetReadResult {
+function readWorksheetRegion(
+  worksheet: ExcelJS.Worksheet,
+  candidateName: string,
+  rows: WorksheetRowSnapshot[],
+  fieldColumnNumbers: number[],
+  structuredTable: WorksheetStructuredTableHints | null
+): WorksheetReadResult {
   const notes: string[] = [];
   const substitutions: string[] = [];
-  const rows: WorksheetRowSnapshot[] = [];
-  worksheet.eachRow({ includeEmpty: false }, (row) => {
-    const values = Array.from({ length: Math.max(worksheet.actualColumnCount, row.cellCount || 0) }, (_, index) =>
-      normalizeCellValue(row.getCell(index + 1).value)
-    );
-    if (values.some((value) => !isBlankCell(value))) {
-      rows.push({ rowNumber: row.number, values });
-    }
-  });
   if (!rows.length) {
-    const message = `Skipped "${worksheet.name}" because it had no usable rows.`;
+    const message = `Skipped "${candidateName}" because it had no usable rows.`;
     return {
-      sheetName: worksheet.name,
+      sheetName: candidateName,
       status: "skipped",
       notes: [message],
       substitutions: [],
@@ -1375,7 +1548,6 @@ function readWorksheet(worksheet: ExcelJS.Worksheet): WorksheetReadResult {
       columnCount: 0
     };
   }
-  const structuredTable = getWorksheetStructuredTableHints(worksheet);
   const autoFilterRange = normalizeAutoFilterRange(worksheet.autoFilter);
   const autoFilterHeaderRowNumber = parseRangeRef(autoFilterRange)?.start.rowNumber || 0;
   const autoFilterHeaderIndex = autoFilterHeaderRowNumber
@@ -1387,9 +1559,6 @@ function readWorksheet(worksheet: ExcelJS.Worksheet): WorksheetReadResult {
   const headerRowIndex = tableHeaderIndex >= 0 ? tableHeaderIndex : (autoFilterHeaderIndex >= 0 ? autoFilterHeaderIndex : selectHeaderRow(rows));
   const headerRow = rows[headerRowIndex];
   const headerSource: "heuristic" | "auto-filter" | "table" = tableHeaderIndex >= 0 ? "table" : (autoFilterHeaderIndex >= 0 ? "auto-filter" : "heuristic");
-  const fieldColumnNumbers = structuredTable
-    ? Array.from({ length: structuredTable.endColumnNumber - structuredTable.startColumnNumber + 1 }, (_, index) => structuredTable.startColumnNumber + index)
-    : Array.from({ length: Math.max(rows.reduce((max, row) => Math.max(max, row.values.length), 0), headerRow.values.length) }, (_, index) => index + 1);
   const relevantRows = structuredTable
     ? rows.filter((row) => row.rowNumber >= structuredTable.headerRowNumber && row.rowNumber <= structuredTable.dataEndRowNumber)
     : rows.slice(headerRowIndex);
@@ -1426,16 +1595,19 @@ function readWorksheet(worksheet: ExcelJS.Worksheet): WorksheetReadResult {
       type: "text"
     };
   });
-  const { layout, hiddenFieldIds } = buildWorksheetLayoutHints(worksheet, rows, headerRowIndex, fields, fieldColumnNumbers, headerSource, structuredTable);
+  const layoutFieldColumnNumbers = structuredTable
+    ? Array.from({ length: structuredTable.endColumnNumber - structuredTable.startColumnNumber + 1 }, (_, index) => structuredTable.startColumnNumber + index)
+    : fieldColumnNumbers;
+  const { layout, hiddenFieldIds } = buildWorksheetLayoutHints(worksheet, rows, headerRowIndex, fields, layoutFieldColumnNumbers, headerSource, structuredTable);
   const dataRows = relevantRows.slice(1)
     .map((row) => Object.fromEntries(
       fields.map((field, index) => [field.id, extractRowValuesByColumnNumbers(row.values, fieldColumnNumbers)[index] ?? null])
     ) as DataRow)
     .filter((row) => Object.values(row).some((value) => !isBlankCell(value)));
   if (!dataRows.length) {
-    const message = `Skipped "${worksheet.name}" because it only contained a header row.`;
+    const message = `Skipped "${candidateName}" because it only contained a header row.`;
     return {
-      sheetName: worksheet.name,
+      sheetName: candidateName,
       status: "skipped",
       notes: [message],
       substitutions,
@@ -1516,7 +1688,7 @@ function readWorksheet(worksheet: ExcelJS.Worksheet): WorksheetReadResult {
     field.type = inferFieldType(dataRows.map((row) => row[field.id] as string | number | boolean | null));
   });
   return {
-    sheetName: worksheet.name,
+    sheetName: candidateName,
     status: "imported",
     notes,
     substitutions,
@@ -1528,6 +1700,51 @@ function readWorksheet(worksheet: ExcelJS.Worksheet): WorksheetReadResult {
     hiddenFieldIds,
     layout
   };
+}
+
+function readWorksheet(worksheet: ExcelJS.Worksheet): WorksheetReadResult[] {
+  const rows: WorksheetRowSnapshot[] = [];
+  worksheet.eachRow({ includeEmpty: false }, (row) => {
+    const values = Array.from({ length: Math.max(worksheet.actualColumnCount, row.cellCount || 0) }, (_, index) =>
+      normalizeCellValue(row.getCell(index + 1).value)
+    );
+    if (values.some((value) => !isBlankCell(value))) {
+      rows.push({ rowNumber: row.number, values });
+    }
+  });
+
+  if (!rows.length) {
+    return [{
+      sheetName: worksheet.name,
+      status: "skipped",
+      notes: [`Skipped "${worksheet.name}" because it had no usable rows.`],
+      substitutions: [],
+      headerRowNumber: 0,
+      rowCount: 0,
+      columnCount: 0
+    }];
+  }
+
+  const regions = buildWorksheetRegions(worksheet, rows);
+  if (!regions.length) {
+    return [{
+      sheetName: worksheet.name,
+      status: "skipped",
+      notes: [`Skipped "${worksheet.name}" because no importable table or worksheet section was detected.`],
+      substitutions: [],
+      headerRowNumber: 0,
+      rowCount: 0,
+      columnCount: 0
+    }];
+  }
+
+  return regions.map((region) => readWorksheetRegion(
+    worksheet,
+    region.candidateName,
+    region.rows,
+    region.columnNumbers,
+    region.structuredTable
+  ));
 }
 
 export async function importWorkbookIntoStudioDocument(
@@ -1555,52 +1772,54 @@ export async function importWorkbookIntoStudioDocument(
   const layoutHintsByReportId: Record<string, WorksheetLayoutHints> = {};
 
   workbook.worksheets.forEach((worksheet, index) => {
-    const parsed = readWorksheet(worksheet);
-    if (parsed.status === "skipped") {
+    const parsedRegions = readWorksheet(worksheet);
+    parsedRegions.forEach((parsed, regionIndex) => {
+      if (parsed.status === "skipped") {
+        sheetReviews.push({
+          sheetName: parsed.sheetName,
+          status: parsed.status,
+          headerRowNumber: parsed.headerRowNumber,
+          rowCount: parsed.rowCount,
+          columnCount: parsed.columnCount,
+          notes: parsed.notes,
+          substitutions: parsed.substitutions,
+          layout: parsed.layout
+        });
+        warnings.push(...parsed.notes.map((note) => `${parsed.sheetName}: ${note}`), ...parsed.substitutions.map((note) => `${parsed.sheetName}: ${note}`));
+        return;
+      }
+      const tableId = uniqueId("table", `${workbookName}-${parsed.sheetName || worksheet.name || `${index + 1}-${regionIndex + 1}`}`, existingIds);
+      const table: TableDefinition = {
+        id: tableId,
+        name: parsed.sheetName || worksheet.name || `Sheet ${index + 1}`,
+        description: `Imported from workbook "${filename}".`,
+        fields: parsed.fields
+      };
+      importedTables.push(table);
+      importedRows[tableId] = parsed.rows;
+      importedRowsByTableId[tableId] = parsed.rows;
+      const inferred = buildImportedReport(table.name, table, parsed.rows, parsed.layout, parsed.hiddenFieldIds, scope, ownerUserId, importedAt, existingIds);
+      const report = inferred.report;
+      importedReports.push(report);
+      layoutHintsByReportId[report.id] = parsed.layout;
       sheetReviews.push({
         sheetName: parsed.sheetName,
         status: parsed.status,
         headerRowNumber: parsed.headerRowNumber,
         rowCount: parsed.rowCount,
         columnCount: parsed.columnCount,
-        notes: parsed.notes,
+        importedTableId: table.id,
+        importedReportId: report.id,
+        notes: [...parsed.notes, ...inferred.notes],
         substitutions: parsed.substitutions,
         layout: parsed.layout
       });
-      warnings.push(...parsed.notes.map((note) => `${parsed.sheetName}: ${note}`), ...parsed.substitutions.map((note) => `${parsed.sheetName}: ${note}`));
-      return;
-    }
-    const tableId = uniqueId("table", `${workbookName}-${worksheet.name || index + 1}`, existingIds);
-    const table: TableDefinition = {
-      id: tableId,
-      name: worksheet.name || `Sheet ${index + 1}`,
-      description: `Imported from workbook "${filename}".`,
-      fields: parsed.fields
-    };
-    importedTables.push(table);
-    importedRows[tableId] = parsed.rows;
-    importedRowsByTableId[tableId] = parsed.rows;
-    const inferred = buildImportedReport(table.name, table, parsed.rows, parsed.layout, parsed.hiddenFieldIds, scope, ownerUserId, importedAt, existingIds);
-    const report = inferred.report;
-    importedReports.push(report);
-    layoutHintsByReportId[report.id] = parsed.layout;
-    sheetReviews.push({
-      sheetName: parsed.sheetName,
-      status: parsed.status,
-      headerRowNumber: parsed.headerRowNumber,
-      rowCount: parsed.rowCount,
-      columnCount: parsed.columnCount,
-      importedTableId: table.id,
-      importedReportId: report.id,
-      notes: [...parsed.notes, ...inferred.notes],
-      substitutions: parsed.substitutions,
-      layout: parsed.layout
+      warnings.push(
+        ...parsed.notes.map((note) => `${parsed.sheetName}: ${note}`),
+        ...parsed.substitutions.map((note) => `${parsed.sheetName}: ${note}`),
+        ...inferred.notes.map((note) => `${parsed.sheetName}: ${note}`)
+      );
     });
-    warnings.push(
-      ...parsed.notes.map((note) => `${parsed.sheetName}: ${note}`),
-      ...parsed.substitutions.map((note) => `${parsed.sheetName}: ${note}`),
-      ...inferred.notes.map((note) => `${parsed.sheetName}: ${note}`)
-    );
   });
 
   if (!importedTables.length || !importedReports.length) {

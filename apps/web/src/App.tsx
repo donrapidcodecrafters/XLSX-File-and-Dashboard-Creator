@@ -252,6 +252,10 @@ function ObjectPage({
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [refreshJob, setRefreshJob] = useState<any>(null);
   const pageSize = 100;
+  const scopedObjectFromDocument = useMemo(
+    () => params.objectId && studioDocument ? studioDocument.bundle.objects[params.objectId] || null : null,
+    [params.objectId, studioDocument]
+  );
   const liveModeEnabled = useMemo(
     () => getProfileIdsForObject(object, tables, studioDocument)
       .some((profileId) => studioDocument?.quickbaseProfiles.find((profile) => profile.id === profileId)?.liveMode === true),
@@ -271,6 +275,17 @@ function ObjectPage({
 
   useEffect(() => {
     if (!params.objectId) return;
+    if (scopedObjectFromDocument) {
+      const reportOverride = scopedObjectFromDocument.type === "report" && scopedObjectFromDocument.scope === "global"
+        ? getReportPersonalOverride(scopedObjectFromDocument.id, studioDocument)
+        : null;
+      setPage(reportOverride?.currentPage || 1);
+      setObject(scopedObjectFromDocument);
+      setResult(null);
+      setLoading(false);
+      onObjectViewed(scopedObjectFromDocument.id);
+      return;
+    }
     let active = true;
     setLoading(true);
     setRefreshNonce(0);
@@ -292,7 +307,7 @@ function ObjectPage({
     return () => {
       active = false;
     };
-  }, [onObjectViewed, params.objectId]);
+  }, [onObjectViewed, params.objectId, scopedObjectFromDocument, studioDocument]);
 
   useEffect(() => {
     if (object) {
@@ -600,6 +615,27 @@ export function App() {
     }),
     [currentUserId, hosted.appId, hosted.launchSource, hosted.realmHostname, sessionScopedDocument]
   );
+  const catalogSourceObjects = useMemo(
+    () => displayDocument
+      ? displayDocument.bundle.order
+          .map((id) => displayDocument.bundle.objects[id])
+          .filter((object): object is StudioObject => Boolean(object))
+          .map((object) => ({
+            id: object.id,
+            type: object.type,
+            schemaVersion: object.schemaVersion,
+            name: object.name,
+            description: object.description,
+            folder: object.folder,
+            category: object.category,
+            tags: object.tags,
+            scope: object.scope,
+            ownerUserId: object.ownerUserId,
+            updatedAt: object.updatedAt
+          }))
+      : objects,
+    [displayDocument, objects]
+  );
   const scopedTables = useMemo(
     () => filterTablesForLaunchScope(tables, sessionScopedDocument, {
       launchSource: hosted.launchSource,
@@ -615,15 +651,17 @@ export function App() {
   );
   const visibleObjects = useMemo(
     () => filterStudioLibraryItems(
-      objects.filter((item) => isCatalogItemInLaunchScope(item, sessionScopedDocument, {
-        launchSource: hosted.launchSource,
-        currentUserId,
-        launchRealmHostname: hosted.realmHostname,
-        launchAppId: hosted.appId
-      })),
+      displayDocument
+        ? catalogSourceObjects
+        : catalogSourceObjects.filter((item) => isCatalogItemInLaunchScope(item, sessionScopedDocument, {
+            launchSource: hosted.launchSource,
+            currentUserId,
+            launchRealmHostname: hosted.realmHostname,
+            launchAppId: hosted.appId
+          })),
       { currentUserId }
     ),
-    [currentUserId, hosted.appId, hosted.launchSource, hosted.realmHostname, objects, sessionScopedDocument]
+    [catalogSourceObjects, currentUserId, displayDocument, hosted.appId, hosted.launchSource, hosted.realmHostname, sessionScopedDocument]
   );
   const [studioSettingsSignal, setStudioSettingsSignal] = useState(0);
   const [studioRefreshSignal, setStudioRefreshSignal] = useState(0);
