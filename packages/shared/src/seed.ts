@@ -474,6 +474,8 @@ export function buildStudioDocument(): StudioDocument {
       ...touchStudioSession({
         currentUserId: "demo.user",
         launchSource: "local-dev",
+        launchRealmHostname: "",
+        launchAppId: "",
         inactivityTimeoutHours: 24,
         requiresLaunch: true,
         launchedAt: "",
@@ -764,6 +766,8 @@ export function normalizeStudioDocument(input: Partial<StudioDocument> | null | 
         ...(source.session || {}),
         currentUserId: String(source.session?.currentUserId || defaults.session.currentUserId || ""),
         launchSource: source.session?.launchSource === "quickbase-button" ? "quickbase-button" : defaults.session.launchSource,
+        launchRealmHostname: String(source.session?.launchRealmHostname || defaults.session.launchRealmHostname || ""),
+        launchAppId: String(source.session?.launchAppId || defaults.session.launchAppId || ""),
         inactivityTimeoutHours: Number(source.session?.inactivityTimeoutHours || defaults.session.inactivityTimeoutHours || 24),
         requiresLaunch: source.session?.requiresLaunch ?? defaults.session.requiresLaunch,
         launchedAt: String(source.session?.launchedAt || defaults.session.launchedAt || ""),

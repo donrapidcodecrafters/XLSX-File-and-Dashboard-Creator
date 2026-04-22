@@ -378,9 +378,13 @@ function testStudioSessionHelpers() {
     now: "2026-04-21T18:00:00.000Z",
     relaunch: true,
     launchSource: "quickbase-button",
-    currentUserId: "demo.user"
+    currentUserId: "demo.user",
+    launchRealmHostname: "cadencec.quickbase.com",
+    launchAppId: "bva8ar4ad"
   });
   assert.equal(relaunched.launchSource, "quickbase-button");
+  assert.equal(relaunched.launchRealmHostname, "cadencec.quickbase.com");
+  assert.equal(relaunched.launchAppId, "bva8ar4ad");
   assert.equal(relaunched.lastActivityAt, "2026-04-21T18:00:00.000Z");
   assert.ok(relaunched.expiresAt > relaunched.lastActivityAt, "expected relaunch to extend the expiry");
 
@@ -399,6 +403,14 @@ function testStudioSessionHelpers() {
     expiresAt: "2026-04-21T18:05:00.000Z"
   }, "2026-04-21T18:06:00.000Z");
   assert.ok(localStatus.message.includes("Local development session expired"), "expected local-dev expiry message");
+
+  const mismatchedLaunch = resolveStudioSessionStatus(relaunched, "2026-04-21T18:01:00.000Z", {
+    launchSource: "quickbase-button",
+    currentUserId: "someone.else",
+    launchRealmHostname: "cadencec.quickbase.com",
+    launchAppId: "bva8ar4ad"
+  });
+  assert.equal(mismatchedLaunch.valid, false, "expected Quickbase user mismatch to invalidate the session");
 }
 
 testSeededReportOverrides();

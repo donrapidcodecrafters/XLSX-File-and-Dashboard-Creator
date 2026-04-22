@@ -92,6 +92,7 @@ import {
   saveStudioDocument
 } from "../lib/studioApi";
 import { downloadExportJob, fetchExportJobStatus, fetchExportJobs, startDashboardExportJob, startReportExportJob } from "../lib/api";
+import { applyLaunchScopeToDocument } from "../lib/catalog";
 import { ChartPreview } from "./ChartPreview";
 import { RefreshOverlay } from "./RefreshOverlay";
 import { StudioDraftReviewStep } from "./StudioDraftReviewStep";
@@ -812,13 +813,27 @@ function ReportFiltersAndSortsEditor({
   );
 }
 
-export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { openSettingsSignal?: number; refreshAllSignal?: number }) {
+export function StudioPage({
+  openSettingsSignal = 0,
+  refreshAllSignal = 0,
+  launchContext
+}: {
+  openSettingsSignal?: number;
+  refreshAllSignal?: number;
+  launchContext: { launchSource: "quickbase-button" | "local-dev" | null; userId: string; realmHostname: string; appId: string };
+}) {
   const navigate = useNavigate();
   const params = useParams();
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const importXlsxInputRef = useRef<HTMLInputElement | null>(null);
   const schemaAutoloadedRef = useRef(false);
-  const [documentState, setDocumentState] = useState<StudioDocument>(() => loadLocalDocument());
+  const scopeDocument = (document: StudioDocument) => applyLaunchScopeToDocument(document, {
+    launchSource: launchContext.launchSource,
+    currentUserId: launchContext.userId,
+    launchRealmHostname: launchContext.realmHostname,
+    launchAppId: launchContext.appId
+  }) || document;
+  const [documentState, setDocumentState] = useState<StudioDocument>(() => scopeDocument(loadLocalDocument()));
   const [loadingRemote, setLoadingRemote] = useState(true);
   const [savingRemote, setSavingRemote] = useState(false);
   const [history, setHistory] = useState<StudioDocument[]>([]);
@@ -877,7 +892,7 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editingReportId, setEditingReportId] = useState<string | null>(null);
   const [createDraft, setCreateDraft] = useState<CreateObjectDraft>(() => {
-    const document = loadLocalDocument();
+    const document = scopeDocument(loadLocalDocument());
     return buildStudioBuilderDraft(document.bundle.tables[0], "report", String(document.session.currentUserId || "").trim(), uid);
   });
   const [createFieldQuery, setCreateFieldQuery] = useState("");
@@ -1185,12 +1200,16 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
   }, [documentState]);
 
   useEffect(() => {
+    setDocumentState((current) => scopeDocument(current));
+  }, [launchContext.appId, launchContext.launchSource, launchContext.realmHostname, launchContext.userId]);
+
+  useEffect(() => {
     let active = true;
     setLoadingRemote(true);
     fetchStudioDocument()
       .then((response) => {
         if (!active) return;
-        const next = normalizeStudioDocument(response.document);
+        const next = scopeDocument(normalizeStudioDocument(response.document));
         next.sync.lastLoadedAt = new Date().toISOString();
         setDocumentState(next);
       })
@@ -1914,7 +1933,7 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
     setSavingRemote(true);
     try {
       const response = await saveStudioDocument(nextDocument);
-      setDocumentState(normalizeStudioDocument(response.document));
+      setDocumentState(scopeDocument(normalizeStudioDocument(response.document)));
       setLastQuickbaseSync(response.sync || null);
       if (response.sync?.enabled) {
         if (response.sync.ok) {
@@ -1953,7 +1972,7 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
   async function reloadRemote() {
     try {
       const response = await fetchStudioDocument();
-      setDocumentState(normalizeStudioDocument(response.document));
+      setDocumentState(scopeDocument(normalizeStudioDocument(response.document)));
       setHistory([]);
       setFuture([]);
       pushToast("Reloaded hosted studio.");
@@ -2300,7 +2319,7 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
     setRefreshingCache(true);
     try {
       const saved = await saveStudioDocument(documentState);
-      setDocumentState(normalizeStudioDocument(saved.document));
+      setDocumentState(scopeDocument(normalizeStudioDocument(saved.document)));
       setLastQuickbaseSync(saved.sync || null);
       const response = await startStudioRefresh();
       setRefreshJob(response.job);
@@ -2369,7 +2388,7 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
     file.text().then((text) => {
       const parsed = JSON.parse(text);
       if (parsed?.bundle && parsed?.templates) {
-        setDocumentState(normalizeStudioDocument(parsed as StudioDocument));
+        setDocumentState(scopeDocument(normalizeStudioDocument(parsed as StudioDocument)));
         pushToast("Studio document imported.");
       } else if (parsed?.type === "report" || parsed?.type === "dashboard") {
         const object = parsed as StudioObject;
@@ -2396,7 +2415,7 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
     setXlsxImporting(true);
     importStudioWorkbook(file)
       .then((response) => {
-        setDocumentState(normalizeStudioDocument(response.document));
+        setDocumentState(scopeDocument(normalizeStudioDocument(response.document)));
         setLastWorkbookImportReview(response.review);
         if (response.primaryObjectId) {
           navigate(`/studio/${response.primaryObjectId}`);

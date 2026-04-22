@@ -55,6 +55,7 @@ export function HelpPage() {
           </div>
           <ol className="flat-list">
             <li>Open the platform from your Quickbase dashboard button. Do not try to start from an expired bookmarked tab.</li>
+            <li>The launch realm, app, and user decide which workspace you are allowed to see. Shared and personal content do not cross Quickbase realms, and personal items only open for the launched user.</li>
             <li>When the top bar appears, use `Home` if you want guided starting points, `Viewing` if you want to open existing work, or `Building` if you need to create something new.</li>
             <li>When you open `Building`, you now land on a workspace home first. The first large card shows the workspace status, and the `Quick start` row directly under it is the only place for `Add new report`, `Add new dashboard`, `Use a template`, and `Import xlsx`.</li>
             <li>If the page says the session expired, go back to Quickbase and launch again from the original button.</li>
@@ -84,6 +85,7 @@ export function HelpPage() {
             <li>Open <Link to="/viewer">Viewing</Link> to search across saved reports and dashboards.</li>
             <li>Use `Scope` to switch between shared content and your personal items.</li>
             <li>Use the app badge on each card to confirm which connected Quickbase app the item belongs to.</li>
+            <li>If you launched from Quickbase, the library is automatically limited to that realm and app so you do not accidentally open another workspace.</li>
             <li>Use `Favorites` and `Recent` filters when the library gets large.</li>
             <li>Open a card directly from the viewer, or start at <Link to="/">Home</Link> if you prefer grouped sections and app-based browsing.</li>
           </ol>
@@ -154,13 +156,13 @@ export function HelpPage() {
         <article className="card help-card" id="multi-app">
           <div className="card-head">
             <strong>Use Multiple Apps Together</strong>
-            <span className="micro">How mixed-app reports and dashboards stay organized</span>
+            <span className="micro">How separate Quickbase app workspaces stay isolated</span>
           </div>
           <ol className="flat-list">
-            <li>Check the app badge on every report or dashboard card before opening it. That badge shows which connected Quickbase app owns the object.</li>
-            <li>Use app filters in <Link to="/viewer">Viewing</Link> or the Studio library when many objects exist across several apps.</li>
-            <li>Dashboards can mix widgets from multiple apps. Runtime filters only affect the cards whose source reports match the selected filter fields.</li>
-            <li>If a widget on a mixed-app dashboard does not react to a filter, open the source report or the dashboard editor and confirm that the filter targets that report.</li>
+            <li>Check the app badge on every report or dashboard card before opening it. That badge shows which Quickbase app owns the object.</li>
+            <li>When the platform is launched from Quickbase, the workspace is limited to the realm and app that opened it.</li>
+            <li>Objects from another app or another realm are intentionally hidden so reporting does not cross workspace boundaries.</li>
+            <li>If you need a different app workspace, go back to Quickbase and launch the platform again from that app’s button.</li>
           </ol>
         </article>
 
@@ -203,6 +205,7 @@ export function HelpPage() {
             <li>If a dashboard widget fails, open the source report from Studio or the reader to isolate the problem.</li>
             <li>If you cannot find where to start building, go back to <Link to="/studio">Building</Link>. The first Building screen is the workspace home where you choose an existing item or create a new one.</li>
             <li>If the platform says the session expired, relaunch from Quickbase.</li>
+            <li>If the platform says the launch is invalid, reopen it from the correct Quickbase realm and app button. A stale bookmark or the wrong user launch will be blocked on purpose.</li>
             <li>If an imported workbook does not look right, read the import review, fix the workbook, and import again.</li>
           </ol>
         </article>

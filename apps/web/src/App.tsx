@@ -22,7 +22,16 @@ import { ReportView } from "./components/ReportView";
 import { StudioPage } from "./components/StudioPage";
 import { ViewerPage } from "./components/ViewerPage";
 import { fetchCatalog, fetchObject, fetchTables, runReport, runReportPage } from "./lib/api";
-import { getProfileIdsForCatalogItem, getProfileIdsForObject, resolveTableDefinition, toggleFavoriteIds, typeLabel } from "./lib/catalog";
+import {
+  applyLaunchScopeToDocument,
+  filterTablesForLaunchScope,
+  getProfileIdsForObject,
+  isCatalogItemInLaunchScope,
+  isObjectInLaunchScope,
+  resolveTableDefinition,
+  toggleFavoriteIds,
+  typeLabel
+} from "./lib/catalog";
 import { getHostedContext } from "./lib/embed";
 import type { QuickbaseTableLinkContext } from "./lib/quickbaseLinks";
 import { cancelStudioRefreshJob, fetchStudioDocument, fetchStudioRefreshJob, saveStudioUserSettings, startStudioObjectRefresh, updateStudioSession } from "./lib/studioApi";
@@ -126,6 +135,7 @@ function ObjectPage({
   tables,
   platformName,
   studioDocument,
+  launchContext,
   openLinksInNewTab = false,
   onObjectViewed,
   onUserSettingsChange,
@@ -134,6 +144,7 @@ function ObjectPage({
   tables: TableDefinition[];
   platformName: string;
   studioDocument: StudioDocument | null;
+  launchContext: ReturnType<typeof getHostedContext>;
   openLinksInNewTab?: boolean;
   onObjectViewed: (objectId: string) => void;
   onUserSettingsChange: (payload: {
@@ -276,6 +287,9 @@ function ObjectPage({
   if (!params.objectId) return null;
   if (!object && loading) return <div className="empty-page">Loading report or dashboard…</div>;
   if (!object) return <div className="empty-page">That report or dashboard could not be found.</div>;
+  if (!isObjectInLaunchScope(object, tables, studioDocument, launchContext)) {
+    return <div className="empty-page">That report or dashboard is not available for this Quickbase realm and app.</div>;
+  }
   if (object.scope === "personal" && String(studioDocument?.session.currentUserId || "").trim() !== String(object.ownerUserId || "").trim()) {
     return <div className="empty-page">That personal report or dashboard is not available for this session.</div>;
   }
@@ -455,18 +469,67 @@ export function App() {
   const location = useLocation();
   const hosted = useMemo(() => getHostedContext(), [location.key]);
   const lastSessionTouchAt = useRef(0);
-  const currentUserId = String(studioDocument?.session.currentUserId || "").trim();
+  const sessionPreview = useMemo(
+    () => studioDocument && hosted.launchSource
+      ? touchStudioSession(studioDocument.session, {
+          launchSource: hosted.launchSource,
+          currentUserId: hosted.userId || studioDocument.session.currentUserId,
+          launchRealmHostname: hosted.realmHostname,
+          launchAppId: hosted.appId,
+          requiresLaunch: true
+        })
+      : studioDocument?.session || null,
+    [hosted.appId, hosted.launchSource, hosted.realmHostname, hosted.userId, studioDocument]
+  );
+  const currentUserId = String(sessionPreview?.currentUserId || "").trim();
   const sessionStatus = useMemo(
-    () => studioDocument ? resolveStudioSessionStatus(studioDocument) : null,
-    [studioDocument]
+    () => sessionPreview ? resolveStudioSessionStatus(sessionPreview, Date.now(), {
+      launchSource: hosted.launchSource,
+      currentUserId: hosted.userId,
+      launchRealmHostname: hosted.realmHostname,
+      launchAppId: hosted.appId
+    }) : null,
+    [hosted.appId, hosted.launchSource, hosted.realmHostname, hosted.userId, sessionPreview]
+  );
+  const sessionScopedDocument = useMemo(
+    () => studioDocument && sessionPreview
+      ? normalizeStudioDocument({ ...studioDocument, session: sessionPreview })
+      : studioDocument,
+    [sessionPreview, studioDocument]
+  );
+  const displayDocument = useMemo(
+    () => applyLaunchScopeToDocument(sessionScopedDocument, {
+      launchSource: hosted.launchSource,
+      currentUserId,
+      launchRealmHostname: hosted.realmHostname,
+      launchAppId: hosted.appId
+    }),
+    [currentUserId, hosted.appId, hosted.launchSource, hosted.realmHostname, sessionScopedDocument]
+  );
+  const scopedTables = useMemo(
+    () => filterTablesForLaunchScope(tables, sessionScopedDocument, {
+      launchSource: hosted.launchSource,
+      currentUserId,
+      launchRealmHostname: hosted.realmHostname,
+      launchAppId: hosted.appId
+    }),
+    [currentUserId, hosted.appId, hosted.launchSource, hosted.realmHostname, sessionScopedDocument, tables]
   );
   const bootstrapIssues = useMemo(
-    () => (studioDocument?.quickbaseProfiles || []).filter((profile) => !profile.bootstrap.ready || profile.bootstrap.autoProvisioned || profile.bootstrap.error),
-    [studioDocument]
+    () => (displayDocument?.quickbaseProfiles || []).filter((profile) => !profile.bootstrap.ready || profile.bootstrap.autoProvisioned || profile.bootstrap.error),
+    [displayDocument]
   );
   const visibleObjects = useMemo(
-    () => filterStudioLibraryItems(objects, { currentUserId }),
-    [currentUserId, objects]
+    () => filterStudioLibraryItems(
+      objects.filter((item) => isCatalogItemInLaunchScope(item, sessionScopedDocument, {
+        launchSource: hosted.launchSource,
+        currentUserId,
+        launchRealmHostname: hosted.realmHostname,
+        launchAppId: hosted.appId
+      })),
+      { currentUserId }
+    ),
+    [currentUserId, hosted.appId, hosted.launchSource, hosted.realmHostname, objects, sessionScopedDocument]
   );
   const [studioSettingsSignal, setStudioSettingsSignal] = useState(0);
   const [studioRefreshSignal, setStudioRefreshSignal] = useState(0);
@@ -499,12 +562,14 @@ export function App() {
       relaunch: true,
       launchSource: hosted.launchSource,
       currentUserId: hosted.userId || studioDocument.session.currentUserId,
+      launchRealmHostname: hosted.realmHostname,
+      launchAppId: hosted.appId,
       requiresLaunch: true
     });
     if (sessionsMatch(studioDocument.session, nextSession)) return;
     setStudioDocument((current) => current ? normalizeStudioDocument({ ...current, session: nextSession }) : current);
     void persistSession(nextSession).catch(() => undefined);
-  }, [hosted.launchSource, hosted.userId, persistSession, setStudioDocument, studioDocument]);
+  }, [hosted.appId, hosted.launchSource, hosted.realmHostname, hosted.userId, persistSession, setStudioDocument, studioDocument]);
 
   useEffect(() => {
     if (!studioDocument || !sessionStatus?.valid) return;
@@ -512,7 +577,7 @@ export function App() {
       const now = Date.now();
       if (now - lastSessionTouchAt.current < 60_000) return;
       lastSessionTouchAt.current = now;
-      const nextSession = touchStudioSession(studioDocument.session, { now });
+      const nextSession = touchStudioSession(sessionPreview || studioDocument.session, { now });
       setStudioDocument((current) => current ? normalizeStudioDocument({ ...current, session: nextSession }) : current);
       void persistSession(nextSession).catch(() => undefined);
     };
@@ -527,7 +592,7 @@ export function App() {
       window.removeEventListener("keydown", touch);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [persistSession, sessionStatus?.valid, setStudioDocument, studioDocument]);
+  }, [persistSession, sessionPreview, sessionStatus?.valid, setStudioDocument, studioDocument]);
 
   useEffect(() => {
     if (readerRoute) return;
@@ -555,7 +620,7 @@ export function App() {
       <div className="app-shell">
         <main className="content">
           <div className="empty-page">
-            <h1>Session expired</h1>
+            <h1>{sessionStatus.expired ? "Session expired" : "Launch required"}</h1>
             <p>{sessionStatus.message}</p>
             <p>Last activity: {formatTimestamp(studioDocument.session.lastActivityAt)}</p>
             <p>Expired: {formatTimestamp(sessionStatus.expiresAt)}</p>
@@ -653,12 +718,12 @@ export function App() {
             </section>
           ) : null}
           <Routes>
-            <Route path="/" element={<HomePage objects={objects} studioDocument={studioDocument} recentIds={recentIds} refreshAllSignal={homeRefreshSignal} openLinksInNewTab={openLinksInNewTab} onRefreshComplete={reloadCatalog} onToggleFavorite={toggleFavorite} />} />
-            <Route path="/viewer" element={<ViewerPage objects={objects} studioDocument={studioDocument} recentIds={recentIds} refreshAllSignal={viewerRefreshSignal} openLinksInNewTab={openLinksInNewTab} onRefreshComplete={reloadCatalog} onToggleFavorite={toggleFavorite} />} />
+            <Route path="/" element={<HomePage objects={visibleObjects} studioDocument={displayDocument} recentIds={recentIds} refreshAllSignal={homeRefreshSignal} openLinksInNewTab={openLinksInNewTab} onRefreshComplete={reloadCatalog} onToggleFavorite={toggleFavorite} />} />
+            <Route path="/viewer" element={<ViewerPage objects={visibleObjects} studioDocument={displayDocument} recentIds={recentIds} refreshAllSignal={viewerRefreshSignal} openLinksInNewTab={openLinksInNewTab} onRefreshComplete={reloadCatalog} onToggleFavorite={toggleFavorite} />} />
             <Route path="/help" element={<HelpPage />} />
-            <Route path="/studio" element={<StudioPage openSettingsSignal={studioSettingsSignal} refreshAllSignal={studioRefreshSignal} />} />
-            <Route path="/studio/:objectId" element={<StudioPage openSettingsSignal={studioSettingsSignal} refreshAllSignal={studioRefreshSignal} />} />
-            <Route path="/:type/:objectId" element={<ObjectPage tables={tables} platformName={platformName} studioDocument={studioDocument} openLinksInNewTab={openLinksInNewTab} onObjectViewed={markObjectAsRecent} onUserSettingsChange={updateUserSettings} onToggleFavorite={toggleFavorite} />} />
+            <Route path="/studio" element={<StudioPage openSettingsSignal={studioSettingsSignal} refreshAllSignal={studioRefreshSignal} launchContext={hosted} />} />
+            <Route path="/studio/:objectId" element={<StudioPage openSettingsSignal={studioSettingsSignal} refreshAllSignal={studioRefreshSignal} launchContext={hosted} />} />
+            <Route path="/:type/:objectId" element={<ObjectPage tables={scopedTables} platformName={platformName} studioDocument={displayDocument} launchContext={hosted} openLinksInNewTab={openLinksInNewTab} onObjectViewed={markObjectAsRecent} onUserSettingsChange={updateUserSettings} onToggleFavorite={toggleFavorite} />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

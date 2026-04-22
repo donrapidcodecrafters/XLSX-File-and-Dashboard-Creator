@@ -491,6 +491,8 @@ export interface StudioDocument {
   session: {
     currentUserId: string;
     launchSource: "quickbase-button" | "local-dev";
+    launchRealmHostname: string;
+    launchAppId: string;
     inactivityTimeoutHours: number;
     requiresLaunch: boolean;
     launchedAt: string;
