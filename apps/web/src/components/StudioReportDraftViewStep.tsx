@@ -1,5 +1,5 @@
 import { type Dispatch, type SetStateAction } from "react";
-import { type ChartAggregation, type ChartSortMode, type ChartType, type ChartSeriesType, type ReportViewMode, type StudioBuilderDraft, type TableDefinition } from "@studio/shared";
+import { type ChartAggregation, type ChartSortMode, type ChartType, type ChartSeriesType, type ReportViewMode, type StudioBuilderDraft, type SummaryMetric, type TableDefinition } from "@studio/shared";
 import {
   CHART_AGGREGATION_OPTIONS,
   CHART_SERIES_TYPE_OPTIONS,
@@ -17,6 +17,10 @@ import {
   reportShowsSummary
 } from "./studioReportUtils";
 import { SearchableSelect } from "./SearchableSelect";
+
+function createMetricId() {
+  return `metric-${Math.random().toString(36).slice(2, 10)}`;
+}
 
 export function StudioReportDraftViewStep({
   createDraft,
@@ -91,6 +95,87 @@ export function StudioReportDraftViewStep({
           </div>
         </section>
 
+        <section className="builder-subsection">
+          <div className="builder-subsection-head">
+            <strong>Summary Metrics</strong>
+            <span className="micro">Choose the summary values to show above the report. Use `Count rows` when you want row count instead of a field calculation.</span>
+          </div>
+          <div className="stack-compact">
+            {createDraft.summaryMetrics.length ? createDraft.summaryMetrics.map((metric) => (
+              <div className="inline-edit-row" key={metric.id}>
+                <SearchableSelect
+                  value={metric.fieldId}
+                  options={fieldOptions}
+                  allowEmpty
+                  emptyOptionLabel="Count rows"
+                  onChange={(value) => setCreateDraft((current) => ({
+                    ...current,
+                    summaryMetrics: current.summaryMetrics.map((item) => item.id === metric.id ? {
+                      ...item,
+                      fieldId: value,
+                      op: value ? item.op : "count",
+                      label: value ? item.label : (item.label || "Row count")
+                    } : item)
+                  }))}
+                />
+                <select
+                  value={metric.op}
+                  onChange={(event) => setCreateDraft((current) => ({
+                    ...current,
+                    summaryMetrics: current.summaryMetrics.map((item) => item.id === metric.id ? {
+                      ...item,
+                      op: event.target.value as SummaryMetric["op"],
+                      fieldId: event.target.value === "count" ? "" : item.fieldId
+                    } : item)
+                  }))}
+                >
+                  <option value="count">Count rows</option>
+                  <option value="sum">Sum</option>
+                  <option value="avg">Average</option>
+                  <option value="min">Minimum</option>
+                  <option value="max">Maximum</option>
+                </select>
+                <input
+                  value={metric.label}
+                  onChange={(event) => setCreateDraft((current) => ({
+                    ...current,
+                    summaryMetrics: current.summaryMetrics.map((item) => item.id === metric.id ? { ...item, label: event.target.value } : item)
+                  }))}
+                  placeholder={metric.op === "count" ? "Row count" : "Metric label"}
+                />
+                <button
+                  type="button"
+                  onClick={() => setCreateDraft((current) => ({
+                    ...current,
+                    summaryMetrics: current.summaryMetrics.filter((item) => item.id !== metric.id)
+                  }))}
+                >
+                  Remove
+                </button>
+              </div>
+            )) : <div className="empty-hint">No summary metrics yet. Add one to show values like row count, sum, average, minimum, or maximum.</div>}
+            <div className="studio-actions">
+              <button
+                type="button"
+                onClick={() => setCreateDraft((current) => ({
+                  ...current,
+                  summaryMetrics: [
+                    ...current.summaryMetrics,
+                    {
+                      id: createMetricId(),
+                      fieldId: "",
+                      op: "count",
+                      label: "Row count"
+                    }
+                  ]
+                }))}
+              >
+                Add summary metric
+              </button>
+            </div>
+          </div>
+        </section>
+
         {reportShowsChart({ view: createDraft.view }) ? (
           <section className="builder-subsection">
             <div className="builder-subsection-head">
@@ -125,7 +210,7 @@ export function StudioReportDraftViewStep({
                   <SearchableSelect value={createDraft.view.chartSeriesFieldId} options={fieldOptions} allowEmpty emptyOptionLabel="Single series" onChange={(value) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartSeriesFieldId: value } }))} />
                 </label>
               ) : null}
-              <label className="field"><span>{chartValueFieldLabel(createDraft.view.chartType)}</span><SearchableSelect value={createDraft.view.chartValueFieldId} options={fieldOptions} allowEmpty emptyOptionLabel="Count rows" onChange={(value) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartValueFieldId: value } }))} /></label>
+              <label className="field"><span>{chartValueFieldLabel(createDraft.view.chartType)}</span><SearchableSelect value={createDraft.view.chartValueFieldId} options={fieldOptions} allowEmpty emptyOptionLabel="Count rows" onChange={(value) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartValueFieldId: value, chartAggregation: value ? current.view.chartAggregation : "count" } }))} /></label>
               <label className="field"><span>Primary aggregation</span><select value={createDraft.view.chartAggregation} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartAggregation: event.target.value as ChartAggregation, chartValueFieldId: event.target.value === "count" ? "" : current.view.chartValueFieldId } }))}>{CHART_AGGREGATION_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
             </div>
             <details className="builder-details">
@@ -157,7 +242,7 @@ export function StudioReportDraftViewStep({
                       {createDraft.view.chartUseSecondaryAxis ? (
                         <>
                           <label className="field"><span>Secondary series type</span><select value={createDraft.view.chartSecondarySeriesType} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartSecondarySeriesType: event.target.value as ChartSeriesType } }))}>{CHART_SERIES_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-                          <label className="field"><span>Secondary Y axis field</span><SearchableSelect value={createDraft.view.chartSecondaryValueFieldId} options={fieldOptions} allowEmpty emptyOptionLabel="Count rows" onChange={(value) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartSecondaryValueFieldId: value } }))} /></label>
+                          <label className="field"><span>Secondary Y axis field</span><SearchableSelect value={createDraft.view.chartSecondaryValueFieldId} options={fieldOptions} allowEmpty emptyOptionLabel="Count rows" onChange={(value) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartSecondaryValueFieldId: value, chartSecondaryAggregation: value ? current.view.chartSecondaryAggregation : "count" } }))} /></label>
                           <label className="field"><span>Secondary aggregation</span><select value={createDraft.view.chartSecondaryAggregation} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartSecondaryAggregation: event.target.value as ChartAggregation, chartSecondaryValueFieldId: event.target.value === "count" ? "" : current.view.chartSecondaryValueFieldId } }))}>{CHART_AGGREGATION_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
                           <label className="field"><span>Secondary Y axis label</span><input value={createDraft.view.chartSecondaryYAxisLabel} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartSecondaryYAxisLabel: event.target.value } }))} placeholder="Optional secondary axis label" /></label>
                         </>

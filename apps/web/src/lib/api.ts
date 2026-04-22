@@ -9,6 +9,7 @@ import type {
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "http://localhost:3001").replace(/\/$/, "");
 const REQUEST_TIMEOUT_MS = 20_000;
+const DASHBOARD_RENDER_TIMEOUT_MS = 120_000;
 
 function parseDownloadFilename(contentDisposition: string | null, fallback: string) {
   if (!contentDisposition) return fallback;
@@ -88,9 +89,9 @@ function submitDownload(path: string, payload: unknown) {
   form.remove();
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: RequestInit & { timeoutMs?: number }): Promise<T> {
   const controller = new AbortController();
-  const timeoutHandle = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeoutHandle = window.setTimeout(() => controller.abort(), init?.timeoutMs ?? REQUEST_TIMEOUT_MS);
   const response = await fetch(API_BASE + path, {
     headers: {
       "Content-Type": "application/json",
@@ -187,7 +188,8 @@ export async function fetchAllReportRows(
 export function renderDashboard(id: string, runtimeFilters: Record<string, string>, activeTabId = "", options: { forceLive?: boolean } = {}) {
   return request<DashboardRunResult>("/api/dashboards/" + encodeURIComponent(id) + "/render", {
     method: "POST",
-    body: JSON.stringify({ runtimeFilters, activeTabId, forceLive: options.forceLive === true })
+    body: JSON.stringify({ runtimeFilters, activeTabId, forceLive: options.forceLive === true }),
+    timeoutMs: DASHBOARD_RENDER_TIMEOUT_MS
   });
 }
 

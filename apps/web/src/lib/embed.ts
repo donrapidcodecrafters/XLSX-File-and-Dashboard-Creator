@@ -58,7 +58,7 @@ export function buildHostedRoute(pathname: string) {
   };
 }
 
-export function buildObjectUrl(type: "report" | "dashboard", id: string, options?: { embed?: boolean; viewer?: boolean }) {
+export function buildHostedHashUrl(pathname: string, options?: { embed?: boolean; viewer?: boolean }) {
   const url = new URL(window.location.href);
   const params = new URLSearchParams(normalizeHostedSearch(url.search));
   if (options?.embed) params.set("embed", "1");
@@ -66,6 +66,10 @@ export function buildObjectUrl(type: "report" | "dashboard", id: string, options
   if (options?.viewer) params.set("mode", "viewer");
   else params.delete("mode");
   url.search = params.toString() ? "?" + params.toString() : "";
-  url.hash = "#/" + type + "/" + id;
+  url.hash = "#" + (pathname.startsWith("/") ? pathname : `/${pathname}`);
   return url.toString();
+}
+
+export function buildObjectUrl(type: "report" | "dashboard", id: string, options?: { embed?: boolean; viewer?: boolean }) {
+  return buildHostedHashUrl(`/${type}/${id}`, options);
 }

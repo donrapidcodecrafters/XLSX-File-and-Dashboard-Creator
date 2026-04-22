@@ -92,7 +92,7 @@ import {
 } from "../lib/studioApi";
 import { downloadExportJob, fetchExportJobStatus, fetchExportJobs, startDashboardExportJob, startReportExportJob } from "../lib/api";
 import { applyLaunchScopeToDocument } from "../lib/catalog";
-import { buildHostedRoute } from "../lib/embed";
+import { buildHostedHashUrl, buildHostedRoute } from "../lib/embed";
 import { ChartPreview } from "./ChartPreview";
 import { RefreshOverlay } from "./RefreshOverlay";
 import { StudioDraftReviewStep } from "./StudioDraftReviewStep";
@@ -225,6 +225,17 @@ function uid(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function getImportDraftTypeLabel(draft: StudioBuilderDraft) {
+  if (draft.type !== "report") return "Dashboard";
+  if (draft.view.mode === "chart") {
+    return `Chart · ${draft.view.chartType}`;
+  }
+  if (draft.view.mode === "table" && draft.view.showChartInTable) {
+    return "Table + chart";
+  }
+  return draft.view.mode.charAt(0).toUpperCase() + draft.view.mode.slice(1);
+}
+
 function buildQuickbaseProfileId(appId: string) {
   const safe = String(appId || "")
     .toLowerCase()
@@ -280,6 +291,16 @@ function buildEmptyLocalDocument() {
   });
 }
 
+function stripLocalDocumentData(document: StudioDocument) {
+  return normalizeStudioDocument({
+    ...document,
+    bundle: {
+      ...document.bundle,
+      data: {}
+    }
+  });
+}
+
 function loadLocalDocument() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -290,7 +311,11 @@ function loadLocalDocument() {
 }
 
 function saveLocalDocument(document: StudioDocument) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(document));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(stripLocalDocumentData(document)));
+  } catch {
+    // Ignore browser storage quota failures so large workspaces do not crash the app.
+  }
 }
 
 function isFilterGroupNode(node: FilterNodeDefinition): node is FilterGroupDefinition {
@@ -1279,6 +1304,15 @@ export function StudioPage({
     () => getStudioBuilderStepIssues(activeCreateStep, createDraft, createDraftTable, currentUserId),
     [activeCreateStep, createDraft, createDraftTable, currentUserId]
   );
+  const importBuilderIdentity = importEditingReportId ? (
+    <div className="import-builder-identity">
+      <div>
+        <div className="eyebrow">Imported Report</div>
+        <strong>{createDraft.name.trim() || "Untitled report"}</strong>
+      </div>
+      <span className="badge brand">{getImportDraftTypeLabel(createDraft)}</span>
+    </div>
+  ) : null;
   const validation = activeObject ? validationMessages(activeObject, activeTable) : [];
   const createDraftPreviewReport = useMemo<ReportDefinition | null>(() => {
     if (createDraft.type !== "report" || !createDraftTable) return null;
@@ -3011,6 +3045,12 @@ export function StudioPage({
     await finalizeWorkbookImport(pendingWorkbookImport);
   }
 
+  const pendingImportActionLabel = pendingWorkbookImport
+    ? pendingImportedReviewReports.length
+      ? ((pendingWorkbookImport.review.dashboardCreated ? "Save imported dashboard" : "Save imported reports"))
+      : (pendingWorkbookImport.review.dashboardCreated ? "Save imported dashboard" : "Save imported reports")
+    : "";
+
   function renderStudioOverlays() {
     return (
       <>
@@ -3059,6 +3099,19 @@ export function StudioPage({
                   <div className="micro">
                     Imported workbooks no longer create placeholder tables. Every imported report and dashboard card will be tied to this existing platform table.
                   </div>
+                </div>
+              ) : null}
+
+              {pendingWorkbookImport ? (
+                <div className="studio-actions import-review-actions-top">
+                  <button type="button" className="ghost-button" onClick={closeImportReviewModal}>Cancel</button>
+                  <button
+                    type="button"
+                    onClick={() => void applyPendingWorkbookImport()}
+                    disabled={!pendingWorkbookImport.sourceTableId || pendingImportedReviewReports.length > 0}
+                  >
+                    {pendingImportActionLabel}
+                  </button>
                 </div>
               ) : null}
 
@@ -3139,7 +3192,7 @@ export function StudioPage({
                     onClick={() => void applyPendingWorkbookImport()}
                     disabled={!pendingWorkbookImport.sourceTableId || pendingImportedReviewReports.length > 0}
                   >
-                    Create imported reports and dashboard
+                    {pendingImportActionLabel}
                   </button>
                 </div>
               ) : null}
@@ -3156,6 +3209,7 @@ export function StudioPage({
                 </div>
                 <button onClick={closeCreateModal}>Close</button>
               </div>
+              {importBuilderIdentity}
 
               <div className="stack">
                 <div className="builder-stepper">
@@ -3549,9 +3603,9 @@ export function StudioPage({
     );
   }
 
-  const defaultUrl = `${window.location.origin}${import.meta.env.BASE_URL}#/${activeObject.type}/${activeObject.id}`;
-  const viewerUrl = `${window.location.origin}${import.meta.env.BASE_URL}?mode=viewer#/${activeObject.type}/${activeObject.id}`;
-  const embedUrl = `${window.location.origin}${import.meta.env.BASE_URL}?embed=1&mode=viewer#/${activeObject.type}/${activeObject.id}`;
+  const defaultUrl = buildHostedHashUrl(`/${activeObject.type}/${activeObject.id}`);
+  const viewerUrl = buildHostedHashUrl(`/${activeObject.type}/${activeObject.id}`, { viewer: true });
+  const embedUrl = buildHostedHashUrl(`/${activeObject.type}/${activeObject.id}`, { embed: true, viewer: true });
 
   return (
     <>
@@ -3750,7 +3804,7 @@ export function StudioPage({
               }}
               onOpenReport={(reportId) => {
                 if (openLinksInNewTab) {
-                  window.open(`${window.location.origin}${import.meta.env.BASE_URL}#/studio/${reportId}`, "_blank", "noopener,noreferrer");
+                  window.open(buildHostedHashUrl(`/studio/${reportId}`), "_blank", "noopener,noreferrer");
                   return;
                 }
                 navigate(buildHostedRoute(`/studio/${reportId}`));
@@ -4157,6 +4211,7 @@ export function StudioPage({
               </div>
               <button onClick={closeCreateModal}>Close</button>
             </div>
+            {importBuilderIdentity}
 
             <div className="stack">
               <div className="builder-stepper">
