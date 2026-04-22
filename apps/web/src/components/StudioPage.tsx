@@ -593,8 +593,24 @@ function removeDeletedReportsFromDashboards(document: StudioDocument, reportIds:
       ...tab,
       widgets: tab.widgets.filter((widget) => widget.mode === "copied" || !reportIdSet.has(widget.reportId))
     }));
+    object.runtimeFilters = object.runtimeFilters.map((filter) => ({
+      ...filter,
+      targetReportIds: filter.targetReportIds.filter((reportId) => !reportIdSet.has(reportId))
+    }));
   });
   return document;
+}
+
+function stripRemovedObjectIds(document: StudioDocument, objectIds: string[]) {
+  if (!objectIds.length) return document;
+  const removedIds = new Set(objectIds);
+  objectIds.forEach((objectId) => {
+    delete document.bundle.objects[objectId];
+  });
+  document.bundle.order = document.bundle.order.filter((item) => !removedIds.has(item));
+  document.favorites = document.favorites.filter((item) => !removedIds.has(item));
+  document.recent = document.recent.filter((item) => !removedIds.has(item));
+  return removeDeletedReportsFromDashboards(document, objectIds);
 }
 
 function rebuildPendingWorkbookImportObjects(
@@ -2200,7 +2216,7 @@ export function StudioPage({
     navigate(buildHostedRoute(`/studio/${nextDocument.bundle.order[0] || ""}`));
     pushToast("Object removed.", "warn");
     try {
-      await persistRemote(nextDocument);
+      await persistRemote(nextDocument, { removedObjectIds: [objectId] });
     } catch (error) {
       pushToast(error instanceof Error ? error.message : "Delete save failed after local removal.", "danger");
     }
@@ -2247,7 +2263,7 @@ export function StudioPage({
     }
     pushToast(`Deleted ${reportIds.length} report${reportIds.length === 1 ? "" : "s"}. Use Undo if needed.`, "warn");
     try {
-      await persistRemote(nextDocument);
+      await persistRemote(nextDocument, { removedObjectIds: reportIds });
     } catch (error) {
       pushToast(error instanceof Error ? error.message : "Bulk delete save failed after local removal.", "danger");
     }
@@ -2279,11 +2295,15 @@ export function StudioPage({
     pushToast("Reapplied change.");
   }
 
-  async function persistRemote(nextDocument: StudioDocument) {
+  async function persistRemote(nextDocument: StudioDocument, options?: { removedObjectIds?: string[] }) {
     setSavingRemote(true);
     try {
       const response = await saveStudioDocument(nextDocument);
-      setDocumentState(scopeDocument(normalizeStudioDocument(response.document)));
+      const persistedDocument = normalizeStudioDocument(response.document);
+      if (options?.removedObjectIds?.length) {
+        stripRemovedObjectIds(persistedDocument, options.removedObjectIds);
+      }
+      setDocumentState(scopeDocument(persistedDocument));
       setLastQuickbaseSync(response.sync || null);
       if (response.sync?.enabled) {
         if (response.sync.ok) {

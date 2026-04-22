@@ -173,7 +173,10 @@ export async function registerRenderRoutes(app: FastifyInstance) {
       forceLive: body.forceLive === true
     });
     if (pendingRefresh?.refreshJob) {
-      result.refreshJob = pendingRefresh.refreshJob;
+      return {
+        ...result,
+        refreshJob: pendingRefresh.refreshJob
+      };
     }
     return result;
   });
@@ -203,7 +206,10 @@ export async function registerRenderRoutes(app: FastifyInstance) {
       forceLive: body.forceLive === true
     });
     if (pendingRefresh?.refreshJob) {
-      result.refreshJob = pendingRefresh.refreshJob;
+      return {
+        ...result,
+        refreshJob: pendingRefresh.refreshJob
+      };
     }
     return result;
   });

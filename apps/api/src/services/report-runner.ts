@@ -54,7 +54,10 @@ interface ExportProgressCallback {
 }
 
 const DATE_TOKENS = new Set(["CURRENT_MONTH", "LAST_30_DAYS", "CURRENT_YEAR"]);
-const cache = new ExecutionCache<ReportRunResult>(20_000);
+const EXECUTION_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const reportCache = new ExecutionCache<ReportRunResult>(EXECUTION_CACHE_TTL_MS, 500);
+const reportPageCache = new ExecutionCache<ReportRunResult>(EXECUTION_CACHE_TTL_MS, 1_500);
+const dashboardCache = new ExecutionCache<DashboardRunResult>(EXECUTION_CACHE_TTL_MS, 200);
 
 function freshness(source: DataFreshnessInfo["source"]): DataFreshnessInfo {
   return {
@@ -209,6 +212,17 @@ function cacheKey(report: ReportDefinition, table: TableDefinition, extraFilters
     filters: extraFilters
       .filter((filter) => Boolean(filter.value))
       .map((filter) => [filter.fieldId, filter.operator, filter.value])
+  });
+}
+
+function pageCacheKey(report: ReportDefinition, table: TableDefinition, extraFilters: FilterDefinition[], options: ExecuteReportOptions): string {
+  const normalized = normalizePageOptions(options);
+  return JSON.stringify({
+    key: cacheKey(report, table, extraFilters),
+    page: normalized.page,
+    pageSize: normalized.pageSize,
+    includeRows: normalized.includeRows,
+    mode: "page-only"
   });
 }
 
@@ -842,7 +856,7 @@ export async function executeReportPage(report: ReportDefinition, extraFilters: 
     });
   }
 
-  const full = await cache.getOrCreate(cacheKey(report, table, extraFilters), async () => {
+  const full = await reportCache.getOrCreate(cacheKey(report, table, extraFilters), async () => {
     const rows = await getExecutionRows(table, { objectId: report.id });
     const result = rows.length <= 1500
       ? runReport(report, table, rows, extraFilters)
@@ -866,11 +880,13 @@ export async function fetchReportPage(report: ReportDefinition, extraFilters: Fi
   }
 
   if (!reportNeedsAggregates(report)) {
-    const rows = await getExecutionRows(table, { objectId: report.id });
-    return executeLocalReportPageOnly(report, table, rows, extraFilters, options);
+    return reportPageCache.getOrCreate(pageCacheKey(report, table, extraFilters, options), async () => {
+      const rows = await getExecutionRows(table, { objectId: report.id });
+      return executeLocalReportPageOnly(report, table, rows, extraFilters, options);
+    });
   }
 
-  const full = await cache.getOrCreate(cacheKey(report, table, extraFilters), async () => {
+  const full = await reportCache.getOrCreate(cacheKey(report, table, extraFilters), async () => {
     const rows = await getExecutionRows(table, { objectId: report.id });
     const result = rows.length <= 1500
       ? runReport(report, table, rows, extraFilters)
@@ -948,7 +964,7 @@ export async function fetchReportExportBundle(
   }
 
   onProgress?.(68, "Preparing export data");
-  return cache.getOrCreate(cacheKey(report, table, extraFilters), async () => {
+  return reportCache.getOrCreate(cacheKey(report, table, extraFilters), async () => {
     const rows = await getExecutionRows(table, { objectId: report.id });
     const result = rows.length <= 1500
       ? runReport(report, table, rows, extraFilters)
@@ -978,7 +994,7 @@ export async function executeReport(report: ReportDefinition, extraFilters: Filt
   }
 
   const key = cacheKey(report, table, extraFilters);
-  const full = await cache.getOrCreate(key, async () => {
+  const full = await reportCache.getOrCreate(key, async () => {
     const rows = await getExecutionRows(table, { objectId: report.id });
     const result = rows.length <= 1500
       ? runReport(report, table, rows, extraFilters)
@@ -1021,19 +1037,45 @@ function buildDashboardExecutionKey(report: ReportDefinition, widget: DashboardR
   });
 }
 
-export async function executeDashboard(
-  dashboardId: string,
+function buildDashboardCacheKey(
+  dashboard: DashboardDefinition,
+  tabsToRender: DashboardDefinition["tabs"],
+  runtimeValues: Record<string, string>
+) {
+  return JSON.stringify({
+    dashboardId: dashboard.id,
+    updatedAt: dashboard.updatedAt,
+    runtimeFilters: Object.entries(runtimeValues || {})
+      .filter(([, value]) => Boolean(value))
+      .sort(([left], [right]) => left.localeCompare(right)),
+    widgets: tabsToRender.flatMap((tab) =>
+      tab.widgets.map((widget) => {
+        const report = objectStore.resolveWidgetReport(widget);
+        if (!report) {
+          return {
+            tabId: tab.id,
+            widgetId: widget.id,
+            missingReport: true
+          };
+        }
+        const table = objectStore.getTable(report.sourceTableId);
+        return {
+          tabId: tab.id,
+          widgetId: widget.id,
+          widgetExecution: buildDashboardExecutionKey(report, widget, buildDashboardFilters(dashboard, report.id, runtimeValues)),
+          tableVersion: table ? getTableCacheVersion(table) : ""
+        };
+      })
+    )
+  });
+}
+
+async function executeDashboardUncached(
+  dashboard: DashboardDefinition,
+  tabsToRender: DashboardDefinition["tabs"],
   runtimeValues: Record<string, string>,
   options: ExecuteDashboardOptions = {}
-): Promise<DashboardRunResult> {
-  const dashboard = objectStore.getDashboard(dashboardId);
-  if (!dashboard) {
-    throw new Error("Dashboard not found.");
-  }
-
-  const tabsToRender = options.activeTabId
-    ? dashboard.tabs.filter((tab) => tab.id === options.activeTabId)
-    : dashboard.tabs;
+) {
   const executionCache = new Map<string, Promise<ReportRunResult>>();
   const widgetResults = await Promise.all(
     tabsToRender.flatMap((tab) =>
@@ -1103,4 +1145,26 @@ export async function executeDashboard(
     ...built,
     freshness: freshness(dashboardSource)
   };
+}
+
+export async function executeDashboard(
+  dashboardId: string,
+  runtimeValues: Record<string, string>,
+  options: ExecuteDashboardOptions = {}
+): Promise<DashboardRunResult> {
+  const dashboard = objectStore.getDashboard(dashboardId);
+  if (!dashboard) {
+    throw new Error("Dashboard not found.");
+  }
+
+  const tabsToRender = options.activeTabId
+    ? dashboard.tabs.filter((tab) => tab.id === options.activeTabId)
+    : dashboard.tabs;
+  if (options.forceLive) {
+    return executeDashboardUncached(dashboard, tabsToRender, runtimeValues, options);
+  }
+  return dashboardCache.getOrCreate(
+    buildDashboardCacheKey(dashboard, tabsToRender, runtimeValues),
+    () => executeDashboardUncached(dashboard, tabsToRender, runtimeValues, options)
+  );
 }

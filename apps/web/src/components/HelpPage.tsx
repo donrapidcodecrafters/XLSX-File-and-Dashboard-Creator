@@ -211,6 +211,7 @@ export function HelpPage() {
           <ol className="flat-list">
             <li>If content looks stale, use `Refresh now` on the current object or `Refresh all` from settings when you are responsible for the app cache.</li>
             <li>If a report, chart, or dashboard needs to load or refresh source rows before it can open, the platform shows a full-screen loading overlay with progress and opens the object automatically when the refresh completes.</li>
+            <li>Rendered report, chart, and dashboard results are reused from cache until the source cache refreshes or the object configuration changes, so normal navigation should reopen them much faster than the first run.</li>
             <li>If the Quickbase launch is slow, the app now keeps loading with partial platform data instead of hanging on a blank page waiting for every endpoint to finish.</li>
             <li>If a field is missing, reload the app metadata or refresh the source report cache so new Quickbase fields become available.</li>
             <li>If a dashboard widget fails, open the source report from Studio or the reader to isolate the problem.</li>

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 export interface SearchableSelectOption {
   value: string;
@@ -30,6 +31,7 @@ export function SearchableSelect({
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [menuRect, setMenuRect] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null);
 
   const selectedOption = useMemo(
     () => options.find((option) => option.value === value) || null,
@@ -64,6 +66,77 @@ export function SearchableSelect({
     });
   }, [options, query]);
 
+  useLayoutEffect(() => {
+    if (!open) {
+      setMenuRect(null);
+      return;
+    }
+    function updateMenuRect() {
+      const rect = rootRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const viewportHeight = window.innerHeight || 0;
+      const top = rect.bottom + 6;
+      const availableHeight = Math.max(160, viewportHeight - top - 16);
+      setMenuRect({
+        top,
+        left: rect.left,
+        width: rect.width,
+        maxHeight: Math.min(320, availableHeight)
+      });
+    }
+    updateMenuRect();
+    window.addEventListener("resize", updateMenuRect);
+    window.addEventListener("scroll", updateMenuRect, true);
+    return () => {
+      window.removeEventListener("resize", updateMenuRect);
+      window.removeEventListener("scroll", updateMenuRect, true);
+    };
+  }, [open]);
+
+  const menu = open && menuRect ? createPortal(
+    <div
+      className="searchable-select-menu"
+      style={{
+        position: "fixed",
+        top: `${menuRect.top}px`,
+        left: `${menuRect.left}px`,
+        width: `${menuRect.width}px`,
+        maxHeight: `${menuRect.maxHeight}px`
+      }}
+    >
+      {allowEmpty ? (
+        <button
+          type="button"
+          className={`searchable-select-option${value === "" ? " active" : ""}`}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => {
+            onChange("");
+            setOpen(false);
+            setQuery("");
+          }}
+        >
+          {emptyOptionLabel}
+        </button>
+      ) : null}
+      {filteredOptions.length ? filteredOptions.map((option) => (
+        <button
+          type="button"
+          key={option.value}
+          className={`searchable-select-option${option.value === value ? " active" : ""}`}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => {
+            onChange(option.value);
+            setOpen(false);
+            setQuery(option.label);
+          }}
+        >
+          {option.label}
+        </button>
+      )) : <div className="searchable-select-empty">{emptyLabel}</div>}
+    </div>,
+    document.body
+  ) : null;
+
   return (
     <div className={`searchable-select${open ? " is-open" : ""}`} ref={rootRef}>
       <input
@@ -83,39 +156,7 @@ export function SearchableSelect({
           }
         }}
       />
-      {open ? (
-        <div className="searchable-select-menu">
-          {allowEmpty ? (
-            <button
-              type="button"
-              className={`searchable-select-option${value === "" ? " active" : ""}`}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => {
-                onChange("");
-                setOpen(false);
-                setQuery("");
-              }}
-            >
-              {emptyOptionLabel}
-            </button>
-          ) : null}
-          {filteredOptions.length ? filteredOptions.map((option) => (
-            <button
-              type="button"
-              key={option.value}
-              className={`searchable-select-option${option.value === value ? " active" : ""}`}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => {
-                onChange(option.value);
-                setOpen(false);
-                setQuery(option.label);
-              }}
-            >
-              {option.label}
-            </button>
-          )) : <div className="searchable-select-empty">{emptyLabel}</div>}
-        </div>
-      ) : null}
+      {menu}
     </div>
   );
 }
