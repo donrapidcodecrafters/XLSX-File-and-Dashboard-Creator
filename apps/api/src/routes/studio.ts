@@ -265,6 +265,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string };
     let job = refreshJobStore.getJob(id);
     if (!job) {
+      await studioStore.hydrateFromQuickbase();
       job = synthesizeRefreshJob(id);
     }
     if (!job) {
