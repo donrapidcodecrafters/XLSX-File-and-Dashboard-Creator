@@ -394,7 +394,7 @@ function collectReportImportReferencedFieldIds(report: ReportDefinition) {
 
 function collectReportImportIssues(report: ReportDefinition, table: TableDefinition | null | undefined) {
   if (!table) {
-    return ["The imported source fields are unavailable because the source table is missing."];
+    return ["Choose the real platform source table before creating imported reports."];
   }
   const fieldIds = new Set(table.fields.map((field) => field.id));
   const issues: string[] = [];
@@ -402,7 +402,13 @@ function collectReportImportIssues(report: ReportDefinition, table: TableDefinit
   if (missingSelectedFields.length) {
     issues.push(`${missingSelectedFields.length} selected field${missingSelectedFields.length === 1 ? "" : "s"} could not be matched.`);
   }
+  if (!report.selectedFieldIds.length && reportShowsDetails(report)) {
+    issues.push("Choose at least one report field.");
+  }
   if (reportShowsChart(report)) {
+    if (!report.view.chartFieldId) {
+      issues.push("Choose a chart X axis field.");
+    }
     if (report.view.chartFieldId && !fieldIds.has(report.view.chartFieldId)) {
       issues.push("The chart X axis field could not be matched.");
     }
@@ -416,6 +422,9 @@ function collectReportImportIssues(report: ReportDefinition, table: TableDefinit
       issues.push("The chart secondary value field could not be matched.");
     }
   }
+  if (report.view.mode === "timeline" && !report.view.timelineDateField) {
+    issues.push("Choose the timeline start field.");
+  }
   if (report.view.mode === "timeline") {
     if (report.view.timelineDateField && !fieldIds.has(report.view.timelineDateField)) {
       issues.push("The timeline start field could not be matched.");
@@ -424,13 +433,178 @@ function collectReportImportIssues(report: ReportDefinition, table: TableDefinit
       issues.push("The timeline end field could not be matched.");
     }
   }
+  if (report.view.mode === "calendar" && !report.view.calendarDateField) {
+    issues.push("Choose the calendar date field.");
+  }
   if (report.view.mode === "calendar" && report.view.calendarDateField && !fieldIds.has(report.view.calendarDateField)) {
     issues.push("The calendar date field could not be matched.");
+  }
+  if (report.view.mode === "kanban" && !report.view.kanbanField) {
+    issues.push("Choose the kanban grouping field.");
   }
   if (report.view.mode === "kanban" && report.view.kanbanField && !fieldIds.has(report.view.kanbanField)) {
     issues.push("The kanban grouping field could not be matched.");
   }
   return issues;
+}
+
+interface PendingWorkbookImport {
+  review: StudioWorkbookImportResult["review"];
+  warnings: string[];
+  primaryObjectId: string;
+  importedObjectIds: string[];
+  sourceTableId: string;
+  baseObjects: Record<string, StudioObject>;
+  currentObjects: Record<string, StudioObject>;
+  importedTablesById: Record<string, TableDefinition>;
+}
+
+function normalizeImportMatchKey(value: string) {
+  return String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function findMatchingFieldIdByLabel(label: string, targetTable: TableDefinition) {
+  const normalizedLabel = normalizeImportMatchKey(label);
+  if (!normalizedLabel) return "";
+  const exact = targetTable.fields.find((field) => normalizeImportMatchKey(field.label) === normalizedLabel);
+  if (exact) return exact.id;
+  const partial = targetTable.fields.find((field) => {
+    const normalizedField = normalizeImportMatchKey(field.label);
+    return normalizedField.includes(normalizedLabel) || normalizedLabel.includes(normalizedField);
+  });
+  return partial?.id || "";
+}
+
+function remapFilterTreeForImport(
+  node: FilterNodeDefinition | undefined,
+  fieldIdMap: Map<string, string>
+): FilterNodeDefinition | null {
+  if (!node) return null;
+  if (isFilterGroupNode(node)) {
+    const conditions = node.conditions
+      .map((condition) => remapFilterTreeForImport(condition, fieldIdMap))
+      .filter((condition): condition is FilterNodeDefinition => Boolean(condition));
+    return conditions.length ? { ...node, conditions } : null;
+  }
+  const filterNode = node as FilterDefinition;
+  const mappedFieldId = fieldIdMap.get(filterNode.fieldId || "") || "";
+  return mappedFieldId ? { ...filterNode, fieldId: mappedFieldId } : null;
+}
+
+function remapImportedReportToSourceTable(
+  report: ReportDefinition,
+  importedTable: TableDefinition | null,
+  targetTable: TableDefinition
+): ReportDefinition {
+  if (!importedTable) {
+    return {
+      ...report,
+      sourceTableId: targetTable.id,
+      selectedFieldIds: [],
+      filters: [],
+      filterTree: undefined,
+      groups: [],
+      sorts: [],
+      summaryMetrics: [],
+      view: {
+        ...report.view,
+        chartFieldId: "",
+        chartSeriesFieldId: "",
+        chartValueFieldId: "",
+        chartSecondaryValueFieldId: "",
+        timelineDateField: "",
+        timelineEndField: "",
+        calendarDateField: "",
+        kanbanField: "",
+        titleFieldId: ""
+      },
+      displayLabels: { fields: {}, chartValues: {} }
+    };
+  }
+
+  const importedFieldById = new Map(importedTable.fields.map((field) => [field.id, field]));
+  const fieldIdMap = new Map<string, string>();
+  importedTable.fields.forEach((field) => {
+    const matchedId = findMatchingFieldIdByLabel(field.label, targetTable);
+    if (matchedId) {
+      fieldIdMap.set(field.id, matchedId);
+    }
+  });
+  const mapFieldId = (fieldId: string) => fieldIdMap.get(fieldId || "") || "";
+  const selectedFieldIds = Array.from(new Set(report.selectedFieldIds.map(mapFieldId).filter(Boolean)));
+  const filters = report.filters
+    .map((filter) => {
+      const mappedFieldId = mapFieldId(filter.fieldId);
+      return mappedFieldId ? { ...filter, fieldId: mappedFieldId } : null;
+    })
+    .filter((filter): filter is FilterDefinition => Boolean(filter));
+  const filterTreeNode = remapFilterTreeForImport(report.filterTree, fieldIdMap);
+  const filterTree: ReportDefinition["filterTree"] = filterTreeNode && isFilterGroupNode(filterTreeNode) ? filterTreeNode : undefined;
+  const groups = report.groups
+    .map((group) => {
+      const mappedFieldId = mapFieldId(group.fieldId);
+      return mappedFieldId ? { ...group, fieldId: mappedFieldId } : null;
+    })
+    .filter((group): group is typeof report.groups[number] => Boolean(group));
+  const sorts = report.sorts
+    .map((sort) => {
+      const mappedFieldId = mapFieldId(sort.fieldId);
+      return mappedFieldId ? { ...sort, fieldId: mappedFieldId } : null;
+    })
+    .filter((sort): sort is typeof report.sorts[number] => Boolean(sort));
+  const summaryMetrics = report.summaryMetrics
+    .map((metric) => {
+      const mappedFieldId = mapFieldId(metric.fieldId);
+      return metric.op === "count" || mappedFieldId ? { ...metric, fieldId: mappedFieldId || metric.fieldId } : null;
+    })
+    .filter((metric): metric is typeof report.summaryMetrics[number] => Boolean(metric));
+
+  return {
+    ...report,
+    sourceTableId: targetTable.id,
+    selectedFieldIds,
+    filters,
+    filterTree,
+    groups,
+    sorts,
+    summaryMetrics,
+    view: {
+      ...report.view,
+      chartFieldId: mapFieldId(report.view.chartFieldId),
+      chartSeriesFieldId: mapFieldId(report.view.chartSeriesFieldId),
+      chartValueFieldId: mapFieldId(report.view.chartValueFieldId),
+      chartSecondaryValueFieldId: mapFieldId(report.view.chartSecondaryValueFieldId),
+      timelineDateField: mapFieldId(report.view.timelineDateField),
+      timelineEndField: mapFieldId(report.view.timelineEndField),
+      calendarDateField: mapFieldId(report.view.calendarDateField),
+      kanbanField: mapFieldId(report.view.kanbanField),
+      titleFieldId: mapFieldId(report.view.titleFieldId)
+    },
+    displayLabels: { fields: {}, chartValues: {} }
+  };
+}
+
+function rebuildPendingWorkbookImportObjects(
+  baseObjects: Record<string, StudioObject>,
+  importedTablesById: Record<string, TableDefinition>,
+  targetTable: TableDefinition | null
+) {
+  const nextObjects: Record<string, StudioObject> = {};
+  Object.entries(baseObjects).forEach(([objectId, object]) => {
+    if (object.type === "report") {
+      nextObjects[objectId] = targetTable
+        ? remapImportedReportToSourceTable(object, importedTablesById[object.sourceTableId] || null, targetTable)
+        : remapImportedReportToSourceTable(object, importedTablesById[object.sourceTableId] || null, {
+          id: "",
+          name: "",
+          description: "",
+          fields: []
+        });
+      return;
+    }
+    nextObjects[objectId] = clone(object);
+  });
+  return nextObjects;
 }
 
 function convertQuickbaseSchemaToTables(schema: QuickbaseAppSchema, profile: QuickbaseAppProfile): TableDefinition[] {
@@ -922,6 +1096,7 @@ export function StudioPage({
   const [lastQuickbaseSync, setLastQuickbaseSync] = useState<QuickbaseSyncResult | null>(null);
   const [lastWorkbookImportReview, setLastWorkbookImportReview] = useState<StudioWorkbookImportResult["review"] | null>(null);
   const [lastWorkbookImportObjectIds, setLastWorkbookImportObjectIds] = useState<string[]>([]);
+  const [pendingWorkbookImport, setPendingWorkbookImport] = useState<PendingWorkbookImport | null>(null);
   const [importReviewModalOpen, setImportReviewModalOpen] = useState(false);
   const activeQuickbaseProfile = useMemo(() => getActiveQuickbaseProfile(documentState), [documentState]);
   const activeQuickbaseConfig = activeQuickbaseProfile?.quickbase || documentState.quickbase;
@@ -974,21 +1149,28 @@ export function StudioPage({
   const bundle = documentState.bundle;
   const currentUserId = String(documentState.session.currentUserId || "").trim();
   const objects = useMemo(() => bundle.order.map((id) => bundle.objects[id]).filter(Boolean), [bundle]);
+  const importReviewObjectIds = pendingWorkbookImport?.importedObjectIds || lastWorkbookImportObjectIds;
+  const importReviewObjects = pendingWorkbookImport?.currentObjects || bundle.objects;
+  const importReviewSourceTable = pendingWorkbookImport?.sourceTableId
+    ? bundle.tables.find((table) => table.id === pendingWorkbookImport.sourceTableId) || null
+    : null;
   const importedReviewReports = useMemo(
-    () => lastWorkbookImportObjectIds
-      .map((id) => bundle.objects[id])
+    () => importReviewObjectIds
+      .map((id) => importReviewObjects[id])
       .filter((object): object is ReportDefinition => Boolean(object) && object.type === "report")
       .map((report) => ({
         report,
-        table: bundle.tables.find((table) => table.id === report.sourceTableId) || null
+        table: pendingWorkbookImport
+          ? importReviewSourceTable
+          : bundle.tables.find((table) => table.id === report.sourceTableId) || null
       })),
-    [bundle.objects, bundle.tables, lastWorkbookImportObjectIds]
+    [bundle.tables, importReviewObjectIds, importReviewObjects, importReviewSourceTable, pendingWorkbookImport]
   );
   const importedReviewDashboardCount = useMemo(
-    () => lastWorkbookImportObjectIds
-      .map((id) => bundle.objects[id])
+    () => importReviewObjectIds
+      .map((id) => importReviewObjects[id])
       .filter((object) => object?.type === "dashboard").length,
-    [bundle.objects, lastWorkbookImportObjectIds]
+    [importReviewObjectIds, importReviewObjects]
   );
   const dashboardFieldOptions = useMemo(() => getSortedDashboardFieldOptions(bundle.tables), [bundle.tables]);
   const reportObjectOptions = useMemo(
@@ -2557,15 +2739,36 @@ export function StudioPage({
     setXlsxImporting(true);
     importStudioWorkbook(file)
       .then((response) => {
-        setDocumentState(scopeDocument(normalizeStudioDocument(response.document)));
-        setLastWorkbookImportReview(response.review);
-        setLastWorkbookImportObjectIds(response.importedObjectIds);
+        const sourceTableId = activeTable?.id || bundle.tables[0]?.id || "";
+        const baseObjects = Object.fromEntries(
+          response.importedObjectIds
+            .map((objectId) => response.document.bundle.objects[objectId])
+            .filter((object): object is StudioObject => Boolean(object))
+            .map((object) => [object.id, clone(object)])
+        );
+        const importedTablesById = Object.fromEntries(
+          response.importedTableIds
+            .map((tableId) => response.document.bundle.tables.find((table) => table.id === tableId))
+            .filter((table): table is TableDefinition => Boolean(table))
+            .map((table) => [table.id, clone(table)])
+        );
+        const targetTable = sourceTableId ? bundle.tables.find((table) => table.id === sourceTableId) || null : null;
+        setPendingWorkbookImport({
+          review: response.review,
+          warnings: response.warnings,
+          primaryObjectId: response.primaryObjectId,
+          importedObjectIds: response.importedObjectIds,
+          sourceTableId,
+          baseObjects,
+          currentObjects: rebuildPendingWorkbookImportObjects(baseObjects, importedTablesById, targetTable),
+          importedTablesById
+        });
         setImportReviewModalOpen(true);
-        if (response.primaryObjectId) {
-          navigate(buildHostedRoute(`/studio/${response.primaryObjectId}`));
-        }
         const importedType = response.review.dashboardCreated ? "dashboard workbook" : response.importedObjectIds.length > 1 ? "workbook" : "sheet";
-        pushToast(`Imported ${importedType} from ${file.name}.`);
+        pushToast(`Parsed ${importedType} from ${file.name}. Choose the real source table before creating anything.`);
+        if (!bundle.tables.length) {
+          pushToast("Load or configure a real platform table first. Imported workbooks no longer create placeholder tables.", "warn");
+        }
         if (response.warnings.length) {
           pushToast(`${response.warnings.length} import note${response.warnings.length === 1 ? "" : "s"} recorded. Review the import summary for details.`, "warn");
         }
@@ -2609,6 +2812,21 @@ export function StudioPage({
   }
 
   function updateImportedReviewReport(reportId: string, updater: (report: ReportDefinition) => ReportDefinition) {
+    if (pendingWorkbookImport) {
+      setPendingWorkbookImport((current) => {
+        if (!current) return current;
+        const report = current.currentObjects[reportId];
+        if (!report || report.type !== "report") return current;
+        return {
+          ...current,
+          currentObjects: {
+            ...current.currentObjects,
+            [reportId]: updater(clone(report))
+          }
+        };
+      });
+      return;
+    }
     const current = bundle.objects[reportId];
     if (!current || current.type !== "report") return;
     updateObject(updater(clone(current)));
@@ -2626,27 +2844,110 @@ export function StudioPage({
     });
   }
 
+  function closeImportReviewModal() {
+    setImportReviewModalOpen(false);
+    if (pendingWorkbookImport) {
+      setPendingWorkbookImport(null);
+    }
+  }
+
+  function updatePendingImportSourceTable(tableId: string) {
+    const targetTable = bundle.tables.find((table) => table.id === tableId) || null;
+    setPendingWorkbookImport((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        sourceTableId: tableId,
+        currentObjects: rebuildPendingWorkbookImportObjects(current.baseObjects, current.importedTablesById, targetTable)
+      };
+    });
+  }
+
+  async function applyPendingWorkbookImport() {
+    if (!pendingWorkbookImport) return;
+    const sourceTable = bundle.tables.find((table) => table.id === pendingWorkbookImport.sourceTableId) || null;
+    if (!sourceTable) {
+      pushToast("Choose the real source table before creating imported reports.", "warn");
+      return;
+    }
+    const issues = importedReviewReports.flatMap(({ report, table }) => collectReportImportIssues(report, table));
+    if (issues.length) {
+      pushToast("Resolve the remaining imported field issues before creating the workbook objects.", "warn");
+      return;
+    }
+    const nextDocument = clone(documentState);
+    pendingWorkbookImport.importedObjectIds.forEach((objectId) => {
+      const object = pendingWorkbookImport.currentObjects[objectId];
+      if (!object) return;
+      nextDocument.bundle.objects[objectId] = clone(object);
+    });
+    nextDocument.bundle.order = [
+      ...pendingWorkbookImport.importedObjectIds.filter((objectId) => Boolean(pendingWorkbookImport.currentObjects[objectId])),
+      ...nextDocument.bundle.order.filter((objectId) => !pendingWorkbookImport.importedObjectIds.includes(objectId))
+    ];
+
+    setHistory((previous) => [clone(documentState), ...previous].slice(0, 60));
+    setFuture([]);
+    setDocumentState(nextDocument);
+    setLastWorkbookImportReview(pendingWorkbookImport.review);
+    setLastWorkbookImportObjectIds(pendingWorkbookImport.importedObjectIds);
+    setPendingWorkbookImport(null);
+    setImportReviewModalOpen(false);
+    if (pendingWorkbookImport.primaryObjectId) {
+      navigate(buildHostedRoute(`/studio/${pendingWorkbookImport.primaryObjectId}`));
+    }
+    pushToast(`Created imported ${pendingWorkbookImport.review.dashboardCreated ? "dashboard and reports" : "reports"} using ${sourceTable.name}.`);
+    await persistRemote(nextDocument);
+  }
+
   function renderStudioOverlays() {
     return (
       <>
-        {importReviewModalOpen && lastWorkbookImportReview ? (
-          <div className="studio-modal-backdrop" onClick={() => setImportReviewModalOpen(false)}>
+        {importReviewModalOpen && (pendingWorkbookImport || lastWorkbookImportReview) ? (
+          <div className="studio-modal-backdrop" onClick={closeImportReviewModal}>
             <section className="studio-modal studio-import-review-modal" onClick={(event) => event.stopPropagation()}>
               <div className="card-head">
                 <div>
                   <strong>Imported workbook review</strong>
                   <div className="micro">
-                    {lastWorkbookImportReview.workbookName} · {importedReviewReports.length} report{importedReviewReports.length === 1 ? "" : "s"}
+                    {(pendingWorkbookImport?.review || lastWorkbookImportReview)?.workbookName} · {importedReviewReports.length} report{importedReviewReports.length === 1 ? "" : "s"}
                     {importedReviewDashboardCount ? ` · ${importedReviewDashboardCount} dashboard candidate${importedReviewDashboardCount === 1 ? "" : "s"}` : ""}
                   </div>
                 </div>
-                <button type="button" onClick={() => setImportReviewModalOpen(false)}>Close</button>
+                <button type="button" onClick={closeImportReviewModal}>{pendingWorkbookImport ? "Cancel import" : "Close"}</button>
               </div>
 
-              {lastWorkbookImportReview.dashboardCreated ? (
+              {pendingWorkbookImport ? (
+                <div className="sync-status sync-status-warn">
+                  <strong>Choose the real source table first</strong>
+                  <span>This workbook has only been parsed. Nothing has been created yet. Pick the existing platform table that should drive every imported report, then fix any fields that still need a match before you create the dashboard and reports.</span>
+                </div>
+              ) : null}
+
+              {(pendingWorkbookImport?.review || lastWorkbookImportReview)?.dashboardCreated ? (
                 <div className="sync-status sync-status-ok">
                   <strong>Dashboard candidate ready</strong>
-                  <span>The workbook was reconstructed into native reports and dashboard tabs. Review each imported report here and fix any fields that still need attention.</span>
+                  <span>{pendingWorkbookImport ? "The workbook structure was reconstructed into draft reports and dashboard tabs. Review each report and fix any fields that still need attention before creating it." : "The workbook was reconstructed into native reports and dashboard tabs. Review each imported report here and fix any fields that still need attention."}</span>
+                </div>
+              ) : null}
+
+              {pendingWorkbookImport ? (
+                <div className="card">
+                  <div className="filter-grid compact-grid">
+                    <label className="field">
+                      <span>Source table for this workbook</span>
+                      <SearchableSelect
+                        value={pendingWorkbookImport.sourceTableId}
+                        options={bundle.tables.map((table) => ({ value: table.id, label: table.name, keywords: [table.description] }))}
+                        allowEmpty
+                        emptyOptionLabel="Choose an existing platform table"
+                        onChange={updatePendingImportSourceTable}
+                      />
+                    </label>
+                  </div>
+                  <div className="micro">
+                    Imported workbooks no longer create placeholder tables. Every imported report and dashboard card will be tied to this existing platform table.
+                  </div>
                 </div>
               ) : null}
 
@@ -2759,6 +3060,18 @@ export function StudioPage({
                 })}
                 {!importedReviewReports.length ? <div className="empty-hint">No imported reports are available to review.</div> : null}
               </div>
+              {pendingWorkbookImport ? (
+                <div className="studio-actions">
+                  <button type="button" className="ghost-button" onClick={closeImportReviewModal}>Cancel</button>
+                  <button
+                    type="button"
+                    onClick={() => void applyPendingWorkbookImport()}
+                    disabled={!pendingWorkbookImport.sourceTableId || importedReviewReports.some(({ report, table }) => collectReportImportIssues(report, table).length > 0)}
+                  >
+                    Create imported reports and dashboard
+                  </button>
+                </div>
+              ) : null}
             </section>
           </div>
         ) : null}
