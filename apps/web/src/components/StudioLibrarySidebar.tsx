@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { type StudioObject, type StudioTemplateRecord } from "@studio/shared";
 import { typeLabel } from "../lib/catalog";
 import { buildHostedRoute } from "../lib/embed";
+import { ClearableInputField } from "./ClearableInputField";
 
 type LibraryFilter = "all" | "report" | "dashboard";
 type LibraryScopeFilter = "all" | "global" | "personal";
@@ -75,16 +76,14 @@ export function StudioLibrarySidebar({
             <button onClick={onOpenCreateDashboard}>New dashboard</button>
           </div>
         </div>
-        <label className="field">
-          <span>Search</span>
-          <input
-            id="studio-library-search"
-            name="studioLibrarySearch"
-            value={libraryQuery}
-            onChange={(event) => onLibraryQueryChange(event.target.value)}
-            placeholder="Search reports, dashboards, fields, tags"
-          />
-        </label>
+        <ClearableInputField
+          label="Search"
+          id="studio-library-search"
+          name="studioLibrarySearch"
+          value={libraryQuery}
+          onChange={onLibraryQueryChange}
+          placeholder="Search reports, dashboards, fields, tags"
+        />
         <div className="filter-grid compact-grid">
           <label className="field">
             <span>Type</span>

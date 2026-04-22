@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { type StudioObject, type StudioTemplateRecord } from "@studio/shared";
 import { typeLabel } from "../lib/catalog";
 import { buildHostedRoute } from "../lib/embed";
+import { ClearableInputField } from "./ClearableInputField";
 
 type LibraryFilter = "all" | "report" | "dashboard";
 type LibraryScopeFilter = "all" | "global" | "personal";
@@ -153,16 +154,14 @@ export function StudioWorkspaceHome({
           ) : null}
         </div>
         <div className="filter-grid compact-grid studio-home-filter-grid">
-          <label className="field">
-            <span>Search</span>
-            <input
-              id="studio-home-search"
-              name="studioHomeSearch"
-              value={libraryQuery}
-              onChange={(event) => onLibraryQueryChange(event.target.value)}
-              placeholder="Search reports, dashboards, fields, tags"
-            />
-          </label>
+          <ClearableInputField
+            label="Search"
+            id="studio-home-search"
+            name="studioHomeSearch"
+            value={libraryQuery}
+            onChange={onLibraryQueryChange}
+            placeholder="Search reports, dashboards, fields, tags"
+          />
           <label className="field">
             <span>Type</span>
             <select

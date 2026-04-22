@@ -142,23 +142,42 @@ export function SearchableSelect({
 
   return (
     <div className={`searchable-select${open ? " is-open" : ""}`} ref={rootRef}>
-      <input
-        className="searchable-select-input"
-        value={query}
-        placeholder={placeholder}
-        onFocus={() => setOpen(true)}
-        onClick={() => setOpen(true)}
-        onChange={(event) => {
-          setQuery(event.target.value);
-          setOpen(true);
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") {
-            setOpen(false);
-            setQuery(selectedOption?.label || "");
-          }
-        }}
-      />
+      <div className="clearable-input-shell">
+        <input
+          className="searchable-select-input"
+          value={query}
+          placeholder={placeholder}
+          onFocus={() => setOpen(true)}
+          onClick={() => setOpen(true)}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setOpen(true);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              setOpen(false);
+              setQuery(selectedOption?.label || "");
+            }
+          }}
+        />
+        {query ? (
+          <button
+            type="button"
+            className="clearable-input-button"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => {
+              setQuery("");
+              setOpen(true);
+              if (allowEmpty) {
+                onChange("");
+              }
+            }}
+            aria-label="Clear search"
+          >
+            ×
+          </button>
+        ) : null}
+      </div>
       {menu}
     </div>
   );

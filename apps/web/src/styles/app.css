@@ -2030,6 +2030,43 @@ th {
   max-width: 680px;
 }
 
+.clearable-field {
+  min-width: 0;
+}
+
+.clearable-input-shell {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.clearable-input-shell input {
+  padding-right: 36px;
+}
+
+.clearable-input-button {
+  position: absolute;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(20, 53, 43, 0.08);
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.clearable-input-button:hover {
+  background: rgba(20, 53, 43, 0.14);
+  color: var(--text);
+}
+
 .viewer-search-field input,
 .studio-library .field input,
 .searchable-select-input,

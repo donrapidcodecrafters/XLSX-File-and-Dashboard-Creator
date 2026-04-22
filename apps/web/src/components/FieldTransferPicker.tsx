@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type { TableDefinition } from "@studio/shared";
+import { ClearableInputField } from "./ClearableInputField";
 
 function normalizeSearchText(value: string) {
   return String(value || "").toLowerCase().trim();
@@ -70,14 +71,12 @@ export function FieldTransferPicker({
           <strong>Available fields</strong>
           <span className="micro">{availableFields.length}</span>
         </div>
-        <label className="field">
-          <span>Search available fields</span>
-          <input
-            value={availableQuery}
-            onChange={(event) => setAvailableQuery(event.target.value)}
-            placeholder="Type part of a field name, id, or type"
-          />
-        </label>
+        <ClearableInputField
+          label="Search available fields"
+          value={availableQuery}
+          onChange={setAvailableQuery}
+          placeholder="Type part of a field name, id, or type"
+        />
         <div className="field-transfer-list">
           {visibleAvailableFields.length ? visibleAvailableFields.map((field) => (
             <button
@@ -103,14 +102,12 @@ export function FieldTransferPicker({
           <strong>Selected fields</strong>
           <span className="micro">{selectedFieldIds.length} in report order</span>
         </div>
-        <label className="field">
-          <span>Search selected fields</span>
-          <input
-            value={selectedQuery}
-            onChange={(event) => setSelectedQuery(event.target.value)}
-            placeholder="Filter the selected field list"
-          />
-        </label>
+        <ClearableInputField
+          label="Search selected fields"
+          value={selectedQuery}
+          onChange={setSelectedQuery}
+          placeholder="Filter the selected field list"
+        />
         <div className="field-transfer-list">
           {visibleSelectedFields.length ? visibleSelectedFields.map((field) => {
             const currentIndex = selectedFieldIds.indexOf(field.id);

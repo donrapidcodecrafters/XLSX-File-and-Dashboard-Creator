@@ -104,6 +104,7 @@ import { SearchableSelect } from "./SearchableSelect";
 import { StudioSettingsPanel } from "./StudioSettingsPanel";
 import { StudioWorkspaceEmptyState } from "./StudioWorkspaceEmptyState";
 import { StudioWorkspaceHome } from "./StudioWorkspaceHome";
+import { ClearableInputField } from "./ClearableInputField";
 import {
   DEFAULT_CHART_COLORS,
   getChartAxisLabels,
@@ -1174,6 +1175,7 @@ export function StudioPage({
     nextH: number;
   } | null>(null);
   const resizeStartSnapshotRef = useRef<StudioDocument | null>(null);
+  const lastImportPreloadTableIdRef = useRef("");
 
   const bundle = documentState.bundle;
   const currentUserId = String(documentState.session.currentUserId || "").trim();
@@ -1194,6 +1196,12 @@ export function StudioPage({
           : bundle.tables.find((table) => table.id === report.sourceTableId) || null
       })),
     [bundle.tables, importReviewObjectIds, importReviewObjects, importReviewSourceTable, pendingWorkbookImport]
+  );
+  const pendingImportedReviewReports = useMemo(
+    () => pendingWorkbookImport
+      ? importedReviewReports.filter(({ report, table }) => collectReportImportIssues(report, table).length > 0)
+      : importedReviewReports,
+    [importedReviewReports, pendingWorkbookImport]
   );
   const importedReviewDashboardCount = useMemo(
     () => importReviewObjectIds
@@ -2131,8 +2139,34 @@ export function StudioPage({
       displayLabels: clone(createDraft.displayLabels)
     };
     if (importEditingReportId) {
-      updateImportedReviewReport(importEditingReportId, () => report);
+      const nextImportState = pendingWorkbookImport
+        ? {
+            ...pendingWorkbookImport,
+            currentObjects: {
+              ...pendingWorkbookImport.currentObjects,
+              [importEditingReportId]: report
+            }
+          }
+        : null;
+      if (nextImportState) {
+        setPendingWorkbookImport(nextImportState);
+      } else {
+        updateImportedReviewReport(importEditingReportId, () => report);
+      }
       closeCreateModal();
+      if (nextImportState) {
+        const remainingReports = nextImportState.importedObjectIds
+          .map((objectId) => nextImportState.currentObjects[objectId])
+          .filter((object): object is ReportDefinition => Boolean(object) && object.type === "report")
+          .filter((candidate) => collectReportImportIssues(candidate, bundle.tables.find((tableDefinition) => tableDefinition.id === nextImportState.sourceTableId) || null).length > 0);
+        if (!remainingReports.length) {
+          void finalizeWorkbookImport(nextImportState);
+          pushToast("Imported report saved. Opening the dashboard and applying the workbook.");
+          return;
+        }
+        pushToast(`Imported report saved. ${remainingReports.length} report${remainingReports.length === 1 ? "" : "s"} still need review.`);
+        return;
+      }
       pushToast("Imported report setup updated.");
       return;
     }
@@ -2713,6 +2747,15 @@ export function StudioPage({
     void refreshAllNow();
   }, [refreshAllSignal]);
 
+  useEffect(() => {
+    const sourceTableId = pendingWorkbookImport?.sourceTableId || "";
+    if (!sourceTableId || sourceTableId === lastImportPreloadTableIdRef.current) return;
+    lastImportPreloadTableIdRef.current = sourceTableId;
+    void startStudioRefresh()
+      .then(() => undefined)
+      .catch(() => undefined);
+  }, [pendingWorkbookImport?.sourceTableId]);
+
   async function refreshAllNow() {
     const refreshValidation = getFullRefreshValidation(documentState);
     if (refreshValidation) {
@@ -2810,6 +2853,7 @@ export function StudioPage({
     importStudioWorkbook(file)
       .then((response) => {
         const sourceTableId = "";
+        lastImportPreloadTableIdRef.current = "";
         const baseObjects = Object.fromEntries(
           response.importedObjectIds
             .map((objectId) => response.document.bundle.objects[objectId])
@@ -2904,9 +2948,50 @@ export function StudioPage({
 
   function closeImportReviewModal() {
     setImportReviewModalOpen(false);
+    lastImportPreloadTableIdRef.current = "";
     if (pendingWorkbookImport) {
       setPendingWorkbookImport(null);
     }
+  }
+
+  async function finalizeWorkbookImport(importState: PendingWorkbookImport) {
+    const sourceTable = bundle.tables.find((table) => table.id === importState.sourceTableId) || null;
+    if (!sourceTable) {
+      pushToast("Choose the real source table before creating imported reports.", "warn");
+      return;
+    }
+    const issues = importState.importedObjectIds.flatMap((objectId) => {
+      const object = importState.currentObjects[objectId];
+      if (!object || object.type !== "report") return [];
+      return collectReportImportIssues(object, sourceTable);
+    });
+    if (issues.length) {
+      pushToast("Resolve the remaining imported field issues before creating the workbook objects.", "warn");
+      return;
+    }
+    const nextDocument = clone(documentState);
+    importState.importedObjectIds.forEach((objectId) => {
+      const object = importState.currentObjects[objectId];
+      if (!object) return;
+      nextDocument.bundle.objects[objectId] = clone(object);
+    });
+    nextDocument.bundle.order = [
+      ...importState.importedObjectIds.filter((objectId) => Boolean(importState.currentObjects[objectId])),
+      ...nextDocument.bundle.order.filter((objectId) => !importState.importedObjectIds.includes(objectId))
+    ];
+
+    setHistory((previous) => [clone(documentState), ...previous].slice(0, 60));
+    setFuture([]);
+    setDocumentState(nextDocument);
+    setLastWorkbookImportReview(importState.review);
+    setLastWorkbookImportObjectIds(importState.importedObjectIds);
+    setPendingWorkbookImport(null);
+    setImportReviewModalOpen(false);
+    if (importState.primaryObjectId) {
+      navigate(buildHostedRoute(`/studio/${importState.primaryObjectId}`));
+    }
+    pushToast(`Created imported ${importState.review.dashboardCreated ? "dashboard and reports" : "reports"} using ${sourceTable.name}.`);
+    await persistRemote(nextDocument);
   }
 
   function updatePendingImportSourceTable(tableId: string) {
@@ -2923,39 +3008,7 @@ export function StudioPage({
 
   async function applyPendingWorkbookImport() {
     if (!pendingWorkbookImport) return;
-    const sourceTable = bundle.tables.find((table) => table.id === pendingWorkbookImport.sourceTableId) || null;
-    if (!sourceTable) {
-      pushToast("Choose the real source table before creating imported reports.", "warn");
-      return;
-    }
-    const issues = importedReviewReports.flatMap(({ report, table }) => collectReportImportIssues(report, table));
-    if (issues.length) {
-      pushToast("Resolve the remaining imported field issues before creating the workbook objects.", "warn");
-      return;
-    }
-    const nextDocument = clone(documentState);
-    pendingWorkbookImport.importedObjectIds.forEach((objectId) => {
-      const object = pendingWorkbookImport.currentObjects[objectId];
-      if (!object) return;
-      nextDocument.bundle.objects[objectId] = clone(object);
-    });
-    nextDocument.bundle.order = [
-      ...pendingWorkbookImport.importedObjectIds.filter((objectId) => Boolean(pendingWorkbookImport.currentObjects[objectId])),
-      ...nextDocument.bundle.order.filter((objectId) => !pendingWorkbookImport.importedObjectIds.includes(objectId))
-    ];
-
-    setHistory((previous) => [clone(documentState), ...previous].slice(0, 60));
-    setFuture([]);
-    setDocumentState(nextDocument);
-    setLastWorkbookImportReview(pendingWorkbookImport.review);
-    setLastWorkbookImportObjectIds(pendingWorkbookImport.importedObjectIds);
-    setPendingWorkbookImport(null);
-    setImportReviewModalOpen(false);
-    if (pendingWorkbookImport.primaryObjectId) {
-      navigate(buildHostedRoute(`/studio/${pendingWorkbookImport.primaryObjectId}`));
-    }
-    pushToast(`Created imported ${pendingWorkbookImport.review.dashboardCreated ? "dashboard and reports" : "reports"} using ${sourceTable.name}.`);
-    await persistRemote(nextDocument);
+    await finalizeWorkbookImport(pendingWorkbookImport);
   }
 
   function renderStudioOverlays() {
@@ -2968,7 +3021,7 @@ export function StudioPage({
                 <div>
                   <strong>Imported workbook review</strong>
                   <div className="micro">
-                    {(pendingWorkbookImport?.review || lastWorkbookImportReview)?.workbookName} · {importedReviewReports.length} report{importedReviewReports.length === 1 ? "" : "s"}
+                    {(pendingWorkbookImport?.review || lastWorkbookImportReview)?.workbookName} · {(pendingWorkbookImport ? pendingImportedReviewReports.length : importedReviewReports.length)} report{(pendingWorkbookImport ? pendingImportedReviewReports.length : importedReviewReports.length) === 1 ? "" : "s"}
                     {importedReviewDashboardCount ? ` · ${importedReviewDashboardCount} dashboard candidate${importedReviewDashboardCount === 1 ? "" : "s"}` : ""}
                   </div>
                 </div>
@@ -2985,7 +3038,7 @@ export function StudioPage({
               {(pendingWorkbookImport?.review || lastWorkbookImportReview)?.dashboardCreated ? (
                 <div className="sync-status sync-status-ok">
                   <strong>Dashboard candidate ready</strong>
-                  <span>{pendingWorkbookImport ? "The workbook structure was reconstructed into draft reports and dashboard tabs. Review each report and fix any fields that still need attention before creating it." : "The workbook was reconstructed into native reports and dashboard tabs. Review each imported report here and fix any fields that still need attention."}</span>
+                  <span>{pendingWorkbookImport ? "The workbook structure was reconstructed into draft reports and dashboard tabs. Only reports that still need field setup stay in this workflow. When the last one is saved, the dashboard will open automatically." : "The workbook was reconstructed into native reports and dashboard tabs. Review each imported report here and fix any fields that still need attention."}</span>
                 </div>
               ) : null}
 
@@ -3010,7 +3063,7 @@ export function StudioPage({
               ) : null}
 
               <div className="stack">
-                {importedReviewReports.map(({ report, table }) => {
+                {(pendingWorkbookImport ? pendingImportedReviewReports : importedReviewReports).map(({ report, table }) => {
                   const tableFieldIds = new Set((table?.fields || []).map((field) => field.id));
                   const referencedFieldIds = collectReportImportReferencedFieldIds(report);
                   const matchedReferencedCount = referencedFieldIds.filter((fieldId) => tableFieldIds.has(fieldId)).length;
@@ -3070,7 +3123,13 @@ export function StudioPage({
                     </article>
                   );
                 })}
-                {!importedReviewReports.length ? <div className="empty-hint">No imported reports are available to review.</div> : null}
+                {!(pendingWorkbookImport ? pendingImportedReviewReports : importedReviewReports).length ? (
+                  <div className="empty-hint">
+                    {pendingWorkbookImport
+                      ? "Every imported report has the fields it needs. Saving the last report will create the workbook automatically."
+                      : "No imported reports are available to review."}
+                  </div>
+                ) : null}
               </div>
               {pendingWorkbookImport ? (
                 <div className="studio-actions">
@@ -3078,7 +3137,7 @@ export function StudioPage({
                   <button
                     type="button"
                     onClick={() => void applyPendingWorkbookImport()}
-                    disabled={!pendingWorkbookImport.sourceTableId || importedReviewReports.some(({ report, table }) => collectReportImportIssues(report, table).length > 0)}
+                    disabled={!pendingWorkbookImport.sourceTableId || pendingImportedReviewReports.length > 0}
                   >
                     Create imported reports and dashboard
                   </button>
@@ -3662,16 +3721,14 @@ export function StudioPage({
                   </div>
                 ) : null}
                 <div className="filter-grid compact-grid">
-                  <label className="field">
-                    <span>Card search</span>
-                    <input
-                      id="studio-widget-search"
-                      name="studioWidgetSearch"
-                      value={widgetSearch}
-                      onChange={(event) => setWidgetSearch(event.target.value)}
-                      placeholder="Find cards or reports"
-                    />
-                  </label>
+                  <ClearableInputField
+                    label="Card search"
+                    id="studio-widget-search"
+                    name="studioWidgetSearch"
+                    value={widgetSearch}
+                    onChange={setWidgetSearch}
+                    placeholder="Find cards or reports"
+                  />
                 </div>
             <div className="studio-tab-strip">
               {activeDashboard.tabs.map((tab) => (

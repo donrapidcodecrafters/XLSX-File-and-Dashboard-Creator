@@ -5,6 +5,7 @@ import { fetchStudioRefreshJob, startStudioRefresh } from "../lib/studioApi";
 import { getProfileIdsForCatalogItem, getProfileLabelsForCatalogItem } from "../lib/catalog";
 import { buildHostedRoute } from "../lib/embed";
 import { CatalogCard } from "./CatalogCard";
+import { ClearableInputField } from "./ClearableInputField";
 import { RefreshOverlay } from "./RefreshOverlay";
 
 export function ViewerPage({
@@ -105,16 +106,16 @@ export function ViewerPage({
       ) : null}
 
       <div className="viewer-filter-bar">
-        <label className="field viewer-search-field">
-          <span>Search</span>
-          <input
+        <div className="viewer-search-field">
+          <ClearableInputField
+            label="Search"
             id="viewer-search"
             name="viewerSearch"
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={setQuery}
             placeholder="Search reports, dashboards, folders, tags, or app labels"
           />
-        </label>
+        </div>
         <label className="field compact-field">
           <span>Type</span>
           <select aria-label="Type" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value as "all" | "report" | "dashboard")}>
