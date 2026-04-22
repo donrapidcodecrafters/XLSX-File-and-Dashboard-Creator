@@ -26,14 +26,18 @@ function tableMatchesLaunchScope(table: TableDefinition | undefined, studioDocum
   if (!table || !studioDocument || !isQuickbaseLaunchScoped(launchContext)) return true;
   const launchRealmHostname = normalizeStudioRealmHostname(launchContext?.launchRealmHostname);
   const launchAppId = normalizeStudioAppId(launchContext?.launchAppId);
+  const explicitTableAppId = normalizeStudioAppId(table.quickbaseAppId);
   if (table.quickbaseProfileId) {
     const profile = studioDocument.quickbaseProfiles.find((item) => item.id === table.quickbaseProfileId);
     if (!profile) return false;
     return normalizeStudioRealmHostname(profile.quickbase.realmHostname) === launchRealmHostname
       && normalizeStudioAppId(profile.quickbase.appId) === launchAppId;
   }
+  if (!explicitTableAppId) {
+    return true;
+  }
   return normalizeStudioRealmHostname(studioDocument.quickbase.realmHostname) === launchRealmHostname
-    && normalizeStudioAppId(table.quickbaseAppId || studioDocument.quickbase.appId) === launchAppId;
+    && explicitTableAppId === launchAppId;
 }
 
 export function getProfileIdsForObject(object: StudioObject | null, tables: TableDefinition[], studioDocument: StudioDocument | null) {
