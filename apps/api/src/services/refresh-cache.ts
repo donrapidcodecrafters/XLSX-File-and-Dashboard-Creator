@@ -338,6 +338,31 @@ function markRefreshAsCancelled(document: StudioDocument, jobId: string, message
   });
 }
 
+function clearStaleRunningRefresh(document: StudioDocument, jobId: string, message = "Previous refresh ended unexpectedly.") {
+  const completedAt = new Date().toISOString();
+  const statuses = [
+    document.sync.refreshStatus,
+    ...document.quickbaseProfiles.map((profile) => profile.refreshStatus)
+  ];
+  let changed = false;
+  statuses.forEach((status) => {
+    if (!status.running) return;
+    if (status.activeJobId && status.activeJobId !== jobId) return;
+    status.running = false;
+    status.cancelRequested = false;
+    status.activeJobId = "";
+    status.message = message;
+    status.estimatedSecondsRemaining = 0;
+    status.lastCompletedAt = completedAt;
+    status.lastError = message;
+    changed = true;
+  });
+  if (changed) {
+    studioStore.flushDocument(document, { markSavedAt: false });
+  }
+  return changed;
+}
+
 function getPersistedRefreshStatus(jobId?: string): RefreshJobStatus | null {
   const document = studioStore.getLiveDocument();
   const statuses = [
@@ -478,7 +503,13 @@ export function getActiveRefreshJob() {
     document.sync.refreshStatus.activeJobId
     || document.quickbaseProfiles.find((profile) => profile.refreshStatus.activeJobId)?.refreshStatus.activeJobId
     || "";
-  return activeJobId ? getTrackedRefreshJob(activeJobId) : null;
+  if (!activeJobId) return null;
+  const inMemory = refreshJobStore.getJob(activeJobId);
+  if (!inMemory) {
+    clearStaleRunningRefresh(document, activeJobId);
+    return null;
+  }
+  return getTrackedRefreshJob(activeJobId);
 }
 
 async function fetchAllTableRows(
