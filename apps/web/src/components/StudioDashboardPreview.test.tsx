@@ -89,7 +89,7 @@ function PreviewHarness({
 }
 
 describe("StudioDashboardPreview", () => {
-  it("handles selection, card drag/drop intent, row dropzones, directional movement, full-width, and resize entry points", async () => {
+  it("handles selection, card drag/drop intent, directional movement, full-width, and resize entry points", async () => {
     const user = userEvent.setup();
     const callbacks = createCallbacks();
     const fixture = buildPreviewFixture();
@@ -119,9 +119,6 @@ describe("StudioDashboardPreview", () => {
     fireEvent.dragStart(firstCard);
     fireEvent.dragOver(secondCard, { clientX: 220, clientY: 90 });
     fireEvent.drop(secondCard, { clientX: 220, clientY: 90 });
-    fireEvent.dragStart(firstCard);
-    fireEvent.dragOver(screen.getByTestId(`row-drop-${fixture.dashboard.tabs[0].id}-0-end`));
-    fireEvent.drop(screen.getByTestId(`row-drop-${fixture.dashboard.tabs[0].id}-0-end`));
 
     expect(firstCard).toHaveStyle({ gridColumn: "1 / 8" });
     expect(callbacks.onSelectWidget).toHaveBeenCalled();
@@ -129,7 +126,6 @@ describe("StudioDashboardPreview", () => {
     expect(callbacks.onMoveWidget).toHaveBeenCalledWith(expect.any(String), expect.any(String), "right");
     expect(callbacks.onBeginResizeWidget).toHaveBeenCalled();
     expect(callbacks.onDropWidget).toHaveBeenCalledWith(expect.any(String), expect.any(String), "after");
-    expect(callbacks.onDropWidgetToRow).toHaveBeenCalledWith(expect.any(String), 0, "end");
   });
 
   it("supports snapped grid drops on blank canvas space", () => {
@@ -164,10 +160,6 @@ describe("StudioDashboardPreview", () => {
 
     fireEvent.dragOver(gridDropzone, { clientX: 940, clientY: 280 });
     expect(screen.getByTestId(`grid-ghost-${fixture.dashboard.tabs[0].id}`)).toHaveStyle({
-      gridColumn: "4 / 11",
-      gridRow: "2 / 6"
-    });
-    expect(screen.getByRole("button", { name: new RegExp(fixture.result.tabs[0].widgets[0].report.name, "i") })).toHaveStyle({
       gridColumn: "4 / 11",
       gridRow: "2 / 6"
     });

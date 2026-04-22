@@ -1395,9 +1395,6 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
       if (changed && resizeStartSnapshotRef.current) {
         setHistory((current) => [resizeStartSnapshotRef.current as StudioDocument, ...current].slice(0, 60));
         setFuture([]);
-        if (activeDashboard) {
-          writeObject(balanceDashboardTabLayoutInDefinition(activeDashboard, session.tabId), { skipHistory: true });
-        }
       }
       resizeStartSnapshotRef.current = null;
       setResizeSession(null);

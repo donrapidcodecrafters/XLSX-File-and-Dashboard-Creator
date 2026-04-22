@@ -609,7 +609,7 @@ export function moveDashboardWidget(
     if (currentIndex < 0 || nextIndex < 0 || nextIndex >= widgets.length) return tab;
     const [widget] = widgets.splice(currentIndex, 1);
     widgets.splice(nextIndex, 0, widget);
-    return balanceDashboardTabWidgets({ ...tab, widgets }) || tab;
+    return compactDashboardTabWidgets({ ...tab, widgets }) || tab;
   });
 }
 
@@ -626,7 +626,7 @@ export function moveDashboardWidgetToEdge(
     const [widget] = widgets.splice(currentIndex, 1);
     if (edge === "start") widgets.unshift(widget);
     else widgets.push(widget);
-    return balanceDashboardTabWidgets({ ...tab, widgets }) || tab;
+    return compactDashboardTabWidgets({ ...tab, widgets }) || tab;
   });
 }
 
@@ -644,7 +644,7 @@ export function reorderDashboardWidget(
     if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return tab;
     const [widget] = widgets.splice(fromIndex, 1);
     widgets.splice(toIndex, 0, widget);
-    return balanceDashboardTabWidgets({ ...tab, widgets }) || tab;
+    return compactDashboardTabWidgets({ ...tab, widgets }) || tab;
   });
 }
 
@@ -655,7 +655,7 @@ export function reorderDashboardWidgetToIndex(
   targetIndex: number
 ) {
   return updateDashboardTab(dashboard, tabId, (tab) => ({
-    ...(balanceDashboardTabWidgets({
+    ...(compactDashboardTabWidgets({
       ...tab,
       widgets: moveWidgetAtIndex(tab.widgets, widgetId, targetIndex)
     }) || tab)
@@ -675,7 +675,7 @@ export function reorderDashboardWidgetToRowEdge(
     if (!targetRow) return tab;
     const targetIndex = edge === "start" ? targetRow.startIndex : targetRow.endIndex + 1;
     return {
-      ...(balanceDashboardTabWidgets({
+      ...(compactDashboardTabWidgets({
         ...tab,
         widgets: moveWidgetAtIndex(tab.widgets, widgetId, targetIndex)
       }) || tab)
@@ -694,7 +694,7 @@ export function reorderDashboardWidgetByDropPosition(
     const targetIndex = tab.widgets.findIndex((widget) => widget.id === targetWidgetId);
     if (targetIndex < 0) return tab;
     return {
-      ...(balanceDashboardTabWidgets({
+      ...(compactDashboardTabWidgets({
         ...tab,
         widgets: moveWidgetAtIndex(tab.widgets, sourceWidgetId, targetIndex + (position === "after" ? 1 : 0))
       }) || tab)
@@ -708,7 +708,7 @@ export function removeDashboardWidget(
   widgetId: string
 ) {
   return updateDashboardTab(dashboard, tabId, (tab) => ({
-    ...(balanceDashboardTabWidgets({
+    ...(compactDashboardTabWidgets({
       ...tab,
       widgets: tab.widgets.filter((widget) => widget.id !== widgetId)
     }) || tab)
@@ -722,7 +722,7 @@ export function applyDashboardWidgetLayout(
   layout: { w: number; h: number; x?: number; y?: number }
 ) {
   return updateDashboardTab(dashboard, tabId, (tab) => ({
-    ...balanceDashboardTabWidgets({
+    ...compactDashboardTabWidgets({
       ...tab,
       widgets: tab.widgets.map((widget) => widget.id === widgetId
         ? {
@@ -775,7 +775,7 @@ export function moveDashboardWidgetByDirection(
     if (!targetPlacement) return tab;
     const targetIndex = targetPlacement.index + (direction === "right" || direction === "down" ? 1 : 0);
     return {
-      ...(balanceDashboardTabWidgets({
+      ...(compactDashboardTabWidgets({
         ...tab,
         widgets: moveWidgetAtIndex(tab.widgets, widgetId, targetIndex)
       }) || tab)
@@ -798,7 +798,7 @@ export function moveDashboardWidgetByRow(
     const targetRow = rows[targetRowIndex];
     if (!targetRow) return tab;
     return {
-      ...(balanceDashboardTabWidgets({
+      ...(compactDashboardTabWidgets({
         ...tab,
         widgets: moveWidgetAtIndex(tab.widgets, widgetId, edge === "start" ? targetRow.startIndex : targetRow.endIndex + 1)
       }) || tab)
@@ -813,7 +813,7 @@ export function toggleDashboardWidgetFullWidth(
   restoredWidth = 6
 ) {
   return updateDashboardTab(dashboard, tabId, (tab) => ({
-    ...balanceDashboardTabWidgets({
+    ...compactDashboardTabWidgets({
       ...tab,
       widgets: tab.widgets.map((widget) => widget.id === widgetId
         ? {
@@ -850,7 +850,7 @@ export function duplicateDashboardWidget(
       layout: normalizeDashboardWidgetLayout(source)
     };
     widgets.splice(widgetIndex + 1, 0, duplicate);
-    return balanceDashboardTabWidgets({ ...tab, widgets }) || tab;
+    return compactDashboardTabWidgets({ ...tab, widgets }) || tab;
   });
   return {
     dashboard: nextDashboard,
@@ -871,7 +871,7 @@ export function insertDashboardWidget(
       ...clone(widget),
       layout: normalizeDashboardWidgetLayout(widget)
     });
-    return balanceDashboardTabWidgets({ ...tab, widgets }) || tab;
+    return compactDashboardTabWidgets({ ...tab, widgets }) || tab;
   });
 }
 
@@ -890,8 +890,8 @@ export function moveDashboardWidgetToTab(
   if (widgetIndex < 0) return dashboard;
   const [widget] = sourceTab.widgets.splice(widgetIndex, 1);
   targetTab.widgets.push(widget);
-  const balancedSource = balanceDashboardTabWidgets(sourceTab);
-  const balancedTarget = balanceDashboardTabWidgets(targetTab);
+  const balancedSource = compactDashboardTabWidgets(sourceTab);
+  const balancedTarget = compactDashboardTabWidgets(targetTab);
   if (balancedSource) sourceTab.widgets = balancedSource.widgets;
   if (balancedTarget) targetTab.widgets = balancedTarget.widgets;
   return nextDashboard;
@@ -928,7 +928,7 @@ export function copyDashboardWidgetToTab(
     layout: normalizeDashboardWidgetLayout(sourceWidget)
   };
   targetTab.widgets.push(duplicate);
-  const balancedTarget = balanceDashboardTabWidgets(targetTab);
+  const balancedTarget = compactDashboardTabWidgets(targetTab);
   if (balancedTarget) targetTab.widgets = balancedTarget.widgets;
   return {
     dashboard: nextDashboard,

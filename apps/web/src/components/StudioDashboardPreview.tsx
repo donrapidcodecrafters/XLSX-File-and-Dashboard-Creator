@@ -335,31 +335,33 @@ export function StudioDashboardPreview({
                     || baseRow.endRow !== row.endRow
                   );
                   const rowContainsDraggedWidget = Boolean(previewDraggedPlacement && row.widgetIds.includes(previewDraggedPlacement.widgetId));
-                  return (
+                return (
                   <div
                     className={`dashboard-layout-row${rowChanged ? " is-preview-affected" : ""}${rowContainsDraggedWidget ? " is-preview-target" : ""}`}
                     key={`${tab.id}-row-${row.rowIndex}`}
                   >
-                    <div
-                      className={`dashboard-row-dropzone${dropTarget?.type === "row" && dropTarget.tabId === tab.id && dropTarget.rowIndex === row.rowIndex && dropTarget.edge === "start" ? " active" : ""}`}
-                      data-testid={`row-drop-${tab.id}-${row.rowIndex}-start`}
-                      onDragOver={(event) => {
-                        event.preventDefault();
-                        setDropTarget({ type: "row", tabId: tab.id, rowIndex: row.rowIndex, edge: "start" });
-                      }}
-                      onDragLeave={() => {
-                        if (dropTarget?.type === "row" && dropTarget.tabId === tab.id && dropTarget.rowIndex === row.rowIndex && dropTarget.edge === "start") {
+                    {draggingLayout ? (
+                      <div
+                        className={`dashboard-row-dropzone${dropTarget?.type === "row" && dropTarget.tabId === tab.id && dropTarget.rowIndex === row.rowIndex && dropTarget.edge === "start" ? " active" : ""}`}
+                        data-testid={`row-drop-${tab.id}-${row.rowIndex}-start`}
+                        onDragOver={(event) => {
+                          event.preventDefault();
+                          setDropTarget({ type: "row", tabId: tab.id, rowIndex: row.rowIndex, edge: "start" });
+                        }}
+                        onDragLeave={() => {
+                          if (dropTarget?.type === "row" && dropTarget.tabId === tab.id && dropTarget.rowIndex === row.rowIndex && dropTarget.edge === "start") {
+                            setDropTarget(null);
+                          }
+                        }}
+                        onDrop={(event) => {
+                          event.preventDefault();
+                          onDropWidgetToRow(tab.id, row.rowIndex, "start");
                           setDropTarget(null);
-                        }
-                      }}
-                      onDrop={(event) => {
-                        event.preventDefault();
-                        onDropWidgetToRow(tab.id, row.rowIndex, "start");
-                        setDropTarget(null);
-                      }}
-                    >
-                      Drop above row {row.rowIndex + 1}
-                    </div>
+                        }}
+                      >
+                        Drop above row {row.rowIndex + 1}
+                      </div>
+                    ) : null}
                     <div className="dashboard-layout-row-head">
                       <span className="micro">Row {row.rowIndex + 1}</span>
                       <span className="micro">{row.widgets.length} card{row.widgets.length === 1 ? "" : "s"} · {row.remainingColumns} open columns</span>
@@ -419,11 +421,18 @@ export function StudioDashboardPreview({
                 const isDisplaced = displacedWidgetIds.has(widget.widgetId);
                 const dropPosition = dropTarget?.type === "widget" && dropTarget.tabId === tab.id && dropTarget.widgetId === widget.widgetId ? dropTarget.position : null;
                 const placement = row.placementsById.get(widget.widgetId) || null;
+                const rowRelativePlacement = placement
+                  ? {
+                      ...placement,
+                      startRow: placement.startRow - row.startRow + 1,
+                      endRow: placement.endRow - row.startRow + 1
+                    }
+                  : null;
                 return (
                   <article
                     className={`widget-card dashboard-layout-item${isDragging ? " is-dragging" : ""}${isSelected ? " is-selected" : ""}${isDisplaced ? " is-displaced" : ""}${dropPosition === "before" ? " is-drop-before" : ""}${dropPosition === "after" ? " is-drop-after" : ""}`}
                     key={widget.widgetId}
-                    style={getDashboardWidgetLayoutStyle(widget.widget, placement)}
+                    style={getDashboardWidgetLayoutStyle(widget.widget, rowRelativePlacement)}
                     role="button"
                     tabIndex={0}
                     draggable
@@ -555,26 +564,28 @@ export function StudioDashboardPreview({
                         Snap card anywhere on the grid
                       </div>
                     ) : null}
-                    <div
-                      className={`dashboard-row-dropzone${dropTarget?.type === "row" && dropTarget.tabId === tab.id && dropTarget.rowIndex === row.rowIndex && dropTarget.edge === "end" ? " active" : ""}`}
-                      data-testid={`row-drop-${tab.id}-${row.rowIndex}-end`}
-                      onDragOver={(event) => {
-                        event.preventDefault();
-                        setDropTarget({ type: "row", tabId: tab.id, rowIndex: row.rowIndex, edge: "end" });
-                      }}
-                      onDragLeave={() => {
-                        if (dropTarget?.type === "row" && dropTarget.tabId === tab.id && dropTarget.rowIndex === row.rowIndex && dropTarget.edge === "end") {
+                    {draggingLayout ? (
+                      <div
+                        className={`dashboard-row-dropzone${dropTarget?.type === "row" && dropTarget.tabId === tab.id && dropTarget.rowIndex === row.rowIndex && dropTarget.edge === "end" ? " active" : ""}`}
+                        data-testid={`row-drop-${tab.id}-${row.rowIndex}-end`}
+                        onDragOver={(event) => {
+                          event.preventDefault();
+                          setDropTarget({ type: "row", tabId: tab.id, rowIndex: row.rowIndex, edge: "end" });
+                        }}
+                        onDragLeave={() => {
+                          if (dropTarget?.type === "row" && dropTarget.tabId === tab.id && dropTarget.rowIndex === row.rowIndex && dropTarget.edge === "end") {
+                            setDropTarget(null);
+                          }
+                        }}
+                        onDrop={(event) => {
+                          event.preventDefault();
+                          onDropWidgetToRow(tab.id, row.rowIndex, "end");
                           setDropTarget(null);
-                        }
-                      }}
-                      onDrop={(event) => {
-                        event.preventDefault();
-                        onDropWidgetToRow(tab.id, row.rowIndex, "end");
-                        setDropTarget(null);
-                      }}
-                    >
-                      Drop below row {row.rowIndex + 1}
-                    </div>
+                        }}
+                      >
+                        Drop below row {row.rowIndex + 1}
+                      </div>
+                    ) : null}
                   </div>
                 );})}
               </div>
