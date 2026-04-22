@@ -1148,6 +1148,7 @@ export function StudioPage({
   const [realmAppsLoading, setRealmAppsLoading] = useState(false);
   const [refreshingCache, setRefreshingCache] = useState(false);
   const [refreshJob, setRefreshJob] = useState<RefreshJobStatus | null>(null);
+  const [activityOverlay, setActivityOverlay] = useState<{ title: string; message: string } | null>(null);
   const [lastQuickbaseSync, setLastQuickbaseSync] = useState<QuickbaseSyncResult | null>(null);
   const [lastWorkbookImportReview, setLastWorkbookImportReview] = useState<StudioWorkbookImportResult["review"] | null>(null);
   const [lastWorkbookImportObjectIds, setLastWorkbookImportObjectIds] = useState<string[]>([]);
@@ -1408,6 +1409,15 @@ export function StudioPage({
     window.setTimeout(() => {
       setToasts((current) => current.filter((item) => item.id !== id));
     }, 3500);
+  }
+
+  async function runWithActivityOverlay<T>(title: string, message: string, action: () => Promise<T>) {
+    setActivityOverlay({ title, message });
+    try {
+      return await action();
+    } finally {
+      setActivityOverlay(null);
+    }
   }
 
   function upsertStudioExportJob(entry: StudioExportJob) {
@@ -2431,19 +2441,23 @@ export function StudioPage({
       pushToast(refreshValidation, "warn");
       return;
     }
-    await persistRemote(documentState);
+    await runWithActivityOverlay("Saving to Quickbase and server", "Saving platform settings and workspace changes…", async () => {
+      await persistRemote(documentState);
+    });
   }
 
   async function reloadRemote() {
-    try {
-      const response = await fetchStudioDocument();
-      setDocumentState(scopeDocument(normalizeStudioDocument(response.document)));
-      setHistory([]);
-      setFuture([]);
-      pushToast("Reloaded hosted studio.");
-    } catch (error) {
-      pushToast(error instanceof Error ? error.message : "Reload failed.", "danger");
-    }
+    await runWithActivityOverlay("Loading from server", "Loading the latest hosted platform document…", async () => {
+      try {
+        const response = await fetchStudioDocument();
+        setDocumentState(scopeDocument(normalizeStudioDocument(response.document)));
+        setHistory([]);
+        setFuture([]);
+        pushToast("Reloaded hosted studio.");
+      } catch (error) {
+        pushToast(error instanceof Error ? error.message : "Reload failed.", "danger");
+      }
+    });
   }
 
   async function loadQuickbaseMetadata(silent = false) {
@@ -2454,40 +2468,44 @@ export function StudioPage({
     }
     setQuickbaseSchemaLoading(true);
     try {
-      const response = await fetchQuickbaseSchema(profile.quickbase);
-      setQuickbaseSchema(response.schema);
-      const nextTables = convertQuickbaseSchemaToTables(response.schema, profile);
-      const detected = detectQuickbaseStorageConfig(response.schema);
-      applyDocumentUpdate((draft) => {
-        draft.bundle.app.id = response.schema.id || draft.bundle.app.id;
-        draft.bundle.app.name = response.schema.name || draft.bundle.app.name;
-        draft.bundle.tables = [
-          ...draft.bundle.tables.filter((table) => table.quickbaseProfileId !== profile.id),
-          ...nextTables
-        ];
-        draft.bundle.data = {
-          ...draft.bundle.data,
-          ...Object.fromEntries(nextTables.map((table) => [table.id, draft.bundle.data[table.id] || []]))
-        };
-        Object.entries(detected).forEach(([key, value]) => {
-          if (!value) return;
-          const typedKey = key as keyof QuickbaseConnectionConfig;
-          const currentProfile = draft.quickbaseProfiles.find((item) => item.id === profile.id);
-          if (currentProfile && !currentProfile.quickbase[typedKey]) {
-            currentProfile.quickbase[typedKey] = value as never;
+      return await runWithActivityOverlay("Loading tables and fields", `Loading the Quickbase schema for ${profile.label}…`, async () => {
+        try {
+          const response = await fetchQuickbaseSchema(profile.quickbase);
+          setQuickbaseSchema(response.schema);
+          const nextTables = convertQuickbaseSchemaToTables(response.schema, profile);
+          const detected = detectQuickbaseStorageConfig(response.schema);
+          applyDocumentUpdate((draft) => {
+            draft.bundle.app.id = response.schema.id || draft.bundle.app.id;
+            draft.bundle.app.name = response.schema.name || draft.bundle.app.name;
+            draft.bundle.tables = [
+              ...draft.bundle.tables.filter((table) => table.quickbaseProfileId !== profile.id),
+              ...nextTables
+            ];
+            draft.bundle.data = {
+              ...draft.bundle.data,
+              ...Object.fromEntries(nextTables.map((table) => [table.id, draft.bundle.data[table.id] || []]))
+            };
+            Object.entries(detected).forEach(([key, value]) => {
+              if (!value) return;
+              const typedKey = key as keyof QuickbaseConnectionConfig;
+              const currentProfile = draft.quickbaseProfiles.find((item) => item.id === profile.id);
+              if (currentProfile && !currentProfile.quickbase[typedKey]) {
+                currentProfile.quickbase[typedKey] = value as never;
+              }
+              if (draft.activeQuickbaseProfileId === profile.id && !draft.quickbase[typedKey]) {
+                draft.quickbase[typedKey] = value as never;
+              }
+            });
+          });
+          if (!silent) {
+            pushToast(`Loaded ${response.schema.tables.length} Quickbase tables for ${profile.label}.`);
           }
-          if (draft.activeQuickbaseProfileId === profile.id && !draft.quickbase[typedKey]) {
-            draft.quickbase[typedKey] = value as never;
-          }
-        });
+          return response.schema;
+        } catch (error) {
+          pushToast(error instanceof Error ? error.message : "Quickbase schema lookup failed.", "danger");
+          return null;
+        }
       });
-      if (!silent) {
-        pushToast(`Loaded ${response.schema.tables.length} Quickbase tables for ${profile.label}.`);
-      }
-      return response.schema;
-    } catch (error) {
-      pushToast(error instanceof Error ? error.message : "Quickbase schema lookup failed.", "danger");
-      return null;
     } finally {
       setQuickbaseSchemaLoading(false);
     }
@@ -2501,13 +2519,17 @@ export function StudioPage({
     }
     setRealmAppsLoading(true);
     try {
-      const response = await fetchQuickbaseApps(profile.quickbase);
-      setRealmApps(response.apps);
-      if (!silent) {
-        pushToast(`Found ${response.apps.length} Quickbase apps you can access in this realm.`);
-      }
-    } catch (error) {
-      pushToast(error instanceof Error ? error.message : "Quickbase app lookup failed.", "danger");
+      await runWithActivityOverlay("Finding Quickbase apps", `Looking up apps you can access in ${profile.quickbase.realmHostname}…`, async () => {
+        try {
+          const response = await fetchQuickbaseApps(profile.quickbase);
+          setRealmApps(response.apps);
+          if (!silent) {
+            pushToast(`Found ${response.apps.length} Quickbase apps you can access in this realm.`);
+          }
+        } catch (error) {
+          pushToast(error instanceof Error ? error.message : "Quickbase app lookup failed.", "danger");
+        }
+      });
     } finally {
       setRealmAppsLoading(false);
     }
@@ -2798,11 +2820,13 @@ export function StudioPage({
     }
     setRefreshingCache(true);
     try {
-      const saved = await saveStudioDocument(documentState);
-      setDocumentState(scopeDocument(normalizeStudioDocument(saved.document)));
-      setLastQuickbaseSync(saved.sync || null);
-      const response = await startStudioRefresh();
-      setRefreshJob(response.job);
+      await runWithActivityOverlay("Preparing refresh", "Saving current settings and starting a full cache refresh…", async () => {
+        const saved = await saveStudioDocument(documentState);
+        setDocumentState(scopeDocument(normalizeStudioDocument(saved.document)));
+        setLastQuickbaseSync(saved.sync || null);
+        const response = await startStudioRefresh();
+        setRefreshJob(response.job);
+      });
     } catch (error) {
       pushToast(error instanceof Error ? error.message : "Refresh failed.", "danger");
       setRefreshingCache(false);
@@ -3054,6 +3078,13 @@ export function StudioPage({
   function renderStudioOverlays() {
     return (
       <>
+        {activityOverlay ? (
+          <RefreshOverlay
+            title={activityOverlay.title}
+            indeterminate
+            job={{ message: activityOverlay.message }}
+          />
+        ) : null}
         {importReviewModalOpen && (pendingWorkbookImport || lastWorkbookImportReview) ? (
           <div className="studio-modal-backdrop" onClick={closeImportReviewModal}>
             <section className="studio-modal studio-import-review-modal" onClick={(event) => event.stopPropagation()}>
