@@ -383,6 +383,7 @@ export interface ReportRunResult {
   totalPages?: number;
   hasNextPage?: boolean;
   freshness?: DataFreshnessInfo;
+  refreshJob?: RefreshJobStatus | null;
 }
 
 export interface DashboardWidgetResult {
@@ -403,6 +404,7 @@ export interface DashboardRunResult {
     widgets: DashboardWidgetResult[];
   }>;
   freshness?: DataFreshnessInfo;
+  refreshJob?: RefreshJobStatus | null;
 }
 
 export interface CatalogSummaryItem {

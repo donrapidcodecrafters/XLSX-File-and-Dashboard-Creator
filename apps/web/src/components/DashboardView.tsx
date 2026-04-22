@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { buildDashboardFilters, formatReportCellValue, getDashboardWidgetLayoutStyle, getDashboardWidgetPlacements, getReportFieldLabel, resolveActiveDashboardTabId, type DashboardDefinition, type DashboardRunResult, type ExportJobStatus, type ReportRunResult, type TableDefinition } from "@studio/shared";
+import { buildDashboardFilters, formatReportCellValue, getDashboardWidgetLayoutStyle, getDashboardWidgetPlacements, getReportFieldLabel, resolveActiveDashboardTabId, type DashboardDefinition, type DashboardRunResult, type ExportJobStatus, type RefreshJobStatus, type ReportRunResult, type TableDefinition } from "@studio/shared";
 import { downloadExportJob, fetchExportJobStatus, renderDashboard, runReportPage, startDashboardExportJob } from "../lib/api";
 import { LinkToolbar } from "./LinkToolbar";
 import { ChartPreview } from "./ChartPreview";
@@ -35,6 +35,7 @@ interface DashboardViewProps {
   }) => void;
   onDeleteView?: (viewId: string) => void;
   onStateChange?: (state: { runtimeFilters: Record<string, string>; activeTabId: string; focusedWidgetId: string }) => void;
+  onRefreshJobDetected?: (job: RefreshJobStatus | null) => void;
   forceLive?: boolean;
   openLinksInNewTab?: boolean;
 }
@@ -159,6 +160,7 @@ export function DashboardView({
   onSaveView,
   onDeleteView,
   onStateChange,
+  onRefreshJobDetected,
   forceLive = false,
   openLinksInNewTab = false
 }: DashboardViewProps) {
@@ -260,6 +262,7 @@ export function DashboardView({
       try {
         const next = await renderDashboard(dashboard.id, runtimeFilters, tabId, { forceLive });
         if (!active) return;
+        onRefreshJobDetected?.(next.refreshJob || null);
         const renderedTab = next.tabs.find((tab) => tab.id === tabId) || next.tabs[0];
         if (renderedTab) {
           setTabResults((current) => ({ ...current, [renderedTab.id]: renderedTab }));
@@ -280,7 +283,7 @@ export function DashboardView({
     return () => {
       active = false;
     };
-  }, [dashboard.id, forceLive, resolvedActiveTabId, runtimeFilters, tabReloadNonce]);
+  }, [dashboard.id, forceLive, onRefreshJobDetected, resolvedActiveTabId, runtimeFilters, tabReloadNonce]);
 
   useEffect(() => {
     if (!activeTabResult) return;

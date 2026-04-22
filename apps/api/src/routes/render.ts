@@ -1,11 +1,13 @@
 import { createReadStream } from "node:fs";
 import type { FastifyInstance } from "fastify";
-import { buildDashboardFilters, type DashboardDefinition, type FilterDefinition, type FilterOperator, type ReportDefinition, type ReportRunResult, type TableDefinition } from "@studio/shared";
+import { buildDashboardFilters, type DashboardDefinition, type FilterDefinition, type FilterOperator, type RefreshJobStatus, type ReportDefinition, type ReportRunResult, type TableDefinition } from "@studio/shared";
 import { executeDashboard, executeReport, fetchAllReportRowsForExport, fetchReportExportBundle, fetchReportPage } from "../services/report-runner.js";
 import { objectStore } from "../services/object-store.js";
 import { studioStore } from "../services/studio-store.js";
 import { exportJobStore } from "../services/export-jobs.js";
 import { buildDashboardFileName, buildReportFileName, streamDashboardWorkbook, streamReportWorkbook } from "../services/xlsx-export.js";
+import { refreshJobStore } from "../services/refresh-jobs.js";
+import { refreshObjectCachedDataWithProgress } from "../services/refresh-cache.js";
 
 function normalizeClientFilters(filters: Array<{ fieldId: string; operator?: string; value: string }> = []): FilterDefinition[] {
   return filters.map((filter, index) => ({
@@ -37,6 +39,88 @@ async function runWithConcurrency<T>(items: T[], concurrency: number, worker: (i
   await Promise.all(runners);
 }
 
+function hasRowsForTable(tableId: string) {
+  const table = objectStore.getTable(tableId);
+  if (!table) return false;
+  return objectStore.getRows(table.id).length > 0 || Boolean(table.quickbaseTableId && objectStore.getRows(table.quickbaseTableId).length);
+}
+
+function hasQuickbaseSource(tableId: string) {
+  const document = studioStore.getDocument();
+  const table = objectStore.getTable(tableId);
+  if (!table) return false;
+  const profile = table.quickbaseProfileId
+    ? document.quickbaseProfiles.find((item) => item.id === table.quickbaseProfileId)
+    : null;
+  const quickbase = profile?.quickbase || document.quickbase;
+  return Boolean((table.quickbaseTableId || table.id) && quickbase.realmHostname && quickbase.userToken && quickbase.appId);
+}
+
+async function startAutoRefreshForObject(objectId: string) {
+  const job = refreshJobStore.createJob("manual", async ({ jobId, update }) => {
+    const result = await refreshObjectCachedDataWithProgress(objectId, (progress, message, extras) => {
+      update(progress, message, extras);
+    }, jobId);
+    return {
+      tableCount: result.tableCount,
+      rowCount: result.rowCount
+    };
+  });
+  return job;
+}
+
+async function maybeStartAutoRefreshForReport(report: ReportDefinition) {
+  if (hasRowsForTable(report.sourceTableId)) return null;
+  if (!hasQuickbaseSource(report.sourceTableId)) return null;
+  return startAutoRefreshForObject(report.id);
+}
+
+async function maybeStartAutoRefreshForDashboard(dashboard: DashboardDefinition) {
+  const tableIds = Array.from(new Set(
+    dashboard.tabs.flatMap((tab) => tab.widgets.map((widget) => widget.reportId))
+      .map((reportId) => objectStore.getReport(reportId)?.sourceTableId || "")
+      .filter(Boolean)
+  ));
+  if (!tableIds.length) return null;
+  if (tableIds.every((tableId) => hasRowsForTable(tableId))) return null;
+  if (!tableIds.some((tableId) => hasQuickbaseSource(tableId))) return null;
+  return startAutoRefreshForObject(dashboard.id);
+}
+
+function buildPendingReportResult(
+  report: ReportDefinition,
+  refreshJob: RefreshJobStatus,
+  page = 1,
+  pageSize = 100
+): ReportRunResult {
+  return {
+    reportId: report.id,
+    tableId: report.sourceTableId,
+    totalRows: 0,
+    rows: [],
+    summary: [],
+    chartData: [],
+    warnings: ["Loading source records for this report. The report will open automatically when the refresh completes."],
+    page,
+    pageSize,
+    totalPages: 1,
+    hasNextPage: false,
+    refreshJob
+  };
+}
+
+function buildPendingDashboardResult(dashboard: DashboardDefinition, refreshJob: RefreshJobStatus) {
+  return {
+    dashboard,
+    tabs: dashboard.tabs.map((tab) => ({
+      id: tab.id,
+      name: tab.name,
+      widgets: []
+    })),
+    refreshJob
+  };
+}
+
 export async function registerRenderRoutes(app: FastifyInstance) {
   app.post("/api/reports/:id/run", async (request, reply) => {
     await studioStore.hydrateFromQuickbase();
@@ -53,6 +137,10 @@ export async function registerRenderRoutes(app: FastifyInstance) {
       forceLive?: boolean;
     } | undefined) || {};
     const extraFilters = normalizeClientFilters(body.filters || []);
+    const pendingRefresh = await maybeStartAutoRefreshForReport(report);
+    if (pendingRefresh) {
+      return buildPendingReportResult(report, pendingRefresh, body.page || 1, body.pageSize || 100);
+    }
     return executeReport(report, extraFilters, {
       page: body.page || 1,
       pageSize: body.pageSize || 100,
@@ -75,6 +163,10 @@ export async function registerRenderRoutes(app: FastifyInstance) {
       forceLive?: boolean;
     } | undefined) || {};
     const extraFilters = normalizeClientFilters(body.filters || []);
+    const pendingRefresh = await maybeStartAutoRefreshForReport(report);
+    if (pendingRefresh) {
+      return buildPendingReportResult(report, pendingRefresh, body.page || 1, body.pageSize || 100);
+    }
     return fetchReportPage(report, extraFilters, {
       page: body.page || 1,
       pageSize: body.pageSize || 100,
@@ -249,6 +341,15 @@ export async function registerRenderRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string };
     const body = (request.body as { runtimeFilters?: Record<string, string>; activeTabId?: string; forceLive?: boolean } | undefined) || {};
     try {
+      const dashboard = objectStore.getDashboard(id) as DashboardDefinition | undefined;
+      if (!dashboard) {
+        reply.code(404);
+        return { message: "Dashboard not found." };
+      }
+      const pendingRefresh = await maybeStartAutoRefreshForDashboard(dashboard);
+      if (pendingRefresh) {
+        return buildPendingDashboardResult(dashboard, pendingRefresh);
+      }
       return await executeDashboard(id, body.runtimeFilters || {}, {
         activeTabId: body.activeTabId || "",
         forceLive: body.forceLive === true

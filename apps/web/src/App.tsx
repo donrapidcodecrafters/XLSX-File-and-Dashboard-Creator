@@ -7,6 +7,7 @@ import {
   resolveStudioSessionStatus,
   touchStudioSession,
   type CatalogSummaryItem,
+  type RefreshJobStatus,
   type ReportDefinition,
   type ReportFocusMode,
   type StudioDocument,
@@ -217,6 +218,7 @@ function ObjectPage({
     fetcher
       .then((reportResult) => {
         if (!active) return;
+        setRefreshJob(reportResult.refreshJob || null);
         setResult((current: any) => page === 1 || !current
           ? reportResult
           : {
@@ -454,6 +456,7 @@ function ObjectPage({
         }}
         forceLive={liveModeEnabled}
         openLinksInNewTab={openLinksInNewTab}
+        onRefreshJobDetected={(job: RefreshJobStatus | null) => setRefreshJob(job)}
       />
     </>
   );
