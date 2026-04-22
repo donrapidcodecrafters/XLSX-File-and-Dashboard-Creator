@@ -585,7 +585,6 @@ async function fetchAllTableRows(
 }
 
 export async function ensureTableRowsAvailable(tableId: string, options: { objectId?: string } = {}) {
-  await studioStore.hydrateFromQuickbase();
   const document = studioStore.getLiveDocument();
   const table = getTable(document, tableId);
   if (!table) return [] as DataRow[];

@@ -220,6 +220,17 @@ export class StudioStore {
     return this.getDocument();
   }
 
+  saveSession(session: StudioDocument["session"], options: { persist?: boolean } = {}) {
+    this.document = normalizeStudioDocument({
+      ...this.document,
+      session
+    });
+    if (options.persist) {
+      this.persist(this.document);
+    }
+    return clone(this.document.session);
+  }
+
   flushCurrent(options: { markSavedAt?: boolean } = {}) {
     if (options.markSavedAt !== false) {
       this.document.sync.lastSavedAt = new Date().toISOString();

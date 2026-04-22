@@ -149,7 +149,6 @@ function buildPendingDashboardResult(dashboard: DashboardDefinition, refreshJob:
 
 export async function registerRenderRoutes(app: FastifyInstance) {
   app.post("/api/reports/:id/run", async (request, reply) => {
-    await studioStore.hydrateFromQuickbase();
     const { id } = request.params as { id: string };
     const report = objectStore.getReport(id);
     if (!report) {
@@ -182,7 +181,6 @@ export async function registerRenderRoutes(app: FastifyInstance) {
   });
 
   app.post("/api/reports/:id/page", async (request, reply) => {
-    await studioStore.hydrateFromQuickbase();
     const { id } = request.params as { id: string };
     const report = objectStore.getReport(id);
     if (!report) {
@@ -215,7 +213,6 @@ export async function registerRenderRoutes(app: FastifyInstance) {
   });
 
   app.post("/api/reports/:id/export-rows", async (request, reply) => {
-    await studioStore.hydrateFromQuickbase();
     const { id } = request.params as { id: string };
     const report = objectStore.getReport(id);
     if (!report) {
@@ -231,7 +228,6 @@ export async function registerRenderRoutes(app: FastifyInstance) {
   });
 
   app.post("/api/reports/:id/export-bundle", async (request, reply) => {
-    await studioStore.hydrateFromQuickbase();
     const { id } = request.params as { id: string };
     const report = objectStore.getReport(id);
     if (!report) {
@@ -247,7 +243,6 @@ export async function registerRenderRoutes(app: FastifyInstance) {
   });
 
   app.post("/api/exports/report/start", async (request, reply) => {
-    await studioStore.hydrateFromQuickbase();
     const body = (request.body as { payload?: string } | undefined) || {};
     const payload = parsePayload(body.payload) as {
       reportId?: string;
@@ -281,7 +276,6 @@ export async function registerRenderRoutes(app: FastifyInstance) {
   });
 
   app.post("/api/exports/dashboard/start", async (request, reply) => {
-    await studioStore.hydrateFromQuickbase();
     const body = (request.body as { payload?: string } | undefined) || {};
     const payload = parsePayload(body.payload) as {
       dashboardId?: string;
@@ -377,7 +371,6 @@ export async function registerRenderRoutes(app: FastifyInstance) {
   });
 
   app.post("/api/dashboards/:id/render", async (request, reply) => {
-    await studioStore.hydrateFromQuickbase();
     const { id } = request.params as { id: string };
     const body = (request.body as { runtimeFilters?: Record<string, string>; activeTabId?: string; forceLive?: boolean } | undefined) || {};
     try {

@@ -16,11 +16,8 @@ import { importWorkbookIntoStudioDocument } from "../services/xlsx-import.js";
 
 export async function registerStudioRoutes(app: FastifyInstance) {
   app.get("/api/studio/document", async () => {
-    await studioStore.hydrateFromQuickbase();
-    const hydrated = studioStore.getLiveDocument();
-    updateRefreshScheduleMetadata(hydrated);
-    const provisioned = await ensureQuickbaseStorageForProfiles(hydrated);
-    const document = studioStore.saveDocument(provisioned, { markSavedAt: false });
+    const document = studioStore.getDocument();
+    updateRefreshScheduleMetadata(document);
     return { document };
   });
 
@@ -112,14 +109,11 @@ export async function registerStudioRoutes(app: FastifyInstance) {
       return { message: "Session payload is required." };
     }
     const current = studioStore.getLiveDocument();
-    const document = studioStore.saveDocument(normalizeStudioDocument({
-      ...current,
-      session: {
-        ...current.session,
-        ...body.session
-      }
-    }), { markSavedAt: false });
-    return { session: document.session };
+    const session = studioStore.saveSession({
+      ...current.session,
+      ...body.session
+    });
+    return { session };
   });
 
   app.post("/api/studio/import/xlsx", async (request, reply) => {
@@ -129,7 +123,6 @@ export async function registerStudioRoutes(app: FastifyInstance) {
       return { message: "Workbook filename and base64 payload are required." };
     }
     try {
-      await studioStore.hydrateFromQuickbase();
       const current = studioStore.getLiveDocument();
       const imported = await importWorkbookIntoStudioDocument(
         current,
@@ -201,7 +194,6 @@ export async function registerStudioRoutes(app: FastifyInstance) {
 
   app.post("/api/studio/refresh/start", async (request, reply) => {
     try {
-      await studioStore.hydrateFromQuickbase();
       const activeJob = getActiveRefreshJob();
       if (activeJob && (activeJob.status === "queued" || activeJob.status === "running")) {
         return { job: activeJob };
@@ -229,7 +221,6 @@ export async function registerStudioRoutes(app: FastifyInstance) {
   app.post("/api/studio/objects/:id/refresh/start", async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
-      await studioStore.hydrateFromQuickbase();
       const activeJob = getActiveRefreshJob();
       if (activeJob && (activeJob.status === "queued" || activeJob.status === "running")) {
         return { job: activeJob };
@@ -256,7 +247,6 @@ export async function registerStudioRoutes(app: FastifyInstance) {
 
   app.get("/api/studio/refresh/jobs/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
-    await studioStore.hydrateFromQuickbase();
     const job = getTrackedRefreshJob(id);
     if (!job) {
       reply.code(404);
