@@ -1176,7 +1176,7 @@ function mapQuickbaseFieldType(fieldType: string, baseType: string): FieldType {
   return "text";
 }
 
-function convertQuickbaseSchemaToTables(
+export function convertQuickbaseSchemaToTables(
   schema: Awaited<ReturnType<typeof loadQuickbaseSchema>>,
   profileId = "",
   appId = ""

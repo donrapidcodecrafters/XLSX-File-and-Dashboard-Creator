@@ -1,6 +1,7 @@
 import type { FastifyBaseLogger } from "fastify";
 import type { DataRow, RefreshJobStatus, RefreshScheduleConfig, ReportDefinition, StudioDocument, TableDefinition } from "@studio/shared";
-import { fetchQuickbaseSavedReportPage, fetchQuickbaseTablePage } from "./quickbase-storage.js";
+import { loadQuickbaseSchema } from "./quickbase-schema.js";
+import { convertQuickbaseSchemaToTables, fetchQuickbaseSavedReportPage, fetchQuickbaseTablePage } from "./quickbase-storage.js";
 import { studioStore } from "./studio-store.js";
 import { RefreshCancelledError, refreshJobStore } from "./refresh-jobs.js";
 
@@ -95,11 +96,13 @@ function getUsedTableIdsForProfile(document: StudioDocument, profileId: string) 
 function getRefreshTableIdsForProfile(document: StudioDocument, profileId: string) {
   const profile = document.quickbaseProfiles.find((item) => item.id === profileId);
   const configured = Array.isArray(profile?.refreshSource?.tableIds) ? profile.refreshSource.tableIds.filter(Boolean) : [];
-  if (!configured.length) {
+  const configuredFromReportIds = Object.keys(profile?.refreshSource?.reportIds || {}).filter(Boolean);
+  const preferred = configured.length ? configured : configuredFromReportIds;
+  if (!preferred.length) {
     return getUsedTableIdsForProfile(document, profileId);
   }
   return Array.from(new Set(
-    configured.map((tableId) => getTable(document, tableId)?.id || tableId)
+    preferred.map((tableId) => getTable(document, tableId)?.id || tableId)
   )).filter((tableId) => {
     const table = getTable(document, tableId);
     return table?.quickbaseProfileId === profileId && isQuickbaseRefreshableTable(document, tableId);
@@ -468,6 +471,56 @@ function randomJobFallbackId(status: StudioDocument["sync"]["refreshStatus"]) {
   return stamp ? `persisted-${stamp}` : "";
 }
 
+async function ensureQuickbaseTablesLoaded(document: StudioDocument, profileIds: string[] = []) {
+  const targetProfiles = (profileIds.length
+    ? document.quickbaseProfiles.filter((profile) => profileIds.includes(profile.id))
+    : document.quickbaseProfiles
+  ).filter((profile) =>
+    Boolean(
+      String(profile.quickbase.realmHostname || "").trim()
+      && String(profile.quickbase.userToken || "").trim()
+      && String(profile.quickbase.appId || "").trim()
+    )
+  );
+
+  if (!targetProfiles.length) return document;
+
+  let changed = false;
+  for (const profile of targetProfiles) {
+    const currentTables = document.bundle.tables.filter((table) => table.quickbaseProfileId === profile.id);
+    const referencedTableIds = new Set([
+      ...(profile.refreshSource?.tableIds || []),
+      ...Object.keys(profile.refreshSource?.reportIds || {})
+    ].filter(Boolean));
+    const hasAllReferencedTables = Array.from(referencedTableIds).every((tableId) => Boolean(getTable(document, tableId)));
+    if (currentTables.length > 0 && hasAllReferencedTables) {
+      continue;
+    }
+    const schema = await loadQuickbaseSchema({
+      realmHostname: profile.quickbase.realmHostname,
+      userToken: profile.quickbase.userToken,
+      appToken: profile.quickbase.appToken,
+      appId: profile.quickbase.appId
+    }).catch(() => null);
+    if (!schema) continue;
+    const loadedTables = convertQuickbaseSchemaToTables(schema, profile.id, profile.quickbase.appId);
+    if (!loadedTables.length) continue;
+    document.bundle.tables = [
+      ...document.bundle.tables.filter((table) => table.quickbaseProfileId !== profile.id),
+      ...loadedTables
+    ];
+    document.bundle.data = {
+      ...document.bundle.data,
+      ...Object.fromEntries(loadedTables.map((table) => [table.id, document.bundle.data[table.id] || document.bundle.data[table.quickbaseTableId || ""] || []]))
+    };
+    changed = true;
+  }
+  if (changed) {
+    studioStore.flushDocument(document, { markSavedAt: false });
+  }
+  return document;
+}
+
 function assertRefreshNotCancelled(jobId: string, profileIds: string[] = []) {
   if (!jobId) return;
   const document = studioStore.getLiveDocument();
@@ -480,6 +533,7 @@ function assertRefreshNotCancelled(jobId: string, profileIds: string[] = []) {
 
 export async function primeRefreshJob(jobId: string, options: { objectId?: string; profileId?: string; message?: string } = {}) {
   const document = studioStore.getLiveDocument();
+  await ensureQuickbaseTablesLoaded(document, options.profileId ? [options.profileId] : []);
   const tableIds = options.objectId ? getObjectTableIds(document, options.objectId) : (
     options.profileId ? getRefreshTableIdsForProfile(document, options.profileId) : getUsedTableIds(document)
   );
@@ -662,6 +716,7 @@ async function fetchAllTableRows(
 export async function ensureTableRowsAvailable(tableId: string, options: { objectId?: string } = {}) {
   await studioStore.hydrateFromQuickbase();
   const document = studioStore.getLiveDocument();
+  await ensureQuickbaseTablesLoaded(document);
   const table = getTable(document, tableId);
   if (!table) return [] as DataRow[];
 
@@ -727,6 +782,7 @@ export function updateLegacyActiveQuickbase(document: StudioDocument) {
 export async function refreshAllCachedData(reason: "manual" | "scheduled" = "manual", profileId = "") {
   await studioStore.hydrateFromQuickbase(true);
   const startDocument = studioStore.getLiveDocument();
+  await ensureQuickbaseTablesLoaded(startDocument, profileId ? [profileId] : []);
   updateRefreshScheduleMetadata(startDocument);
   updateLegacyActiveQuickbase(startDocument);
   startDocument.sync.refreshStatus.running = true;
@@ -831,6 +887,7 @@ export async function refreshAllCachedDataWithProgress(
 ) {
   await studioStore.hydrateFromQuickbase(true);
   const startDocument = studioStore.getLiveDocument();
+  await ensureQuickbaseTablesLoaded(startDocument, profileId ? [profileId] : []);
   updateRefreshScheduleMetadata(startDocument);
   updateLegacyActiveQuickbase(startDocument);
   startDocument.sync.refreshStatus.running = true;
@@ -1014,6 +1071,7 @@ export async function refreshObjectCachedDataWithProgress(
 ) {
   await studioStore.hydrateFromQuickbase(true);
   const startDocument = studioStore.getLiveDocument();
+  await ensureQuickbaseTablesLoaded(startDocument);
   updateRefreshScheduleMetadata(startDocument);
   updateLegacyActiveQuickbase(startDocument);
   startDocument.sync.refreshStatus.running = true;
