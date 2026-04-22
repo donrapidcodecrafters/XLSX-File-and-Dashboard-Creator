@@ -879,7 +879,7 @@ export async function executeReport(report: ReportDefinition, extraFilters: Filt
 
   const key = cacheKey(report, table, extraFilters);
   const full = await cache.getOrCreate(key, async () => {
-    const rows = objectStore.getRows(table.id);
+    const rows = await getExecutionRows(table, { objectId: report.id });
     const result = rows.length <= 1500
       ? runReport(report, table, rows, extraFilters)
       : await runReportWorker({ report, table, rows, extraFilters });
