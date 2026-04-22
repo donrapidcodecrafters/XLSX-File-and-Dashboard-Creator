@@ -500,21 +500,23 @@ export function StudioDashboardPreview({
                       </div>
                     ) : null}
                     {widget.status === "complete" && (resolveDashboardWidgetDisplayMode(widget.widget) === "table" || widget.widget.showDetails) ? (
-                      <div className="table-shell compact-table-shell">
-                        <table>
-                          <thead>
-                            <tr>
-                              {widget.report.selectedFieldIds.slice(0, 6).map((fieldId) => <th key={fieldId}>{getFieldLabel(widget.report, widgetTable, fieldId)}</th>)}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {widget.result.rows.slice(0, 8).map((row, index) => (
-                              <tr key={index}>
-                                {widget.report.selectedFieldIds.slice(0, 6).map((fieldId) => <td key={fieldId}>{formatCell(row[fieldId], widget.report, widgetTable, fieldId)}</td>)}
+                      <div className="compact-table-shell">
+                        <div className="table-shell preview-widget-table-shell">
+                          <table>
+                            <thead>
+                              <tr>
+                                {widget.report.selectedFieldIds.slice(0, 6).map((fieldId) => <th key={fieldId}>{getFieldLabel(widget.report, widgetTable, fieldId)}</th>)}
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                            </thead>
+                            <tbody>
+                              {widget.result.rows.slice(0, 8).map((row, index) => (
+                                <tr key={index}>
+                                  {widget.report.selectedFieldIds.slice(0, 6).map((fieldId) => <td key={fieldId}>{formatCell(row[fieldId], widget.report, widgetTable, fieldId)}</td>)}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
                       </div>
                     ) : null}
                     <button

@@ -236,7 +236,7 @@ export function ReportView({
     setFocusedSection(view.focusedSection || "");
   }
 
-  function renderDetailContent() {
+  function renderDetailContent(tableShellClassName = "report-table-shell") {
     if (!result) return null;
     const rows = result.rows || [];
     if (report.view.mode === "timeline" || report.view.mode === "calendar") {
@@ -288,7 +288,7 @@ export function ReportView({
       );
     }
     return (
-      <div className="table-shell">
+      <div className={`table-shell ${tableShellClassName}`}>
         <table>
           <thead>
             <tr>
@@ -527,7 +527,7 @@ export function ReportView({
               <strong>{report.name} · Detail focus</strong>
               <button className="ghost-button" onClick={() => setFocusedSection("")}>Close</button>
             </div>
-            {renderDetailContent()}
+            {renderDetailContent("focus-table-shell")}
           </div>
         </div>
       ) : null}

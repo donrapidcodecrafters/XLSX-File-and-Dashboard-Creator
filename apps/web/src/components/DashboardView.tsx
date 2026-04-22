@@ -737,7 +737,7 @@ export function DashboardView({
                         );
                       }
                       return (
-                        <div className="table-shell">
+                        <div className="table-shell widget-table-shell">
                           <table>
                             <thead>
                               <tr>
@@ -847,7 +847,7 @@ export function DashboardView({
               </div>
             ) : null}
             {(widgetRenderMode(focusedWidget.widget, focusedWidget.report) === "table" || focusedWidget.widget.showDetails) ? (
-              <div className="table-shell">
+              <div className="table-shell focus-table-shell">
                 <table>
                   <thead>
                     <tr>

@@ -19,9 +19,9 @@ function buildPager(page: number, totalPages: number, totalRows: number, pageSiz
   );
 }
 
-function renderDetailTable(report: ReportDefinition, table: TableDefinition, rows: DataRow[]) {
+function renderDetailTable(report: ReportDefinition, table: TableDefinition, rows: DataRow[], tableShellClassName = "preview-table-shell") {
   return (
-    <div className="table-shell">
+    <div className={`table-shell ${tableShellClassName}`}>
       <table>
         <thead>
           <tr>

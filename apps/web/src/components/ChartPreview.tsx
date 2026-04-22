@@ -407,8 +407,8 @@ export function ChartPreview({
 
   if (normalizedChartType === "variwide-bar") {
     const { ticks, axisMax } = axisMaxFor(primaryItems.map((item) => item.value), compact);
-    const chartWidth = 760;
-    const chartHeight = 348;
+    const chartWidth = compact ? 520 : 760;
+    const chartHeight = compact ? 236 : 348;
     const leftPad = axisTickTextWidth(ticks, decimalPlaces, compact);
     const rightPad = 24;
     const topPad = 24;
@@ -498,8 +498,8 @@ export function ChartPreview({
     );
     const primaryMax = Math.max(...categorySums, ...primaryItems.map((item) => item.value), 1);
     const { ticks, axisMax } = axisMaxFor([primaryMax], compact);
-    const chartWidth = 760;
-    const chartHeight = 348;
+    const chartWidth = compact ? 520 : 760;
+    const chartHeight = compact ? 236 : 348;
     const leftPad = axisTickTextWidth(ticks, decimalPlaces, compact);
     const rightPad = 24;
     const topPad = 24;
@@ -625,8 +625,8 @@ export function ChartPreview({
     );
     const primaryMax = Math.max(...categorySums, ...primaryItems.map((item) => item.value), 1);
     const { ticks, axisMax } = axisMaxFor([primaryMax], compact);
-    const chartWidth = 760;
-    const chartHeight = Math.max(220, 84 + categories.length * 44);
+    const chartWidth = compact ? 540 : 760;
+    const chartHeight = Math.max(compact ? 172 : 220, (compact ? 72 : 84) + categories.length * (compact ? 32 : 44));
     const labelPad = Math.min(220, Math.max(132, categories.reduce((max, item) => Math.max(max, cap(item.label, compact ? 12 : 18).length), 1) * 8 + 36));
     const leftPad = labelPad + (yAxisLabel ? 26 : 0);
     const rightPad = showValues ? axisTickTextWidth([axisMax], decimalPlaces, compact) : 28;
@@ -743,16 +743,16 @@ export function ChartPreview({
     const secondaryAxis = secondaryItems.length ? axisMaxFor([secondaryMax], compact) : null;
     const yAxisWidth = axisTickTextWidth(ticks, decimalPlaces, compact);
     const secondaryAxisWidth = secondaryAxis ? axisTickTextWidth(secondaryAxis.ticks, decimalPlaces, compact) : 0;
-    const chartWidth = 460;
-    const chartHeight = 292;
+    const chartWidth = compact ? 400 : 460;
+    const chartHeight = compact ? 232 : 292;
     const plotLeft = yAxisWidth + 18;
     const plotRight = chartWidth - (secondaryAxis ? secondaryAxisWidth + 18 : 12);
-    const plotTop = 20;
-    const plotBottom = 186;
+    const plotTop = compact ? 16 : 20;
+    const plotBottom = compact ? 150 : 186;
     const plotWidth = plotRight - plotLeft;
     const plotHeight = plotBottom - plotTop;
-    const tickLabelY = 226;
-    const axisLabelY = 274;
+    const tickLabelY = compact ? 186 : 226;
+    const axisLabelY = compact ? 220 : 274;
     const axisLayoutColumns = `${yAxisLabel ? "auto " : ""}minmax(0, 1fr)${secondaryYAxisLabel ? " auto" : ""}`;
     const buildSeriesPoints = (seriesRaw: string, axis: "primary" | "secondary") => {
       const maxValue = axis === "secondary" && secondaryAxis ? secondaryAxis.axisMax : axisMax;
