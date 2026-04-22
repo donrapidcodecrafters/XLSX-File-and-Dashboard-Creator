@@ -284,6 +284,7 @@ function ObjectPage({
   const [page, setPage] = useState(1);
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [refreshJob, setRefreshJob] = useState<any>(null);
+  const [startingRefresh, setStartingRefresh] = useState(false);
   const pageSize = 100;
   const scopedObjectFromDocument = useMemo(
     () => params.objectId && studioDocument ? studioDocument.bundle.objects[params.objectId] || null : null,
@@ -410,8 +411,13 @@ function ObjectPage({
 
   async function startObjectRefresh() {
     if (!object) return;
-    const response = await startStudioObjectRefresh(object.id);
-    setRefreshJob(response.job);
+    setStartingRefresh(true);
+    try {
+      const response = await startStudioObjectRefresh(object.id);
+      setRefreshJob(response.job);
+    } finally {
+      window.setTimeout(() => setStartingRefresh(false), 700);
+    }
   }
 
   if (!params.objectId) return null;
@@ -430,6 +436,9 @@ function ObjectPage({
     const personalOverride = object.scope === "global" ? getReportPersonalOverride(object.id, studioDocument) : null;
     return (
       <>
+        {startingRefresh && !refreshJob ? (
+          <RefreshOverlay title="Starting report refresh" indeterminate job={{ message: "Starting a cache refresh for this report…" }} />
+        ) : null}
         {liveModeEnabled ? (
           <div className="sync-status sync-status-warn">
             <strong>Live mode enabled</strong>
@@ -514,6 +523,9 @@ function ObjectPage({
 
   return (
     <>
+      {startingRefresh && !refreshJob ? (
+        <RefreshOverlay title="Starting dashboard refresh" indeterminate job={{ message: "Starting a cache refresh for this dashboard…" }} />
+      ) : null}
       {liveModeEnabled ? (
         <div className="sync-status sync-status-warn">
           <strong>Live mode enabled</strong>
@@ -705,6 +717,7 @@ export function App() {
   const [studioRefreshSignal, setStudioRefreshSignal] = useState(0);
   const [viewerRefreshSignal, setViewerRefreshSignal] = useState(0);
   const [homeRefreshSignal, setHomeRefreshSignal] = useState(0);
+  const lastAppliedLaunchSessionKey = useRef("");
   const homeRoute = location.pathname === "/";
   const helpRoute = location.pathname === "/help";
   const studioRoute = location.pathname.startsWith("/studio");
@@ -723,6 +736,13 @@ export function App() {
 
   useEffect(() => {
     if (!studioDocument || !hosted.launchSource) return;
+    const launchSessionKey = JSON.stringify({
+      launchSource: hosted.launchSource,
+      currentUserId: hosted.userId || studioDocument.session.currentUserId,
+      launchRealmHostname: hosted.realmHostname,
+      launchAppId: hosted.appId
+    });
+    if (launchSessionKey === lastAppliedLaunchSessionKey.current) return;
     const nextSession = touchStudioSession(studioDocument.session, {
       now: Date.now(),
       relaunch: true,
@@ -733,6 +753,7 @@ export function App() {
       requiresLaunch: true
     });
     if (sessionsMatch(studioDocument.session, nextSession)) return;
+    lastAppliedLaunchSessionKey.current = launchSessionKey;
     setStudioDocument((current) => applySessionToDocument(current, nextSession));
     void persistSession(nextSession).catch(() => undefined);
   }, [hosted.appId, hosted.launchSource, hosted.realmHostname, hosted.userId, persistSession, setStudioDocument, studioDocument]);

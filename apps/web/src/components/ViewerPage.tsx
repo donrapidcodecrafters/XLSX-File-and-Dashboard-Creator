@@ -32,6 +32,7 @@ export function ViewerPage({
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [recentOnly, setRecentOnly] = useState(false);
   const [refreshJob, setRefreshJob] = useState<any>(null);
+  const [startingRefresh, setStartingRefresh] = useState(false);
   const favorites = studioDocument?.favorites || [];
   const currentUserId = String(studioDocument?.session.currentUserId || "").trim();
   const visibleObjects = useMemo(
@@ -77,12 +78,20 @@ export function ViewerPage({
   }, [refreshAllSignal]);
 
   async function startFullRefresh() {
-    const response = await startStudioRefresh();
-    setRefreshJob(response.job);
+    setStartingRefresh(true);
+    try {
+      const response = await startStudioRefresh();
+      setRefreshJob(response.job);
+    } finally {
+      window.setTimeout(() => setStartingRefresh(false), 700);
+    }
   }
 
   return (
     <section className="surface stack viewer-page">
+      {startingRefresh && !refreshJob ? (
+        <RefreshOverlay title="Starting refresh" indeterminate job={{ message: "Starting a full platform refresh…" }} />
+      ) : null}
       {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" && refreshJob.status !== "cancelled" ? (
         <RefreshOverlay title="Refreshing all reports and dashboards" job={refreshJob} />
       ) : null}

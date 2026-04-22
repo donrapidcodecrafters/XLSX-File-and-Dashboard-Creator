@@ -38,6 +38,7 @@ export function HomePage({
   onToggleFavorite: (objectId: string) => Promise<void>;
 }) {
   const [refreshJob, setRefreshJob] = useState<any>(null);
+  const [startingRefresh, setStartingRefresh] = useState(false);
   const currentUserId = String(studioDocument?.session.currentUserId || "").trim();
   const catalogLookup = useMemo(
     () => buildStudioCatalogItemLookup(objects, studioDocument?.bundle.objects),
@@ -118,12 +119,20 @@ export function HomePage({
   }, [refreshAllSignal]);
 
   async function startFullRefresh() {
-    const response = await startStudioRefresh();
-    setRefreshJob(response.job);
+    setStartingRefresh(true);
+    try {
+      const response = await startStudioRefresh();
+      setRefreshJob(response.job);
+    } finally {
+      window.setTimeout(() => setStartingRefresh(false), 700);
+    }
   }
 
   return (
     <section className="surface home-page">
+      {startingRefresh && !refreshJob ? (
+        <RefreshOverlay title="Starting refresh" indeterminate job={{ message: "Starting a full platform refresh…" }} />
+      ) : null}
       {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" && refreshJob.status !== "cancelled" ? (
         <RefreshOverlay title="Refreshing all reports and dashboards" job={refreshJob} />
       ) : null}

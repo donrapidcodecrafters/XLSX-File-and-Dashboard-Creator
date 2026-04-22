@@ -116,6 +116,7 @@ import {
 } from "./studioReportUtils";
 
 const STORAGE_KEY = "hosted-reporting-studio-v2";
+const ACTIVITY_OVERLAY_MIN_MS = 700;
 const WIDGET_LAYOUT_PRESETS = [
   { id: "quarter", label: "Quarter", w: 3, h: 3 },
   { id: "third", label: "Third", w: 4, h: 3 },
@@ -1412,10 +1413,15 @@ export function StudioPage({
   }
 
   async function runWithActivityOverlay<T>(title: string, message: string, action: () => Promise<T>) {
+    const startedAt = Date.now();
     setActivityOverlay({ title, message });
     try {
       return await action();
     } finally {
+      const elapsed = Date.now() - startedAt;
+      if (elapsed < ACTIVITY_OVERLAY_MIN_MS) {
+        await new Promise((resolve) => window.setTimeout(resolve, ACTIVITY_OVERLAY_MIN_MS - elapsed));
+      }
       setActivityOverlay(null);
     }
   }
