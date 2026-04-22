@@ -278,6 +278,17 @@ function uniqueFieldIds(values: Array<string | undefined>) {
   return Array.from(new Set(values.filter(Boolean).map((value) => String(value).trim()).filter(Boolean)));
 }
 
+function payloadUpdatedAt(payload: any) {
+  const candidate = Date.parse(String(payload?.updatedAt || payload?.changedAt || ""));
+  return Number.isNaN(candidate) ? 0 : candidate;
+}
+
+function selectLatestPayload<T extends Record<string, any>>(items: T[], predicate: (item: T) => boolean) {
+  return items
+    .filter(predicate)
+    .sort((left, right) => payloadUpdatedAt(right) - payloadUpdatedAt(left))[0];
+}
+
 function isRecordIdField(fid: string) {
   return String(fid || "").trim() === "3";
 }
@@ -974,11 +985,12 @@ async function resolveStoredQuickbaseConfig(
   }
   const bootstrapRows = await loadQuickbaseBootstrapRows(bootstrapConfig).catch(() => []);
   const scope = `${normalizeHostname(bootstrapConfig.realmHostname)}::${bootstrapConfig.appId}`;
-  const storagePayload = bootstrapRows
-    .map((row) => uniqueFieldIds(["8", bootstrapConfig.settingsJsonFieldId, "7"]).map((fid) => parseJsonValue(qbFieldValue(row, fid))).find(Boolean))
-    .find((payload: any) => payload?.type === "storageConfig" && (!payload.scope || payload.scope === scope)) as
-      | { storage?: Partial<StudioDocument["quickbase"]> }
-      | undefined;
+  const storagePayload = selectLatestPayload(
+    bootstrapRows
+      .map((row) => uniqueFieldIds(["8", bootstrapConfig.settingsJsonFieldId, "7"]).map((fid) => parseJsonValue(qbFieldValue(row, fid))).find(Boolean))
+      .filter((payload): payload is { storage?: Partial<StudioDocument["quickbase"]>; type?: string; scope?: string } => Boolean(payload && typeof payload === "object")),
+    (payload) => payload.type === "storageConfig" && (!payload.scope || payload.scope === scope)
+  );
 
   return {
     config: mergeQuickbaseConfig(bootstrapConfig, storagePayload?.storage || null),
@@ -1068,8 +1080,12 @@ function loadUserSettingsFromRows(
     payload: any;
   }>;
 
-  const exact = parsedRows.find((entry) => entry.payload?.type === "userSettings" && String(qbFieldValue(entry.row, config.settingsUserFieldId || "6")) === userValue);
-  const fallback = parsedRows.find((entry) => entry.payload?.type === "userSettings");
+  const exact = parsedRows
+    .filter((entry) => entry.payload?.type === "userSettings" && String(qbFieldValue(entry.row, config.settingsUserFieldId || "6")) === userValue)
+    .sort((left, right) => payloadUpdatedAt(right.payload) - payloadUpdatedAt(left.payload))[0];
+  const fallback = parsedRows
+    .filter((entry) => entry.payload?.type === "userSettings")
+    .sort((left, right) => payloadUpdatedAt(right.payload) - payloadUpdatedAt(left.payload))[0];
   return exact?.payload || fallback?.payload || null;
 }
 
