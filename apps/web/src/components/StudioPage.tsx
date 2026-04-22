@@ -100,6 +100,7 @@ import { StudioReportDraftViewStep } from "./StudioReportDraftViewStep";
 import { StudioReportPreview } from "./StudioReportPreview";
 import { StudioSettingsPanel } from "./StudioSettingsPanel";
 import { StudioWorkspaceEmptyState } from "./StudioWorkspaceEmptyState";
+import { StudioWorkspaceHome } from "./StudioWorkspaceHome";
 import {
   DEFAULT_CHART_COLORS,
   getChartAxisLabels,
@@ -902,27 +903,11 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
   );
   const activeObjectId = params.objectId && bundle.objects[params.objectId] && isStudioItemVisibleToCurrentUser(bundle.objects[params.objectId], currentUserId)
     ? params.objectId
-    : visibleObjects[0]?.id;
-  const hasActiveObject = Boolean(activeObjectId && bundle.objects[activeObjectId]);
-  const activeObject = hasActiveObject
-    ? bundle.objects[activeObjectId as string]
-    : ({
-        id: "",
-        type: "dashboard",
-        schemaVersion: 1,
-        name: "No reports or dashboards yet",
-        description: "Create a report or dashboard, or open Settings to connect Quickbase and load workspace data.",
-        folder: "",
-        category: "",
-        tags: [],
-        scope: "global",
-        ownerUserId: "",
-        updatedAt: "",
-        runtimeFilters: [],
-        tabs: []
-      } as StudioObject);
-  const activeReport = hasActiveObject && activeObject.type === "report" ? activeObject : null;
-  const activeDashboard = hasActiveObject && activeObject.type === "dashboard" ? activeObject : null;
+    : "";
+  const activeObject = activeObjectId ? bundle.objects[activeObjectId] || null : null;
+  const hasActiveObject = Boolean(activeObject);
+  const activeReport: ReportDefinition | null = activeObject?.type === "report" ? activeObject : null;
+  const activeDashboard: DashboardDefinition | null = activeObject?.type === "dashboard" ? activeObject : null;
   const openLinksInNewTab = documentState.branding.openLinksInNewTab === true;
   const resolvedActiveDashboardTabId = resolveActiveDashboardTabId(activeDashboard, activeTabId);
   const activeDashboardTab = activeDashboard?.tabs.find((tab) => tab.id === resolvedActiveDashboardTabId) || null;
@@ -965,7 +950,7 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
     () => getStudioBuilderStepIssues(activeCreateStep, createDraft, createDraftTable, currentUserId),
     [activeCreateStep, createDraft, createDraftTable, currentUserId]
   );
-  const validation = hasActiveObject ? validationMessages(activeObject, activeTable) : [];
+  const validation = activeObject ? validationMessages(activeObject, activeTable) : [];
   const visibleCreateFields = useMemo(() => {
     if (!createDraftTable) return [];
     const query = createFieldQuery.trim().toLowerCase();
@@ -1232,12 +1217,6 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
     activeQuickbaseConfig.userToken,
     documentState.bundle.tables
   ]);
-
-  useEffect(() => {
-    if (!activeObjectId && visibleObjects[0]) {
-      navigate(`/studio/${visibleObjects[0].id}`, { replace: true });
-    }
-  }, [activeObjectId, navigate, visibleObjects]);
 
   useEffect(() => {
     if (!activeObjectId) return;
@@ -2451,7 +2430,7 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
     pushToast("Workbook export started.");
   }
 
-  if (!activeObject) {
+  if (!activeObject && !visibleObjects.length) {
     return (
       <>
         {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" ? (
@@ -2470,10 +2449,46 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
           </div>
         ) : null}
         <section className="studio-page studio-page-empty">
-          <StudioLibrarySidebar
-            homeLabel={documentState.branding.homeLabel}
-            navigationLabel={documentState.branding.navigationLabel}
-            openLinksInNewTab={openLinksInNewTab}
+          <StudioWorkspaceEmptyState
+            loadingRemote={loadingRemote}
+            lastSavedAt={documentState.sync.lastSavedAt}
+            savingRemote={savingRemote}
+            xlsxImporting={xlsxImporting}
+            onSave={saveRemote}
+            onCreateReport={() => openCreateModal("report")}
+            onCreateDashboard={() => openCreateModal("dashboard")}
+            onImportXlsx={() => importXlsxInputRef.current?.click()}
+            onUseTemplate={() => setDrawer("templates")}
+          />
+        </section>
+      </>
+    );
+  }
+
+  if (!activeObject) {
+    return (
+      <>
+        {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" ? (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(12,22,18,0.58)", zIndex: 9999, display: "grid", placeItems: "center", padding: "24px" }}>
+            <div style={{ width: "min(560px, 100%)", background: "#fff", borderRadius: "20px", padding: "24px", boxShadow: "0 24px 64px rgba(0,0,0,0.24)" }}>
+              <strong style={{ display: "block", fontSize: "1.1rem", marginBottom: "8px" }}>Refreshing all reports and dashboards</strong>
+              <div style={{ marginBottom: "10px", color: "#41554a" }}>{refreshJob.message}</div>
+              <div style={{ height: "12px", background: "#e5ece8", borderRadius: "999px", overflow: "hidden", marginBottom: "10px" }}>
+                <div style={{ height: "100%", width: `${refreshJob.progress || 0}%`, background: "#0d7c66" }} />
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.95rem", color: "#41554a" }}>
+                <span>{refreshJob.progress || 0}% complete</span>
+                <span>{typeof refreshJob.estimatedSecondsRemaining === "number" ? `~${refreshJob.estimatedSecondsRemaining}s remaining` : "Estimating time…"}</span>
+              </div>
+            </div>
+          </div>
+        ) : null}
+        <section className="studio-page studio-page-home">
+          <StudioWorkspaceHome
+            loadingRemote={loadingRemote}
+            lastSavedAt={documentState.sync.lastSavedAt}
+            savingRemote={savingRemote}
+            xlsxImporting={xlsxImporting}
             libraryQuery={libraryQuery}
             onLibraryQueryChange={setLibraryQuery}
             libraryFilter={libraryFilter}
@@ -2487,28 +2502,16 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
             hasPersonalObjects={visibleObjects.some((object) => object.scope === "personal")}
             filteredObjects={filteredObjects}
             templates={[...documentState.templates.layouts, ...documentState.templates.yaml]}
-            xlsxImporting={xlsxImporting}
-            importInputRef={importInputRef}
-            importXlsxInputRef={importXlsxInputRef}
-            onImportJsonChange={handleImportJson}
-            onImportXlsxChange={handleImportXlsx}
-            onApplyTemplate={applyTemplate}
-            onOpenCreateReport={() => openCreateModal("report")}
-            onOpenCreateDashboard={() => openCreateModal("dashboard")}
-            onOpenTemplates={() => setDrawer("templates")}
-          />
-
-          <StudioWorkspaceEmptyState
-            loadingRemote={loadingRemote}
-            lastSavedAt={documentState.sync.lastSavedAt}
-            savingRemote={savingRemote}
-            xlsxImporting={xlsxImporting}
+            openLinksInNewTab={openLinksInNewTab}
             onSave={saveRemote}
             onCreateReport={() => openCreateModal("report")}
             onCreateDashboard={() => openCreateModal("dashboard")}
             onImportXlsx={() => importXlsxInputRef.current?.click()}
             onUseTemplate={() => setDrawer("templates")}
+            onApplyTemplate={applyTemplate}
           />
+          <input ref={importInputRef} hidden type="file" accept="application/json" onChange={handleImportJson} />
+          <input ref={importXlsxInputRef} hidden type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={handleImportXlsx} />
         </section>
       </>
     );
