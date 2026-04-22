@@ -615,6 +615,7 @@ export function App() {
     }),
     [currentUserId, hosted.appId, hosted.launchSource, hosted.realmHostname, sessionScopedDocument]
   );
+  const requiresHostedStudioDocument = hosted.launchSource === "quickbase-button";
   const catalogSourceObjects = useMemo(
     () => displayDocument
       ? displayDocument.bundle.order
@@ -633,17 +634,19 @@ export function App() {
             ownerUserId: object.ownerUserId,
             updatedAt: object.updatedAt
           }))
-      : objects,
-    [displayDocument, objects]
+      : requiresHostedStudioDocument ? [] : objects,
+    [displayDocument, objects, requiresHostedStudioDocument]
   );
   const scopedTables = useMemo(
-    () => filterTablesForLaunchScope(tables, sessionScopedDocument, {
-      launchSource: hosted.launchSource,
-      currentUserId,
-      launchRealmHostname: hosted.realmHostname,
-      launchAppId: hosted.appId
-    }),
-    [currentUserId, hosted.appId, hosted.launchSource, hosted.realmHostname, sessionScopedDocument, tables]
+    () => requiresHostedStudioDocument && !sessionScopedDocument
+      ? []
+      : filterTablesForLaunchScope(tables, sessionScopedDocument, {
+          launchSource: hosted.launchSource,
+          currentUserId,
+          launchRealmHostname: hosted.realmHostname,
+          launchAppId: hosted.appId
+        }),
+    [currentUserId, hosted.appId, hosted.launchSource, hosted.realmHostname, requiresHostedStudioDocument, sessionScopedDocument, tables]
   );
   const bootstrapIssues = useMemo(
     () => (displayDocument?.quickbaseProfiles || []).filter((profile) => !profile.bootstrap.ready || profile.bootstrap.autoProvisioned || profile.bootstrap.error),
@@ -653,6 +656,8 @@ export function App() {
     () => filterStudioLibraryItems(
       displayDocument
         ? catalogSourceObjects
+        : requiresHostedStudioDocument
+          ? []
         : catalogSourceObjects.filter((item) => isCatalogItemInLaunchScope(item, sessionScopedDocument, {
             launchSource: hosted.launchSource,
             currentUserId,
@@ -661,7 +666,7 @@ export function App() {
           })),
       { currentUserId }
     ),
-    [catalogSourceObjects, currentUserId, displayDocument, hosted.appId, hosted.launchSource, hosted.realmHostname, sessionScopedDocument]
+    [catalogSourceObjects, currentUserId, displayDocument, hosted.appId, hosted.launchSource, hosted.realmHostname, requiresHostedStudioDocument, sessionScopedDocument]
   );
   const [studioSettingsSignal, setStudioSettingsSignal] = useState(0);
   const [studioRefreshSignal, setStudioRefreshSignal] = useState(0);
@@ -868,6 +873,12 @@ export function App() {
               <span>Connecting to saved reports, dashboards, and table definitions…</span>
             </section>
           ) : null}
+          {requiresHostedStudioDocument && !catalogLoading && !studioDocument ? (
+            <section className="sync-status sync-status-warn">
+              <strong>Saved platform content has not loaded yet</strong>
+              <span>The hosted app is waiting for the real saved platform document and is not falling back to seeded reports or dashboards.</span>
+            </section>
+          ) : null}
           {catalogError ? (
             <section className="sync-status sync-status-warn">
               <strong>Some content did not load cleanly</strong>
@@ -890,15 +901,17 @@ export function App() {
               </div>
             </section>
           ) : null}
-          <Routes>
-            <Route path="/" element={<HomePage objects={visibleObjects} studioDocument={displayDocument} recentIds={recentIds} refreshAllSignal={homeRefreshSignal} openLinksInNewTab={openLinksInNewTab} onRefreshComplete={reloadCatalog} onToggleFavorite={toggleFavorite} />} />
-            <Route path="/viewer" element={<ViewerPage objects={visibleObjects} studioDocument={displayDocument} recentIds={recentIds} refreshAllSignal={viewerRefreshSignal} openLinksInNewTab={openLinksInNewTab} onRefreshComplete={reloadCatalog} onToggleFavorite={toggleFavorite} />} />
-            <Route path="/help" element={<HelpPage />} />
-            <Route path="/studio" element={<StudioPage openSettingsSignal={studioSettingsSignal} refreshAllSignal={studioRefreshSignal} launchContext={hosted} />} />
-            <Route path="/studio/:objectId" element={<StudioPage openSettingsSignal={studioSettingsSignal} refreshAllSignal={studioRefreshSignal} launchContext={hosted} />} />
-            <Route path="/:type/:objectId" element={<ObjectPage tables={scopedTables} platformName={platformName} studioDocument={displayDocument} launchContext={hosted} openLinksInNewTab={openLinksInNewTab} onObjectViewed={markObjectAsRecent} onUserSettingsChange={updateUserSettings} onToggleFavorite={toggleFavorite} />} />
-            <Route path="*" element={<Navigate to={buildHostedRoute("/")} replace />} />
-          </Routes>
+          {requiresHostedStudioDocument && !studioDocument ? null : (
+            <Routes>
+              <Route path="/" element={<HomePage objects={visibleObjects} studioDocument={displayDocument} recentIds={recentIds} refreshAllSignal={homeRefreshSignal} openLinksInNewTab={openLinksInNewTab} onRefreshComplete={reloadCatalog} onToggleFavorite={toggleFavorite} />} />
+              <Route path="/viewer" element={<ViewerPage objects={visibleObjects} studioDocument={displayDocument} recentIds={recentIds} refreshAllSignal={viewerRefreshSignal} openLinksInNewTab={openLinksInNewTab} onRefreshComplete={reloadCatalog} onToggleFavorite={toggleFavorite} />} />
+              <Route path="/help" element={<HelpPage />} />
+              <Route path="/studio" element={<StudioPage openSettingsSignal={studioSettingsSignal} refreshAllSignal={studioRefreshSignal} launchContext={hosted} />} />
+              <Route path="/studio/:objectId" element={<StudioPage openSettingsSignal={studioSettingsSignal} refreshAllSignal={studioRefreshSignal} launchContext={hosted} />} />
+              <Route path="/:type/:objectId" element={<ObjectPage tables={scopedTables} platformName={platformName} studioDocument={displayDocument} launchContext={hosted} openLinksInNewTab={openLinksInNewTab} onObjectViewed={markObjectAsRecent} onUserSettingsChange={updateUserSettings} onToggleFavorite={toggleFavorite} />} />
+              <Route path="*" element={<Navigate to={buildHostedRoute("/")} replace />} />
+            </Routes>
+          )}
         </main>
       </div>
     </div>
