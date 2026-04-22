@@ -1229,6 +1229,28 @@ function remapObjectTableIds(object: StudioObject, tables: TableDefinition[]): S
   };
 }
 
+function hasRefreshSourceConfig(profile: { refreshSource?: { tableIds?: string[]; reportIds?: Record<string, string> } } | null | undefined) {
+  const tableIds = Array.isArray(profile?.refreshSource?.tableIds) ? profile!.refreshSource!.tableIds.filter(Boolean) : [];
+  const reportIds = Object.values(profile?.refreshSource?.reportIds || {}).filter((value) => String(value || "").trim());
+  return tableIds.length > 0 || reportIds.length > 0;
+}
+
+function mergeProfileRefreshSource(
+  baseProfile: { refreshSource?: { tableIds?: string[]; reportIds?: Record<string, string> } } | undefined,
+  loadedProfile: { refreshSource?: { tableIds?: string[]; reportIds?: Record<string, string> } }
+) {
+  if (hasRefreshSourceConfig(loadedProfile) || !hasRefreshSourceConfig(baseProfile)) {
+    return {
+      tableIds: [...(loadedProfile.refreshSource?.tableIds || [])],
+      reportIds: { ...(loadedProfile.refreshSource?.reportIds || {}) }
+    };
+  }
+  return {
+    tableIds: [...(baseProfile?.refreshSource?.tableIds || [])],
+    reportIds: { ...(baseProfile?.refreshSource?.reportIds || {}) }
+  };
+}
+
 export async function hydrateStudioDocumentFromQuickbase(document: StudioDocument): Promise<StudioDocument> {
   const base = normalizeStudioDocument(document);
   const bootstrapConfig =
@@ -1373,6 +1395,10 @@ export async function hydrateStudioDocumentFromQuickbase(document: StudioDocumen
 
   next.quickbaseProfiles = next.quickbaseProfiles.map((profile) => ({
     ...profile,
+    refreshSource: mergeProfileRefreshSource(
+      base.quickbaseProfiles.find((item) => item.id === profile.id),
+      profile
+    ),
     refreshStatus: base.quickbaseProfiles.find((item) => item.id === profile.id)?.refreshStatus || profile.refreshStatus
   }));
 
