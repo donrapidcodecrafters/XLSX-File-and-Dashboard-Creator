@@ -12,6 +12,7 @@ import {
   matchesFilterNode,
   runReport,
   type ChartAggregation,
+  type DashboardDefinition,
   type DashboardRunResult,
   type DataRow,
   type FilterDefinition,
@@ -136,12 +137,22 @@ function collectReportFieldIds(report: ReportDefinition) {
   ));
 }
 
-function cacheKey(report: ReportDefinition, extraFilters: FilterDefinition[], options: ExecuteReportOptions): string {
+function getTableCacheVersion(table: TableDefinition): string {
+  const keys = Array.from(new Set([table.id, table.quickbaseTableId || ""].filter(Boolean)));
+  for (const key of keys) {
+    const meta = studioStore.getCacheMeta(key);
+    if (meta) {
+      return `${key}:${meta.cachedAt}:${meta.rowCount}`;
+    }
+  }
+  return `rows:${objectStore.getRows(table.id).length}`;
+}
+
+function cacheKey(report: ReportDefinition, table: TableDefinition, extraFilters: FilterDefinition[]): string {
   return JSON.stringify({
     reportId: report.id,
     updatedAt: report.updatedAt,
-    page: options.page || 1,
-    pageSize: options.pageSize || 100,
+    tableVersion: getTableCacheVersion(table),
     filters: extraFilters
       .filter((filter) => Boolean(filter.value))
       .map((filter) => [filter.fieldId, filter.operator, filter.value])
@@ -177,6 +188,24 @@ function normalizePageOptions(options: ExecuteReportOptions) {
     includeRows: options.includeRows !== false,
     startIndex: (page - 1) * pageSize,
     endIndexExclusive: page * pageSize
+  };
+}
+
+function paginateReportResult(
+  full: ReportRunResult,
+  options: ExecuteReportOptions,
+  mode: "full" | "page-only" = "full"
+): ReportRunResult {
+  const { page, pageSize, includeRows, startIndex, endIndexExclusive } = normalizePageOptions(options);
+  return {
+    ...full,
+    rows: includeRows ? full.rows.slice(startIndex, endIndexExclusive) : [],
+    summary: mode === "page-only" ? [] : full.summary,
+    chartData: mode === "page-only" ? [] : full.chartData,
+    page,
+    pageSize,
+    totalPages: Math.max(1, Math.ceil(full.totalRows / pageSize)),
+    hasNextPage: includeRows ? page * pageSize < full.totalRows : false
   };
 }
 
@@ -266,6 +295,79 @@ function summarizeRows(rows: DataRow[], metrics: SummaryMetric[], decimalPlaces:
       numericValue
     };
   });
+}
+
+function createEmptyReportResult(reportId: string, tableId: string, warning: string, source: DataFreshnessInfo["source"] = "local-fallback"): ReportRunResult {
+  return {
+    reportId,
+    tableId,
+    totalRows: 0,
+    rows: [],
+    summary: [],
+    chartData: [],
+    warnings: warning ? [warning] : [],
+    page: 1,
+    pageSize: 100,
+    totalPages: 1,
+    hasNextPage: false,
+    freshness: freshness(source)
+  };
+}
+
+function createFallbackWidgetReport(widget: DashboardDefinition["tabs"][number]["widgets"][number], message: string): ReportDefinition {
+  return {
+    id: widget.reportId || `${widget.id}-missing-report`,
+    type: "report",
+    schemaVersion: 1,
+    name: widget.title || "Unavailable report",
+    description: message,
+    folder: "Unavailable",
+    category: "Unavailable",
+    tags: [],
+    scope: "global",
+    ownerUserId: "",
+    updatedAt: new Date().toISOString(),
+    sourceTableId: "",
+    sourceReportOverrides: {},
+    selectedFieldIds: [],
+    filters: [],
+    filterTree: createFilterGroup("and", []),
+    groups: [],
+    sorts: [],
+    summaryMetrics: [],
+    view: {
+      mode: "table",
+      showChartInTable: false,
+      showSummary: false,
+      showDetails: true,
+      chartTitle: "",
+      decimalPlaces: 2,
+      chartType: "bar",
+      chartOrientation: "vertical",
+      chartFieldId: "",
+      chartSeriesFieldId: "",
+      chartValueFieldId: "",
+      chartAggregation: "count",
+      chartSecondaryValueFieldId: "",
+      chartSecondaryAggregation: "sum",
+      chartUseSecondaryAxis: false,
+      chartSecondarySeriesType: "line",
+      chartTopN: 12,
+      chartSort: "value-desc",
+      chartColors: ["#0d7c66"],
+      chartShowLegend: false,
+      chartShowValues: false,
+      chartXAxisLabel: "",
+      chartYAxisLabel: "",
+      chartSecondaryYAxisLabel: "",
+      timelineDateField: "",
+      timelineEndField: "",
+      calendarDateField: "",
+      kanbanField: "",
+      titleFieldId: ""
+    },
+    displayLabels: { fields: {}, chartValues: {} }
+  };
 }
 
 function createMetricAccumulator(metrics: SummaryMetric[]) {
@@ -630,33 +732,25 @@ export async function executeReportPage(report: ReportDefinition, extraFilters: 
     return executeQuickbaseReportPage(report, table, extraFilters, options).catch(async () => {
       const rows = objectStore.getRows(table.id);
       const full = runReport(report, table, rows, extraFilters);
-      const { page, pageSize, startIndex, endIndexExclusive } = normalizePageOptions(options);
       const cachedFreshness = getCachedFreshness(table.id);
-      return {
+      return paginateReportResult({
         ...full,
-        rows: full.rows.slice(startIndex, endIndexExclusive),
-        page,
-        pageSize,
-        totalPages: Math.max(1, Math.ceil(full.totalRows / pageSize)),
-        hasNextPage: page * pageSize < full.totalRows,
         freshness: cachedFreshness || freshness("local-fallback")
-      };
+      }, options, "full");
     });
   }
 
-  const rows = objectStore.getRows(table.id);
-  const full = runReport(report, table, rows, extraFilters);
-  const { page, pageSize, startIndex, endIndexExclusive } = normalizePageOptions(options);
-  const cachedFreshness = getCachedFreshness(table.id);
-  return {
-    ...full,
-    rows: full.rows.slice(startIndex, endIndexExclusive),
-    page,
-    pageSize,
-    totalPages: Math.max(1, Math.ceil(full.totalRows / pageSize)),
-    hasNextPage: page * pageSize < full.totalRows,
-    freshness: cachedFreshness || freshness("local-fallback")
-  };
+  const full = await cache.getOrCreate(cacheKey(report, table, extraFilters), async () => {
+    const rows = objectStore.getRows(table.id);
+    const result = rows.length <= 1500
+      ? runReport(report, table, rows, extraFilters)
+      : await runReportWorker({ report, table, rows, extraFilters });
+    return {
+      ...result,
+      freshness: getCachedFreshness(table.id) || freshness("local-fallback")
+    };
+  });
+  return paginateReportResult(full, options, "full");
 }
 
 export async function fetchReportPage(report: ReportDefinition, extraFilters: FilterDefinition[] = [], options: ExecuteReportOptions = {}): Promise<ReportRunResult> {
@@ -669,20 +763,17 @@ export async function fetchReportPage(report: ReportDefinition, extraFilters: Fi
     return fetchQuickbaseReportPageOnly(report, table, extraFilters, options);
   }
 
-  const full = runReport(report, table, objectStore.getRows(table.id), extraFilters);
-  const { page, pageSize, startIndex, endIndexExclusive } = normalizePageOptions(options);
-  const cachedFreshness = getCachedFreshness(table.id);
-  return {
-    ...full,
-    rows: full.rows.slice(startIndex, endIndexExclusive),
-    summary: [],
-    chartData: [],
-    page,
-    pageSize,
-    totalPages: Math.max(1, Math.ceil(full.totalRows / pageSize)),
-    hasNextPage: page * pageSize < full.totalRows,
-    freshness: cachedFreshness || freshness("local-fallback")
-  };
+  const full = await cache.getOrCreate(cacheKey(report, table, extraFilters), async () => {
+    const rows = objectStore.getRows(table.id);
+    const result = rows.length <= 1500
+      ? runReport(report, table, rows, extraFilters)
+      : await runReportWorker({ report, table, rows, extraFilters });
+    return {
+      ...result,
+      freshness: getCachedFreshness(table.id) || freshness("local-fallback")
+    };
+  });
+  return paginateReportResult(full, options, "page-only");
 }
 
 export async function fetchReportExportBundle(
@@ -750,10 +841,16 @@ export async function fetchReportExportBundle(
   }
 
   onProgress?.(68, "Preparing export data");
-  return {
-    ...runReport(report, table, objectStore.getRows(table.id), extraFilters),
-    freshness: getCachedFreshness(table.id) || freshness("local-fallback")
-  };
+  return cache.getOrCreate(cacheKey(report, table, extraFilters), async () => {
+    const rows = objectStore.getRows(table.id);
+    const result = rows.length <= 1500
+      ? runReport(report, table, rows, extraFilters)
+      : await runReportWorker({ report, table, rows, extraFilters });
+    return {
+      ...result,
+      freshness: getCachedFreshness(table.id) || freshness("local-fallback")
+    };
+  });
 }
 
 export async function fetchAllReportRowsForExport(report: ReportDefinition, extraFilters: FilterDefinition[] = []): Promise<DataRow[]> {
@@ -766,43 +863,25 @@ export async function executeReport(report: ReportDefinition, extraFilters: Filt
   if (!table) {
     throw new Error("Table not found for report " + report.id + ".");
   }
-  if (!reportNeedsAggregates(report)) {
-    return fetchReportPage(report, extraFilters, options);
-  }
   if (shouldUseLiveQuickbase(table.id, options.forceLive)) {
+    if (!reportNeedsAggregates(report)) {
+      return fetchQuickbaseReportPageOnly(report, table, extraFilters, options);
+    }
     return executeQuickbaseReportPage(report, table, extraFilters, options);
   }
 
-  const key = cacheKey(report, extraFilters, options);
-  return cache.getOrCreate(key, async () => {
+  const key = cacheKey(report, table, extraFilters);
+  const full = await cache.getOrCreate(key, async () => {
     const rows = objectStore.getRows(table.id);
-    const cachedFreshness = getCachedFreshness(table.id);
-    if (rows.length <= 1500) {
-      const full = runReport(report, table, rows, extraFilters);
-      const { page, pageSize, startIndex, endIndexExclusive } = normalizePageOptions(options);
-      return {
-        ...full,
-        rows: full.rows.slice(startIndex, endIndexExclusive),
-        page,
-        pageSize,
-        totalPages: Math.max(1, Math.ceil(full.totalRows / pageSize)),
-        hasNextPage: page * pageSize < full.totalRows,
-        freshness: cachedFreshness || freshness("local-fallback")
-      };
-    }
-
-    const full = await runReportWorker({ report, table, rows, extraFilters });
-    const { page, pageSize, startIndex, endIndexExclusive } = normalizePageOptions(options);
+    const result = rows.length <= 1500
+      ? runReport(report, table, rows, extraFilters)
+      : await runReportWorker({ report, table, rows, extraFilters });
     return {
-      ...full,
-      rows: full.rows.slice(startIndex, endIndexExclusive),
-      page,
-      pageSize,
-      totalPages: Math.max(1, Math.ceil(full.totalRows / pageSize)),
-      hasNextPage: page * pageSize < full.totalRows,
-      freshness: cachedFreshness || freshness("local-fallback")
+      ...result,
+      freshness: getCachedFreshness(table.id) || freshness("local-fallback")
     };
   });
+  return paginateReportResult(full, options, "full");
 }
 
 function resolveDashboardWidgetDisplayMode(report: ReportDefinition, widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"]) {
@@ -853,32 +932,58 @@ export async function executeDashboard(
       tab.widgets.map(async (widget) => {
         const report = objectStore.resolveWidgetReport(widget);
         if (!report) {
-          throw new Error("Widget report not found for " + widget.id + ".");
+          const message = "Widget report not found.";
+          const fallbackReport = createFallbackWidgetReport(widget, message);
+          return {
+            widgetId: widget.id,
+            widget,
+            report: fallbackReport,
+            result: createEmptyReportResult(fallbackReport.id, fallbackReport.sourceTableId, message),
+            status: "failed" as const,
+            message,
+            error: message
+          };
         }
         const extraFilters = buildDashboardFilters(dashboard, report.id, runtimeValues);
         const executionKey = buildDashboardExecutionKey(report, widget, extraFilters);
-        let pending = executionCache.get(executionKey);
-        if (!pending) {
-          pending = widgetNeedsAggregates(report, widget)
-            ? executeReport(report, extraFilters, { page: 1, pageSize: 100, includeRows: widgetNeedsRows(report, widget), forceLive: options.forceLive })
-            : fetchReportPage(report, extraFilters, { page: 1, pageSize: 100, forceLive: options.forceLive });
-          executionCache.set(executionKey, pending);
+        try {
+          let pending = executionCache.get(executionKey);
+          if (!pending) {
+            pending = widgetNeedsAggregates(report, widget)
+              ? executeReport(report, extraFilters, { page: 1, pageSize: 100, includeRows: widgetNeedsRows(report, widget), forceLive: options.forceLive })
+              : fetchReportPage(report, extraFilters, { page: 1, pageSize: 100, forceLive: options.forceLive });
+            executionCache.set(executionKey, pending);
+          }
+          const result = await pending;
+          return {
+            widgetId: widget.id,
+            widget,
+            report,
+            result,
+            status: "complete" as const,
+            message: result.totalRows ? `${result.totalRows} row${result.totalRows === 1 ? "" : "s"}` : "No rows returned"
+          };
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Widget failed to load.";
+          return {
+            widgetId: widget.id,
+            widget,
+            report,
+            result: createEmptyReportResult(report.id, report.sourceTableId, message),
+            status: "failed" as const,
+            message,
+            error: message
+          };
         }
-        const result = await pending;
-        return {
-          widgetId: widget.id,
-          widget,
-          report,
-          result
-        };
       })
     )
   );
 
   const built = buildDashboardResult(dashboard, widgetResults);
-  const dashboardSource = widgetResults.every((widget) => widget.result.freshness?.source === "quickbase-live")
+  const successfulWidgets = widgetResults.filter((widget) => widget.status === "complete");
+  const dashboardSource = successfulWidgets.length && successfulWidgets.every((widget) => widget.result.freshness?.source === "quickbase-live")
     ? "quickbase-live"
-    : widgetResults.every((widget) => widget.result.freshness?.source === "scheduled-cache")
+    : successfulWidgets.length && successfulWidgets.every((widget) => widget.result.freshness?.source === "scheduled-cache")
       ? "scheduled-cache"
       : "local-fallback";
   return {

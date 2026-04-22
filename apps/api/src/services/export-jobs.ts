@@ -91,6 +91,12 @@ export class ExportJobStore {
     return this.jobs.get(id);
   }
 
+  listJobs() {
+    this.cleanup();
+    return Array.from(this.jobs.values())
+      .sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime());
+  }
+
   createFileStream(id: string) {
     const job = this.jobs.get(id);
     if (!job?.filePath) return null;

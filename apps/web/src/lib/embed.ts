@@ -1,9 +1,18 @@
+type HostedLaunchSource = "quickbase-button" | "local-dev" | null;
+
 export function getHostedContext() {
   const params = new URLSearchParams(window.location.search);
+  const launchSource: HostedLaunchSource = params.get("launch") === "quickbase" || params.get("qbLaunch") === "1"
+    ? "quickbase-button"
+    : params.get("launch") === "local"
+      ? "local-dev"
+      : null;
   return {
     embed: params.get("embed") === "1",
     mode: params.get("mode") === "viewer" ? "viewer" : "builder",
-    search: params.toString() ? "?" + params.toString() : ""
+    search: params.toString() ? "?" + params.toString() : "",
+    launchSource,
+    userId: String(params.get("userId") || params.get("userid") || "").trim()
   };
 }
 

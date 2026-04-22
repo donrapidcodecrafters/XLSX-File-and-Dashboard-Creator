@@ -1,10 +1,43 @@
 import ExcelJS from "exceljs";
 import type { Stream } from "node:stream";
-import { formatNumericValue, formatReportCellValue, getReportDecimalPlaces, getReportFieldLabel, type ChartDatum, type DashboardDefinition, type DashboardRunResult, type ReportDefinition, type ReportRunResult, type SummaryDatum, type TableDefinition } from "@studio/shared";
+import {
+  buildDashboardFilters,
+  filterNeedsValue,
+  formatNumericValue,
+  formatReportCellValue,
+  getDashboardWidgetPlacements,
+  getReportDecimalPlaces,
+  getReportFieldLabel,
+  type ChartDatum,
+  type DashboardDefinition,
+  type DashboardRunResult,
+  type FilterDefinition,
+  type FilterOperator,
+  type ReportDefinition,
+  type ReportRunResult,
+  type SummaryDatum,
+  type TableDefinition
+} from "@studio/shared";
 
 interface ExportProgressCallback {
   (progress: number, message: string): void;
 }
+
+const FILTER_OPERATOR_LABELS: Record<FilterOperator, string> = {
+  equals: "equals",
+  "not-equals": "does not equal",
+  contains: "contains",
+  "not-contains": "does not contain",
+  blank: "is blank",
+  "not-blank": "is not blank",
+  gt: "is greater than",
+  gte: "is at least",
+  lt: "is less than",
+  lte: "is at most",
+  on: "is on",
+  "on-or-after": "is on or after",
+  "on-or-before": "is on or before"
+};
 
 function safeSheetName(name: string, usedNames: Set<string>) {
   const base = (name || "Sheet").replace(/[\\/*?:[\]]/g, "").trim() || "Sheet";
@@ -22,6 +55,134 @@ function safeSheetName(name: string, usedNames: Set<string>) {
 function safeFileName(name: string, fallback: string) {
   const next = (name || fallback).replace(/[<>:"/\\|?*\u0000-\u001f]/g, " ").replace(/\s+/g, " ").trim();
   return next || fallback;
+}
+
+function sheetHyperlink(sheetName: string) {
+  return `#'${sheetName.replace(/'/g, "''")}'!A1`;
+}
+
+function formatTimestamp(value: Date) {
+  return new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(value);
+}
+
+function getTableFieldLabel(table: TableDefinition | undefined, fieldId: string) {
+  return table?.fields.find((field) => field.id === fieldId)?.label || fieldId;
+}
+
+function formatFilterValue(value: string) {
+  const trimmed = String(value ?? "").trim();
+  return trimmed || "(blank)";
+}
+
+function describeReportFilter(report: ReportDefinition, table: TableDefinition, filter: FilterDefinition) {
+  const fieldLabel = getReportFieldLabel(report, table, filter.fieldId);
+  const operatorLabel = FILTER_OPERATOR_LABELS[filter.operator] || filter.operator;
+  return filterNeedsValue(filter.operator)
+    ? `${fieldLabel} ${operatorLabel} ${formatFilterValue(filter.value)}`
+    : `${fieldLabel} ${operatorLabel}`;
+}
+
+function describeRuntimeFilter(
+  dashboard: DashboardDefinition,
+  filter: DashboardDefinition["runtimeFilters"][number],
+  tablesById: Record<string, TableDefinition>,
+  runtimeValues: Record<string, string>
+) {
+  const fieldLabel = Object.values(tablesById)
+    .map((table) => getTableFieldLabel(table, filter.fieldId))
+    .find((label) => label !== filter.fieldId) || filter.fieldId;
+  const currentValue = runtimeValues[filter.id] ?? filter.defaultValue ?? "";
+  const scope = filter.mode === "global"
+    ? "all cards"
+    : filter.targetReportIds.length
+      ? `${filter.targetReportIds.length} selected report${filter.targetReportIds.length === 1 ? "" : "s"}`
+      : "selected reports";
+  return `${filter.label || filter.id}: ${fieldLabel} = ${formatFilterValue(currentValue)} (${scope})`;
+}
+
+function writeOverviewHeader(sheet: ExcelJS.Worksheet, title: string, description: string) {
+  sheet.getCell("A1").value = title;
+  sheet.getCell("A1").font = { size: 18, bold: true };
+  sheet.getCell("A2").value = description;
+  sheet.getCell("A2").alignment = { wrapText: true };
+}
+
+function writeMetadataRows(
+  sheet: ExcelJS.Worksheet,
+  startRow: number,
+  items: Array<{ label: string; value: string | number }>
+) {
+  let row = startRow;
+  items.forEach((item) => {
+    sheet.getCell(`A${row}`).value = item.label;
+    sheet.getCell(`A${row}`).font = { bold: true };
+    sheet.getCell(`B${row}`).value = item.value;
+    row += 1;
+  });
+  return row;
+}
+
+function writeLinkRows(
+  sheet: ExcelJS.Worksheet,
+  startRow: number,
+  title: string,
+  links: Array<{ label: string; sheetName: string }>
+) {
+  let row = startRow;
+  sheet.getCell(`A${row}`).value = title;
+  sheet.getCell(`A${row}`).font = { bold: true };
+  row += 1;
+  if (!links.length) {
+    sheet.getCell(`A${row}`).value = "None";
+    return row + 2;
+  }
+  links.forEach((link) => {
+    sheet.getCell(`A${row}`).value = {
+      text: link.label,
+      hyperlink: sheetHyperlink(link.sheetName)
+    };
+    sheet.getCell(`A${row}`).font = { color: { argb: "FF1F5AA6" }, underline: true };
+    row += 1;
+  });
+  return row + 1;
+}
+
+function writeTextListSection(sheet: ExcelJS.Worksheet, startRow: number, title: string, items: string[], emptyText = "None") {
+  let row = startRow;
+  sheet.getCell(`A${row}`).value = title;
+  sheet.getCell(`A${row}`).font = { bold: true };
+  row += 1;
+  if (!items.length) {
+    sheet.getCell(`A${row}`).value = emptyText;
+    return row + 2;
+  }
+  items.forEach((item) => {
+    sheet.getCell(`A${row}`).value = `• ${item}`;
+    sheet.getCell(`A${row}`).alignment = { wrapText: true };
+    row += 1;
+  });
+  return row + 1;
+}
+
+function writeWarningSection(sheet: ExcelJS.Worksheet, startRow: number, warnings: string[]) {
+  if (!warnings.length) return startRow;
+  let row = startRow;
+  sheet.getCell(`A${row}`).value = "Warnings";
+  sheet.getCell(`A${row}`).font = { bold: true, color: { argb: "FF8A4B08" } };
+  row += 1;
+  warnings.forEach((warning) => {
+    sheet.getCell(`A${row}`).value = `• ${warning}`;
+    sheet.getCell(`A${row}`).alignment = { wrapText: true };
+    sheet.getCell(`A${row}`).font = { color: { argb: "FF8A4B08" } };
+    row += 1;
+  });
+  return row + 1;
 }
 
 function reportShowsChart(report: ReportDefinition) {
@@ -103,9 +264,95 @@ function writeDataSheet(
   });
 }
 
+const DEFAULT_CHART_COLORS = ["#0d7c66", "#d88d3d", "#5b7cfa", "#9b59b6", "#e66f5c", "#3a9782", "#b7a26a"];
+
+function getChartPalette(report: ReportDefinition) {
+  const configured = (report.view.chartColors || [])
+    .map((color) => String(color || "").trim())
+    .filter((color) => /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(color));
+  return configured.length ? configured : DEFAULT_CHART_COLORS;
+}
+
+function withAlpha(color: string, alpha: string) {
+  const normalized = color.trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(normalized)) {
+    return `${normalized}${alpha}`;
+  }
+  if (/^#[0-9a-fA-F]{3}$/.test(normalized)) {
+    const expanded = `#${normalized.slice(1).split("").map((character) => `${character}${character}`).join("")}`;
+    return `${expanded}${alpha}`;
+  }
+  return normalized;
+}
+
+function collapseChartData(data: ChartDatum[], axis: "primary" | "secondary" = "primary") {
+  const grouped = new Map<string, ChartDatum>();
+  data
+    .filter((datum) => (datum.axis || "primary") === axis)
+    .forEach((datum) => {
+      const key = String(datum.rawLabel ?? datum.label ?? "");
+      const current = grouped.get(key) || {
+        label: datum.label,
+        rawLabel: datum.rawLabel,
+        value: 0,
+        axis
+      };
+      current.value += datum.value;
+      grouped.set(key, current);
+    });
+  return Array.from(grouped.values());
+}
+
+function deriveCategories(data: ChartDatum[]) {
+  return Array.from(new Set(data.map((datum) => String(datum.rawLabel ?? datum.label ?? "")))).map((rawLabel) => {
+    const match = data.find((datum) => String(datum.rawLabel ?? datum.label ?? "") === rawLabel);
+    return {
+      rawLabel,
+      label: match?.label || rawLabel
+    };
+  });
+}
+
+function deriveSeries(data: ChartDatum[], axis: "primary" | "secondary" = "primary") {
+  const filtered = data.filter((datum) => (datum.axis || "primary") === axis);
+  if (!filtered.length) return [];
+  const rawSeries = Array.from(new Set(filtered.map((datum) => String(datum.rawSeries || datum.series || ""))));
+  if (!rawSeries.length || (rawSeries.length === 1 && rawSeries[0] === "")) {
+    return [{
+      rawSeries: "",
+      label: axis === "secondary" ? "Secondary" : "Values"
+    }];
+  }
+  return rawSeries.map((seriesKey) => {
+    const match = filtered.find((datum) => String(datum.rawSeries || datum.series || "") === seriesKey);
+    return {
+      rawSeries: seriesKey,
+      label: match?.series || seriesKey || (axis === "secondary" ? "Secondary" : "Values")
+    };
+  });
+}
+
+function valueForCategory(data: ChartDatum[], rawLabel: string, rawSeries: string, axis: "primary" | "secondary" = "primary") {
+  return data
+    .filter((datum) => (datum.axis || "primary") === axis)
+    .filter((datum) => String(datum.rawLabel ?? datum.label ?? "") === rawLabel)
+    .filter((datum) => String(datum.rawSeries || datum.series || "") === rawSeries)
+    .reduce((sum, datum) => sum + datum.value, 0);
+}
+
+function chartLabelNumericValue(rawLabel: string, index: number) {
+  const trimmed = String(rawLabel || "").trim();
+  const numeric = Number(trimmed);
+  if (Number.isFinite(numeric)) return numeric;
+  const dateValue = Date.parse(trimmed);
+  if (Number.isFinite(dateValue)) return index + 1;
+  return index + 1;
+}
+
 function quickChartType(chartType: ReportDefinition["view"]["chartType"]) {
   if (chartType === "pie" || chartType === "3d-pie") return "pie";
   if (chartType === "donut" || chartType === "3d-donut") return "doughnut";
+  if (chartType === "gauge" || chartType === "radial-bar" || chartType === "progress-bar") return "doughnut";
   if (chartType === "line" || chartType === "spline" || chartType === "line-bar") return "line";
   if (chartType === "area" || chartType === "area-spline" || chartType === "streamgraph" || chartType === "3d-area") return "line";
   if (chartType === "radar") return "radar";
@@ -114,37 +361,171 @@ function quickChartType(chartType: ReportDefinition["view"]["chartType"]) {
   return "bar";
 }
 
-function chartDataset(data: ChartDatum[], report: ReportDefinition) {
-  const horizontal = report.view.chartType === "horizontal-bar" || report.view.chartType === "horizontal-stacked-bar" || (report.view.chartType === "bar" && report.view.chartOrientation === "horizontal");
+function isHorizontalChart(report: ReportDefinition) {
+  return report.view.chartType === "horizontal-bar"
+    || report.view.chartType === "horizontal-stacked-bar"
+    || (report.view.chartType === "bar" && report.view.chartOrientation === "horizontal");
+}
+
+function isStackedChart(chartType: ReportDefinition["view"]["chartType"]) {
+  return chartType === "stacked-bar" || chartType === "horizontal-stacked-bar" || chartType === "stacked-column" || chartType === "3d-stacked-bar";
+}
+
+function isAreaChart(chartType: ReportDefinition["view"]["chartType"]) {
+  return chartType === "area" || chartType === "area-spline" || chartType === "streamgraph" || chartType === "3d-area";
+}
+
+function buildChartData(report: ReportDefinition, data: ChartDatum[]) {
+  const palette = getChartPalette(report);
   const type = quickChartType(report.view.chartType);
-  if (type === "scatter") {
+  const horizontal = isHorizontalChart(report);
+  const stacked = isStackedChart(report.view.chartType);
+  const primaryItems = data.filter((datum) => (datum.axis || "primary") === "primary");
+  const secondaryItems = data.filter((datum) => (datum.axis || "primary") === "secondary");
+  const hasSecondaryAxis = secondaryItems.length > 0;
+
+  if (type === "pie" || type === "doughnut") {
+    const collapsed = collapseChartData(data, "primary");
     return {
-      datasets: [{
-        label: report.view.chartTitle || report.name,
-        data: data.map((item, index) => ({ x: index + 1, y: item.value })),
-        backgroundColor: "#0d7c66"
-      }]
+      chartType: type,
+      horizontal,
+      stacked: false,
+      hasSecondaryAxis: false,
+      data: {
+        labels: collapsed.map((item) => item.label),
+        datasets: [{
+          label: report.view.chartTitle || report.name,
+          data: collapsed.map((item) => item.value),
+          backgroundColor: collapsed.map((_, index) => palette[index % palette.length]),
+          borderColor: "#ffffff",
+          borderWidth: 2
+        }]
+      }
     };
   }
-  if (type === "bubble") {
+
+  if (type === "radar") {
+    const categories = deriveCategories(primaryItems);
+    const primarySeries = deriveSeries(primaryItems, "primary");
     return {
-      datasets: [{
-        label: report.view.chartTitle || report.name,
-        data: data.map((item, index) => ({ x: index + 1, y: item.value, r: 8 + Math.min(18, Math.round(item.value / 5 || 1)) })),
-        backgroundColor: "rgba(13,124,102,0.65)"
-      }]
+      chartType: type,
+      horizontal,
+      stacked: false,
+      hasSecondaryAxis: false,
+      data: {
+        labels: categories.map((category) => category.label),
+        datasets: primarySeries.map((series, seriesIndex) => {
+          const color = palette[seriesIndex % palette.length];
+          return {
+            label: primarySeries.length === 1 && !series.rawSeries ? (report.view.chartTitle || report.name) : series.label,
+            data: categories.map((category) => valueForCategory(data, category.rawLabel, series.rawSeries, "primary")),
+            borderColor: color,
+            backgroundColor: withAlpha(color, "33"),
+            pointBackgroundColor: color,
+            borderWidth: 3,
+            fill: true
+          };
+        })
+      }
     };
   }
+
+  if (type === "scatter" || type === "bubble") {
+    const categories = deriveCategories(primaryItems);
+    const primarySeries = deriveSeries(primaryItems, "primary");
+    const secondaryMax = Math.max(...secondaryItems.map((item) => item.value), ...primaryItems.map((item) => item.value), 1);
+    return {
+      chartType: type,
+      horizontal: false,
+      stacked: false,
+      hasSecondaryAxis: false,
+      data: {
+        datasets: primarySeries.map((series, seriesIndex) => {
+          const color = palette[seriesIndex % palette.length];
+          const points = categories.flatMap((category, categoryIndex) => {
+            const primaryMatch = primaryItems.find((item) =>
+              String(item.rawLabel ?? item.label ?? "") === category.rawLabel
+              && String(item.rawSeries || item.series || "") === series.rawSeries
+            );
+            if (!primaryMatch) return [];
+            const secondaryMatch = secondaryItems.find((item) =>
+              String(item.rawLabel ?? item.label ?? "") === category.rawLabel
+              && String(item.rawSeries || item.series || "") === series.rawSeries
+            );
+            return [{
+              x: chartLabelNumericValue(category.rawLabel, categoryIndex),
+              y: primaryMatch.value,
+              ...(type === "bubble"
+                ? { r: 8 + Math.min(18, Math.round(((secondaryMatch?.value ?? primaryMatch.value) / secondaryMax) * 18)) }
+                : {})
+            }];
+          });
+          return {
+            label: primarySeries.length === 1 && !series.rawSeries ? (report.view.chartTitle || report.name) : series.label,
+            data: points,
+            backgroundColor: type === "bubble" ? withAlpha(color, "aa") : color,
+            borderColor: color,
+            pointBackgroundColor: color
+          };
+        }).filter((dataset) => dataset.data.length)
+      }
+    };
+  }
+
+  const categories = deriveCategories(primaryItems.length ? primaryItems : data);
+  const primarySeries = deriveSeries(primaryItems, "primary");
+  const secondarySeries = deriveSeries(secondaryItems, "secondary");
+  const primaryAxisId = horizontal ? "x" : "y";
+  const secondaryAxisId = horizontal ? "x1" : "y1";
+  const primaryAxisKey = horizontal ? "xAxisID" : "yAxisID";
+  const secondaryAxisKey = horizontal ? "xAxisID" : "yAxisID";
+  const datasets = [
+    ...primarySeries.map((series, seriesIndex) => {
+      const color = palette[seriesIndex % palette.length];
+      const isLineLike = type === "line";
+      return {
+        label: primarySeries.length === 1 && !series.rawSeries ? (report.view.chartTitle || report.name) : series.label,
+        data: categories.map((category) => valueForCategory(data, category.rawLabel, series.rawSeries, "primary")),
+        backgroundColor: isLineLike ? withAlpha(color, "33") : color,
+        borderColor: color,
+        pointBackgroundColor: color,
+        borderWidth: isLineLike ? 3 : 1,
+        fill: isLineLike ? isAreaChart(report.view.chartType) : false,
+        tension: report.view.chartType === "spline" || report.view.chartType === "area-spline" ? 0.35 : 0,
+        [primaryAxisKey]: primaryAxisId,
+        stack: stacked ? "primary" : undefined
+      };
+    }),
+    ...secondarySeries.map((series, seriesIndex) => {
+      const color = palette[(primarySeries.length + seriesIndex) % palette.length];
+      const secondaryType = report.view.chartSecondarySeriesType === "bar" || report.view.chartSecondarySeriesType === "column"
+        ? "bar"
+        : "line";
+      return {
+        type: secondaryType,
+        label: `${series.label} (secondary)`,
+        data: categories.map((category) => valueForCategory(data, category.rawLabel, series.rawSeries, "secondary")),
+        backgroundColor: secondaryType === "line" ? withAlpha(color, "22") : withAlpha(color, "aa"),
+        borderColor: color,
+        pointBackgroundColor: color,
+        borderWidth: secondaryType === "line" ? 3 : 1,
+        fill: report.view.chartSecondarySeriesType === "area",
+        borderDash: secondaryType === "line" ? [8, 5] : undefined,
+        tension: report.view.chartSecondarySeriesType === "area" ? 0.25 : 0,
+        [secondaryAxisKey]: secondaryAxisId
+      };
+    })
+  ];
+
   return {
-    labels: data.map((item) => item.label),
-    datasets: [{
-      label: report.view.chartTitle || report.name,
-      data: data.map((item) => item.value),
-      backgroundColor: ["#0d7c66", "#d88d3d", "#5b7cfa", "#9b59b6", "#e66f5c", "#3a9782", "#b7a26a"],
-      borderColor: "#0d7c66",
-      fill: type === "line" ? (report.view.chartType === "area" || report.view.chartType === "area-spline" || report.view.chartType === "streamgraph") : undefined
-    }],
-    indexAxis: horizontal ? ("y" as const) : ("x" as const)
+    chartType: type,
+    horizontal,
+    stacked,
+    hasSecondaryAxis,
+    data: {
+      labels: categories.map((category) => category.label),
+      datasets
+    }
   };
 }
 
@@ -181,19 +562,70 @@ function getChartImageSizing(report: ReportDefinition, chartData: ChartDatum[]) 
 
 async function renderChartImage(report: ReportDefinition, subtitle: string, chartData: ChartDatum[], summary: SummaryDatum[]) {
   if (!chartData.length) return null;
-  const chartType = quickChartType(report.view.chartType);
+  const builtChart = buildChartData(report, chartData);
+  const chartType = builtChart.chartType;
   const sizing = getChartImageSizing(report, chartData);
-  const horizontal = report.view.chartType === "horizontal-bar"
-    || report.view.chartType === "horizontal-stacked-bar"
-    || (report.view.chartType === "bar" && report.view.chartOrientation === "horizontal");
+  const horizontal = builtChart.horizontal;
   const categoryAxisKey = horizontal ? "y" : "x";
   const valueAxisKey = horizontal ? "x" : "y";
+  const secondaryValueAxisKey = horizontal ? "x1" : "y1";
+  const isScatterLike = chartType === "scatter" || chartType === "bubble";
+  const scales = chartType === "pie" || chartType === "doughnut" || chartType === "radar"
+    ? undefined
+    : isScatterLike
+      ? {
+        x: {
+          type: "linear" as const,
+          title: {
+            display: Boolean(report.view.chartXAxisLabel),
+            text: report.view.chartXAxisLabel
+          }
+        },
+        y: {
+          title: {
+            display: Boolean(report.view.chartYAxisLabel),
+            text: report.view.chartYAxisLabel
+          }
+        }
+      }
+      : {
+        [categoryAxisKey]: {
+          ticks: {
+            autoSkip: false,
+            maxRotation: horizontal ? 0 : 60,
+            minRotation: horizontal ? 0 : 45
+          },
+          stacked: builtChart.stacked,
+          title: {
+            display: Boolean(horizontal ? report.view.chartYAxisLabel : report.view.chartXAxisLabel),
+            text: horizontal ? report.view.chartYAxisLabel : report.view.chartXAxisLabel
+          }
+        },
+        [valueAxisKey]: {
+          stacked: builtChart.stacked,
+          title: {
+            display: Boolean(horizontal ? report.view.chartXAxisLabel : report.view.chartYAxisLabel),
+            text: horizontal ? report.view.chartXAxisLabel : report.view.chartYAxisLabel
+          }
+        },
+        ...(builtChart.hasSecondaryAxis ? {
+          [secondaryValueAxisKey]: {
+            position: horizontal ? "top" as const : "right" as const,
+            grid: { drawOnChartArea: false },
+            title: {
+              display: Boolean(report.view.chartSecondaryYAxisLabel),
+              text: report.view.chartSecondaryYAxisLabel
+            }
+          }
+        } : {})
+      };
   const config = {
     type: chartType,
-    data: chartDataset(chartData, report),
+    data: builtChart.data,
     options: {
       responsive: false,
       animation: false,
+      indexAxis: horizontal ? ("y" as const) : ("x" as const),
       layout: {
         padding: {
           bottom: horizontal ? 18 : Math.min(220, 42 + Math.max(0, Math.max(...chartData.map((item) => String(item.label || "").length), 0) - 10) * 8),
@@ -213,25 +645,7 @@ async function renderChartImage(report: ReportDefinition, subtitle: string, char
           text: subtitle
         }
       },
-      scales: chartType === "pie" || chartType === "doughnut" || chartType === "radar" ? undefined : {
-        [categoryAxisKey]: {
-          ticks: {
-            autoSkip: false,
-            maxRotation: horizontal ? 0 : 60,
-            minRotation: horizontal ? 0 : 45
-          },
-          title: {
-            display: Boolean(horizontal ? report.view.chartYAxisLabel : report.view.chartXAxisLabel),
-            text: horizontal ? report.view.chartYAxisLabel : report.view.chartXAxisLabel
-          }
-        },
-        [valueAxisKey]: {
-          title: {
-            display: Boolean(horizontal ? report.view.chartXAxisLabel : report.view.chartYAxisLabel),
-            text: horizontal ? report.view.chartXAxisLabel : report.view.chartYAxisLabel
-          }
-        }
-      }
+      scales
     }
   };
   const response = await fetch("https://quickchart.io/chart", {
@@ -278,36 +692,35 @@ function mergeRowRange(sheet: ExcelJS.Worksheet, row: number, startCol: number, 
   }
 }
 
-function layoutDashboardWidgets(widgets: DashboardRunResult["tabs"][number]["widgets"]) {
-  const placements: Array<{
-    widget: DashboardRunResult["tabs"][number]["widgets"][number];
-    startCol: number;
-    endCol: number;
-    startRow: number;
-    endRow: number;
-  }> = [];
-  let currentCol = 1;
-  let currentRow = 1;
-  let rowHeight = 0;
-
-  widgets.forEach((widget) => {
-    const width = Math.max(1, Math.min(12, Math.round(widget.widget.layout.w || 6)));
-    const height = Math.max(6, Math.round((widget.widget.layout.h || 4) * 6));
-    if (currentCol + width - 1 > 12) {
-      currentRow += rowHeight + 1;
-      currentCol = 1;
-      rowHeight = 0;
-    }
-    const startCol = currentCol;
-    const endCol = Math.min(12, startCol + width - 1);
-    const startRow = currentRow;
-    const endRow = startRow + height - 1;
-    placements.push({ widget, startCol, endCol, startRow, endRow });
-    currentCol = endCol + 1;
-    rowHeight = Math.max(rowHeight, height);
-  });
-
-  return placements;
+function layoutDashboardWidgets(
+  dashboard: DashboardDefinition,
+  tabId: string,
+  widgets: DashboardRunResult["tabs"][number]["widgets"]
+) {
+  const dashboardTab = dashboard.tabs.find((tab) => tab.id === tabId);
+  if (!dashboardTab) return [];
+  const placementsById = new Map(
+    getDashboardWidgetPlacements(dashboardTab).map((placement) => [placement.widgetId, placement])
+  );
+  return widgets
+    .map((widget) => {
+      const placement = placementsById.get(widget.widgetId);
+      if (!placement) return null;
+      return {
+        widget,
+        startCol: placement.startCol,
+        endCol: placement.endCol,
+        startRow: ((placement.startRow - 1) * 7) + 1,
+        endRow: (((placement.endRow - placement.startRow + 1) * 7) + ((placement.startRow - 1) * 7)) - 1
+      };
+    })
+    .filter((placement): placement is {
+      widget: DashboardRunResult["tabs"][number]["widgets"][number];
+      startCol: number;
+      endCol: number;
+      startRow: number;
+      endRow: number;
+    } => Boolean(placement));
 }
 
 function writeWidgetTitle(sheet: ExcelJS.Worksheet, row: number, startCol: number, endCol: number, title: string, subtitle: string) {
@@ -322,6 +735,38 @@ function writeWidgetTitle(sheet: ExcelJS.Worksheet, row: number, startCol: numbe
     subtitleCell.value = subtitle;
     subtitleCell.font = { italic: true, color: { argb: "FF56685E" } };
   }
+}
+
+function writeWidgetMessageBlock(sheet: ExcelJS.Worksheet, row: number, startCol: number, endCol: number, message: string) {
+  mergeRowRange(sheet, row, startCol, endCol);
+  const cell = sheet.getCell(row, startCol);
+  cell.value = message;
+  cell.alignment = { wrapText: true, vertical: "middle" };
+  cell.font = { italic: true, color: { argb: "FF8A4B08" } };
+  cell.fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FFF8E8D7" }
+  };
+  return row + 2;
+}
+
+function writeWidgetWarningsBlock(sheet: ExcelJS.Worksheet, row: number, startCol: number, endCol: number, warnings: string[]) {
+  if (!warnings.length) return row;
+  mergeRowRange(sheet, row, startCol, endCol);
+  const titleCell = sheet.getCell(row, startCol);
+  titleCell.value = "Warnings";
+  titleCell.font = { bold: true, color: { argb: "FF8A4B08" } };
+  row += 1;
+  warnings.forEach((warning) => {
+    mergeRowRange(sheet, row, startCol, endCol);
+    const cell = sheet.getCell(row, startCol);
+    cell.value = `• ${warning}`;
+    cell.alignment = { wrapText: true, vertical: "middle" };
+    cell.font = { color: { argb: "FF8A4B08" } };
+    row += 1;
+  });
+  return row + 1;
 }
 
 function writeWidgetSummaryBlock(
@@ -386,8 +831,41 @@ function writeWidgetDataPreviewBlock(
   return row;
 }
 
+function writeDetailSheet(
+  sheet: ExcelJS.Worksheet,
+  report: ReportDefinition,
+  table: TableDefinition,
+  result: ReportRunResult,
+  filterDescriptions: string[]
+) {
+  writeOverviewHeader(sheet, report.name, report.description || table.name);
+  let row = writeMetadataRows(sheet, 4, [
+    { label: "Source table", value: table.name },
+    { label: "Rows exported", value: result.totalRows },
+    { label: "View mode", value: report.view.mode }
+  ]);
+  row = writeTextListSection(sheet, row + 1, "Applied filters", filterDescriptions, "No filters applied");
+  row = writeWarningSection(sheet, row, result.warnings || []);
+  const headersRow = row + 1;
+  const headers = report.selectedFieldIds.map((fieldId) => getReportFieldLabel(report, table, fieldId));
+  headers.forEach((header, index) => {
+    const cell = sheet.getCell(headersRow, index + 1);
+    cell.value = header;
+    cell.font = { bold: true };
+  });
+  result.rows.forEach((dataRow, rowIndex) => {
+  report.selectedFieldIds.forEach((fieldId, fieldIndex) => {
+      sheet.getCell(headersRow + 1 + rowIndex, fieldIndex + 1).value = formatReportCellValue(report, table, fieldId, dataRow[fieldId]);
+    });
+  });
+  headers.forEach((header, index) => {
+    sheet.getColumn(index + 1).width = Math.min(32, Math.max(16, header.length + 4));
+  });
+}
+
 async function writeDashboardTabSheet(
   workbook: ExcelJS.Workbook,
+  dashboard: DashboardDefinition,
   sheet: ExcelJS.Worksheet,
   tab: DashboardRunResult["tabs"][number],
   tablesById: Record<string, TableDefinition>,
@@ -396,13 +874,20 @@ async function writeDashboardTabSheet(
   onProgress?: ExportProgressCallback
 ) {
   setDashboardLayoutColumns(sheet);
-  const placements = layoutDashboardWidgets(tab.widgets);
+  const placements = layoutDashboardWidgets(dashboard, tab.id, tab.widgets);
   for (const placement of placements) {
     const { widget, startCol, endCol, startRow, endRow } = placement;
     const exportResult = exportResultsByReportId[widget.report.id] || widget.result;
     const table = tablesById[widget.report.sourceTableId];
-    if (!table) continue;
     writeWidgetTitle(sheet, startRow, startCol, endCol, widget.widget.title || widget.report.name, widget.report.name !== widget.widget.title ? widget.report.name : "");
+    if (widget.status === "failed") {
+      writeWidgetMessageBlock(sheet, startRow + 3, startCol, endCol, widget.error || widget.message || "Widget failed to load.");
+      continue;
+    }
+    if (!table) {
+      writeWidgetMessageBlock(sheet, startRow + 3, startCol, endCol, "Source table unavailable for this widget.");
+      continue;
+    }
     let contentRow = startRow + 3;
     if (widget.widget.showSummary) {
       contentRow = writeWidgetSummaryBlock(sheet, exportResult, contentRow, startCol, endCol) + 1;
@@ -442,7 +927,8 @@ export async function streamReportWorkbook(
   report: ReportDefinition,
   table: TableDefinition,
   result: ReportRunResult,
-  onProgress?: ExportProgressCallback
+  onProgress?: ExportProgressCallback,
+  exportFilters: FilterDefinition[] = []
 ) {
   const workbook = new ExcelJS.Workbook();
   const usedNames = new Set<string>();
@@ -452,9 +938,42 @@ export async function streamReportWorkbook(
   const includeSummary = reportShowsSummary(report) && result.summary.length > 0;
   const includeChart = reportShowsChart(report);
   const includeDetails = reportShowsDetails(report);
+  const overviewSheet = workbook.addWorksheet(safeSheetName(`${report.name} Overview`, usedNames));
+  const linkedSheets: Array<{ label: string; sheetName: string }> = [];
+
+  writeOverviewHeader(overviewSheet, report.name, report.description || table.name);
+  let overviewRow = writeMetadataRows(overviewSheet, 4, [
+    { label: "Generated", value: formatTimestamp(workbook.created) },
+    { label: "Source table", value: table.name },
+    { label: "Rows exported", value: result.totalRows },
+    {
+      label: "Workbook content",
+      value: [
+        includeSummary ? "summary" : "",
+        includeChart ? "chart" : "",
+        includeDetails ? "detail rows" : ""
+      ].filter(Boolean).join(", ") || "metadata only"
+    }
+  ]);
+  overviewRow = writeTextListSection(
+    overviewSheet,
+    overviewRow + 1,
+    "Saved report filters",
+    report.filters.map((filter) => describeReportFilter(report, table, filter)),
+    "No saved report filters"
+  );
+  overviewRow = writeTextListSection(
+    overviewSheet,
+    overviewRow,
+    "Export-only filters",
+    exportFilters.map((filter) => describeReportFilter(report, table, filter)),
+    "No export-only filters"
+  );
+  overviewRow = writeWarningSection(overviewSheet, overviewRow, result.warnings || []);
 
   if (includeDetails) {
     const dataSheet = workbook.addWorksheet(safeSheetName(`${report.name} Data`, usedNames));
+    linkedSheets.push({ label: `${dataSheet.name} sheet`, sheetName: dataSheet.name });
     writeDataSheet(dataSheet, report, table, result, onProgress, {
       start: 80,
       end: 98,
@@ -464,10 +983,12 @@ export async function streamReportWorkbook(
 
   if (includeSummary || includeChart) {
     const summarySheet = workbook.addWorksheet(safeSheetName(`${report.name} Summary`, usedNames));
+    linkedSheets.push({ label: `${summarySheet.name} sheet`, sheetName: summarySheet.name });
     summarySheet.getCell("A1").value = report.name;
     summarySheet.getCell("A1").font = { size: 18, bold: true };
     summarySheet.getCell("A2").value = report.description || table.name;
     const chartRow = writeSummaryRows(summarySheet, report, result, 4, includeSummary);
+    writeWarningSection(summarySheet, Math.max(chartRow, 4), result.warnings || []);
     if (includeChart) {
       onProgress?.(76, "Rendering chart image");
       await addChartImage(workbook, summarySheet, report, table.name, result);
@@ -476,6 +997,8 @@ export async function streamReportWorkbook(
       }
     }
   }
+
+  writeLinkRows(overviewSheet, overviewRow, "Workbook sheets", linkedSheets);
 
   await workbook.xlsx.write(output);
   onProgress?.(100, "Export ready");
@@ -487,7 +1010,8 @@ export async function streamDashboardWorkbook(
   rendered: DashboardRunResult,
   exportResultsByReportId: Record<string, ReportRunResult>,
   tablesById: Record<string, TableDefinition>,
-  onProgress?: ExportProgressCallback
+  onProgress?: ExportProgressCallback,
+  runtimeFilters: Record<string, string> = {}
 ) {
   const workbook = new ExcelJS.Workbook();
   const usedNames = new Set<string>();
@@ -495,30 +1019,32 @@ export async function streamDashboardWorkbook(
   workbook.created = new Date();
 
   const overview = workbook.addWorksheet(safeSheetName(`${dashboard.name} Overview`, usedNames));
-  overview.getCell("A1").value = dashboard.name;
-  overview.getCell("A1").font = { size: 18, bold: true };
-  overview.getCell("A2").value = dashboard.description || "Dashboard export";
-  overview.getCell("A4").value = "Tab";
-  overview.getCell("B4").value = "Report";
-  overview.getCell("C4").value = "Exported content";
-  overview.getRow(4).font = { bold: true };
-  let overviewRow = 5;
-  rendered.tabs.forEach((tab) => {
-    tab.widgets.forEach((widget) => {
-      const displayChart = widgetShowsChart(widget.widget, widget.report);
-      const displaySummary = widget.widget.showSummary;
-      const displayDetails = widgetShowsDetails(widget.widget, widget.report);
-      const parts = [
-        displaySummary ? "summary" : "",
-        displayChart ? "chart" : "",
-        displayDetails ? "rows" : ""
-      ].filter(Boolean);
-      overview.getCell(`A${overviewRow}`).value = tab.name;
-      overview.getCell(`B${overviewRow}`).value = widget.report.name;
-      overview.getCell(`C${overviewRow}`).value = parts.join(", ") || "skipped";
-      overviewRow += 1;
-    });
-  });
+  writeOverviewHeader(overview, dashboard.name, dashboard.description || "Dashboard export");
+  let overviewRow = writeMetadataRows(overview, 4, [
+    { label: "Generated", value: formatTimestamp(workbook.created) },
+    { label: "Tabs exported", value: rendered.tabs.length },
+    {
+      label: "Cards exported",
+      value: rendered.tabs.reduce((sum, tab) => sum + tab.widgets.length, 0)
+    }
+  ]);
+  overviewRow = writeTextListSection(
+    overview,
+    overviewRow + 1,
+    "Runtime filters",
+    dashboard.runtimeFilters.map((filter) => describeRuntimeFilter(dashboard, filter, tablesById, runtimeFilters)),
+    "No dashboard runtime filters"
+  );
+  overview.getCell(`A${overviewRow}`).value = "Tab";
+  overview.getCell(`B${overviewRow}`).value = "Card";
+  overview.getCell(`C${overviewRow}`).value = "Report";
+  overview.getCell(`D${overviewRow}`).value = "Status";
+  overview.getCell(`E${overviewRow}`).value = "Rows";
+  overview.getCell(`F${overviewRow}`).value = "Sheet";
+  overview.getCell(`G${overviewRow}`).value = "Applied filters";
+  overview.getCell(`H${overviewRow}`).value = "Exported content";
+  overview.getRow(overviewRow).font = { bold: true };
+  overviewRow += 1;
   onProgress?.(74, "Writing dashboard overview");
 
   const detailSheetNames: Record<string, string> = {};
@@ -529,6 +1055,65 @@ export async function streamDashboardWorkbook(
     tabSheetNamesById[tab.id] = tabSheet.name;
   });
 
+  rendered.tabs.forEach((tab) => {
+    tab.widgets.forEach((widget) => {
+      if (widget.status === "failed") return;
+      const table = tablesById[widget.report.sourceTableId];
+      const exportResult = exportResultsByReportId[widget.report.id] || widget.result;
+      if (!table || !exportResult.rows.length) return;
+      const detailSheet = workbook.addWorksheet(safeSheetName(`${tab.name} ${widget.report.name} Data`, usedNames));
+      detailSheetNames[widget.widgetId] = detailSheet.name;
+      const widgetFilters = buildDashboardFilters(dashboard, widget.report.id, runtimeFilters);
+      const filterDescriptions = [
+        ...widget.report.filters.map((filter) => describeReportFilter(widget.report, table, filter)),
+        ...widgetFilters.map((filter) => describeReportFilter(widget.report, table, filter))
+      ];
+      writeDetailSheet(detailSheet, widget.report, table, exportResult, filterDescriptions);
+    });
+  });
+
+  rendered.tabs.forEach((tab) => {
+    tab.widgets.forEach((widget) => {
+      const table = tablesById[widget.report.sourceTableId];
+      const runtimeWidgetFilters = table
+        ? buildDashboardFilters(dashboard, widget.report.id, runtimeFilters).map((filter) => describeReportFilter(widget.report, table, filter))
+        : [];
+      const savedFilters = table
+        ? widget.report.filters.map((filter) => describeReportFilter(widget.report, table, filter))
+        : [];
+      const filterSummary = [...savedFilters, ...runtimeWidgetFilters].join("; ") || "No filters";
+      const parts = widget.status === "failed"
+        ? [`failed: ${widget.error || widget.message || "Widget load failed"}`]
+        : [
+            widget.widget.showSummary ? "summary" : "",
+            widgetShowsChart(widget.widget, widget.report) ? "chart" : "",
+            detailSheetNames[widget.widgetId] ? "detail sheet" : widgetShowsDetails(widget.widget, widget.report) ? "preview rows" : ""
+          ].filter(Boolean);
+      overview.getCell(`A${overviewRow}`).value = tab.name;
+      overview.getCell(`B${overviewRow}`).value = widget.widget.title || widget.report.name;
+      overview.getCell(`C${overviewRow}`).value = widget.report.name;
+      overview.getCell(`D${overviewRow}`).value = widget.status === "failed" ? (widget.error || widget.message || "Failed") : "Ready";
+      overview.getCell(`E${overviewRow}`).value = widget.result.totalRows;
+      if (detailSheetNames[widget.widgetId]) {
+        overview.getCell(`F${overviewRow}`).value = {
+          text: detailSheetNames[widget.widgetId],
+          hyperlink: sheetHyperlink(detailSheetNames[widget.widgetId])
+        };
+        overview.getCell(`F${overviewRow}`).font = { color: { argb: "FF1F5AA6" }, underline: true };
+      } else {
+        overview.getCell(`F${overviewRow}`).value = tabSheetNamesById[tab.id] || "";
+      }
+      overview.getCell(`G${overviewRow}`).value = filterSummary;
+      overview.getCell(`H${overviewRow}`).value = parts.join(", ") || "skipped";
+      overview.getRow(overviewRow).alignment = { vertical: "top", wrapText: true };
+      overviewRow += 1;
+    });
+  });
+  [1, 2, 3, 4, 5, 6, 7, 8].forEach((index) => {
+    const widths = [18, 24, 26, 18, 12, 28, 44, 20];
+    overview.getColumn(index).width = widths[index - 1];
+  });
+
   for (const tab of rendered.tabs) {
     const sheetName = tabSheetNamesById[tab.id];
     const sheet = sheetName ? workbook.getWorksheet(sheetName) : undefined;
@@ -536,7 +1121,7 @@ export async function streamDashboardWorkbook(
     sheet.getCell("A1").value = tab.name;
     sheet.getCell("A1").font = { size: 18, bold: true };
     sheet.getCell("A2").value = dashboard.name;
-    await writeDashboardTabSheet(workbook, sheet, tab, tablesById, exportResultsByReportId, detailSheetNames, onProgress);
+    await writeDashboardTabSheet(workbook, dashboard, sheet, tab, tablesById, exportResultsByReportId, detailSheetNames, onProgress);
   }
 
   await workbook.xlsx.write(output);

@@ -8,7 +8,8 @@ import { registerStudioRoutes } from "./routes/studio.js";
 import { startRefreshScheduler } from "./services/refresh-cache.js";
 
 const app = Fastify({
-  logger: true
+  logger: true,
+  bodyLimit: 25 * 1024 * 1024
 });
 
 await app.register(cors, {

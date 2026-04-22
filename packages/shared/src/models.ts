@@ -1,4 +1,5 @@
 export type StudioObjectType = "report" | "dashboard";
+export type StudioObjectScope = "global" | "personal";
 export type FieldType = "text" | "number" | "currency" | "date" | "datetime" | "user" | "multiselect";
 export type FilterOperator =
   | "equals"
@@ -153,11 +154,14 @@ export interface ReportDisplayLabels {
 export interface BaseStudioObject {
   id: string;
   type: StudioObjectType;
+  schemaVersion: number;
   name: string;
   description: string;
   folder: string;
   category: string;
   tags: string[];
+  scope: StudioObjectScope;
+  ownerUserId: string;
   updatedAt: string;
 }
 
@@ -181,6 +185,8 @@ export interface WidgetDefinition {
   layout: {
     w: number;
     h: number;
+    x?: number;
+    y?: number;
   };
   mode: WidgetMode;
   displayMode: "inherit" | "table" | "summary" | "chart";
@@ -210,6 +216,43 @@ export interface DashboardDefinition extends BaseStudioObject {
   tabs: DashboardTabDefinition[];
   runtimeFilters: RuntimeFilterDefinition[];
   sourceReportOverrides?: Record<string, string>;
+}
+
+export interface DashboardPersonalOverride {
+  runtimeFilters: Record<string, string>;
+  activeTabId: string;
+  focusedWidgetId: string;
+  savedViews: Array<{
+    id: string;
+    name: string;
+    runtimeFilters: Record<string, string>;
+    activeTabId: string;
+    focusedWidgetId: string;
+    updatedAt: string;
+  }>;
+  updatedAt: string;
+}
+
+export type ReportFocusMode = "default" | "summary" | "chart" | "details";
+
+export interface ReportPersonalOverride {
+  currentPage: number;
+  focusMode: ReportFocusMode;
+  focusedSection: "" | "chart" | "details";
+  savedViews: Array<{
+    id: string;
+    name: string;
+    currentPage: number;
+    focusMode: ReportFocusMode;
+    focusedSection: "" | "chart" | "details";
+    updatedAt: string;
+  }>;
+  updatedAt: string;
+}
+
+export interface PersonalOverrideStore {
+  dashboards: Record<string, DashboardPersonalOverride>;
+  reports: Record<string, ReportPersonalOverride>;
 }
 
 export type StudioObject = ReportDefinition | DashboardDefinition;
@@ -287,11 +330,22 @@ export interface QuickbaseConnectionConfig {
   versionUpdatedByFieldId: string;
 }
 
+export interface QuickbaseBootstrapStatus {
+  ready: boolean;
+  checkedAt: string;
+  autoProvisioned: boolean;
+  missing: string[];
+  warnings: string[];
+  message: string;
+  error?: string;
+}
+
 export interface QuickbaseAppProfile {
   id: string;
   label: string;
   liveMode: boolean;
   quickbase: QuickbaseConnectionConfig;
+  bootstrap: QuickbaseBootstrapStatus;
   refreshSource: {
     tableIds: string[];
     reportIds: Record<string, string>;
@@ -336,6 +390,9 @@ export interface DashboardWidgetResult {
   widget: WidgetDefinition;
   report: ReportDefinition;
   result: ReportRunResult;
+  status: "complete" | "failed";
+  message: string;
+  error?: string;
 }
 
 export interface DashboardRunResult {
@@ -351,11 +408,14 @@ export interface DashboardRunResult {
 export interface CatalogSummaryItem {
   id: string;
   type: StudioObjectType;
+  schemaVersion: number;
   name: string;
   description: string;
   folder: string;
   category: string;
   tags: string[];
+  scope: StudioObjectScope;
+  ownerUserId: string;
   updatedAt: string;
 }
 
@@ -391,10 +451,16 @@ export interface StudioVersionRecord {
 export interface StudioExportJob {
   id: string;
   objectId: string;
+  objectType: "report" | "dashboard" | "studio";
   format: "xlsx" | "json";
   status: "queued" | "running" | "complete" | "failed";
-  progress?: number;
-  message?: string;
+  progress: number;
+  message: string;
+  filename?: string;
+  error?: string;
+  updatedAt: string;
+  sourceJobId?: string;
+  runtimeFilters?: Record<string, string>;
   createdAt: string;
 }
 
@@ -413,9 +479,21 @@ export interface ExportJobStatus {
 }
 
 export interface StudioDocument {
+  schemaVersion: number;
   bundle: SeedBundle;
   favorites: string[];
   recent: string[];
+  personalOverrides: PersonalOverrideStore;
+  session: {
+    currentUserId: string;
+    launchSource: "quickbase-button" | "local-dev";
+    inactivityTimeoutHours: number;
+    requiresLaunch: boolean;
+    launchedAt: string;
+    lastActivityAt: string;
+    expiresAt: string;
+    lastValidatedAt: string;
+  };
   branding: {
     platformName: string;
     navigationLabel: string;

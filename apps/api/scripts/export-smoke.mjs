@@ -1,0 +1,160 @@
+import assert from "node:assert/strict";
+import { PassThrough } from "node:stream";
+import ExcelJS from "exceljs";
+import {
+  buildDashboardFilters,
+  buildStudioDocument,
+  runReport
+} from "../../../packages/shared/dist/index.js";
+import { streamDashboardWorkbook, streamReportWorkbook } from "../dist/services/xlsx-export.js";
+
+async function writeWorkbookBuffer(writer) {
+  const stream = new PassThrough();
+  const chunks = [];
+  stream.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+  const finished = new Promise((resolve, reject) => {
+    stream.on("finish", resolve);
+    stream.on("error", reject);
+  });
+  await writer(stream);
+  stream.end();
+  await finished;
+  return Buffer.concat(chunks);
+}
+
+function sheetText(sheet) {
+  return sheet.getSheetValues()
+    .flatMap((row) => Array.isArray(row) ? row : [])
+    .map((value) => {
+      if (value && typeof value === "object" && "text" in value) return String(value.text || "");
+      return String(value || "");
+    })
+    .filter(Boolean);
+}
+
+async function main() {
+  const document = buildStudioDocument();
+  const report = document.bundle.objects["report-invoice-health"];
+  const table = document.bundle.tables.find((item) => item.id === report.sourceTableId);
+  assert.ok(report?.type === "report", "expected seed invoice report");
+  assert.ok(table, "expected source table for invoice report");
+
+  const exportFilters = [{ id: "export-region", fieldId: "region", operator: "equals", value: "North" }];
+  const reportResult = runReport(report, table, document.bundle.data[table.id], exportFilters);
+  const reportBuffer = await writeWorkbookBuffer((stream) =>
+    streamReportWorkbook(stream, report, table, reportResult, undefined, exportFilters)
+  );
+  const reportWorkbook = new ExcelJS.Workbook();
+  await reportWorkbook.xlsx.load(reportBuffer);
+
+  const reportOverview = reportWorkbook.getWorksheet("Invoice Health Overview");
+  assert.ok(reportOverview, "expected report overview sheet");
+  const reportOverviewText = sheetText(reportOverview);
+  assert.ok(reportOverviewText.includes("Saved report filters"), "expected saved filter section on report overview");
+  assert.ok(reportOverviewText.includes("Export-only filters"), "expected export-only filter section on report overview");
+  assert.ok(reportOverviewText.some((value) => value.includes("Region equals North")), "expected export filter summary in report overview");
+  assert.ok(reportWorkbook.getWorksheet("Invoice Health Summary"), "expected summary sheet for report export");
+
+  const dashboardTemplate = document.bundle.objects["dashboard-executive-pulse"];
+  assert.ok(dashboardTemplate?.type === "dashboard", "expected seed dashboard");
+  const dashboard = {
+    ...dashboardTemplate,
+    id: "dashboard-export-smoke",
+    name: "Export Smoke Dashboard",
+    tabs: [{
+      id: "tab-export",
+      name: "Overview",
+      widgets: [
+        {
+          id: "widget-export-summary",
+          title: "Invoice Snapshot",
+          mode: "linked",
+          displayMode: "summary",
+          showSummary: true,
+          showDetails: false,
+          reportId: report.id,
+          layout: { w: 5, h: 3, x: 1, y: 1 }
+        },
+        {
+          id: "widget-export-invoice",
+          title: "Open Invoices",
+          mode: "linked",
+          displayMode: "table",
+          showSummary: true,
+          showDetails: true,
+          reportId: report.id,
+          layout: { w: 6, h: 4, x: 7, y: 1 }
+        }
+      ]
+    }],
+    runtimeFilters: [{
+      id: "runtime-region",
+      label: "Region",
+      fieldId: "region",
+      mode: "global",
+      targetReportIds: [],
+      defaultValue: ""
+    }]
+  };
+  const runtimeValues = { "runtime-region": "North" };
+  const widgetFilters = buildDashboardFilters(dashboard, report.id, runtimeValues);
+  const dashboardReportResult = runReport(report, table, document.bundle.data[table.id], widgetFilters);
+  const rendered = {
+    dashboard,
+    tabs: [{
+      id: "tab-export",
+      name: "Overview",
+      widgets: [{
+        widgetId: "widget-export-summary",
+        widget: dashboard.tabs[0].widgets[0],
+        report,
+        result: dashboardReportResult,
+        status: "complete",
+        message: `${dashboardReportResult.totalRows} rows`
+      }, {
+        widgetId: "widget-export-invoice",
+        widget: dashboard.tabs[0].widgets[1],
+        report,
+        result: dashboardReportResult,
+        status: "complete",
+        message: `${dashboardReportResult.totalRows} rows`
+      }]
+    }]
+  };
+  const dashboardBuffer = await writeWorkbookBuffer((stream) =>
+    streamDashboardWorkbook(
+      stream,
+      dashboard,
+      rendered,
+      { [report.id]: dashboardReportResult },
+      Object.fromEntries(document.bundle.tables.map((item) => [item.id, item])),
+      undefined,
+      runtimeValues
+    )
+  );
+  const dashboardWorkbook = new ExcelJS.Workbook();
+  await dashboardWorkbook.xlsx.load(dashboardBuffer);
+
+  const dashboardOverview = dashboardWorkbook.getWorksheet("Export Smoke Dashboard Overview");
+  assert.ok(dashboardOverview, "expected dashboard overview sheet");
+  const dashboardOverviewText = sheetText(dashboardOverview);
+  assert.ok(dashboardOverviewText.includes("Runtime filters"), "expected runtime filter section in dashboard overview");
+  assert.ok(dashboardOverviewText.some((value) => value.includes("Region = North")), "expected dashboard runtime filter summary");
+  assert.ok(
+    dashboardOverviewText.some((value) => value.includes("Overview Invoice Health Data")),
+    "expected dashboard overview to link to a widget detail data sheet"
+  );
+  const detailSheet = dashboardWorkbook.getWorksheet("Overview Invoice Health Data");
+  assert.ok(detailSheet, "expected widget detail data sheet");
+  const detailText = sheetText(detailSheet);
+  assert.ok(detailText.includes("Applied filters"), "expected detail sheet to summarize widget filters");
+  assert.ok(detailText.some((value) => value.includes("Region equals North")), "expected detail sheet filter summary");
+  const dashboardTabSheet = dashboardWorkbook.getWorksheet("Overview");
+  assert.ok(dashboardTabSheet, "expected exported dashboard tab sheet");
+  assert.equal(dashboardTabSheet.getCell("A1").value, "Invoice Snapshot", "expected first widget title to render at its explicit grid origin");
+  assert.equal(dashboardTabSheet.getCell("G1").value, "Open Invoices", "expected second widget title to render at its reconstructed X position");
+
+  console.log("api export smoke tests passed");
+}
+
+await main();

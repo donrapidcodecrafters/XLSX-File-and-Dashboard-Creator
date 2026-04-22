@@ -1,7 +1,8 @@
-import type {
+import {
   ChartDatum,
   DashboardRunResult,
   DataRow,
+  getReportFieldLabel,
   ReportDefinition,
   ReportRunResult,
   SummaryDatum,
@@ -397,10 +398,15 @@ function renderChartImage(title: string, subtitle: string, chartType: ReportDefi
   return canvas.toDataURL("image/png");
 }
 
-function rowsAsObjects(fieldIds: string[], rows: DataRow[], table?: TableDefinition) {
+function resolveExportFieldLabel(report: ReportDefinition | undefined, table: TableDefinition | undefined, fieldId: string) {
+  if (report && table) return getReportFieldLabel(report, table, fieldId);
+  return table?.fields.find((field) => field.id === fieldId)?.label || fieldId;
+}
+
+function rowsAsObjects(fieldIds: string[], rows: DataRow[], table?: TableDefinition, report?: ReportDefinition) {
   return rows.map((row) =>
     Object.fromEntries(
-      fieldIds.map((fieldId) => [table?.fields.find((field) => field.id === fieldId)?.label || fieldId, formatCell(row[fieldId])])
+      fieldIds.map((fieldId) => [resolveExportFieldLabel(report, table, fieldId), formatCell(row[fieldId])])
     )
   );
 }
@@ -438,8 +444,8 @@ export async function exportReportWorkbook(report: ReportDefinition, table: Tabl
   }
 
   const dataSheet = workbook.addWorksheet(safeSheetName(`${report.name} Data`, usedNames));
-  const rows = rowsAsObjects(report.selectedFieldIds, result.rows, table);
-  const columns = Object.keys(rows[0] || Object.fromEntries(report.selectedFieldIds.map((fieldId) => [table.fields.find((field) => field.id === fieldId)?.label || fieldId, ""])));
+  const rows = rowsAsObjects(report.selectedFieldIds, result.rows, table, report);
+  const columns = Object.keys(rows[0] || Object.fromEntries(report.selectedFieldIds.map((fieldId) => [resolveExportFieldLabel(report, table, fieldId), ""])));
   dataSheet.columns = columns.map((header) => ({ header, key: header, width: 22 }));
   dataSheet.addRows(rows);
 
@@ -474,6 +480,11 @@ export async function exportDashboardWorkbook(
       tabSheet.getCell(`A${rowCursor}`).value = widget.report.name;
       tabSheet.getCell(`A${rowCursor}`).font = { size: 16, bold: true };
       rowCursor += 1;
+      if (widget.status === "failed") {
+        tabSheet.getCell(`A${rowCursor}`).value = widget.error || widget.message || "Widget failed to load.";
+        rowCursor += 3;
+        return;
+      }
       const exportResult = exportResultsByReportId?.[widget.report.id] || widget.result;
       const image = renderChartImage(widget.report.name, tab.name, widget.report.view.chartType, exportResult.chartData, exportResult.summary);
       if (image) {
@@ -489,10 +500,18 @@ export async function exportDashboardWorkbook(
 
     tab.widgets.forEach((widget) => {
       const tableSheet = workbook.addWorksheet(safeSheetName(`${tab.name} ${widget.report.name}`, usedNames));
+      if (widget.status === "failed") {
+        tableSheet.getCell("A1").value = widget.report.name;
+        tableSheet.getCell("A1").font = { size: 16, bold: true };
+        tableSheet.getCell("A3").value = widget.error || widget.message || "Widget failed to load.";
+        return;
+      }
       const exportResult = exportResultsByReportId?.[widget.report.id] || widget.result;
       const rows = rowsAsObjects(
         widget.report.selectedFieldIds,
-        exportResult.rows
+        exportResult.rows,
+        undefined,
+        undefined
       );
       const columns = Object.keys(rows[0] || Object.fromEntries(widget.report.selectedFieldIds.map((fieldId) => [fieldId, ""])));
       tableSheet.columns = columns.map((header) => ({ header, key: header, width: 22 }));

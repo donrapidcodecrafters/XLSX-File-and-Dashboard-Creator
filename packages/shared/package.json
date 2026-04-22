@@ -14,7 +14,8 @@
   "scripts": {
     "dev": "tsc -w -p tsconfig.json",
     "build": "tsc -p tsconfig.json",
-    "check": "tsc -p tsconfig.json --noEmit"
+    "check": "tsc -p tsconfig.json --noEmit",
+    "smoke": "npm run build && node ./scripts/smoke.mjs"
   },
   "devDependencies": {
     "typescript": "^5.6.3"

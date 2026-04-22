@@ -8,6 +8,7 @@ const CACHE_PATH = resolve(process.cwd(), ".data/studio-cache.json");
 const CACHE_META_PATH = resolve(process.cwd(), ".data/studio-cache-meta.json");
 const HYDRATE_TTL_MS = 60_000;
 const HYDRATE_TIMEOUT_MS = 8_000;
+const DISK_RELOAD_TTL_MS = 250;
 export const CACHE_RETENTION_MS = 24 * 60 * 60 * 1000;
 
 type PersistedCacheMetaEntry = {
@@ -21,11 +22,19 @@ function clone<T>(value: T): T {
 }
 
 function stripCachedRows(document: StudioDocument): StudioDocument {
+  const importedTableIds = new Set(
+    (document.bundle.tables || [])
+      .filter((table) => !table.quickbaseTableId && !table.quickbaseProfileId)
+      .map((table) => table.id)
+  );
   return {
     ...document,
     bundle: {
       ...document.bundle,
-      data: {}
+      // Keep locally imported workbook rows available to the client while omitting cached Quickbase rows.
+      data: Object.fromEntries(
+        Object.entries(document.bundle.data || {}).filter(([tableId]) => importedTableIds.has(tableId))
+      )
     }
   };
 }
@@ -77,11 +86,13 @@ export class StudioStore {
   private cacheMeta: Record<string, PersistedCacheMetaEntry> = {};
   private hydratePromise: Promise<StudioDocument> | null = null;
   private lastHydratedAt = 0;
+  private lastReloadedFromDiskAt = 0;
 
   constructor() {
     this.document = this.load();
     this.cacheMeta = loadPersistedCacheMeta();
     this.lastHydratedAt = Date.parse(this.document.sync?.lastLoadedAt || "") || 0;
+    this.lastReloadedFromDiskAt = Date.now();
   }
 
   private load(): StudioDocument {
@@ -97,10 +108,15 @@ export class StudioStore {
     writeFileSync(STORAGE_PATH, JSON.stringify(stripCachedRows(document), null, 2));
     writeFileSync(CACHE_PATH, JSON.stringify(document.bundle.data || {}, null, 2));
     writeFileSync(CACHE_META_PATH, JSON.stringify(this.cacheMeta || {}, null, 2));
+    this.lastReloadedFromDiskAt = Date.now();
   }
 
-  private reloadFromDisk() {
+  private reloadFromDisk(force = false) {
+    if (!force && this.lastReloadedFromDiskAt && Date.now() - this.lastReloadedFromDiskAt < DISK_RELOAD_TTL_MS) {
+      return;
+    }
     const persisted = loadPersistedDocument();
+    this.lastReloadedFromDiskAt = Date.now();
     if (!persisted) return;
     this.document = persisted;
     this.cacheMeta = loadPersistedCacheMeta();

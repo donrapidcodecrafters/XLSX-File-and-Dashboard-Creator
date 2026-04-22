@@ -143,7 +143,7 @@ export async function registerRenderRoutes(app: FastifyInstance) {
       if (!stream) {
         throw new Error("Unable to create export file stream.");
       }
-      await streamReportWorkbook(stream, report, table, result, update);
+      await streamReportWorkbook(stream, report, table, result, update, extraFilters);
     });
     return { job };
   });
@@ -189,13 +189,18 @@ export async function registerRenderRoutes(app: FastifyInstance) {
         reportProgress.set(report.id, 0);
         reportMessage.set(report.id, `Loading ${report.name}`);
         updateOverallProgress();
-        exportResultsByReportId[reportId] = await fetchReportExportBundle(report, filters, (progress, message) => {
-          reportProgress.set(report.id, Math.max(0, Math.min(100, progress)));
-          reportMessage.set(report.id, `${report.name}: ${message}`);
-          updateOverallProgress();
-        });
-        reportProgress.set(report.id, 100);
-        reportMessage.set(report.id, `${report.name}: ready`);
+        try {
+          exportResultsByReportId[reportId] = await fetchReportExportBundle(report, filters, (progress, message) => {
+            reportProgress.set(report.id, Math.max(0, Math.min(100, progress)));
+            reportMessage.set(report.id, `${report.name}: ${message}`);
+            updateOverallProgress();
+          });
+          reportProgress.set(report.id, 100);
+          reportMessage.set(report.id, `${report.name}: ready`);
+        } catch (error) {
+          reportProgress.set(report.id, 100);
+          reportMessage.set(report.id, `${report.name}: ${error instanceof Error ? error.message : "failed"}`);
+        }
         updateOverallProgress();
       });
       const tablesById = Object.fromEntries(objectStore.listTables().map((table) => [table.id, table]));
@@ -204,7 +209,7 @@ export async function registerRenderRoutes(app: FastifyInstance) {
       if (!stream) {
         throw new Error("Unable to create export file stream.");
       }
-      await streamDashboardWorkbook(stream, dashboard, rendered, exportResultsByReportId, tablesById, update);
+      await streamDashboardWorkbook(stream, dashboard, rendered, exportResultsByReportId, tablesById, update, runtimeFilters);
     });
     return { job };
   });
@@ -217,6 +222,10 @@ export async function registerRenderRoutes(app: FastifyInstance) {
       return { message: "Export job not found." };
     }
     return { job };
+  });
+
+  app.get("/api/exports/jobs", async () => {
+    return { jobs: exportJobStore.listJobs() };
   });
 
   app.get("/api/exports/jobs/:id/download", async (request, reply) => {

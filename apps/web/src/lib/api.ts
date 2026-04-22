@@ -31,17 +31,29 @@ async function downloadExportBlob(url: string, fallbackFilename: string, popupWi
   const blob = await response.blob();
   const filename = parseDownloadFilename(response.headers.get("content-disposition"), fallbackFilename);
   const objectUrl = URL.createObjectURL(blob);
-  if (popupWindow && !popupWindow.closed) {
-    popupWindow.location.href = objectUrl;
-    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-    return;
-  }
   const anchor = document.createElement("a");
   anchor.href = objectUrl;
   anchor.download = filename;
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
+  if (popupWindow && !popupWindow.closed) {
+    try {
+      popupWindow.document.open();
+      popupWindow.document.write(`
+        <title>Download ready</title>
+        <body style="font-family: sans-serif; padding: 20px;">
+          <p>Your export is ready.</p>
+          <p><a id="download-link" href="${objectUrl}" download="${filename}">Click here if the download did not start automatically.</a></p>
+        </body>
+      `);
+      popupWindow.document.close();
+      const popupLink = popupWindow.document.getElementById("download-link") as HTMLAnchorElement | null;
+      popupLink?.click();
+    } catch {
+      // If the popup document is no longer scriptable, the main-window anchor click above is the fallback.
+    }
+  }
   window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
 }
 
@@ -220,14 +232,18 @@ export function fetchExportJobStatus(id: string) {
   return request<{ job: ExportJobStatus }>("/api/exports/jobs/" + encodeURIComponent(id));
 }
 
+export function fetchExportJobs() {
+  return request<{ jobs: ExportJobStatus[] }>("/api/exports/jobs");
+}
+
 export function downloadExportJob(id: string, options: { directDownload?: boolean; popupWindow?: Window | null } = {}) {
   const downloadUrl = API_BASE + "/api/exports/jobs/" + encodeURIComponent(id) + "/download";
-  if (options.popupWindow && !options.popupWindow.closed) {
-    options.popupWindow.location.href = downloadUrl;
-    return;
-  }
   if (options.directDownload) {
     void downloadExportBlob(downloadUrl, `export-${id}.xlsx`, options.popupWindow);
+    return;
+  }
+  if (options.popupWindow && !options.popupWindow.closed) {
+    options.popupWindow.location.href = downloadUrl;
     return;
   }
   ensureDownloadFrame().src = downloadUrl;

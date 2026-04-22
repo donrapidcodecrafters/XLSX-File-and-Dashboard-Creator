@@ -36,6 +36,69 @@ export interface QuickbaseRealmApp {
   name: string;
 }
 
+export interface StudioWorkbookImportResult {
+  document: StudioDocument;
+  primaryObjectId: string;
+  importedObjectIds: string[];
+  importedTableIds: string[];
+  warnings: string[];
+  review: {
+    workbookName: string;
+    importedAt: string;
+    importedSheetCount: number;
+    skippedSheetCount: number;
+    dashboardCreated: boolean;
+    sheets: Array<{
+      sheetName: string;
+      status: "imported" | "skipped";
+      headerRowNumber: number;
+      rowCount: number;
+      columnCount: number;
+      importedTableId?: string;
+      importedReportId?: string;
+      notes: string[];
+      substitutions: string[];
+      layout?: {
+        state: "visible" | "hidden" | "veryHidden";
+        tabColor: string;
+        accentColor: string;
+        title: string;
+        titleRowNumber: number;
+        headingRowCount: number;
+        headerSource: "heuristic" | "auto-filter" | "table";
+        frozenRows: number;
+        frozenColumns: number;
+        hiddenRowCount: number;
+        hiddenColumnCount: number;
+        hiddenFieldLabels: string[];
+        visibleColumnCount: number;
+        autoFilterRange: string;
+        printArea: string;
+        tableName: string;
+        tableRange: string;
+        tableStyle: string;
+        totalsRow: boolean;
+        tableRowStripes: boolean;
+        tableColumnStripes: boolean;
+        viewStyle: "normal" | "pageLayout" | "pageBreakPreview";
+        showGridLines: boolean;
+        zoomScale: number;
+        centeredHorizontally: boolean;
+        centeredVertically: boolean;
+        fitToWidth: number;
+        fitToHeight: number;
+        headerFooterText: string;
+        imageCount: number;
+        tableFocused: boolean;
+        wideLayout: boolean;
+        landscape: boolean;
+        mergedTitle: boolean;
+      };
+    }>;
+  };
+  sync?: QuickbaseSyncResult;
+}
+
 function buildSavePayload(document: StudioDocument): StudioDocument {
   return {
     ...document,
@@ -67,6 +130,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
+function arrayBufferToBase64(buffer: ArrayBuffer) {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    const chunk = bytes.subarray(index, Math.min(index + chunkSize, bytes.length));
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+}
+
 export function fetchStudioDocument() {
   return request<{ document: StudioDocument }>("/api/studio/document");
 }
@@ -75,6 +149,35 @@ export function saveStudioDocument(document: StudioDocument) {
   return request<{ document: StudioDocument; sync?: QuickbaseSyncResult }>("/api/studio/document", {
     method: "PUT",
     body: JSON.stringify({ document: buildSavePayload(document) })
+  });
+}
+
+export function saveStudioUserSettings(payload: {
+  favorites?: string[];
+  recent?: string[];
+  personalOverrides?: StudioDocument["personalOverrides"];
+}) {
+  return request<{ document: StudioDocument; sync?: QuickbaseSyncResult }>("/api/studio/user-settings", {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function updateStudioSession(session: Partial<StudioDocument["session"]>) {
+  return request<{ document: StudioDocument }>("/api/studio/session", {
+    method: "PATCH",
+    body: JSON.stringify({ session })
+  });
+}
+
+export async function importStudioWorkbook(file: File) {
+  const base64 = arrayBufferToBase64(await file.arrayBuffer());
+  return request<StudioWorkbookImportResult>("/api/studio/import/xlsx", {
+    method: "POST",
+    body: JSON.stringify({
+      filename: file.name,
+      base64
+    })
   });
 }
 

@@ -1,23 +1,32 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
-import { normalizeStudioDocument, type CatalogSummaryItem, type ReportDefinition, type StudioDocument, type StudioObject, type TableDefinition } from "@studio/shared";
+import {
+  filterStudioLibraryItems,
+  getStudioObjectScopeLabel,
+  normalizeStudioDocument,
+  resolveStudioSessionStatus,
+  touchStudioSession,
+  type CatalogSummaryItem,
+  type ReportDefinition,
+  type ReportFocusMode,
+  type StudioDocument,
+  type StudioObject,
+  type TableDefinition
+} from "@studio/shared";
 import { DashboardView } from "./components/DashboardView";
+import { HelpPage } from "./components/HelpPage";
+import { HomePage } from "./components/HomePage";
+import { RefreshOverlay } from "./components/RefreshOverlay";
 import { ReportView } from "./components/ReportView";
 import { StudioPage } from "./components/StudioPage";
+import { ViewerPage } from "./components/ViewerPage";
 import { fetchCatalog, fetchObject, fetchTables, runReport, runReportPage } from "./lib/api";
+import { getProfileIdsForCatalogItem, getProfileIdsForObject, resolveTableDefinition, toggleFavoriteIds, typeLabel } from "./lib/catalog";
 import { getHostedContext } from "./lib/embed";
 import type { QuickbaseTableLinkContext } from "./lib/quickbaseLinks";
-import { fetchStudioDocument, fetchStudioRefreshJob, startStudioObjectRefresh, startStudioRefresh } from "./lib/studioApi";
+import { fetchStudioDocument, fetchStudioRefreshJob, saveStudioUserSettings, startStudioObjectRefresh, updateStudioSession } from "./lib/studioApi";
 
 const SESSION_RECENT_KEY = "studio-session-recent";
-
-function typeLabel(type: "report" | "dashboard") {
-  return type === "report" ? "Report" : "Dashboard";
-}
-
-function resolveTableDefinition(tables: TableDefinition[], tableId: string) {
-  return tables.find((item) => item.id === tableId || item.quickbaseTableId === tableId);
-}
 
 function getQuickbaseLinkContextForTable(table: TableDefinition | undefined, studioDocument: StudioDocument | null): QuickbaseTableLinkContext | null {
   if (!table || !studioDocument) return null;
@@ -30,27 +39,6 @@ function getQuickbaseLinkContextForTable(table: TableDefinition | undefined, stu
     realmHostname,
     tableId
   };
-}
-
-function getProfileIdsForObject(object: StudioObject | null, tables: TableDefinition[], studioDocument: StudioDocument | null) {
-  if (!object || !studioDocument) return [] as string[];
-  const ids = new Set<string>();
-  if (object.type === "report") {
-    const table = resolveTableDefinition(tables, object.sourceTableId);
-    if (table?.quickbaseProfileId) ids.add(table.quickbaseProfileId);
-    return Array.from(ids);
-  }
-  object.tabs.forEach((tab) => {
-    tab.widgets.forEach((widget) => {
-      const report = widget.mode === "copied" && widget.snapshot
-        ? widget.snapshot
-        : studioDocument.bundle.objects[widget.reportId];
-      if (report?.type !== "report") return;
-      const table = resolveTableDefinition(tables, report.sourceTableId);
-      if (table?.quickbaseProfileId) ids.add(table.quickbaseProfileId);
-    });
-  });
-  return Array.from(ids);
 }
 
 function useCatalog() {
@@ -68,9 +56,30 @@ function useCatalog() {
   });
 
   const reloadCatalog = useCallback(async () => {
-    fetchCatalog().then((response) => setObjects(response.objects));
-    fetchTables().then((response) => setTables(response.tables));
-    fetchStudioDocument().then((response) => setStudioDocument(normalizeStudioDocument(response.document))).catch(() => undefined);
+    const [catalogResponse, tablesResponse, studioResponse] = await Promise.all([
+      fetchCatalog(),
+      fetchTables(),
+      fetchStudioDocument().catch(() => null)
+    ]);
+    setObjects(catalogResponse.objects);
+    setTables(tablesResponse.tables);
+    if (studioResponse?.document) {
+      setStudioDocument(normalizeStudioDocument(studioResponse.document));
+    }
+  }, []);
+
+  const updateUserSettings = useCallback(async (payload: {
+    favorites?: string[];
+    recent?: string[];
+    personalOverrides?: StudioDocument["personalOverrides"];
+  }) => {
+    const response = await saveStudioUserSettings(payload);
+    setStudioDocument(normalizeStudioDocument(response.document));
+  }, []);
+
+  const persistSession = useCallback(async (session: Partial<StudioDocument["session"]>) => {
+    const response = await updateStudioSession(session);
+    setStudioDocument(normalizeStudioDocument(response.document));
   }, []);
 
   const markObjectAsRecent = useCallback((objectId: string) => {
@@ -80,15 +89,16 @@ function useCatalog() {
       try {
         window.sessionStorage.setItem(SESSION_RECENT_KEY, JSON.stringify(next));
       } catch {}
+      void updateUserSettings({ recent: next });
       return next;
     });
-  }, []);
+  }, [updateUserSettings]);
 
   useEffect(() => {
     void reloadCatalog();
   }, []);
 
-  return { objects, tables, studioDocument, recentIds, reloadCatalog, markObjectAsRecent };
+  return { objects, tables, studioDocument, recentIds, reloadCatalog, markObjectAsRecent, updateUserSettings, persistSession, setStudioDocument };
 }
 
 function formatTimestamp(value?: string) {
@@ -97,283 +107,18 @@ function formatTimestamp(value?: string) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
-function buildCatalogItemLookup(objects: CatalogSummaryItem[], studioDocument: StudioDocument | null) {
-  const map = new Map<string, CatalogSummaryItem>();
-  objects.forEach((object) => map.set(object.id, object));
-  if (studioDocument) {
-    Object.values(studioDocument.bundle.objects).forEach((object) => {
-      if (!map.has(object.id)) {
-        map.set(object.id, {
-          id: object.id,
-          type: object.type,
-          name: object.name,
-          description: object.description,
-          folder: object.folder,
-          category: object.category,
-          tags: object.tags,
-          updatedAt: object.updatedAt
-        });
-      }
-    });
-  }
-  return map;
+function sessionsMatch(left: StudioDocument["session"] | null | undefined, right: StudioDocument["session"] | null | undefined) {
+  return JSON.stringify(left || {}) === JSON.stringify(right || {});
 }
 
-function getProfileIdsForCatalogItem(item: CatalogSummaryItem, studioDocument: StudioDocument | null) {
-  if (!studioDocument) return [] as string[];
-  const object = studioDocument.bundle.objects[item.id];
-  if (!object) return [] as string[];
-  return getProfileIdsForObject(object, studioDocument.bundle.tables || [], studioDocument);
+function getDashboardPersonalOverride(dashboardId: string, studioDocument: StudioDocument | null) {
+  if (!dashboardId || !studioDocument) return null;
+  return studioDocument.personalOverrides.dashboards[dashboardId] || null;
 }
 
-function HomePage({
-  objects,
-  studioDocument,
-  recentIds,
-  refreshAllSignal = 0,
-  openLinksInNewTab = false
-}: {
-  objects: CatalogSummaryItem[];
-  studioDocument: StudioDocument | null;
-  recentIds: string[];
-  refreshAllSignal?: number;
-  openLinksInNewTab?: boolean;
-}) {
-  const [refreshJob, setRefreshJob] = useState<any>(null);
-  const catalogLookup = useMemo(() => buildCatalogItemLookup(objects, studioDocument), [objects, studioDocument]);
-  const rankedObjects = [...objects].sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime());
-  const reports = rankedObjects.filter((object) => object.type === "report");
-  const dashboards = rankedObjects.filter((object) => object.type === "dashboard");
-  const recentObjects = recentIds
-    .map((id) => catalogLookup.get(id))
-    .filter((item): item is CatalogSummaryItem => Boolean(item))
-    .slice(0, 6) || [];
-  const favoriteObjects = (studioDocument?.favorites || [])
-    .map((id) => catalogLookup.get(id))
-    .filter((item): item is CatalogSummaryItem => Boolean(item))
-    .slice(0, 6) || [];
-  const appBrowseGroups = useMemo(() => {
-    const profiles = studioDocument?.quickbaseProfiles || [];
-    const grouped = profiles.map((profile) => ({
-      id: profile.id,
-      label: profile.label || "Quickbase app",
-      items: rankedObjects.filter((item) => getProfileIdsForCatalogItem(item, studioDocument).includes(profile.id)).slice(0, 8)
-    })).filter((group) => group.items.length > 0);
-    const unassigned = rankedObjects.filter((item) => getProfileIdsForCatalogItem(item, studioDocument).length === 0).slice(0, 8);
-    if (unassigned.length) {
-      grouped.push({
-        id: "general",
-        label: "General",
-        items: unassigned
-      });
-    }
-    return grouped;
-  }, [rankedObjects, studioDocument]);
-  const recentOrLatest = recentObjects.length ? recentObjects : rankedObjects.slice(0, 6);
-  const favoritesOrFeatured = favoriteObjects.length ? favoriteObjects : [...dashboards, ...reports].slice(0, 6);
-  const appProfiles = studioDocument?.quickbaseProfiles || [];
-  const totalCachedRows = appProfiles.reduce((sum, profile) => sum + (profile.refreshStatus.cachedRowCount || 0), 0);
-  const healthTone = totalCachedRows > 0 ? "Up to date" : "Needs refresh";
-
-  useEffect(() => {
-    if (!refreshJob || refreshJob.status === "complete" || refreshJob.status === "failed") return;
-    const handle = window.setInterval(() => {
-      fetchStudioRefreshJob(refreshJob.id)
-        .then((response) => {
-          setRefreshJob(response.job);
-          if (response.job.status === "complete" || response.job.status === "failed") {
-            window.location.reload();
-          }
-        })
-        .catch(() => undefined);
-    }, 1000);
-    return () => window.clearInterval(handle);
-  }, [refreshJob]);
-
-  useEffect(() => {
-    if (!refreshAllSignal) return;
-    void startFullRefresh();
-  }, [refreshAllSignal]);
-
-  async function startFullRefresh() {
-    const response = await startStudioRefresh();
-    setRefreshJob(response.job);
-  }
-
-  return (
-    <section className="surface home-page">
-      {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" ? (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(12,22,18,0.58)", zIndex: 9999, display: "grid", placeItems: "center", padding: "24px" }}>
-          <div style={{ width: "min(560px, 100%)", background: "#fff", borderRadius: "20px", padding: "24px", boxShadow: "0 24px 64px rgba(0,0,0,0.24)" }}>
-            <strong style={{ display: "block", fontSize: "1.1rem", marginBottom: "8px" }}>Refreshing all reports and dashboards</strong>
-            <div style={{ marginBottom: "10px", color: "#41554a" }}>{refreshJob.message}</div>
-            <div style={{ height: "12px", background: "#e5ece8", borderRadius: "999px", overflow: "hidden", marginBottom: "10px" }}>
-              <div style={{ height: "100%", width: `${refreshJob.progress || 0}%`, background: "#0d7c66" }} />
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.95rem", color: "#41554a" }}>
-              <span>{refreshJob.progress || 0}% complete</span>
-              <span>{typeof refreshJob.estimatedSecondsRemaining === "number" ? `~${refreshJob.estimatedSecondsRemaining}s remaining` : "Estimating time…"}</span>
-            </div>
-          </div>
-        </div>
-      ) : null}
-      <div className="home-shell">
-        <section className="home-hero-panel">
-          <div className="home-hero-copy">
-            <span className="badge brand">Home</span>
-            <h1>{studioDocument?.branding.homeLabel || "Reporting platform home"}</h1>
-            <p>Everything important in one place: refresh health, connected apps, recent activity, favorites, and fast access to the reports and dashboards people use every day.</p>
-          </div>
-          <div className="home-hero-actions">
-            <button className="ghost-button" onClick={() => { void startFullRefresh(); }}>Refresh all</button>
-            <Link className="ghost-button" to="/viewer">Browse reports and dashboards</Link>
-            <Link className="ghost-button" to="/studio">Open building area</Link>
-          </div>
-          <div className="home-highlight-grid">
-            <div className="home-highlight-card home-highlight-card-primary">
-              <span className="micro">Platform health</span>
-              <strong>{healthTone}</strong>
-              <span>Last refresh {formatTimestamp(studioDocument?.sync.refreshStatus.lastSuccessAt)}</span>
-            </div>
-            <div className="home-highlight-card">
-              <span className="micro">Saved content</span>
-              <strong>{objects.length}</strong>
-              <span>{reports.length} reports · {dashboards.length} dashboards</span>
-            </div>
-            <div className="home-highlight-card">
-              <span className="micro">Rows saved for faster loading</span>
-              <strong>{totalCachedRows.toLocaleString()}</strong>
-              <span>Across {appProfiles.length} connected app{appProfiles.length === 1 ? "" : "s"}</span>
-            </div>
-          </div>
-        </section>
-
-        <section className="home-main-grid">
-          <div className="home-column home-column-wide">
-            <div className="card home-section-card">
-              <div className="card-head">
-                <strong>{recentObjects.length ? "Recently Opened" : "Latest Activity"}</strong>
-                <span className="micro">{recentObjects.length ? "Quickly reopen active work" : "Start here if nothing has been opened yet"}</span>
-              </div>
-              <div className="viewer-grid home-object-grid">
-                {recentOrLatest.length ? recentOrLatest.map((object) => (
-                  <Link key={object.id} className="home-object-card" to={`/${object.type}/${object.id}`} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>
-                    <span className="badge">{typeLabel(object.type)}</span>
-                    <strong>{object.name}</strong>
-                    <span>{object.description || "No description yet."}</span>
-                    <span className="micro">{object.folder} · {object.category}</span>
-                  </Link>
-                )) : (
-                  <div className="empty-page">No reports or dashboards are available yet.</div>
-                )}
-              </div>
-            </div>
-
-            <div className="card home-section-card">
-              <div className="card-head">
-                <strong>{favoriteObjects.length ? "Favorites" : "Featured Dashboards and Reports"}</strong>
-                <span className="micro">{favoriteObjects.length ? "Pinned items for quick access" : "Helpful starting points until favorites are set"}</span>
-              </div>
-              <div className="viewer-grid home-object-grid">
-                {favoritesOrFeatured.length ? favoritesOrFeatured.map((object) => (
-                  <Link key={object.id} className="home-object-card" to={`/${object.type}/${object.id}`} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>
-                    <span className="badge">{typeLabel(object.type)}</span>
-                    <strong>{object.name}</strong>
-                    <span>{object.description || "No description yet."}</span>
-                    <span className="micro">{object.folder} · {object.category}</span>
-                  </Link>
-                )) : (
-                  <div className="empty-page">No favorites or featured content are available yet.</div>
-                )}
-              </div>
-            </div>
-
-            <div className="card home-section-card">
-              <div className="card-head">
-                <strong>Browse by App</strong>
-                <span className="micro">Open reports and dashboards grouped by connected Quickbase app</span>
-              </div>
-              <div className="home-app-browser">
-                {appBrowseGroups.length ? appBrowseGroups.map((group) => (
-                  <div className="home-app-browse-card" key={group.id}>
-                    <div className="home-app-browse-head">
-                      <strong>{group.label}</strong>
-                      <span className="micro">{group.items.length} item{group.items.length === 1 ? "" : "s"}</span>
-                    </div>
-                    <div className="home-app-browse-links">
-                      {group.items.map((object) => (
-                        <Link
-                          key={object.id}
-                          className="home-app-browse-link"
-                          to={`/${object.type}/${object.id}`}
-                          target={openLinksInNewTab ? "_blank" : undefined}
-                          rel={openLinksInNewTab ? "noreferrer" : undefined}
-                        >
-                          <span className="badge">{typeLabel(object.type)}</span>
-                          <strong>{object.name}</strong>
-                        </Link>
-                      ))}
-                    </div>
-                  </div>
-                )) : (
-                  <div className="empty-page">No app-based report or dashboard groups are available yet.</div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="home-column">
-            <div className="card home-section-card">
-              <div className="card-head">
-                <strong>Platform Status</strong>
-                <span className="micro">What is happening right now</span>
-              </div>
-              <div className="home-status-list">
-                <div className="home-status-item">
-                  <strong>Last full refresh</strong>
-                  <span>{formatTimestamp(studioDocument?.sync.refreshStatus.lastSuccessAt)}</span>
-                </div>
-                <div className="home-status-item">
-                  <strong>Next scheduled refresh</strong>
-                  <span>{formatTimestamp(studioDocument?.sync.refreshStatus.nextRunAt)}</span>
-                </div>
-                <div className="home-status-item">
-                  <strong>Current refresh message</strong>
-                  <span>{studioDocument?.sync.refreshStatus.message || "No refresh has run yet."}</span>
-                </div>
-                <div className="home-status-item">
-                  <strong>Favorites saved</strong>
-                  <span>{(studioDocument?.favorites || []).length}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="card home-section-card">
-              <div className="card-head">
-                <strong>Connected Apps</strong>
-                <span className="micro">Refresh and cache status by app</span>
-              </div>
-              <div className="home-app-list">
-                {appProfiles.length ? appProfiles.map((profile) => (
-                  <div className="home-app-item" key={profile.id}>
-                    <div className="home-app-head">
-                      <strong>{profile.label || "Quickbase app"}</strong>
-                      <span className="badge">{profile.liveMode ? "Live mode" : "Cached mode"}</span>
-                    </div>
-                    <span>Last refresh: {formatTimestamp(profile.refreshStatus.lastSuccessAt)}</span>
-                    <span>Next refresh: {formatTimestamp(profile.refreshStatus.nextRunAt)}</span>
-                    <span>Rows saved: {(profile.refreshStatus.cachedRowCount || 0).toLocaleString()}</span>
-                  </div>
-                )) : (
-                  <div className="empty">No Quickbase apps are configured yet.</div>
-                )}
-              </div>
-            </div>
-          </div>
-        </section>
-      </div>
-    </section>
-  );
+function getReportPersonalOverride(reportId: string, studioDocument: StudioDocument | null) {
+  if (!reportId || !studioDocument) return null;
+  return studioDocument.personalOverrides.reports[reportId] || null;
 }
 
 function ObjectPage({
@@ -381,13 +126,21 @@ function ObjectPage({
   platformName,
   studioDocument,
   openLinksInNewTab = false,
-  onObjectViewed
+  onObjectViewed,
+  onUserSettingsChange,
+  onToggleFavorite
 }: {
   tables: TableDefinition[];
   platformName: string;
   studioDocument: StudioDocument | null;
   openLinksInNewTab?: boolean;
   onObjectViewed: (objectId: string) => void;
+  onUserSettingsChange: (payload: {
+    favorites?: string[];
+    recent?: string[];
+    personalOverrides?: StudioDocument["personalOverrides"];
+  }) => Promise<void>;
+  onToggleFavorite: (objectId: string) => Promise<void>;
 }) {
   const params = useParams();
   const [object, setObject] = useState<StudioObject | null>(null);
@@ -418,12 +171,15 @@ function ObjectPage({
     if (!params.objectId) return;
     let active = true;
     setLoading(true);
-    setPage(1);
     setRefreshNonce(0);
     setRefreshJob(null);
     fetchObject(params.objectId)
       .then((response) => {
         if (!active) return;
+        const reportOverride = response.object.type === "report" && response.object.scope === "global"
+          ? getReportPersonalOverride(response.object.id, studioDocument)
+          : null;
+        setPage(reportOverride?.currentPage || 1);
         setObject(response.object);
         setResult(null);
         onObjectViewed(response.object.id);
@@ -443,12 +199,21 @@ function ObjectPage({
   }, [object, platformName]);
 
   useEffect(() => {
+    if (!object || object.type !== "report" || object.scope !== "global") return;
+    const reportOverride = getReportPersonalOverride(object.id, studioDocument);
+    const overridePage = Math.max(1, reportOverride?.currentPage || 1);
+    if (overridePage !== page) {
+      setPage(overridePage);
+    }
+  }, [object?.id, object?.scope, object?.type, studioDocument]);
+
+  useEffect(() => {
     if (!object || object.type !== "report") return;
     let active = true;
     setLoading(true);
     const fetcher = page === 1
-      ? runReport(object.id)
-      : runReportPage(object.id, page, pageSize);
+      ? runReport(object.id, [], { forceLive: liveModeEnabled })
+      : runReportPage(object.id, page, pageSize, [], { forceLive: liveModeEnabled });
     fetcher
       .then((reportResult) => {
         if (!active) return;
@@ -470,7 +235,7 @@ function ObjectPage({
     return () => {
       active = false;
     };
-  }, [object?.id, object?.type, page, refreshNonce]);
+  }, [liveModeEnabled, object?.id, object?.type, page, refreshNonce]);
 
   useEffect(() => {
     if (!refreshJob || refreshJob.status === "complete" || refreshJob.status === "failed") return;
@@ -497,16 +262,20 @@ function ObjectPage({
   if (!params.objectId) return null;
   if (!object && loading) return <div className="empty-page">Loading report or dashboard…</div>;
   if (!object) return <div className="empty-page">That report or dashboard could not be found.</div>;
+  if (object.scope === "personal" && String(studioDocument?.session.currentUserId || "").trim() !== String(object.ownerUserId || "").trim()) {
+    return <div className="empty-page">That personal report or dashboard is not available for this session.</div>;
+  }
 
   if (object.type === "report") {
     const table = resolveTableDefinition(tables, object.sourceTableId);
     const quickbaseLinkContext = getQuickbaseLinkContextForTable(table, studioDocument);
+    const personalOverride = object.scope === "global" ? getReportPersonalOverride(object.id, studioDocument) : null;
     return (
       <>
         {liveModeEnabled ? (
           <div className="sync-status sync-status-warn">
             <strong>Live mode enabled</strong>
-            <span>Opening this report triggers a live object refresh first, so loading can take significantly longer.</span>
+            <span>This report is loading live Quickbase data directly, so loading can take significantly longer.</span>
           </div>
         ) : null}
         {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" ? (
@@ -533,18 +302,76 @@ function ObjectPage({
           currentPage={page}
           onPageChange={setPage}
           onRefresh={() => { void startObjectRefresh(); }}
+          initialFocusMode={(personalOverride?.focusMode || "default") as ReportFocusMode}
+          initialFocusedSection={personalOverride?.focusedSection || ""}
+          savedViews={personalOverride?.savedViews || []}
+          onSaveView={(view) => {
+            if (object.scope !== "global" || !studioDocument) return;
+            const nextPersonalOverrides: StudioDocument["personalOverrides"] = {
+              ...studioDocument.personalOverrides,
+              reports: {
+                ...studioDocument.personalOverrides.reports,
+                [object.id]: {
+                  currentPage: Math.max(1, page || 1),
+                  focusMode: personalOverride?.focusMode || "default",
+                  focusedSection: personalOverride?.focusedSection || "",
+                  savedViews: [...(personalOverride?.savedViews || []), { ...view, updatedAt: new Date().toISOString() }],
+                  updatedAt: new Date().toISOString()
+                }
+              }
+            };
+            void onUserSettingsChange({ personalOverrides: nextPersonalOverrides });
+          }}
+          onDeleteView={(viewId) => {
+            if (object.scope !== "global" || !studioDocument) return;
+            const nextPersonalOverrides: StudioDocument["personalOverrides"] = {
+              ...studioDocument.personalOverrides,
+              reports: {
+                ...studioDocument.personalOverrides.reports,
+                [object.id]: {
+                  currentPage: Math.max(1, personalOverride?.currentPage || 1),
+                  focusMode: (personalOverride?.focusMode || "default") as ReportFocusMode,
+                  focusedSection: personalOverride?.focusedSection || "",
+                  savedViews: (personalOverride?.savedViews || []).filter((view) => view.id !== viewId),
+                  updatedAt: new Date().toISOString()
+                }
+              }
+            };
+            void onUserSettingsChange({ personalOverrides: nextPersonalOverrides });
+          }}
+          onStateChange={(state) => {
+            if (object.scope !== "global" || !studioDocument) return;
+            const nextPersonalOverrides: StudioDocument["personalOverrides"] = {
+              ...studioDocument.personalOverrides,
+              reports: {
+                ...studioDocument.personalOverrides.reports,
+                [object.id]: {
+                  currentPage: Math.max(1, state.currentPage || 1),
+                  focusMode: state.focusMode,
+                  focusedSection: state.focusedSection,
+                  savedViews: personalOverride?.savedViews || [],
+                  updatedAt: new Date().toISOString()
+                }
+              }
+            };
+            void onUserSettingsChange({ personalOverrides: nextPersonalOverrides });
+          }}
+          isFavorite={(studioDocument?.favorites || []).includes(object.id)}
+          onToggleFavorite={() => { void onToggleFavorite(object.id); }}
           openLinksInNewTab={openLinksInNewTab}
         />
       </>
     );
   }
 
+  const personalOverride = object.scope === "global" ? getDashboardPersonalOverride(object.id, studioDocument) : null;
+
   return (
     <>
       {liveModeEnabled ? (
         <div className="sync-status sync-status-warn">
           <strong>Live mode enabled</strong>
-          <span>Opening this dashboard triggers a live object refresh first, so loading can take significantly longer.</span>
+          <span>This dashboard is loading live Quickbase data directly, so loading can take significantly longer.</span>
         </div>
       ) : null}
       {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" ? (
@@ -568,111 +395,94 @@ function ObjectPage({
         getQuickbaseLinkContext={(tableId) => getQuickbaseLinkContextForTable(resolveTableDefinition(tables, tableId), studioDocument)}
         refreshNonce={refreshNonce}
         onRefresh={() => { void startObjectRefresh(); }}
+        initialRuntimeFilters={personalOverride?.runtimeFilters}
+        initialActiveTabId={personalOverride?.activeTabId}
+        initialFocusedWidgetId={personalOverride?.focusedWidgetId}
+        savedViews={personalOverride?.savedViews || []}
+        onSaveView={(view) => {
+          if (object.scope !== "global" || !studioDocument) return;
+          const nextPersonalOverrides: StudioDocument["personalOverrides"] = {
+            ...studioDocument.personalOverrides,
+            dashboards: {
+              ...studioDocument.personalOverrides.dashboards,
+              [object.id]: {
+                runtimeFilters: personalOverride?.runtimeFilters || {},
+                activeTabId: personalOverride?.activeTabId || "",
+                focusedWidgetId: personalOverride?.focusedWidgetId || "",
+                savedViews: [...(personalOverride?.savedViews || []), { ...view, updatedAt: new Date().toISOString() }],
+                updatedAt: new Date().toISOString()
+              }
+            }
+          };
+          void onUserSettingsChange({ personalOverrides: nextPersonalOverrides });
+        }}
+        onDeleteView={(viewId) => {
+          if (object.scope !== "global" || !studioDocument) return;
+          const nextPersonalOverrides: StudioDocument["personalOverrides"] = {
+            ...studioDocument.personalOverrides,
+            dashboards: {
+              ...studioDocument.personalOverrides.dashboards,
+              [object.id]: {
+                runtimeFilters: personalOverride?.runtimeFilters || {},
+                activeTabId: personalOverride?.activeTabId || "",
+                focusedWidgetId: personalOverride?.focusedWidgetId || "",
+                savedViews: (personalOverride?.savedViews || []).filter((view) => view.id !== viewId),
+                updatedAt: new Date().toISOString()
+              }
+            }
+          };
+          void onUserSettingsChange({ personalOverrides: nextPersonalOverrides });
+        }}
+        isFavorite={(studioDocument?.favorites || []).includes(object.id)}
+        onToggleFavorite={() => { void onToggleFavorite(object.id); }}
+        onStateChange={(state) => {
+          if (object.scope !== "global" || !studioDocument) return;
+          const nextPersonalOverrides: StudioDocument["personalOverrides"] = {
+            ...studioDocument.personalOverrides,
+            dashboards: {
+              ...studioDocument.personalOverrides.dashboards,
+              [object.id]: {
+                runtimeFilters: state.runtimeFilters,
+                activeTabId: state.activeTabId,
+                focusedWidgetId: state.focusedWidgetId,
+                savedViews: personalOverride?.savedViews || [],
+                updatedAt: new Date().toISOString()
+              }
+            }
+          };
+          void onUserSettingsChange({ personalOverrides: nextPersonalOverrides });
+        }}
+        forceLive={liveModeEnabled}
         openLinksInNewTab={openLinksInNewTab}
       />
     </>
   );
 }
 
-function ViewerPage({ objects, refreshAllSignal = 0, openLinksInNewTab = false }: { objects: CatalogSummaryItem[]; refreshAllSignal?: number; openLinksInNewTab?: boolean }) {
-  const [query, setQuery] = useState("");
-  const [refreshJob, setRefreshJob] = useState<any>(null);
-  const filtered = useMemo(() => {
-    const text = query.trim().toLowerCase();
-    if (!text) return objects;
-    return objects.filter((object) =>
-      [object.name, object.description, object.folder, object.category, object.tags.join(" ")].join(" ").toLowerCase().includes(text)
-    );
-  }, [objects, query]);
-
-  useEffect(() => {
-    if (!refreshJob || refreshJob.status === "complete" || refreshJob.status === "failed") return;
-    const handle = window.setInterval(() => {
-      fetchStudioRefreshJob(refreshJob.id)
-        .then((response) => {
-          setRefreshJob(response.job);
-          if (response.job.status === "complete" || response.job.status === "failed") {
-            window.location.reload();
-          }
-        })
-        .catch(() => undefined);
-    }, 1000);
-    return () => window.clearInterval(handle);
-  }, [refreshJob]);
-
-  useEffect(() => {
-    if (!refreshAllSignal) return;
-    void startFullRefresh();
-  }, [refreshAllSignal]);
-
-  async function startFullRefresh() {
-    const response = await startStudioRefresh();
-    setRefreshJob(response.job);
-  }
-
-  return (
-    <section className="surface stack viewer-page">
-      {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" ? (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(12,22,18,0.58)", zIndex: 9999, display: "grid", placeItems: "center", padding: "24px" }}>
-          <div style={{ width: "min(560px, 100%)", background: "#fff", borderRadius: "20px", padding: "24px", boxShadow: "0 24px 64px rgba(0,0,0,0.24)" }}>
-            <strong style={{ display: "block", fontSize: "1.1rem", marginBottom: "8px" }}>Refreshing all reports and dashboards</strong>
-            <div style={{ marginBottom: "10px", color: "#41554a" }}>{refreshJob.message}</div>
-            <div style={{ height: "12px", background: "#e5ece8", borderRadius: "999px", overflow: "hidden", marginBottom: "10px" }}>
-              <div style={{ height: "100%", width: `${refreshJob.progress || 0}%`, background: "#0d7c66" }} />
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.95rem", color: "#41554a" }}>
-              <span>{refreshJob.progress || 0}% complete</span>
-              <span>{typeof refreshJob.estimatedSecondsRemaining === "number" ? `~${refreshJob.estimatedSecondsRemaining}s remaining` : "Estimating time…"}</span>
-            </div>
-          </div>
-        </div>
-      ) : null}
-      <div className="hero viewer-hero">
-        <div>
-          <span className="badge brand">Viewing</span>
-          <h1>Open Reports and Dashboards</h1>
-          <p>Choose any saved report or dashboard to open it full screen with its live filters and navigation controls.</p>
-        </div>
-        <div className="link-toolbar viewer-actions">
-          <Link className="ghost-button" to="/studio">Open building area</Link>
-        </div>
-      </div>
-
-      <label className="field viewer-search-field">
-        <span>Search</span>
-        <input
-          id="viewer-search"
-          name="viewerSearch"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search reports and dashboards"
-        />
-      </label>
-
-      <div className="viewer-grid">
-        {filtered.map((object) => (
-          <Link key={object.id} className="viewer-card" to={`/${object.type}/${object.id}`} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>
-            <span className="badge">{typeLabel(object.type)}</span>
-            <strong>{object.name}</strong>
-            <span>{object.description || "No description yet."}</span>
-            <span className="micro">{object.folder} · {object.category}</span>
-          </Link>
-        ))}
-        {!filtered.length ? <div className="empty-page">No reports or dashboards match this search.</div> : null}
-      </div>
-    </section>
-  );
-}
-
 export function App() {
-  const { objects, tables, studioDocument, recentIds, reloadCatalog, markObjectAsRecent } = useCatalog();
+  const { objects, tables, studioDocument, recentIds, reloadCatalog, markObjectAsRecent, updateUserSettings, persistSession, setStudioDocument } = useCatalog();
   const location = useLocation();
   const hosted = useMemo(() => getHostedContext(), [location.key]);
+  const lastSessionTouchAt = useRef(0);
+  const currentUserId = String(studioDocument?.session.currentUserId || "").trim();
+  const sessionStatus = useMemo(
+    () => studioDocument ? resolveStudioSessionStatus(studioDocument) : null,
+    [studioDocument]
+  );
+  const bootstrapIssues = useMemo(
+    () => (studioDocument?.quickbaseProfiles || []).filter((profile) => !profile.bootstrap.ready || profile.bootstrap.autoProvisioned || profile.bootstrap.error),
+    [studioDocument]
+  );
+  const visibleObjects = useMemo(
+    () => filterStudioLibraryItems(objects, { currentUserId }),
+    [currentUserId, objects]
+  );
   const [studioSettingsSignal, setStudioSettingsSignal] = useState(0);
   const [studioRefreshSignal, setStudioRefreshSignal] = useState(0);
   const [viewerRefreshSignal, setViewerRefreshSignal] = useState(0);
   const [homeRefreshSignal, setHomeRefreshSignal] = useState(0);
   const homeRoute = location.pathname === "/";
+  const helpRoute = location.pathname === "/help";
   const studioRoute = location.pathname.startsWith("/studio");
   const viewerRoute = location.pathname === "/viewer";
   const readerRoute = /^\/(report|dashboard)\//.test(location.pathname);
@@ -680,11 +490,53 @@ export function App() {
   const openLinksInNewTab = studioDocument?.branding.openLinksInNewTab === true;
   const navLabel = studioDocument?.branding.navigationLabel || "Reports and Dashboards";
   const readerFullScreen = readerRoute || hosted.mode === "viewer" || hosted.embed;
-  const hideSidebar = hosted.embed || studioRoute || readerRoute || viewerRoute || homeRoute;
+  const hideSidebar = hosted.embed || studioRoute || readerRoute || viewerRoute || homeRoute || helpRoute;
+  const toggleFavorite = useCallback(async (objectId: string) => {
+    if (!studioDocument) return;
+    const next = toggleFavoriteIds(studioDocument.favorites || [], objectId);
+    await updateUserSettings({ favorites: next });
+  }, [studioDocument, updateUserSettings]);
 
   useEffect(() => {
     void reloadCatalog();
   }, [location.pathname, reloadCatalog]);
+
+  useEffect(() => {
+    if (!studioDocument || !hosted.launchSource) return;
+    const nextSession = touchStudioSession(studioDocument.session, {
+      now: Date.now(),
+      relaunch: true,
+      launchSource: hosted.launchSource,
+      currentUserId: hosted.userId || studioDocument.session.currentUserId,
+      requiresLaunch: true
+    });
+    if (sessionsMatch(studioDocument.session, nextSession)) return;
+    setStudioDocument((current) => current ? normalizeStudioDocument({ ...current, session: nextSession }) : current);
+    void persistSession(nextSession).catch(() => undefined);
+  }, [hosted.launchSource, hosted.userId, persistSession, setStudioDocument, studioDocument]);
+
+  useEffect(() => {
+    if (!studioDocument || !sessionStatus?.valid) return;
+    const touch = () => {
+      const now = Date.now();
+      if (now - lastSessionTouchAt.current < 60_000) return;
+      lastSessionTouchAt.current = now;
+      const nextSession = touchStudioSession(studioDocument.session, { now });
+      setStudioDocument((current) => current ? normalizeStudioDocument({ ...current, session: nextSession }) : current);
+      void persistSession(nextSession).catch(() => undefined);
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") touch();
+    };
+    window.addEventListener("pointerdown", touch, { passive: true });
+    window.addEventListener("keydown", touch);
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      window.removeEventListener("pointerdown", touch);
+      window.removeEventListener("keydown", touch);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [persistSession, sessionStatus?.valid, setStudioDocument, studioDocument]);
 
   useEffect(() => {
     if (readerRoute) return;
@@ -696,19 +548,55 @@ export function App() {
       document.title = `${platformName} · Building`;
       return;
     }
+    if (helpRoute) {
+      document.title = `${platformName} · Help`;
+      return;
+    }
     if (viewerRoute || location.pathname === "/") {
       document.title = `${platformName} · Viewing`;
       return;
     }
     document.title = platformName;
-  }, [homeRoute, location.pathname, platformName, readerRoute, studioRoute, viewerRoute]);
+  }, [helpRoute, homeRoute, location.pathname, platformName, readerRoute, studioRoute, viewerRoute]);
+
+  if (studioDocument && sessionStatus && !sessionStatus.valid) {
+    return (
+      <div className="app-shell">
+        <main className="content">
+          <div className="empty-page">
+            <h1>Session expired</h1>
+            <p>{sessionStatus.message}</p>
+            <p>Last activity: {formatTimestamp(studioDocument.session.lastActivityAt)}</p>
+            <p>Expired: {formatTimestamp(sessionStatus.expiresAt)}</p>
+            {studioDocument.session.launchSource === "local-dev" ? (
+              <button
+                onClick={() => {
+                  const nextSession = touchStudioSession(studioDocument.session, {
+                    now: Date.now(),
+                    relaunch: true,
+                    launchSource: "local-dev",
+                    currentUserId: studioDocument.session.currentUserId
+                  });
+                  setStudioDocument((current) => current ? normalizeStudioDocument({ ...current, session: nextSession }) : current);
+                  void persistSession(nextSession).catch(() => undefined);
+                }}
+              >
+                Resume local session
+              </button>
+            ) : null}
+            <p className="micro">Production relaunches should come from the Quickbase dashboard button so the platform receives fresh launch context.</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className={`app-shell ${hosted.embed ? "embed-shell" : ""} ${readerFullScreen ? "reader-shell" : ""}`}>
       {hosted.embed || readerRoute ? null : (
         <header className="topbar">
           <div>
-            <div className="eyebrow">{homeRoute ? "Home" : studioRoute ? "Building" : viewerRoute ? "Viewing" : "Viewer"}</div>
+            <div className="eyebrow">{homeRoute ? "Home" : studioRoute ? "Building" : viewerRoute ? "Viewing" : helpRoute ? "Help" : "Viewer"}</div>
             <h1>{platformName}</h1>
           </div>
           <div className="topbar-meta">
@@ -729,8 +617,9 @@ export function App() {
             {viewerRoute ? (
               <button className="ghost-button topbar-action" onClick={() => setViewerRefreshSignal((value) => value + 1)}>Refresh all</button>
             ) : null}
+            {!helpRoute ? <Link className="ghost-button topbar-action" to="/help">Help</Link> : null}
             <span className="badge">{hosted.mode === "viewer" ? "Full-screen view" : navLabel}</span>
-            <span className="badge brand">{objects.length} saved views</span>
+            <span className="badge brand">{visibleObjects.length} saved views</span>
           </div>
         </header>
       )}
@@ -743,9 +632,10 @@ export function App() {
               <span className="micro">Open a report or dashboard directly.</span>
             </div>
             <nav className="nav-list">
-              {objects.map((object) => (
+              {visibleObjects.map((object) => (
                 <Link key={object.id} className="nav-card" to={`/${object.type}/${object.id}`} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>
                   <span className="badge">{typeLabel(object.type)}</span>
+                  <span className="badge">{getStudioObjectScopeLabel(object)}</span>
                   <strong>{object.name}</strong>
                   <span className="micro">{object.folder} · {object.category}</span>
                 </Link>
@@ -755,12 +645,29 @@ export function App() {
         )}
 
         <main className={`content ${readerRoute ? "reader-content" : ""}`}>
+          {bootstrapIssues.length ? (
+            <section className={`sync-status ${bootstrapIssues.some((profile) => profile.bootstrap.error || !profile.bootstrap.ready) ? "sync-status-warn" : "sync-status-ok"}`}>
+              <strong>{bootstrapIssues.some((profile) => profile.bootstrap.error || !profile.bootstrap.ready) ? "Quickbase setup needs attention" : "Quickbase setup updated"}</strong>
+              <div className="stack">
+                {bootstrapIssues.map((profile) => (
+                  <div key={profile.id}>
+                    <strong>{profile.label}</strong>
+                    <span>{` ${profile.bootstrap.message}`}</span>
+                    {profile.bootstrap.missing.length ? <div className="micro">Missing: {profile.bootstrap.missing.join(", ")}</div> : null}
+                    {profile.bootstrap.warnings.length ? <div className="micro">Warnings: {profile.bootstrap.warnings.join(", ")}</div> : null}
+                    {profile.bootstrap.error ? <div className="micro">Error: {profile.bootstrap.error}</div> : null}
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
           <Routes>
-            <Route path="/" element={<HomePage objects={objects} studioDocument={studioDocument} recentIds={recentIds} refreshAllSignal={homeRefreshSignal} openLinksInNewTab={openLinksInNewTab} />} />
-            <Route path="/viewer" element={<ViewerPage objects={objects} refreshAllSignal={viewerRefreshSignal} openLinksInNewTab={openLinksInNewTab} />} />
+            <Route path="/" element={<HomePage objects={objects} studioDocument={studioDocument} recentIds={recentIds} refreshAllSignal={homeRefreshSignal} openLinksInNewTab={openLinksInNewTab} onRefreshComplete={reloadCatalog} onToggleFavorite={toggleFavorite} />} />
+            <Route path="/viewer" element={<ViewerPage objects={objects} studioDocument={studioDocument} recentIds={recentIds} refreshAllSignal={viewerRefreshSignal} openLinksInNewTab={openLinksInNewTab} onRefreshComplete={reloadCatalog} onToggleFavorite={toggleFavorite} />} />
+            <Route path="/help" element={<HelpPage />} />
             <Route path="/studio" element={<StudioPage openSettingsSignal={studioSettingsSignal} refreshAllSignal={studioRefreshSignal} />} />
             <Route path="/studio/:objectId" element={<StudioPage openSettingsSignal={studioSettingsSignal} refreshAllSignal={studioRefreshSignal} />} />
-            <Route path="/:type/:objectId" element={<ObjectPage tables={tables} platformName={platformName} studioDocument={studioDocument} openLinksInNewTab={openLinksInNewTab} onObjectViewed={markObjectAsRecent} />} />
+            <Route path="/:type/:objectId" element={<ObjectPage tables={tables} platformName={platformName} studioDocument={studioDocument} openLinksInNewTab={openLinksInNewTab} onObjectViewed={markObjectAsRecent} onUserSettingsChange={updateUserSettings} onToggleFavorite={toggleFavorite} />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

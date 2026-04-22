@@ -2,15 +2,19 @@ import {
   type FilterDefinition,
   DashboardDefinition,
   type QuickbaseAppProfile,
+  type QuickbaseBootstrapStatus,
   type QuickbaseConnectionConfig,
+  type ReportPersonalOverride,
   ReportDefinition,
   ReportViewDefinition,
   SeedBundle,
+  type StudioObjectScope,
   StudioDocument,
   TableDefinition,
   WidgetDefinition
 } from "./models.js";
 import { createFilterGroup } from "./report-engine.js";
+import { touchStudioSession } from "./studio-session.js";
 
 function timestamp(offset = 0): string {
   return new Date(Date.UTC(2026, 0, 15 + offset, 12, 0, 0)).toISOString();
@@ -80,6 +84,18 @@ function buildRefreshStatus() {
   };
 }
 
+function buildBootstrapStatus(overrides: Partial<QuickbaseBootstrapStatus> = {}): QuickbaseBootstrapStatus {
+  return {
+    ready: false,
+    checkedAt: new Date().toISOString(),
+    autoProvisioned: false,
+    missing: [],
+    warnings: [],
+    message: "Quickbase support tables have not been validated yet.",
+    ...overrides
+  };
+}
+
 function buildDefaultQuickbaseConfig(): QuickbaseConnectionConfig {
   return {
     realmHostname: "cadencec.quickbase.com",
@@ -117,6 +133,10 @@ function buildQuickbaseProfile(overrides: Partial<QuickbaseAppProfile> = {}): Qu
     label: "Cadence app",
     liveMode: false,
     quickbase: buildDefaultQuickbaseConfig(),
+    bootstrap: buildBootstrapStatus({
+      ready: true,
+      message: "Quickbase support tables are configured."
+    }),
     refreshSource: {
       tableIds: [],
       reportIds: {}
@@ -132,11 +152,14 @@ function createReport(input: Partial<ReportDefinition> & Pick<ReportDefinition, 
   return {
     id: input.id,
     type: "report",
+    schemaVersion: input.schemaVersion || 1,
     name: input.name,
     description: input.description || "",
     folder: input.folder || "Operations",
     category: input.category || "Reporting",
     tags: input.tags || [],
+    scope: input.scope || "global",
+    ownerUserId: input.ownerUserId || "",
     updatedAt: input.updatedAt || timestamp(),
     sourceTableId: input.sourceTableId,
     sourceReportOverrides: input.sourceReportOverrides || {},
@@ -160,7 +183,12 @@ function createWidget(input: Partial<WidgetDefinition> & Pick<WidgetDefinition, 
     showDetails: input.showDetails ?? false,
     showSummary: input.showSummary ?? true,
     reportId: input.reportId,
-    layout: input.layout || { w: 6, h: 3 },
+    layout: {
+      w: input.layout?.w || 6,
+      h: input.layout?.h || 3,
+      ...(Number.isFinite(Number(input.layout?.x)) ? { x: Math.max(1, Math.round(Number(input.layout?.x))) } : {}),
+      ...(Number.isFinite(Number(input.layout?.y)) ? { y: Math.max(1, Math.round(Number(input.layout?.y))) } : {})
+    },
     snapshot: input.snapshot
   };
 }
@@ -169,11 +197,14 @@ function createDashboard(input: Partial<DashboardDefinition> & Pick<DashboardDef
   return {
     id: input.id,
     type: "dashboard",
+    schemaVersion: input.schemaVersion || 1,
     name: input.name,
     description: input.description || "",
     folder: input.folder || "Executive",
     category: input.category || "Dashboard",
     tags: input.tags || [],
+    scope: input.scope || "global",
+    ownerUserId: input.ownerUserId || "",
     updatedAt: input.updatedAt || timestamp(),
     tabs: input.tabs,
     runtimeFilters: input.runtimeFilters || [],
@@ -314,6 +345,23 @@ export function buildSeedBundle(): SeedBundle {
     })
   });
 
+  const personalProjects = createReport({
+    id: "report-my-active-projects",
+    name: "My Active Projects",
+    sourceTableId: "projects",
+    selectedFieldIds: ["recordId", "projectName", "status", "owner", "region", "completion"],
+    description: "Personal working view for current owned projects.",
+    updatedAt: timestamp(5),
+    tags: ["personal", "portfolio"],
+    scope: "personal",
+    ownerUserId: "demo.user",
+    filters: [{ id: "filter-my-project-owner", fieldId: "owner", operator: "equals", value: "A. Brooks" }],
+    view: buildReportView({
+      mode: "table",
+      titleFieldId: "projectName"
+    })
+  });
+
   const dashboard = createDashboard({
     id: "dashboard-executive-pulse",
     name: "Executive Pulse",
@@ -348,7 +396,8 @@ export function buildSeedBundle(): SeedBundle {
     [dashboard.id]: dashboard,
     [projects.id]: projects,
     [tasks.id]: tasks,
-    [invoices.id]: invoices
+    [invoices.id]: invoices,
+    [personalProjects.id]: personalProjects
   };
 
   return {
@@ -359,7 +408,7 @@ export function buildSeedBundle(): SeedBundle {
     tables,
     data,
     objects,
-    order: [dashboard.id, projects.id, tasks.id, invoices.id]
+    order: [dashboard.id, projects.id, tasks.id, invoices.id, personalProjects.id]
   };
 }
 
@@ -371,9 +420,72 @@ export function buildStudioDocument(): StudioDocument {
   const defaultProfile = buildQuickbaseProfile({ quickbase: defaultQuickbase });
 
   return {
+    schemaVersion: 1,
     bundle,
     favorites: ["dashboard-executive-pulse"],
     recent: ["dashboard-executive-pulse"],
+    personalOverrides: {
+      dashboards: {
+        "dashboard-executive-pulse": {
+          runtimeFilters: {
+            "runtime-status": "",
+            "runtime-start-date": "CURRENT_MONTH"
+          },
+          activeTabId: "tab-overview",
+          focusedWidgetId: "",
+          savedViews: [
+            {
+              id: "dashboard-view-open-overview",
+              name: "Open Overview",
+              runtimeFilters: {
+                "runtime-status": "Open",
+                "runtime-start-date": "CURRENT_MONTH"
+              },
+              activeTabId: "tab-overview",
+              focusedWidgetId: "",
+              updatedAt: timestamp(6)
+            }
+          ],
+          updatedAt: timestamp(6)
+        }
+      },
+      reports: {
+        "report-project-portfolio": {
+          currentPage: 1,
+          focusMode: "default",
+          focusedSection: "",
+          savedViews: [
+            {
+              id: "report-view-chart",
+              name: "Chart Focus",
+              currentPage: 1,
+              focusMode: "chart",
+              focusedSection: "chart",
+              updatedAt: timestamp(6)
+            }
+          ],
+          updatedAt: timestamp(6)
+        }
+      }
+    },
+    session: {
+      ...touchStudioSession({
+        currentUserId: "demo.user",
+        launchSource: "local-dev",
+        inactivityTimeoutHours: 24,
+        requiresLaunch: true,
+        launchedAt: "",
+        lastActivityAt: "",
+        expiresAt: "",
+        lastValidatedAt: ""
+      }, {
+        relaunch: true,
+        launchSource: "local-dev",
+        currentUserId: "demo.user",
+        inactivityTimeoutHours: 24,
+        requiresLaunch: true
+      })
+    },
     branding: {
       platformName: "Cadence Reporting Portal",
       navigationLabel: "Reports and Dashboards",
@@ -484,6 +596,17 @@ function mergeQuickbaseProfile(defaults: QuickbaseAppProfile, source?: Partial<Q
     label: String(current.label || defaults.label),
     liveMode: current.liveMode === true,
     quickbase: mergeQuickbaseDefaults(defaults.quickbase, current.quickbase),
+    bootstrap: {
+      ...defaults.bootstrap,
+      ...(current.bootstrap || {}),
+      ready: current.bootstrap?.ready === true,
+      checkedAt: String(current.bootstrap?.checkedAt || defaults.bootstrap.checkedAt || new Date().toISOString()),
+      autoProvisioned: current.bootstrap?.autoProvisioned === true,
+      missing: Array.isArray(current.bootstrap?.missing) ? current.bootstrap.missing.map(String) : defaults.bootstrap.missing,
+      warnings: Array.isArray(current.bootstrap?.warnings) ? current.bootstrap.warnings.map(String) : defaults.bootstrap.warnings,
+      message: String(current.bootstrap?.message || defaults.bootstrap.message),
+      error: current.bootstrap?.error ? String(current.bootstrap.error) : undefined
+    },
     refreshSource: {
       tableIds: Array.isArray(current.refreshSource?.tableIds) ? current.refreshSource.tableIds.map(String) : defaults.refreshSource.tableIds,
       reportIds: Object.fromEntries(
@@ -520,6 +643,9 @@ export function normalizeStudioDocument(input: Partial<StudioDocument> | null | 
         const filters = object.filters || [];
         return [id, {
           ...object,
+          schemaVersion: Number(object.schemaVersion || 1),
+          scope: ((object.scope || "global") as StudioObjectScope),
+          ownerUserId: String(object.ownerUserId || ""),
           sourceReportOverrides: Object.fromEntries(
             Object.entries(object.sourceReportOverrides || {}).map(([key, value]) => [String(key), String(value || "")])
           ),
@@ -531,15 +657,40 @@ export function normalizeStudioDocument(input: Partial<StudioDocument> | null | 
       }
       return [id, {
         ...object,
+        schemaVersion: Number(object.schemaVersion || 1),
+        scope: ((object.scope || "global") as StudioObjectScope),
+        ownerUserId: String(object.ownerUserId || ""),
         sourceReportOverrides: Object.fromEntries(
           Object.entries(object.sourceReportOverrides || {}).map(([key, value]) => [String(key), String(value || "")])
-        )
+        ),
+        tabs: (object.tabs || []).map((tab, tabIndex) => ({
+          ...tab,
+          id: String(tab.id || `tab-${tabIndex + 1}`),
+          name: String(tab.name || `Tab ${tabIndex + 1}`),
+          widgets: (tab.widgets || []).map((widget, widgetIndex) => ({
+            id: String(widget.id || `widget-${tabIndex + 1}-${widgetIndex + 1}`),
+            title: String(widget.title || ""),
+            mode: widget.mode === "copied" ? "copied" : "linked",
+            displayMode: widget.displayMode === "table" || widget.displayMode === "summary" || widget.displayMode === "chart" ? widget.displayMode : "inherit",
+            showDetails: widget.showDetails === true,
+            showSummary: widget.showSummary !== false,
+            reportId: String(widget.reportId || ""),
+            layout: {
+              w: Math.max(1, Number(widget.layout?.w) || 6),
+              h: Math.max(2, Number(widget.layout?.h) || 3),
+              ...(Number.isFinite(Number(widget.layout?.x)) ? { x: Math.max(1, Math.round(Number(widget.layout?.x))) } : {}),
+              ...(Number.isFinite(Number(widget.layout?.y)) ? { y: Math.max(1, Math.round(Number(widget.layout?.y))) } : {})
+            },
+            snapshot: widget.snapshot
+          }))
+        }))
       }];
     })
   );
   return {
     ...defaults,
     ...source,
+    schemaVersion: Number(source.schemaVersion || defaults.schemaVersion || 1),
     bundle: {
       ...defaults.bundle,
       ...(source.bundle || {}),
@@ -557,6 +708,68 @@ export function normalizeStudioDocument(input: Partial<StudioDocument> | null | 
       objects: normalizedObjects,
       order: source.bundle?.order || defaults.bundle.order
     },
+    personalOverrides: {
+      dashboards: Object.fromEntries(
+        Object.entries(source.personalOverrides?.dashboards || defaults.personalOverrides.dashboards).map(([objectId, override]) => [
+          String(objectId),
+          {
+            runtimeFilters: Object.fromEntries(Object.entries(override?.runtimeFilters || {}).map(([key, value]) => [String(key), String(value || "")])),
+            activeTabId: String(override?.activeTabId || ""),
+            focusedWidgetId: String(override?.focusedWidgetId || ""),
+            savedViews: Array.isArray(override?.savedViews)
+              ? override.savedViews.map((view) => ({
+                  id: String(view?.id || ""),
+                  name: String(view?.name || "Saved view"),
+                  runtimeFilters: Object.fromEntries(Object.entries(view?.runtimeFilters || {}).map(([key, value]) => [String(key), String(value || "")])),
+                  activeTabId: String(view?.activeTabId || ""),
+                  focusedWidgetId: String(view?.focusedWidgetId || ""),
+                  updatedAt: String(view?.updatedAt || new Date().toISOString())
+                })).filter((view) => view.id && view.name)
+              : [],
+            updatedAt: String(override?.updatedAt || new Date().toISOString())
+          }
+        ])
+      ),
+      reports: Object.fromEntries(
+        Object.entries(source.personalOverrides?.reports || defaults.personalOverrides.reports).map(([objectId, override]) => [
+          String(objectId),
+          {
+            currentPage: Math.max(1, Number(override?.currentPage) || 1),
+            focusMode: override?.focusMode === "summary" || override?.focusMode === "chart" || override?.focusMode === "details" ? override.focusMode : "default",
+            focusedSection: override?.focusedSection === "chart" || override?.focusedSection === "details" ? override.focusedSection : "",
+            savedViews: Array.isArray(override?.savedViews)
+              ? override.savedViews.map((view) => {
+                  const focusMode = view?.focusMode === "summary" || view?.focusMode === "chart" || view?.focusMode === "details" ? view.focusMode : "default";
+                  const focusedSection = view?.focusedSection === "chart" || view?.focusedSection === "details" ? view.focusedSection : "";
+                  return {
+                    id: String(view?.id || ""),
+                    name: String(view?.name || "Saved view"),
+                    currentPage: Math.max(1, Number(view?.currentPage) || 1),
+                    focusMode,
+                    focusedSection,
+                    updatedAt: String(view?.updatedAt || new Date().toISOString())
+                  };
+                }).filter((view) => view.id && view.name) as ReportPersonalOverride["savedViews"]
+              : ([] as ReportPersonalOverride["savedViews"]),
+            updatedAt: String(override?.updatedAt || new Date().toISOString())
+          }
+        ])
+      )
+    },
+    session: {
+      ...touchStudioSession({
+        ...defaults.session,
+        ...(source.session || {}),
+        currentUserId: String(source.session?.currentUserId || defaults.session.currentUserId || ""),
+        launchSource: source.session?.launchSource === "quickbase-button" ? "quickbase-button" : defaults.session.launchSource,
+        inactivityTimeoutHours: Number(source.session?.inactivityTimeoutHours || defaults.session.inactivityTimeoutHours || 24),
+        requiresLaunch: source.session?.requiresLaunch ?? defaults.session.requiresLaunch,
+        launchedAt: String(source.session?.launchedAt || defaults.session.launchedAt || ""),
+        lastActivityAt: String(source.session?.lastActivityAt || defaults.session.lastActivityAt || ""),
+        expiresAt: String(source.session?.expiresAt || defaults.session.expiresAt || ""),
+        lastValidatedAt: String(source.session?.lastValidatedAt || defaults.session.lastValidatedAt || "")
+      })
+    },
     branding: {
       ...defaults.branding,
       ...(source.branding || {})
@@ -570,7 +783,21 @@ export function normalizeStudioDocument(input: Partial<StudioDocument> | null | 
       upload: source.templates?.upload || defaults.templates.upload
     },
     versions: source.versions || defaults.versions,
-    exportJobs: source.exportJobs || defaults.exportJobs,
+    exportJobs: (source.exportJobs || defaults.exportJobs).map((job) => ({
+      id: String(job?.id || `job-${Math.random().toString(36).slice(2, 10)}`),
+      objectId: String(job?.objectId || "studio"),
+      objectType: job?.objectType === "report" || job?.objectType === "dashboard" ? job.objectType : "studio",
+      format: job?.format === "xlsx" ? "xlsx" : "json",
+      status: job?.status === "queued" || job?.status === "running" || job?.status === "failed" ? job.status : "complete",
+      progress: Math.max(0, Math.min(100, Number(job?.progress ?? (job?.status === "complete" ? 100 : 0)) || 0)),
+      message: String(job?.message || (job?.status === "failed" ? job?.error || "Export failed." : job?.format === "xlsx" ? "Workbook export" : "JSON export")),
+      filename: job?.filename ? String(job.filename) : undefined,
+      error: job?.error ? String(job.error) : undefined,
+      updatedAt: String(job?.updatedAt || job?.createdAt || new Date().toISOString()),
+      sourceJobId: job?.sourceJobId ? String(job.sourceJobId) : undefined,
+      runtimeFilters: Object.fromEntries(Object.entries(job?.runtimeFilters || {}).map(([key, value]) => [String(key), String(value || "")])),
+      createdAt: String(job?.createdAt || new Date().toISOString())
+    })),
     favorites: source.favorites || defaults.favorites,
     recent: source.recent || defaults.recent,
     sync: {

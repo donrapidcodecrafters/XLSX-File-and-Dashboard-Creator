@@ -1235,6 +1235,67 @@ export function ChartPreview({
   }
 
   if (normalizedChartType === "heatmap") {
+    const heatCategories = categories;
+    const heatSeries = primarySeries.length > 1
+      ? primarySeries
+      : deriveSeries(items, "primary").filter((series) => series.rawSeries);
+    if (heatCategories.length && heatSeries.length) {
+      return (
+        <div className="chart-shell">
+          {renderTitle(title)}
+          {(xAxisLabel || yAxisLabel) ? (
+            <div className="chart-axis-labels">
+              {yAxisLabel ? <span className="chart-axis-label">{yAxisLabel}</span> : <span />}
+              {xAxisLabel ? <span className="chart-axis-label">{xAxisLabel}</span> : null}
+            </div>
+          ) : null}
+          <div className="heatmap-matrix">
+            <div className="heatmap-corner" />
+            {heatSeries.map((series) => (
+              <div key={`heat-series-${series.rawSeries || "default"}`} className="heatmap-header">
+                {cap(series.label, compact ? 10 : 16)}
+              </div>
+            ))}
+            {heatCategories.map((category) => (
+              <div className="heatmap-row" key={`heat-row-${category.rawLabel}`}>
+                <div className="heatmap-row-label">{cap(category.label, compact ? 10 : 16)}</div>
+                {heatSeries.map((series) => {
+                  const value = valueForCategory(items, category.rawLabel, series.rawSeries, "primary");
+                  const datum = items.find((item) =>
+                    String(item.rawLabel ?? item.label ?? "") === category.rawLabel
+                    && String(item.rawSeries || item.series || "") === series.rawSeries
+                    && (item.axis || "primary") === "primary"
+                  );
+                  const href = datum ? (getDatumHref?.(datum) || "") : "";
+                  const content = (
+                    <div
+                      className={`heat-cell${href ? " chart-linkable" : ""}`}
+                      style={{ background: `rgba(13, 124, 102, ${0.18 + (value / max) * 0.72})` }}
+                    >
+                      {showValues ? <strong>{formatAxisValue(value, decimalPlaces)}</strong> : null}
+                      {showLegend ? <span>{cap(series.label, compact ? 8 : 12)}</span> : null}
+                    </div>
+                  );
+                  return href ? (
+                    <a
+                      key={`heat-cell-${category.rawLabel}-${series.rawSeries || "default"}`}
+                      className="chart-link-reset"
+                      href={href}
+                      target={anchorTarget}
+                      rel={anchorRel}
+                    >
+                      {content}
+                    </a>
+                  ) : (
+                    <div key={`heat-cell-${category.rawLabel}-${series.rawSeries || "default"}`}>{content}</div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="heat-grid">
         {renderTitle(title)}

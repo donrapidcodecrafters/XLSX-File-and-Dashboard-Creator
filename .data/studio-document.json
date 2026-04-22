@@ -1,0 +1,5520 @@
+{
+  "bundle": {
+    "app": {
+      "id": "seed-app",
+      "name": "Hosted Reporting Platform"
+    },
+    "tables": [
+      {
+        "id": "bvbnfz6pb",
+        "name": "Agencies",
+        "description": "Quickbase table",
+        "fields": [
+          {
+            "id": "6",
+            "label": "Agency",
+            "type": "text"
+          },
+          {
+            "id": "7",
+            "label": "Claim records",
+            "type": "text"
+          },
+          {
+            "id": "8",
+            "label": "Add Claim",
+            "type": "text"
+          },
+          {
+            "id": "1",
+            "label": "Date Created",
+            "type": "datetime"
+          },
+          {
+            "id": "2",
+            "label": "Date Modified",
+            "type": "datetime"
+          },
+          {
+            "id": "3",
+            "label": "Record ID#",
+            "type": "text"
+          },
+          {
+            "id": "4",
+            "label": "Record Owner",
+            "type": "user"
+          },
+          {
+            "id": "5",
+            "label": "Last Modified By",
+            "type": "user"
+          }
+        ]
+      },
+      {
+        "id": "bvbng4g7f",
+        "name": "Billers/Master Roster",
+        "description": "Quickbase table",
+        "fields": [
+          {
+            "id": "6",
+            "label": "First Name",
+            "type": "text"
+          },
+          {
+            "id": "14",
+            "label": "Last Name",
+            "type": "text"
+          },
+          {
+            "id": "36",
+            "label": "Role",
+            "type": "text"
+          },
+          {
+            "id": "8",
+            "label": "Email",
+            "type": "text"
+          },
+          {
+            "id": "15",
+            "label": "Supervisor Name",
+            "type": "text"
+          },
+          {
+            "id": "16",
+            "label": "Supervisor Email",
+            "type": "text"
+          },
+          {
+            "id": "26",
+            "label": "# of Claim records to Work",
+            "type": "text"
+          },
+          {
+            "id": "27",
+            "label": "Exclude from Snapshots",
+            "type": "text"
+          },
+          {
+            "id": "10",
+            "label": "Add Claim",
+            "type": "text"
+          },
+          {
+            "id": "12",
+            "label": "Add Claim2",
+            "type": "text"
+          },
+          {
+            "id": "34",
+            "label": "Add Insurance by Agency Company",
+            "type": "text"
+          },
+          {
+            "id": "25",
+            "label": "Add Primary Insurance Company",
+            "type": "text"
+          },
+          {
+            "id": "32",
+            "label": "Add Sub Insurance Company",
+            "type": "text"
+          },
+          {
+            "id": "40",
+            "label": "addedToHelpdesk",
+            "type": "text"
+          },
+          {
+            "id": "35",
+            "label": "addToHelpdesk - Manual",
+            "type": "text"
+          },
+          {
+            "id": "9",
+            "label": "Claim records",
+            "type": "text"
+          },
+          {
+            "id": "11",
+            "label": "Claim records2",
+            "type": "text"
+          },
+          {
+            "id": "1",
+            "label": "Date Created",
+            "type": "datetime"
+          },
+          {
+            "id": "2",
+            "label": "Date Modified",
+            "type": "datetime"
+          },
+          {
+            "id": "30",
+            "label": "Emp-D-tot#-PendingPayment",
+            "type": "text"
+          },
+          {
+            "id": "29",
+            "label": "Emp-W-tot#-PendingPayment",
+            "type": "text"
+          },
+          {
+            "id": "17",
+            "label": "Employee Phone",
+            "type": "text"
+          },
+          {
+            "id": "28",
+            "label": "employee-D-tot#-NeedsWorked",
+            "type": "text"
+          },
+          {
+            "id": "23",
+            "label": "fullName",
+            "type": "text"
+          },
+          {
+            "id": "37",
+            "label": "Helpdesk Role",
+            "type": "text"
+          },
+          {
+            "id": "33",
+            "label": "Insurance by Agency Company records",
+            "type": "text"
+          },
+          {
+            "id": "5",
+            "label": "Last Modified By",
+            "type": "user"
+          },
+          {
+            "id": "21",
+            "label": "Maximum Biller/roster record - weeklyGoal",
+            "type": "text"
+          },
+          {
+            "id": "22",
+            "label": "Maximum Record ID#",
+            "type": "text"
+          },
+          {
+            "id": "24",
+            "label": "Primary Insurance Company records",
+            "type": "text"
+          },
+          {
+            "id": "3",
+            "label": "Record ID#",
+            "type": "text"
+          },
+          {
+            "id": "4",
+            "label": "Record Owner",
+            "type": "user"
+          },
+          {
+            "id": "19",
+            "label": "Responsible for Clients",
+            "type": "text"
+          },
+          {
+            "id": "38",
+            "label": "roleID",
+            "type": "text"
+          },
+          {
+            "id": "31",
+            "label": "Sub Insurance Company records",
+            "type": "text"
+          },
+          {
+            "id": "18",
+            "label": "Supervisor Phone",
+            "type": "text"
+          },
+          {
+            "id": "39",
+            "label": "userID",
+            "type": "text"
+          },
+          {
+            "id": "20",
+            "label": "weeklyGoal",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "id": "bvbnfuiqy",
+        "name": "Branches",
+        "description": "Quickbase table",
+        "fields": [
+          {
+            "id": "6",
+            "label": "Branch",
+            "type": "text"
+          },
+          {
+            "id": "7",
+            "label": "Claim records",
+            "type": "text"
+          },
+          {
+            "id": "8",
+            "label": "Add Claim",
+            "type": "text"
+          },
+          {
+            "id": "9",
+            "label": "branch-D-tot#-PendingPayment",
+            "type": "text"
+          },
+          {
+            "id": "10",
+            "label": "branch-D-tot#-NeedsWorked",
+            "type": "text"
+          },
+          {
+            "id": "1",
+            "label": "Date Created",
+            "type": "datetime"
+          },
+          {
+            "id": "2",
+            "label": "Date Modified",
+            "type": "datetime"
+          },
+          {
+            "id": "3",
+            "label": "Record ID#",
+            "type": "text"
+          },
+          {
+            "id": "4",
+            "label": "Record Owner",
+            "type": "user"
+          },
+          {
+            "id": "5",
+            "label": "Last Modified By",
+            "type": "user"
+          }
+        ]
+      },
+      {
+        "id": "bvbbv3eb6",
+        "name": "Claims",
+        "description": "Quickbase table",
+        "fields": [
+          {
+            "id": "37",
+            "label": "Related Customer",
+            "type": "text"
+          },
+          {
+            "id": "15",
+            "label": "Biller/roster record",
+            "type": "text"
+          },
+          {
+            "id": "23",
+            "label": "Agency",
+            "type": "text"
+          },
+          {
+            "id": "24",
+            "label": "Branch",
+            "type": "text"
+          },
+          {
+            "id": "22",
+            "label": "Payer Type",
+            "type": "text"
+          },
+          {
+            "id": "186",
+            "label": "Related Primary Insurance Company (ref) - Name",
+            "type": "text"
+          },
+          {
+            "id": "188",
+            "label": "Sub Insurance Company - Sub Insurance",
+            "type": "text"
+          },
+          {
+            "id": "189",
+            "label": "Insurance by Agency Company - Agency",
+            "type": "text"
+          },
+          {
+            "id": "8",
+            "label": "Patient Name",
+            "type": "text"
+          },
+          {
+            "id": "9",
+            "label": "MRN",
+            "type": "text"
+          },
+          {
+            "id": "12",
+            "label": "DOB",
+            "type": "date"
+          },
+          {
+            "id": "18",
+            "label": "Billing Period Start Date",
+            "type": "date"
+          },
+          {
+            "id": "19",
+            "label": "Billing Period End Date",
+            "type": "date"
+          },
+          {
+            "id": "10",
+            "label": "Claim Number",
+            "type": "text"
+          },
+          {
+            "id": "14",
+            "label": "Final Claim Number",
+            "type": "text"
+          },
+          {
+            "id": "16",
+            "label": "Billing Status",
+            "type": "text"
+          },
+          {
+            "id": "86",
+            "label": "Overall Claim Status",
+            "type": "text"
+          },
+          {
+            "id": "33",
+            "label": "Claim Status",
+            "type": "text"
+          },
+          {
+            "id": "32",
+            "label": "Substatus",
+            "type": "text"
+          },
+          {
+            "id": "17",
+            "label": "Biller/roster record Comments",
+            "type": "text"
+          },
+          {
+            "id": "28",
+            "label": "Anticipated Payment",
+            "type": "text"
+          },
+          {
+            "id": "44",
+            "label": "Supervisor Notes",
+            "type": "text"
+          },
+          {
+            "id": "45",
+            "label": "Notes",
+            "type": "text"
+          },
+          {
+            "id": "46",
+            "label": "Date Worked",
+            "type": "date"
+          },
+          {
+            "id": "47",
+            "label": "Days Outstanding",
+            "type": "number"
+          },
+          {
+            "id": "48",
+            "label": "Date Report Pulled",
+            "type": "date"
+          },
+          {
+            "id": "7",
+            "label": "Billed Date",
+            "type": "date"
+          },
+          {
+            "id": "153",
+            "label": "# Times Claim Worked",
+            "type": "text"
+          },
+          {
+            "id": "109",
+            "label": "#ClosedQuestions",
+            "type": "text"
+          },
+          {
+            "id": "118",
+            "label": "#Questions",
+            "type": "text"
+          },
+          {
+            "id": "63",
+            "label": "30 - 59 Days",
+            "type": "text"
+          },
+          {
+            "id": "167",
+            "label": "30 - 59 Days NEW",
+            "type": "text"
+          },
+          {
+            "id": "64",
+            "label": "60 - 179 Days",
+            "type": "text"
+          },
+          {
+            "id": "168",
+            "label": "60 - 179 Days NEW",
+            "type": "text"
+          },
+          {
+            "id": "62",
+            "label": "< 30 Days",
+            "type": "text"
+          },
+          {
+            "id": "169",
+            "label": "< 30 Days NEW",
+            "type": "text"
+          },
+          {
+            "id": "65",
+            "label": "> 180 Days",
+            "type": "text"
+          },
+          {
+            "id": "166",
+            "label": "> 180 Days NEW",
+            "type": "text"
+          },
+          {
+            "id": "171",
+            "label": "> 241 Days",
+            "type": "text"
+          },
+          {
+            "id": "66",
+            "label": "> 30 Days",
+            "type": "text"
+          },
+          {
+            "id": "67",
+            "label": "> 60 Days",
+            "type": "text"
+          },
+          {
+            "id": "170",
+            "label": "> 60 Days NEW",
+            "type": "text"
+          },
+          {
+            "id": "172",
+            "label": "> 90 Days NEW",
+            "type": "text"
+          },
+          {
+            "id": "144",
+            "label": "Add Claim Worked",
+            "type": "text"
+          },
+          {
+            "id": "52",
+            "label": "Add Team Questions/Response",
+            "type": "text"
+          },
+          {
+            "id": "95",
+            "label": "Aging Buckets",
+            "type": "text"
+          },
+          {
+            "id": "102",
+            "label": "Anticipated Payment to Number",
+            "type": "currency"
+          },
+          {
+            "id": "152",
+            "label": "Average durationInNeedsWorkedStatusCycle",
+            "type": "number"
+          },
+          {
+            "id": "148",
+            "label": "Average test_timeInNeedsWorkedStatus",
+            "type": "number"
+          },
+          {
+            "id": "89",
+            "label": "billedDatetoClosedDateDuration",
+            "type": "number"
+          },
+          {
+            "id": "103",
+            "label": "Biller Matches Current User",
+            "type": "text"
+          },
+          {
+            "id": "59",
+            "label": "Biller/roster record - Employee Phone",
+            "type": "text"
+          },
+          {
+            "id": "99",
+            "label": "Biller/roster record - Exclude from Metrics",
+            "type": "text"
+          },
+          {
+            "id": "100",
+            "label": "Biller/roster record - fullName",
+            "type": "text"
+          },
+          {
+            "id": "58",
+            "label": "Biller/roster record - Last Name",
+            "type": "text"
+          },
+          {
+            "id": "71",
+            "label": "Biller/roster record - Maximum Record ID#",
+            "type": "text"
+          },
+          {
+            "id": "69",
+            "label": "Biller/roster record - Responsible for Clients",
+            "type": "text"
+          },
+          {
+            "id": "57",
+            "label": "Biller/roster record - Supervisor Email",
+            "type": "text"
+          },
+          {
+            "id": "56",
+            "label": "Biller/roster record - Supervisor Name",
+            "type": "text"
+          },
+          {
+            "id": "60",
+            "label": "Biller/roster record - Supervisor Phone",
+            "type": "text"
+          },
+          {
+            "id": "70",
+            "label": "Biller/roster record - weeklyGoal",
+            "type": "text"
+          },
+          {
+            "id": "40",
+            "label": "Biller/roster record Name",
+            "type": "text"
+          },
+          {
+            "id": "123",
+            "label": "BU Date Worked",
+            "type": "datetime"
+          },
+          {
+            "id": "110",
+            "label": "Claim Number - Billed Date",
+            "type": "date"
+          },
+          {
+            "id": "30",
+            "label": "Claim Number - Biller/roster record",
+            "type": "text"
+          },
+          {
+            "id": "43",
+            "label": "Claim Number - Biller/roster record Name",
+            "type": "text"
+          },
+          {
+            "id": "111",
+            "label": "Claim Number - Billing Period End Date",
+            "type": "date"
+          },
+          {
+            "id": "112",
+            "label": "Claim Number - Billing Period Start Date",
+            "type": "date"
+          },
+          {
+            "id": "79",
+            "label": "Claim Number - currentClaim",
+            "type": "text"
+          },
+          {
+            "id": "113",
+            "label": "Claim Number - Date Report Pulled",
+            "type": "date"
+          },
+          {
+            "id": "114",
+            "label": "Claim Number - DOB",
+            "type": "text"
+          },
+          {
+            "id": "115",
+            "label": "Claim Number - First Billable Date",
+            "type": "date"
+          },
+          {
+            "id": "92",
+            "label": "Claim Number - Insurance-Agency",
+            "type": "text"
+          },
+          {
+            "id": "116",
+            "label": "Claim Number - Last Billable Date",
+            "type": "date"
+          },
+          {
+            "id": "117",
+            "label": "Claim Number - TOB",
+            "type": "text"
+          },
+          {
+            "id": "108",
+            "label": "Claim Type of Bill",
+            "type": "text"
+          },
+          {
+            "id": "143",
+            "label": "Claim Worked records",
+            "type": "text"
+          },
+          {
+            "id": "75",
+            "label": "claimWorked_btn",
+            "type": "text"
+          },
+          {
+            "id": "164",
+            "label": "closedDate",
+            "type": "date"
+          },
+          {
+            "id": "158",
+            "label": "Copy of Needs Worked",
+            "type": "text"
+          },
+          {
+            "id": "150",
+            "label": "createClaimedWorkedRecord_btn",
+            "type": "text"
+          },
+          {
+            "id": "49",
+            "label": "createQuestionBtn",
+            "type": "text"
+          },
+          {
+            "id": "41",
+            "label": "currentUserEmail",
+            "type": "text"
+          },
+          {
+            "id": "38",
+            "label": "Customer - Phone",
+            "type": "text"
+          },
+          {
+            "id": "192",
+            "label": "Customer-Insurance",
+            "type": "text"
+          },
+          {
+            "id": "191",
+            "label": "Customer-Insurance-Sub Insurance",
+            "type": "text"
+          },
+          {
+            "id": "190",
+            "label": "Customer-Insurance-Sub Insurance-Agency",
+            "type": "text"
+          },
+          {
+            "id": "1",
+            "label": "Date Created",
+            "type": "datetime"
+          },
+          {
+            "id": "2",
+            "label": "Date Modified",
+            "type": "datetime"
+          },
+          {
+            "id": "122",
+            "label": "Date Worked User",
+            "type": "user"
+          },
+          {
+            "id": "88",
+            "label": "Days Spent on Claim",
+            "type": "number"
+          },
+          {
+            "id": "185",
+            "label": "dev assigned user",
+            "type": "text"
+          },
+          {
+            "id": "107",
+            "label": "Initial Claim Number",
+            "type": "text"
+          },
+          {
+            "id": "21",
+            "label": "Insurance",
+            "type": "text"
+          },
+          {
+            "id": "193",
+            "label": "Insurance by Agency Company - Agency2",
+            "type": "text"
+          },
+          {
+            "id": "184",
+            "label": "Insurance by Agency Company - Assigned User Email",
+            "type": "text"
+          },
+          {
+            "id": "187",
+            "label": "Insurance by Agency Company - Sub Insurance",
+            "type": "text"
+          },
+          {
+            "id": "161",
+            "label": "insuranceFilterAbbv",
+            "type": "text"
+          },
+          {
+            "id": "25",
+            "label": "Last Follow-up",
+            "type": "date"
+          },
+          {
+            "id": "26",
+            "label": "Last Follow-up User",
+            "type": "text"
+          },
+          {
+            "id": "5",
+            "label": "Last Modified By",
+            "type": "user"
+          },
+          {
+            "id": "165",
+            "label": "manualTriggerSetRelatedIns_cb",
+            "type": "text"
+          },
+          {
+            "id": "72",
+            "label": "Maximum Biller/roster record - weeklyGoal",
+            "type": "text"
+          },
+          {
+            "id": "53",
+            "label": "maxQuestionRID",
+            "type": "text"
+          },
+          {
+            "id": "27",
+            "label": "Medicare / Subscriber Number",
+            "type": "text"
+          },
+          {
+            "id": "156",
+            "label": "moreThanThirtyDaysSinceBilled_cb",
+            "type": "text"
+          },
+          {
+            "id": "87",
+            "label": "Needs Worked",
+            "type": "text"
+          },
+          {
+            "id": "149",
+            "label": "neverWorkedAndNeedsWorked_cb",
+            "type": "text"
+          },
+          {
+            "id": "94",
+            "label": "New vs Resolved",
+            "type": "text"
+          },
+          {
+            "id": "121",
+            "label": "newClaimThisWeek",
+            "type": "text"
+          },
+          {
+            "id": "129",
+            "label": "nextNeedsWorkDate",
+            "type": "date"
+          },
+          {
+            "id": "101",
+            "label": "No Employee Assigned",
+            "type": "text"
+          },
+          {
+            "id": "128",
+            "label": "Overall Claim Status COPY",
+            "type": "text"
+          },
+          {
+            "id": "76",
+            "label": "Paid Status",
+            "type": "text"
+          },
+          {
+            "id": "98",
+            "label": "Payment Duration Range",
+            "type": "text"
+          },
+          {
+            "id": "106",
+            "label": "Policy Number",
+            "type": "text"
+          },
+          {
+            "id": "6",
+            "label": "Record ID",
+            "type": "text"
+          },
+          {
+            "id": "3",
+            "label": "Record ID#",
+            "type": "text"
+          },
+          {
+            "id": "4",
+            "label": "Record Owner",
+            "type": "user"
+          },
+          {
+            "id": "183",
+            "label": "Related Insurance by Agency Company",
+            "type": "text"
+          },
+          {
+            "id": "163",
+            "label": "Related Primary Insurance Company",
+            "type": "text"
+          },
+          {
+            "id": "173",
+            "label": "Related Primary Insurance Company (ref)",
+            "type": "text"
+          },
+          {
+            "id": "176",
+            "label": "Related Sub Insurance Company",
+            "type": "text"
+          },
+          {
+            "id": "31",
+            "label": "Related Substatus",
+            "type": "text"
+          },
+          {
+            "id": "127",
+            "label": "resolvedCurrentWeek_cb",
+            "type": "text"
+          },
+          {
+            "id": "105",
+            "label": "setAllOtherInsurancesAsUser_cb",
+            "type": "text"
+          },
+          {
+            "id": "85",
+            "label": "Status - From Notes",
+            "type": "text"
+          },
+          {
+            "id": "177",
+            "label": "Sub Insurance Company - Agency",
+            "type": "text"
+          },
+          {
+            "id": "182",
+            "label": "Sub Insurance Company - Assigned User Email",
+            "type": "text"
+          },
+          {
+            "id": "178",
+            "label": "Sub Insurance Company - PrimarySub",
+            "type": "text"
+          },
+          {
+            "id": "179",
+            "label": "Sub Insurance Company - projectPrimary",
+            "type": "text"
+          },
+          {
+            "id": "180",
+            "label": "Sub Insurance Company - projectPrimarySub",
+            "type": "text"
+          },
+          {
+            "id": "181",
+            "label": "Sub Insurance Company - Related Customer",
+            "type": "text"
+          },
+          {
+            "id": "13",
+            "label": "Subscriber ID",
+            "type": "text"
+          },
+          {
+            "id": "93",
+            "label": "Sup Email",
+            "type": "text"
+          },
+          {
+            "id": "50",
+            "label": "SupervisorRespondQuestions/Notes_btn",
+            "type": "text"
+          },
+          {
+            "id": "51",
+            "label": "Team Questions/Response records",
+            "type": "text"
+          },
+          {
+            "id": "104",
+            "label": "Test Record_cb",
+            "type": "text"
+          },
+          {
+            "id": "134",
+            "label": "test_createClaimedWorkedRecord_btn",
+            "type": "text"
+          },
+          {
+            "id": "133",
+            "label": "test_dateTimeLastWorked",
+            "type": "datetime"
+          },
+          {
+            "id": "136",
+            "label": "test_needsWorkedMinutes",
+            "type": "text"
+          },
+          {
+            "id": "145",
+            "label": "test_neverWorkedAndNeedsWorked_cb",
+            "type": "text"
+          },
+          {
+            "id": "137",
+            "label": "test_nextNeedsWorkDate",
+            "type": "datetime"
+          },
+          {
+            "id": "147",
+            "label": "test_nextNeedsWorkedDateFrozen",
+            "type": "datetime"
+          },
+          {
+            "id": "20",
+            "label": "TOB",
+            "type": "text"
+          },
+          {
+            "id": "125",
+            "label": "todate BU Date Worked",
+            "type": "date"
+          },
+          {
+            "id": "151",
+            "label": "today",
+            "type": "date"
+          },
+          {
+            "id": "154",
+            "label": "todayMinusBilledDateDuration",
+            "type": "number"
+          },
+          {
+            "id": "155",
+            "label": "todayMinusBilledDaysAsNumber",
+            "type": "text"
+          },
+          {
+            "id": "160",
+            "label": "todayMinusDateWorkedAsNumber",
+            "type": "text"
+          },
+          {
+            "id": "159",
+            "label": "todayMinusDateWorkedDuration",
+            "type": "number"
+          },
+          {
+            "id": "68",
+            "label": "tonumberDaysOutstanding",
+            "type": "text"
+          },
+          {
+            "id": "54",
+            "label": "Total billerResponse_count",
+            "type": "text"
+          },
+          {
+            "id": "55",
+            "label": "Total supResponse_count",
+            "type": "text"
+          },
+          {
+            "id": "73",
+            "label": "weeklyGoal",
+            "type": "text"
+          },
+          {
+            "id": "124",
+            "label": "workedCounter",
+            "type": "text"
+          },
+          {
+            "id": "74",
+            "label": "workedCurrentWeek",
+            "type": "text"
+          },
+          {
+            "id": "162",
+            "label": "workedLast30days",
+            "type": "text"
+          },
+          {
+            "id": "194",
+            "label": "Billed Aging",
+            "type": "text"
+          },
+          {
+            "id": "195",
+            "label": "Unbilled Aging",
+            "type": "text"
+          },
+          {
+            "id": "196",
+            "label": "Combined Aging",
+            "type": "text"
+          },
+          {
+            "id": "197",
+            "label": "Month/Year Report Pulled",
+            "type": "text"
+          },
+          {
+            "id": "198",
+            "label": "Month/Year Claim Paid",
+            "type": "text"
+          },
+          {
+            "id": "199",
+            "label": "Customer Text",
+            "type": "text"
+          },
+          {
+            "id": "200",
+            "label": "Home Care",
+            "type": "text"
+          },
+          {
+            "id": "201",
+            "label": "Full Claim Status",
+            "type": "text"
+          },
+          {
+            "id": "202",
+            "label": "Worked Current Week",
+            "type": "text"
+          },
+          {
+            "id": "203",
+            "label": "Pending Work Current Week",
+            "type": "text"
+          },
+          {
+            "id": "204",
+            "label": "Claim Number - Date Modified",
+            "type": "datetime"
+          },
+          {
+            "id": "205",
+            "label": "Billed/Unbilled",
+            "type": "text"
+          },
+          {
+            "id": "206",
+            "label": "insuranceForDashboards",
+            "type": "text"
+          },
+          {
+            "id": "207",
+            "label": "Full Insurance",
+            "type": "text"
+          },
+          {
+            "id": "208",
+            "label": "Active Statuses",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "id": "bvbbv8kay",
+        "name": "Claims Staging",
+        "description": "Quickbase table",
+        "fields": [
+          {
+            "id": "1",
+            "label": "Date Created",
+            "type": "datetime"
+          },
+          {
+            "id": "2",
+            "label": "Date Modified",
+            "type": "datetime"
+          },
+          {
+            "id": "36",
+            "label": "Date Report Pulled",
+            "type": "date"
+          },
+          {
+            "id": "58",
+            "label": "currentClaim",
+            "type": "text"
+          },
+          {
+            "id": "7",
+            "label": "Billed Date",
+            "type": "date"
+          },
+          {
+            "id": "8",
+            "label": "Patient Name",
+            "type": "text"
+          },
+          {
+            "id": "9",
+            "label": "MRN",
+            "type": "text"
+          },
+          {
+            "id": "10",
+            "label": "Claim Number",
+            "type": "text"
+          },
+          {
+            "id": "11",
+            "label": "Claim Status",
+            "type": "text"
+          },
+          {
+            "id": "12",
+            "label": "DOB",
+            "type": "date"
+          },
+          {
+            "id": "13",
+            "label": "Subscriber ID",
+            "type": "text"
+          },
+          {
+            "id": "14",
+            "label": "Final Claim Number",
+            "type": "text"
+          },
+          {
+            "id": "21",
+            "label": "Insurance",
+            "type": "text"
+          },
+          {
+            "id": "57",
+            "label": "Insurance - Assigned User",
+            "type": "text"
+          },
+          {
+            "id": "15",
+            "label": "Biller/roster record",
+            "type": "text"
+          },
+          {
+            "id": "16",
+            "label": "Billing Status",
+            "type": "text"
+          },
+          {
+            "id": "17",
+            "label": "Biller/roster record Comments",
+            "type": "text"
+          },
+          {
+            "id": "18",
+            "label": "Billing Period Start Date",
+            "type": "date"
+          },
+          {
+            "id": "19",
+            "label": "Billing Period End Date",
+            "type": "date"
+          },
+          {
+            "id": "20",
+            "label": "TOB",
+            "type": "text"
+          },
+          {
+            "id": "22",
+            "label": "Payer Type",
+            "type": "text"
+          },
+          {
+            "id": "23",
+            "label": "Agency",
+            "type": "text"
+          },
+          {
+            "id": "24",
+            "label": "Branch",
+            "type": "text"
+          },
+          {
+            "id": "25",
+            "label": "Last Follow-up",
+            "type": "text"
+          },
+          {
+            "id": "26",
+            "label": "Last Follow-up User",
+            "type": "text"
+          },
+          {
+            "id": "27",
+            "label": "Medicare / Subscriber Number",
+            "type": "text"
+          },
+          {
+            "id": "28",
+            "label": "Anticipated Payment",
+            "type": "text"
+          },
+          {
+            "id": "56",
+            "label": "Related Customer",
+            "type": "text"
+          },
+          {
+            "id": "60",
+            "label": "Notes",
+            "type": "text"
+          },
+          {
+            "id": "61",
+            "label": "Date worked",
+            "type": "date"
+          },
+          {
+            "id": "62",
+            "label": "Agency Type",
+            "type": "text"
+          },
+          {
+            "id": "63",
+            "label": "Policy Number",
+            "type": "text"
+          },
+          {
+            "id": "64",
+            "label": "First Billable Date",
+            "type": "date"
+          },
+          {
+            "id": "65",
+            "label": "Last Billable Date",
+            "type": "date"
+          },
+          {
+            "id": "66",
+            "label": "Payer Rank",
+            "type": "text"
+          },
+          {
+            "id": "67",
+            "label": "Initial Claim Number",
+            "type": "text"
+          },
+          {
+            "id": "70",
+            "label": "Patient Last Name",
+            "type": "text"
+          },
+          {
+            "id": "71",
+            "label": "Patient First Name",
+            "type": "text"
+          },
+          {
+            "id": "118",
+            "label": "CW Status",
+            "type": "text"
+          },
+          {
+            "id": "31",
+            "label": "# of Claim records",
+            "type": "text"
+          },
+          {
+            "id": "30",
+            "label": "Add Claim",
+            "type": "text"
+          },
+          {
+            "id": "105",
+            "label": "assignedUserEmail",
+            "type": "text"
+          },
+          {
+            "id": "35",
+            "label": "Biller/roster record Name",
+            "type": "text"
+          },
+          {
+            "id": "85",
+            "label": "bllank",
+            "type": "text"
+          },
+          {
+            "id": "29",
+            "label": "Claim records",
+            "type": "text"
+          },
+          {
+            "id": "75",
+            "label": "Claim Type of Bill",
+            "type": "text"
+          },
+          {
+            "id": "33",
+            "label": "claimSubstatus",
+            "type": "text"
+          },
+          {
+            "id": "68",
+            "label": "Concierge - Home Care",
+            "type": "text"
+          },
+          {
+            "id": "115",
+            "label": "Copy of assignedUserEmail",
+            "type": "text"
+          },
+          {
+            "id": "116",
+            "label": "Copy of currentClaim",
+            "type": "text"
+          },
+          {
+            "id": "104",
+            "label": "Customer-Insurance",
+            "type": "text"
+          },
+          {
+            "id": "72",
+            "label": "Customer-Insurance-Sub Insurance",
+            "type": "text"
+          },
+          {
+            "id": "106",
+            "label": "Customer-Insurance-Sub Insurance-Agency",
+            "type": "text"
+          },
+          {
+            "id": "34",
+            "label": "getSubstatusRid",
+            "type": "text"
+          },
+          {
+            "id": "38",
+            "label": "Imported Biller First Name",
+            "type": "text"
+          },
+          {
+            "id": "39",
+            "label": "Imported Biller Last Name",
+            "type": "text"
+          },
+          {
+            "id": "87",
+            "label": "Insurance (ref)",
+            "type": "text"
+          },
+          {
+            "id": "108",
+            "label": "Insurance by Agency Company - Agency",
+            "type": "text"
+          },
+          {
+            "id": "112",
+            "label": "Insurance by Agency Company - Assigned User Email",
+            "type": "text"
+          },
+          {
+            "id": "110",
+            "label": "Insurance by Agency Company - Related Customer",
+            "type": "text"
+          },
+          {
+            "id": "109",
+            "label": "Insurance by Agency Company - Related Primary Insurance Company",
+            "type": "text"
+          },
+          {
+            "id": "111",
+            "label": "Insurance by Agency Company - Related Sub Insurance Company",
+            "type": "text"
+          },
+          {
+            "id": "5",
+            "label": "Last Modified By",
+            "type": "user"
+          },
+          {
+            "id": "99",
+            "label": "leftInsurance",
+            "type": "text"
+          },
+          {
+            "id": "50",
+            "label": "Maximum Record ID#",
+            "type": "text"
+          },
+          {
+            "id": "59",
+            "label": "Paid Status",
+            "type": "text"
+          },
+          {
+            "id": "32",
+            "label": "partOneClaimStatus",
+            "type": "text"
+          },
+          {
+            "id": "97",
+            "label": "queryAgency",
+            "type": "text"
+          },
+          {
+            "id": "98",
+            "label": "queryPrimaryInsurance",
+            "type": "text"
+          },
+          {
+            "id": "102",
+            "label": "querySubInsurance",
+            "type": "text"
+          },
+          {
+            "id": "3",
+            "label": "Record ID#",
+            "type": "text"
+          },
+          {
+            "id": "4",
+            "label": "Record Owner",
+            "type": "user"
+          },
+          {
+            "id": "107",
+            "label": "Related Insurance by Agency Company",
+            "type": "text"
+          },
+          {
+            "id": "90",
+            "label": "Related Sub Insurance Company",
+            "type": "text"
+          },
+          {
+            "id": "100",
+            "label": "rightInsurance",
+            "type": "text"
+          },
+          {
+            "id": "37",
+            "label": "Roster Email",
+            "type": "text"
+          },
+          {
+            "id": "117",
+            "label": "set pending payment",
+            "type": "text"
+          },
+          {
+            "id": "91",
+            "label": "Sub Insurance Company - Agency",
+            "type": "text"
+          },
+          {
+            "id": "96",
+            "label": "Sub Insurance Company - Assigned User Email",
+            "type": "text"
+          },
+          {
+            "id": "92",
+            "label": "Sub Insurance Company - PrimarySub",
+            "type": "text"
+          },
+          {
+            "id": "93",
+            "label": "Sub Insurance Company - projectPrimary",
+            "type": "text"
+          },
+          {
+            "id": "94",
+            "label": "Sub Insurance Company - projectPrimarySub",
+            "type": "text"
+          },
+          {
+            "id": "95",
+            "label": "Sub Insurance Company - Related Customer",
+            "type": "text"
+          },
+          {
+            "id": "113",
+            "label": "Sub Insurance Company - Related Insurance by Agency Company",
+            "type": "text"
+          },
+          {
+            "id": "114",
+            "label": "Sub Insurance Company - Related Primary Primary Insurance Company",
+            "type": "text"
+          },
+          {
+            "id": "40",
+            "label": "textBillingDate",
+            "type": "date"
+          },
+          {
+            "id": "101",
+            "label": "textInsurance",
+            "type": "text"
+          },
+          {
+            "id": "103",
+            "label": "textinsurance2",
+            "type": "text"
+          },
+          {
+            "id": "42",
+            "label": "textPeriodEnd",
+            "type": "text"
+          },
+          {
+            "id": "41",
+            "label": "textPeriodStart",
+            "type": "text"
+          },
+          {
+            "id": "69",
+            "label": "today",
+            "type": "date"
+          },
+          {
+            "id": "119",
+            "label": "max PulledDate",
+            "type": "date"
+          },
+          {
+            "id": "120",
+            "label": "customer text",
+            "type": "text"
+          },
+          {
+            "id": "121",
+            "label": "badClaim_cb",
+            "type": "text"
+          },
+          {
+            "id": "122",
+            "label": "dateReportPulledOrModified",
+            "type": "date"
+          },
+          {
+            "id": "123",
+            "label": "Authorization Number",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "id": "bvmz4vyhn",
+        "name": "Claims Worked",
+        "description": "Quickbase table",
+        "fields": [
+          {
+            "id": "10",
+            "label": "Related Claim",
+            "type": "text"
+          },
+          {
+            "id": "11",
+            "label": "Claim - Record ID#",
+            "type": "text"
+          },
+          {
+            "id": "1",
+            "label": "Date Created",
+            "type": "datetime"
+          },
+          {
+            "id": "15",
+            "label": "eligibleForNeedsWorkedStartDateCycle",
+            "type": "date"
+          },
+          {
+            "id": "14",
+            "label": "durationInNeedsWorkedStatusCycle",
+            "type": "number"
+          },
+          {
+            "id": "13",
+            "label": "resolvedOrPaidDateLogged",
+            "type": "date"
+          },
+          {
+            "id": "19",
+            "label": "Claim - Date Worked User",
+            "type": "user"
+          },
+          {
+            "id": "2",
+            "label": "Date Modified",
+            "type": "datetime"
+          },
+          {
+            "id": "5",
+            "label": "Last Modified By",
+            "type": "user"
+          },
+          {
+            "id": "3",
+            "label": "Record ID#",
+            "type": "text"
+          },
+          {
+            "id": "4",
+            "label": "Record Owner",
+            "type": "user"
+          },
+          {
+            "id": "7",
+            "label": "test_eligibleNeedsWorkedStartDatetime",
+            "type": "datetime"
+          },
+          {
+            "id": "9",
+            "label": "test_resolvedOrPaidDateLogged",
+            "type": "datetime"
+          },
+          {
+            "id": "8",
+            "label": "test_timeInNeedsWorkedStatus",
+            "type": "number"
+          }
+        ]
+      },
+      {
+        "id": "bvbngqc6v",
+        "name": "Customers",
+        "description": "Quickbase table",
+        "fields": [
+          {
+            "id": "6",
+            "label": "Customer",
+            "type": "text"
+          },
+          {
+            "id": "7",
+            "label": "Address",
+            "type": "text"
+          },
+          {
+            "id": "14",
+            "label": "Phone",
+            "type": "text"
+          },
+          {
+            "id": "15",
+            "label": "Email",
+            "type": "text"
+          },
+          {
+            "id": "17",
+            "label": "Add Claim",
+            "type": "text"
+          },
+          {
+            "id": "19",
+            "label": "Add Import",
+            "type": "text"
+          },
+          {
+            "id": "10",
+            "label": "City",
+            "type": "text"
+          },
+          {
+            "id": "13",
+            "label": "Country",
+            "type": "text"
+          },
+          {
+            "id": "12",
+            "label": "Postal Code",
+            "type": "text"
+          },
+          {
+            "id": "11",
+            "label": "State/Region",
+            "type": "text"
+          },
+          {
+            "id": "8",
+            "label": "Street 1",
+            "type": "text"
+          },
+          {
+            "id": "9",
+            "label": "Street 2",
+            "type": "text"
+          },
+          {
+            "id": "16",
+            "label": "Claim records",
+            "type": "text"
+          },
+          {
+            "id": "1",
+            "label": "Date Created",
+            "type": "datetime"
+          },
+          {
+            "id": "2",
+            "label": "Date Modified",
+            "type": "datetime"
+          },
+          {
+            "id": "18",
+            "label": "Import records",
+            "type": "text"
+          },
+          {
+            "id": "20",
+            "label": "Claim records2",
+            "type": "text"
+          },
+          {
+            "id": "21",
+            "label": "Add Claim2",
+            "type": "text"
+          },
+          {
+            "id": "22",
+            "label": "File Type records",
+            "type": "text"
+          },
+          {
+            "id": "23",
+            "label": "Add File Type",
+            "type": "text"
+          },
+          {
+            "id": "24",
+            "label": "Primary Insurance Company records",
+            "type": "text"
+          },
+          {
+            "id": "25",
+            "label": "Add Primary Insurance Company",
+            "type": "text"
+          },
+          {
+            "id": "26",
+            "label": "client-D-tot#-NeedsWorked",
+            "type": "text"
+          },
+          {
+            "id": "27",
+            "label": "Weekly - # of Claim records - Was Worked",
+            "type": "text"
+          },
+          {
+            "id": "28",
+            "label": "client-D-tot#-PendingPayment",
+            "type": "text"
+          },
+          {
+            "id": "29",
+            "label": "Sub Insurance Company records",
+            "type": "text"
+          },
+          {
+            "id": "30",
+            "label": "Add Sub Insurance Company",
+            "type": "text"
+          },
+          {
+            "id": "31",
+            "label": "Insurance by Agency Company records",
+            "type": "text"
+          },
+          {
+            "id": "32",
+            "label": "Add Insurance by Agency Company",
+            "type": "text"
+          },
+          {
+            "id": "33",
+            "label": "Merge Field Setting records",
+            "type": "text"
+          },
+          {
+            "id": "34",
+            "label": "Add Merge Field Setting",
+            "type": "text"
+          },
+          {
+            "id": "35",
+            "label": "0-30 Billed Aging",
+            "type": "text"
+          },
+          {
+            "id": "44",
+            "label": "0-30 Billed Aging Total Payment",
+            "type": "text"
+          },
+          {
+            "id": "36",
+            "label": "31-60 Billed Aging",
+            "type": "text"
+          },
+          {
+            "id": "45",
+            "label": "31-60 Billed Aging Total Payment",
+            "type": "text"
+          },
+          {
+            "id": "37",
+            "label": "61-90 Billed Aging",
+            "type": "text"
+          },
+          {
+            "id": "46",
+            "label": "61-90 Billed Aging Total Payment",
+            "type": "text"
+          },
+          {
+            "id": "38",
+            "label": "91-120 Billed Aging",
+            "type": "text"
+          },
+          {
+            "id": "47",
+            "label": "91-120 Billed Aging Total Payment",
+            "type": "text"
+          },
+          {
+            "id": "39",
+            "label": "121-150 Billed Aging",
+            "type": "text"
+          },
+          {
+            "id": "48",
+            "label": "121-150 Billed Aging Total Payment",
+            "type": "text"
+          },
+          {
+            "id": "40",
+            "label": "151-180 Billed Aging",
+            "type": "text"
+          },
+          {
+            "id": "49",
+            "label": "151-180 Billed Aging Total Payment",
+            "type": "text"
+          },
+          {
+            "id": "41",
+            "label": "181-210 Billed Aging",
+            "type": "text"
+          },
+          {
+            "id": "50",
+            "label": "181-210 Billed Aging Total Payment",
+            "type": "text"
+          },
+          {
+            "id": "42",
+            "label": "211-240 Billed Aging",
+            "type": "text"
+          },
+          {
+            "id": "51",
+            "label": "211-240 Billed Aging Total Payment",
+            "type": "text"
+          },
+          {
+            "id": "43",
+            "label": "241+ Billed Aging",
+            "type": "text"
+          },
+          {
+            "id": "52",
+            "label": "241+ Billed Aging Total Payment",
+            "type": "text"
+          },
+          {
+            "id": "53",
+            "label": "Dashboard Data records",
+            "type": "text"
+          },
+          {
+            "id": "54",
+            "label": "Add Dashboard Data",
+            "type": "text"
+          },
+          {
+            "id": "5",
+            "label": "Last Modified By",
+            "type": "user"
+          },
+          {
+            "id": "3",
+            "label": "Record ID#",
+            "type": "text"
+          },
+          {
+            "id": "4",
+            "label": "Record Owner",
+            "type": "user"
+          }
+        ]
+      },
+      {
+        "id": "bvj9ti3bd",
+        "name": "Daily Snapshot Metrics",
+        "description": "Quickbase table",
+        "fields": [
+          {
+            "id": "1",
+            "label": "Date Created",
+            "type": "datetime"
+          },
+          {
+            "id": "6",
+            "label": "Snapshot Frequency",
+            "type": "text"
+          },
+          {
+            "id": "11",
+            "label": "Source Table",
+            "type": "text"
+          },
+          {
+            "id": "14",
+            "label": "Source Table RID",
+            "type": "text"
+          },
+          {
+            "id": "13",
+            "label": "Emp-W-tot#-PendingPayment",
+            "type": "text"
+          },
+          {
+            "id": "15",
+            "label": "EmpFullName",
+            "type": "text"
+          },
+          {
+            "id": "3",
+            "label": "Record ID#",
+            "type": "text"
+          },
+          {
+            "id": "20",
+            "label": "yesterdaysSnapshotRID",
+            "type": "text"
+          },
+          {
+            "id": "21",
+            "label": "weeklyRelatedSnapshot",
+            "type": "text"
+          },
+          {
+            "id": "29",
+            "label": "isYesterdaysDailySnapshot_cb",
+            "type": "text"
+          },
+          {
+            "id": "30",
+            "label": "mostRecentWeeklySnapshot",
+            "type": "text"
+          },
+          {
+            "id": "12",
+            "label": "Emp-D-tot#-PendingPayment",
+            "type": "text"
+          },
+          {
+            "id": "24",
+            "label": "dailyRelatedSnapshot - Emp-D-tot#-PendingPayment",
+            "type": "text"
+          },
+          {
+            "id": "62",
+            "label": "dailyRelatedSnapshot - Client-D-tot#-PendingPayment",
+            "type": "text"
+          },
+          {
+            "id": "65",
+            "label": "dailyRelatedSnapshot - Client-D-tot#-NeedsWorked",
+            "type": "text"
+          },
+          {
+            "id": "48",
+            "label": "dailyRelatedSnapshot - Emp-D-tot#-NeedsWorked",
+            "type": "text"
+          },
+          {
+            "id": "56",
+            "label": "dailyRelatedSnapshot - Branch-D-tot#-NeedsWorked",
+            "type": "text"
+          },
+          {
+            "id": "59",
+            "label": "dailyRelatedSnapshot - Branch-D-tot#-PendingPayment",
+            "type": "text"
+          },
+          {
+            "id": "31",
+            "label": "avgEmpClaimsPendingPayment",
+            "type": "text"
+          },
+          {
+            "id": "64",
+            "label": "avgClientClaimsPendingPayment",
+            "type": "text"
+          },
+          {
+            "id": "67",
+            "label": "avgClientClaimsNeedsWorked",
+            "type": "text"
+          },
+          {
+            "id": "46",
+            "label": "avgEmpClaimsNeedsWorked",
+            "type": "text"
+          },
+          {
+            "id": "58",
+            "label": "avgBranchClaimsNeedsWorked",
+            "type": "text"
+          },
+          {
+            "id": "61",
+            "label": "avgBranchClaimsPendingPayment",
+            "type": "text"
+          },
+          {
+            "id": "34",
+            "label": "branch-D-tot#-PendingPayment",
+            "type": "text"
+          },
+          {
+            "id": "35",
+            "label": "branch-D-tot#-NeedsWorked",
+            "type": "text"
+          },
+          {
+            "id": "36",
+            "label": "Branch",
+            "type": "text"
+          },
+          {
+            "id": "33",
+            "label": "yesterdaysEmpAvgDailyClaimsPendingPayment",
+            "type": "text"
+          },
+          {
+            "id": "63",
+            "label": "yesterdaysClientAvgDailyClaimsPendingPayment",
+            "type": "text"
+          },
+          {
+            "id": "66",
+            "label": "yesterdaysClientAvgDailyClaimsNeedsWorked",
+            "type": "text"
+          },
+          {
+            "id": "47",
+            "label": "yesterdaysEmpAvgDailyClaimsNeedsWorked",
+            "type": "text"
+          },
+          {
+            "id": "57",
+            "label": "yesterdaysBranchAvgDailyClaimsNeedsWorked",
+            "type": "text"
+          },
+          {
+            "id": "60",
+            "label": "yesterdaysBranchAvgDailyClaimsPendingPayment",
+            "type": "text"
+          },
+          {
+            "id": "38",
+            "label": "client-D-tot#-PendingPayment",
+            "type": "text"
+          },
+          {
+            "id": "39",
+            "label": "client-D-tot#-NeedsWorked",
+            "type": "text"
+          },
+          {
+            "id": "40",
+            "label": "Customer",
+            "type": "text"
+          },
+          {
+            "id": "23",
+            "label": "Add Snapshot",
+            "type": "text"
+          },
+          {
+            "id": "27",
+            "label": "Add Snapshot2",
+            "type": "text"
+          },
+          {
+            "id": "32",
+            "label": "Add Snapshot3",
+            "type": "text"
+          },
+          {
+            "id": "25",
+            "label": "dailyRelatedSnapshot - toText Emp-D-tot#-PendingPayment",
+            "type": "text"
+          },
+          {
+            "id": "2",
+            "label": "Date Modified",
+            "type": "datetime"
+          },
+          {
+            "id": "5",
+            "label": "Last Modified By",
+            "type": "user"
+          },
+          {
+            "id": "4",
+            "label": "Record Owner",
+            "type": "user"
+          },
+          {
+            "id": "22",
+            "label": "Snapshot records",
+            "type": "text"
+          },
+          {
+            "id": "26",
+            "label": "Snapshot records2",
+            "type": "text"
+          },
+          {
+            "id": "16",
+            "label": "toText Emp-D-tot#-PendingPayment",
+            "type": "text"
+          },
+          {
+            "id": "28",
+            "label": "weeklyRelatedSnapshot - Emp-W-tot#-PendingPayment",
+            "type": "text"
+          },
+          {
+            "id": "41",
+            "label": "insurance-D-tot#-PendingPayment",
+            "type": "text"
+          },
+          {
+            "id": "42",
+            "label": "insurance-D-tot#-NeedsWorked",
+            "type": "text"
+          },
+          {
+            "id": "43",
+            "label": "Insurance",
+            "type": "text"
+          },
+          {
+            "id": "44",
+            "label": "afterImportSnapshot_cb",
+            "type": "text"
+          },
+          {
+            "id": "45",
+            "label": "employee-D-tot#-NeedsWorked",
+            "type": "text"
+          },
+          {
+            "id": "49",
+            "label": "test_text",
+            "type": "text"
+          },
+          {
+            "id": "51",
+            "label": "manual_trigger",
+            "type": "text"
+          },
+          {
+            "id": "52",
+            "label": "snapshotDate",
+            "type": "date"
+          }
+        ]
+      },
+      {
+        "id": "bvvjfetye",
+        "name": "Dashboard Data",
+        "description": "Data used for the monthly dashboard",
+        "fields": [
+          {
+            "id": "6",
+            "label": "Related Customer",
+            "type": "text"
+          },
+          {
+            "id": "7",
+            "label": "Customer",
+            "type": "text"
+          },
+          {
+            "id": "1",
+            "label": "Date Created",
+            "type": "datetime"
+          },
+          {
+            "id": "2",
+            "label": "Date Modified",
+            "type": "datetime"
+          },
+          {
+            "id": "3",
+            "label": "Record ID#",
+            "type": "text"
+          },
+          {
+            "id": "4",
+            "label": "Record Owner",
+            "type": "user"
+          },
+          {
+            "id": "5",
+            "label": "Last Modified By",
+            "type": "user"
+          }
+        ]
+      },
+      {
+        "id": "bvjwih4t5",
+        "name": "File Types",
+        "description": "Quickbase table",
+        "fields": [
+          {
+            "id": "6",
+            "label": "File Type",
+            "type": "text"
+          },
+          {
+            "id": "7",
+            "label": "Customer",
+            "type": "text"
+          },
+          {
+            "id": "8",
+            "label": "# of Rows to Skip",
+            "type": "text"
+          },
+          {
+            "id": "9",
+            "label": "Import records",
+            "type": "text"
+          },
+          {
+            "id": "10",
+            "label": "Add Import",
+            "type": "text"
+          },
+          {
+            "id": "11",
+            "label": "Merge Parent/Child",
+            "type": "text"
+          },
+          {
+            "id": "12",
+            "label": "Merge Field Setting records",
+            "type": "text"
+          },
+          {
+            "id": "13",
+            "label": "Add Merge Field Setting",
+            "type": "text"
+          },
+          {
+            "id": "14",
+            "label": "Headers",
+            "type": "text"
+          },
+          {
+            "id": "3",
+            "label": "Record ID#",
+            "type": "text"
+          },
+          {
+            "id": "1",
+            "label": "Date Created",
+            "type": "datetime"
+          },
+          {
+            "id": "2",
+            "label": "Date Modified",
+            "type": "datetime"
+          },
+          {
+            "id": "5",
+            "label": "Last Modified By",
+            "type": "user"
+          },
+          {
+            "id": "4",
+            "label": "Record Owner",
+            "type": "user"
+          }
+        ]
+      },
+      {
+        "id": "bvyf99n3v",
+        "name": "Import Queues",
+        "description": "Quickbase table",
+        "fields": [
+          {
+            "id": "6",
+            "label": "Run Counter",
+            "type": "text"
+          },
+          {
+            "id": "7",
+            "label": "Current Import RID",
+            "type": "text"
+          },
+          {
+            "id": "8",
+            "label": "Last Run At",
+            "type": "datetime"
+          },
+          {
+            "id": "9",
+            "label": "Last Import RID",
+            "type": "text"
+          },
+          {
+            "id": "1",
+            "label": "Date Created",
+            "type": "datetime"
+          },
+          {
+            "id": "2",
+            "label": "Date Modified",
+            "type": "datetime"
+          },
+          {
+            "id": "3",
+            "label": "Record ID#",
+            "type": "text"
+          },
+          {
+            "id": "4",
+            "label": "Record Owner",
+            "type": "user"
+          },
+          {
+            "id": "5",
+            "label": "Last Modified By",
+            "type": "user"
+          }
+        ]
+      },
+      {
+        "id": "bvkp6n4tp",
+        "name": "Import Rules",
+        "description": "Quickbase table",
+        "fields": [
+          {
+            "id": "6",
+            "label": "Show Helpers",
+            "type": "text"
+          },
+          {
+            "id": "7",
+            "label": "Show Filters",
+            "type": "text"
+          },
+          {
+            "id": "8",
+            "label": "Show Pipeline Details",
+            "type": "text"
+          },
+          {
+            "id": "9",
+            "label": "Allow File Delete",
+            "type": "text"
+          },
+          {
+            "id": "10",
+            "label": "Show Recent Imports Table",
+            "type": "text"
+          },
+          {
+            "id": "11",
+            "label": "Realm Host",
+            "type": "text"
+          },
+          {
+            "id": "12",
+            "label": "User Token",
+            "type": "text"
+          },
+          {
+            "id": "13",
+            "label": "App ID",
+            "type": "text"
+          },
+          {
+            "id": "14",
+            "label": "Projects DBID",
+            "type": "text"
+          },
+          {
+            "id": "15",
+            "label": "Types DBID",
+            "type": "text"
+          },
+          {
+            "id": "16",
+            "label": "Imports DBID",
+            "type": "text"
+          },
+          {
+            "id": "17",
+            "label": "Merge Settings DBID",
+            "type": "text"
+          },
+          {
+            "id": "18",
+            "label": "Project Name FID",
+            "type": "text"
+          },
+          {
+            "id": "19",
+            "label": "Type Name FID",
+            "type": "text"
+          },
+          {
+            "id": "20",
+            "label": "Types Project Name FID",
+            "type": "text"
+          },
+          {
+            "id": "21",
+            "label": "Types Default Skip FID",
+            "type": "text"
+          },
+          {
+            "id": "22",
+            "label": "Types Merge Role FID",
+            "type": "text"
+          },
+          {
+            "id": "23",
+            "label": "Imports Attachment FID",
+            "type": "text"
+          },
+          {
+            "id": "24",
+            "label": "Imports Project FID",
+            "type": "text"
+          },
+          {
+            "id": "25",
+            "label": "Imports Type FID",
+            "type": "text"
+          },
+          {
+            "id": "26",
+            "label": "Imports Rows Skipped FID",
+            "type": "text"
+          },
+          {
+            "id": "27",
+            "label": "Imports Added FID",
+            "type": "text"
+          },
+          {
+            "id": "28",
+            "label": "Imports Updated FID",
+            "type": "text"
+          },
+          {
+            "id": "29",
+            "label": "Imports Unchanged FID",
+            "type": "text"
+          },
+          {
+            "id": "30",
+            "label": "Imports Total FID",
+            "type": "text"
+          },
+          {
+            "id": "31",
+            "label": "Imports Status FID",
+            "type": "text"
+          },
+          {
+            "id": "32",
+            "label": "Imports Pipeline Status FID",
+            "type": "text"
+          },
+          {
+            "id": "33",
+            "label": "Imports Error FID",
+            "type": "text"
+          },
+          {
+            "id": "34",
+            "label": "Imports Heartbeat FID",
+            "type": "text"
+          },
+          {
+            "id": "35",
+            "label": "Imports Original XLSX FID",
+            "type": "text"
+          },
+          {
+            "id": "36",
+            "label": "Merge Settings File Type FID",
+            "type": "text"
+          },
+          {
+            "id": "37",
+            "label": "Merge Settings Customer FID",
+            "type": "text"
+          },
+          {
+            "id": "1",
+            "label": "Date Created",
+            "type": "datetime"
+          },
+          {
+            "id": "2",
+            "label": "Date Modified",
+            "type": "datetime"
+          },
+          {
+            "id": "3",
+            "label": "Record ID#",
+            "type": "text"
+          },
+          {
+            "id": "4",
+            "label": "Record Owner",
+            "type": "user"
+          },
+          {
+            "id": "5",
+            "label": "Last Modified By",
+            "type": "user"
+          }
+        ]
+      },
+      {
+        "id": "bvhvwkx47",
+        "name": "Imports",
+        "description": "Quickbase table",
+        "fields": [
+          {
+            "id": "1",
+            "label": "Date Created",
+            "type": "datetime"
+          },
+          {
+            "id": "42",
+            "label": "ReadyOrNotReady",
+            "type": "text"
+          },
+          {
+            "id": "41",
+            "label": "minRecordID",
+            "type": "text"
+          },
+          {
+            "id": "3",
+            "label": "Record ID#",
+            "type": "text"
+          },
+          {
+            "id": "40",
+            "label": "testNewImport",
+            "type": "text"
+          },
+          {
+            "id": "37",
+            "label": "Queue Status",
+            "type": "text"
+          },
+          {
+            "id": "38",
+            "label": "Started At",
+            "type": "datetime"
+          },
+          {
+            "id": "39",
+            "label": "Completed At",
+            "type": "datetime"
+          },
+          {
+            "id": "7",
+            "label": "customer",
+            "type": "text"
+          },
+          {
+            "id": "21",
+            "label": "File Type",
+            "type": "text"
+          },
+          {
+            "id": "6",
+            "label": "attachment",
+            "type": "text"
+          },
+          {
+            "id": "26",
+            "label": "originalAttachment",
+            "type": "text"
+          },
+          {
+            "id": "31",
+            "label": "Heartbeat",
+            "type": "datetime"
+          },
+          {
+            "id": "13",
+            "label": "Import Status",
+            "type": "text"
+          },
+          {
+            "id": "27",
+            "label": "Status",
+            "type": "text"
+          },
+          {
+            "id": "29",
+            "label": "Pipeline Status",
+            "type": "text"
+          },
+          {
+            "id": "30",
+            "label": "Error Message",
+            "type": "text"
+          },
+          {
+            "id": "9",
+            "label": "# Rows Stage Claims Added",
+            "type": "text"
+          },
+          {
+            "id": "10",
+            "label": "# Rows Stage Claims Updated",
+            "type": "text"
+          },
+          {
+            "id": "11",
+            "label": "# Rows Stage Claims Unchanged",
+            "type": "text"
+          },
+          {
+            "id": "12",
+            "label": "# Rows Stage Claims Read",
+            "type": "text"
+          },
+          {
+            "id": "36",
+            "label": "sendNotification",
+            "type": "text"
+          },
+          {
+            "id": "14",
+            "label": "customer - Address",
+            "type": "text"
+          },
+          {
+            "id": "2",
+            "label": "Date Modified",
+            "type": "datetime"
+          },
+          {
+            "id": "35",
+            "label": "File #",
+            "type": "text"
+          },
+          {
+            "id": "45",
+            "label": "File Type - Headers",
+            "type": "text"
+          },
+          {
+            "id": "5",
+            "label": "Last Modified By",
+            "type": "user"
+          },
+          {
+            "id": "33",
+            "label": "manuallyRunImport",
+            "type": "text"
+          },
+          {
+            "id": "4",
+            "label": "Record Owner",
+            "type": "user"
+          },
+          {
+            "id": "20",
+            "label": "Related File Type",
+            "type": "text"
+          },
+          {
+            "id": "19",
+            "label": "Report Pulled Date",
+            "type": "date"
+          },
+          {
+            "id": "34",
+            "label": "testbatch",
+            "type": "text"
+          },
+          {
+            "id": "25",
+            "label": "textNumRowsSkipped",
+            "type": "text"
+          },
+          {
+            "id": "8",
+            "label": "type",
+            "type": "text"
+          },
+          {
+            "id": "46",
+            "label": "test import pipe",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "id": "bvr4dk5r9",
+        "name": "Insurance by Agency Companies",
+        "description": "Quickbase table",
+        "fields": [
+          {
+            "id": "11",
+            "label": "Related Customer",
+            "type": "text"
+          },
+          {
+            "id": "43",
+            "label": "Customer-Insurance-Sub Insurance-Agency",
+            "type": "text"
+          },
+          {
+            "id": "26",
+            "label": "Primary Insurance Company - Name",
+            "type": "text"
+          },
+          {
+            "id": "33",
+            "label": "Sub Insurance Company - Sub Insurance2",
+            "type": "text"
+          },
+          {
+            "id": "7",
+            "label": "Agency",
+            "type": "text"
+          },
+          {
+            "id": "9",
+            "label": "Assigned User Email",
+            "type": "text"
+          },
+          {
+            "id": "35",
+            "label": "Add Claim",
+            "type": "text"
+          },
+          {
+            "id": "46",
+            "label": "Add Claim2",
+            "type": "text"
+          },
+          {
+            "id": "10",
+            "label": "Assign this User",
+            "type": "text"
+          },
+          {
+            "id": "29",
+            "label": "Assigned User Email - Email",
+            "type": "text"
+          },
+          {
+            "id": "28",
+            "label": "Assigned User Email - fullName",
+            "type": "text"
+          },
+          {
+            "id": "34",
+            "label": "Claim records",
+            "type": "text"
+          },
+          {
+            "id": "45",
+            "label": "Claim records2",
+            "type": "text"
+          },
+          {
+            "id": "27",
+            "label": "Customer - Email",
+            "type": "text"
+          },
+          {
+            "id": "1",
+            "label": "Date Created",
+            "type": "datetime"
+          },
+          {
+            "id": "2",
+            "label": "Date Modified",
+            "type": "datetime"
+          },
+          {
+            "id": "5",
+            "label": "Last Modified By",
+            "type": "user"
+          },
+          {
+            "id": "6",
+            "label": "Name",
+            "type": "text"
+          },
+          {
+            "id": "25",
+            "label": "Primary Insurance Company - Agency",
+            "type": "text"
+          },
+          {
+            "id": "21",
+            "label": "PrimarySub",
+            "type": "text"
+          },
+          {
+            "id": "22",
+            "label": "projectPrimary",
+            "type": "text"
+          },
+          {
+            "id": "23",
+            "label": "projectPrimarySub",
+            "type": "text"
+          },
+          {
+            "id": "3",
+            "label": "Record ID#",
+            "type": "text"
+          },
+          {
+            "id": "4",
+            "label": "Record Owner",
+            "type": "user"
+          },
+          {
+            "id": "24",
+            "label": "Related Primary Insurance Company",
+            "type": "text"
+          },
+          {
+            "id": "30",
+            "label": "Related Sub Insurance Company",
+            "type": "text"
+          },
+          {
+            "id": "12",
+            "label": "rightInsurance",
+            "type": "text"
+          },
+          {
+            "id": "13",
+            "label": "setInsurance",
+            "type": "text"
+          },
+          {
+            "id": "14",
+            "label": "setSubInsurance",
+            "type": "text"
+          },
+          {
+            "id": "15",
+            "label": "Sub Insurance",
+            "type": "text"
+          },
+          {
+            "id": "31",
+            "label": "Sub Insurance Company - Name",
+            "type": "text"
+          },
+          {
+            "id": "32",
+            "label": "Sub Insurance Company - Sub Insurance",
+            "type": "text"
+          },
+          {
+            "id": "16",
+            "label": "text PrimarySub",
+            "type": "text"
+          },
+          {
+            "id": "17",
+            "label": "text projectPrimary",
+            "type": "text"
+          },
+          {
+            "id": "18",
+            "label": "text projectPrimarySub",
+            "type": "text"
+          },
+          {
+            "id": "19",
+            "label": "textInsurance",
+            "type": "text"
+          },
+          {
+            "id": "20",
+            "label": "Field 20",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "id": "bvsaujsau",
+        "name": "Merge Field Settings",
+        "description": "Quickbase table",
+        "fields": [
+          {
+            "id": "6",
+            "label": "Parent Column1",
+            "type": "text"
+          },
+          {
+            "id": "7",
+            "label": "Parent Column2",
+            "type": "text"
+          },
+          {
+            "id": "8",
+            "label": "Parent Column3",
+            "type": "text"
+          },
+          {
+            "id": "9",
+            "label": "Parent Column4",
+            "type": "text"
+          },
+          {
+            "id": "10",
+            "label": "Parent Column5",
+            "type": "text"
+          },
+          {
+            "id": "11",
+            "label": "Parent Column6",
+            "type": "text"
+          },
+          {
+            "id": "12",
+            "label": "Parent Column7",
+            "type": "text"
+          },
+          {
+            "id": "13",
+            "label": "Parent Column8",
+            "type": "text"
+          },
+          {
+            "id": "14",
+            "label": "Parent Column9",
+            "type": "text"
+          },
+          {
+            "id": "15",
+            "label": "Parent Column10",
+            "type": "text"
+          },
+          {
+            "id": "16",
+            "label": "Child Merge to Parent1",
+            "type": "text"
+          },
+          {
+            "id": "17",
+            "label": "Child Merge to Parent2",
+            "type": "text"
+          },
+          {
+            "id": "18",
+            "label": "Child Merge to Parent3",
+            "type": "text"
+          },
+          {
+            "id": "19",
+            "label": "Child Merge to Parent4",
+            "type": "text"
+          },
+          {
+            "id": "20",
+            "label": "Child Merge to Parent5",
+            "type": "text"
+          },
+          {
+            "id": "21",
+            "label": "Child Merge to Parent6",
+            "type": "text"
+          },
+          {
+            "id": "22",
+            "label": "Child Merge to Parent7",
+            "type": "text"
+          },
+          {
+            "id": "23",
+            "label": "Child Merge to Parent8",
+            "type": "text"
+          },
+          {
+            "id": "24",
+            "label": "Child Merge to Parent9",
+            "type": "text"
+          },
+          {
+            "id": "25",
+            "label": "Child Merge to Parent10",
+            "type": "text"
+          },
+          {
+            "id": "26",
+            "label": "Add Column to Parent1",
+            "type": "text"
+          },
+          {
+            "id": "27",
+            "label": "Add Column to Parent2",
+            "type": "text"
+          },
+          {
+            "id": "28",
+            "label": "Add Column to Parent3",
+            "type": "text"
+          },
+          {
+            "id": "29",
+            "label": "Add Column to Parent4",
+            "type": "text"
+          },
+          {
+            "id": "30",
+            "label": "Add Column to Parent5",
+            "type": "text"
+          },
+          {
+            "id": "31",
+            "label": "Add Column to Parent6",
+            "type": "text"
+          },
+          {
+            "id": "32",
+            "label": "Add Column to Parent7",
+            "type": "text"
+          },
+          {
+            "id": "33",
+            "label": "Add Column to Parent8",
+            "type": "text"
+          },
+          {
+            "id": "34",
+            "label": "Add Column to Parent9",
+            "type": "text"
+          },
+          {
+            "id": "35",
+            "label": "Add Column to Parent10",
+            "type": "text"
+          },
+          {
+            "id": "36",
+            "label": "Related File Type",
+            "type": "text"
+          },
+          {
+            "id": "37",
+            "label": "File Type",
+            "type": "text"
+          },
+          {
+            "id": "39",
+            "label": "File Type for Merge",
+            "type": "text"
+          },
+          {
+            "id": "40",
+            "label": "Related Customer",
+            "type": "text"
+          },
+          {
+            "id": "41",
+            "label": "Customer - Phone",
+            "type": "text"
+          },
+          {
+            "id": "42",
+            "label": "Merge Child into Parent1",
+            "type": "text"
+          },
+          {
+            "id": "43",
+            "label": "Merge Child into Parent2",
+            "type": "text"
+          },
+          {
+            "id": "44",
+            "label": "Merge Child into Parent3",
+            "type": "text"
+          },
+          {
+            "id": "45",
+            "label": "Merge Child into Parent4",
+            "type": "text"
+          },
+          {
+            "id": "46",
+            "label": "Merge Child into Parent5",
+            "type": "text"
+          },
+          {
+            "id": "47",
+            "label": "Merge Child into Parent6",
+            "type": "text"
+          },
+          {
+            "id": "48",
+            "label": "Merge Child into Parent7",
+            "type": "text"
+          },
+          {
+            "id": "49",
+            "label": "Merge Child into Parent8",
+            "type": "text"
+          },
+          {
+            "id": "50",
+            "label": "Merge Child into Parent9",
+            "type": "text"
+          },
+          {
+            "id": "51",
+            "label": "Merge Child into Parent10",
+            "type": "text"
+          },
+          {
+            "id": "52",
+            "label": "Parent Column11",
+            "type": "text"
+          },
+          {
+            "id": "53",
+            "label": "Child Merge to Parent11",
+            "type": "text"
+          },
+          {
+            "id": "54",
+            "label": "Parent Column12",
+            "type": "text"
+          },
+          {
+            "id": "55",
+            "label": "Child Merge to Parent12",
+            "type": "text"
+          },
+          {
+            "id": "56",
+            "label": "Add Column to Parent11",
+            "type": "text"
+          },
+          {
+            "id": "57",
+            "label": "Merge Child into Parent11",
+            "type": "text"
+          },
+          {
+            "id": "58",
+            "label": "Merge Child into Parent12",
+            "type": "text"
+          },
+          {
+            "id": "59",
+            "label": "Add Column to Parent12",
+            "type": "text"
+          },
+          {
+            "id": "60",
+            "label": "Merge Child into Parent13",
+            "type": "text"
+          },
+          {
+            "id": "61",
+            "label": "Add Column to Parent13",
+            "type": "text"
+          },
+          {
+            "id": "62",
+            "label": "Child Merge to Parent13",
+            "type": "text"
+          },
+          {
+            "id": "63",
+            "label": "Parent Column13",
+            "type": "text"
+          },
+          {
+            "id": "64",
+            "label": "Child Merge to Parent14",
+            "type": "text"
+          },
+          {
+            "id": "65",
+            "label": "Parent Column14",
+            "type": "text"
+          },
+          {
+            "id": "66",
+            "label": "Add Column to Parent14",
+            "type": "text"
+          },
+          {
+            "id": "67",
+            "label": "Merge Child into Parent14",
+            "type": "text"
+          },
+          {
+            "id": "68",
+            "label": "Add Column to Parent15",
+            "type": "text"
+          },
+          {
+            "id": "69",
+            "label": "Merge Child into Parent15",
+            "type": "text"
+          },
+          {
+            "id": "70",
+            "label": "Add Column to Parent16",
+            "type": "text"
+          },
+          {
+            "id": "71",
+            "label": "Merge Child into Parent16",
+            "type": "text"
+          },
+          {
+            "id": "72",
+            "label": "Merge Child into Parent17",
+            "type": "text"
+          },
+          {
+            "id": "73",
+            "label": "Add Column to Parent17",
+            "type": "text"
+          },
+          {
+            "id": "74",
+            "label": "Add Column to Parent18",
+            "type": "text"
+          },
+          {
+            "id": "75",
+            "label": "Merge Child into Parent18",
+            "type": "text"
+          },
+          {
+            "id": "76",
+            "label": "Add Column to Parent19",
+            "type": "text"
+          },
+          {
+            "id": "77",
+            "label": "Merge Child into Parent19",
+            "type": "text"
+          },
+          {
+            "id": "78",
+            "label": "Add Column to Parent20",
+            "type": "text"
+          },
+          {
+            "id": "79",
+            "label": "Merge Child into Parent20",
+            "type": "text"
+          },
+          {
+            "id": "80",
+            "label": "Merge Child into Parent21",
+            "type": "text"
+          },
+          {
+            "id": "81",
+            "label": "Add Column to Parent21",
+            "type": "text"
+          },
+          {
+            "id": "82",
+            "label": "Merge Type",
+            "type": "text"
+          },
+          {
+            "id": "83",
+            "label": "Merge Column to QB1",
+            "type": "text"
+          },
+          {
+            "id": "84",
+            "label": "Merge Column to QB2",
+            "type": "text"
+          },
+          {
+            "id": "85",
+            "label": "Merge Column to QB3",
+            "type": "text"
+          },
+          {
+            "id": "86",
+            "label": "Merge Column to QB4",
+            "type": "text"
+          },
+          {
+            "id": "87",
+            "label": "Merge Column to QB5",
+            "type": "text"
+          },
+          {
+            "id": "88",
+            "label": "Merge Column to QB6",
+            "type": "text"
+          },
+          {
+            "id": "89",
+            "label": "Merge Column to QB7",
+            "type": "text"
+          },
+          {
+            "id": "90",
+            "label": "Merge Column to QB8",
+            "type": "text"
+          },
+          {
+            "id": "91",
+            "label": "Merge Column to QB9",
+            "type": "text"
+          },
+          {
+            "id": "92",
+            "label": "Merge Column to QB10",
+            "type": "text"
+          },
+          {
+            "id": "93",
+            "label": "Import to QB Field1",
+            "type": "text"
+          },
+          {
+            "id": "94",
+            "label": "Import to QB Field2",
+            "type": "text"
+          },
+          {
+            "id": "95",
+            "label": "Import to QB Field3",
+            "type": "text"
+          },
+          {
+            "id": "96",
+            "label": "Import to QB Field4",
+            "type": "text"
+          },
+          {
+            "id": "97",
+            "label": "Import to QB Field5",
+            "type": "text"
+          },
+          {
+            "id": "98",
+            "label": "Import to QB Field6",
+            "type": "text"
+          },
+          {
+            "id": "99",
+            "label": "Import to QB Field7",
+            "type": "text"
+          },
+          {
+            "id": "100",
+            "label": "Import to QB Field8",
+            "type": "text"
+          },
+          {
+            "id": "101",
+            "label": "Import to QB Field9",
+            "type": "text"
+          },
+          {
+            "id": "102",
+            "label": "Import to QB Field10",
+            "type": "text"
+          },
+          {
+            "id": "1",
+            "label": "Date Created",
+            "type": "datetime"
+          },
+          {
+            "id": "2",
+            "label": "Date Modified",
+            "type": "datetime"
+          },
+          {
+            "id": "3",
+            "label": "Record ID#",
+            "type": "text"
+          },
+          {
+            "id": "4",
+            "label": "Record Owner",
+            "type": "user"
+          },
+          {
+            "id": "5",
+            "label": "Last Modified By",
+            "type": "user"
+          }
+        ]
+      },
+      {
+        "id": "bvbnf59qf",
+        "name": "Payer Types",
+        "description": "Quickbase table",
+        "fields": [
+          {
+            "id": "6",
+            "label": "Payer Type",
+            "type": "text"
+          },
+          {
+            "id": "7",
+            "label": "Claim records",
+            "type": "text"
+          },
+          {
+            "id": "8",
+            "label": "Add Claim",
+            "type": "text"
+          },
+          {
+            "id": "1",
+            "label": "Date Created",
+            "type": "datetime"
+          },
+          {
+            "id": "2",
+            "label": "Date Modified",
+            "type": "datetime"
+          },
+          {
+            "id": "3",
+            "label": "Record ID#",
+            "type": "text"
+          },
+          {
+            "id": "4",
+            "label": "Record Owner",
+            "type": "user"
+          },
+          {
+            "id": "5",
+            "label": "Last Modified By",
+            "type": "user"
+          }
+        ]
+      },
+      {
+        "id": "bvbbvspja",
+        "name": "Pipeline Log",
+        "description": "Quickbase table",
+        "fields": [
+          {
+            "id": "8",
+            "label": "Agency",
+            "type": "text"
+          },
+          {
+            "id": "9",
+            "label": "Branch",
+            "type": "text"
+          },
+          {
+            "id": "10",
+            "label": "Payer Type",
+            "type": "text"
+          },
+          {
+            "id": "11",
+            "label": "Insurance",
+            "type": "text"
+          },
+          {
+            "id": "12",
+            "label": "Patient Name",
+            "type": "text"
+          },
+          {
+            "id": "13",
+            "label": "MRN",
+            "type": "text"
+          },
+          {
+            "id": "14",
+            "label": "DOB",
+            "type": "text"
+          },
+          {
+            "id": "15",
+            "label": "Billing Period Start Date",
+            "type": "text"
+          },
+          {
+            "id": "16",
+            "label": "Billing Period End Date",
+            "type": "text"
+          },
+          {
+            "id": "17",
+            "label": "Claim Number",
+            "type": "text"
+          },
+          {
+            "id": "18",
+            "label": "Final Claim Number",
+            "type": "text"
+          },
+          {
+            "id": "19",
+            "label": "Billing Status",
+            "type": "text"
+          },
+          {
+            "id": "20",
+            "label": "Claim Status",
+            "type": "text"
+          },
+          {
+            "id": "21",
+            "label": "Substatus",
+            "type": "text"
+          },
+          {
+            "id": "22",
+            "label": "Biller/roster record Comments",
+            "type": "text"
+          },
+          {
+            "id": "23",
+            "label": "Anticipated Payment",
+            "type": "text"
+          },
+          {
+            "id": "24",
+            "label": "Supervisor Notes",
+            "type": "text"
+          },
+          {
+            "id": "25",
+            "label": "Notes",
+            "type": "text"
+          },
+          {
+            "id": "26",
+            "label": "Date Worked",
+            "type": "text"
+          },
+          {
+            "id": "27",
+            "label": "Days Outstanding",
+            "type": "text"
+          },
+          {
+            "id": "28",
+            "label": "Date Report Pulled",
+            "type": "text"
+          },
+          {
+            "id": "29",
+            "label": "30 - 59 Days",
+            "type": "text"
+          },
+          {
+            "id": "30",
+            "label": "60 - 179 Days",
+            "type": "text"
+          },
+          {
+            "id": "31",
+            "label": "< 30 Days",
+            "type": "text"
+          },
+          {
+            "id": "32",
+            "label": "> 180 Days",
+            "type": "text"
+          },
+          {
+            "id": "33",
+            "label": "> 30 Days",
+            "type": "text"
+          },
+          {
+            "id": "34",
+            "label": "> 60 Days",
+            "type": "text"
+          },
+          {
+            "id": "35",
+            "label": "Add Team Questions/Response",
+            "type": "text"
+          },
+          {
+            "id": "36",
+            "label": "Billed Date",
+            "type": "text"
+          },
+          {
+            "id": "37",
+            "label": "Biller/roster record",
+            "type": "text"
+          },
+          {
+            "id": "38",
+            "label": "Biller/roster record - Employee Phone",
+            "type": "text"
+          },
+          {
+            "id": "39",
+            "label": "Biller/roster record - Last Name",
+            "type": "text"
+          },
+          {
+            "id": "40",
+            "label": "Biller/roster record - Supervisor Email",
+            "type": "text"
+          },
+          {
+            "id": "41",
+            "label": "Biller/roster record - Supervisor Name",
+            "type": "text"
+          },
+          {
+            "id": "42",
+            "label": "Biller/roster record - Supervisor Phone",
+            "type": "text"
+          },
+          {
+            "id": "43",
+            "label": "Biller/roster record Name",
+            "type": "text"
+          },
+          {
+            "id": "44",
+            "label": "Claim Number - Biller/roster record",
+            "type": "text"
+          },
+          {
+            "id": "45",
+            "label": "Claim Number - Biller/roster record Name",
+            "type": "text"
+          },
+          {
+            "id": "46",
+            "label": "currentUserEmail",
+            "type": "text"
+          },
+          {
+            "id": "47",
+            "label": "Customer - Phone",
+            "type": "text"
+          },
+          {
+            "id": "48",
+            "label": "Last Follow-up",
+            "type": "text"
+          },
+          {
+            "id": "49",
+            "label": "Last Follow-up User",
+            "type": "text"
+          },
+          {
+            "id": "50",
+            "label": "Maximum Record ID#",
+            "type": "text"
+          },
+          {
+            "id": "51",
+            "label": "Medicare / Subscriber Number",
+            "type": "text"
+          },
+          {
+            "id": "52",
+            "label": "Record ID",
+            "type": "text"
+          },
+          {
+            "id": "53",
+            "label": "Related Customer",
+            "type": "text"
+          },
+          {
+            "id": "54",
+            "label": "Related Substatus",
+            "type": "text"
+          },
+          {
+            "id": "55",
+            "label": "sendSupervisorQuestions/Notes_btn",
+            "type": "text"
+          },
+          {
+            "id": "56",
+            "label": "Subscriber ID",
+            "type": "text"
+          },
+          {
+            "id": "57",
+            "label": "SupervisorRespondQuestions/Notes_btn",
+            "type": "text"
+          },
+          {
+            "id": "58",
+            "label": "Team Questions/Response records",
+            "type": "text"
+          },
+          {
+            "id": "59",
+            "label": "TOB",
+            "type": "text"
+          },
+          {
+            "id": "60",
+            "label": "tonumberDaysOutstanding",
+            "type": "text"
+          },
+          {
+            "id": "61",
+            "label": "Total billerResponse_count",
+            "type": "text"
+          },
+          {
+            "id": "62",
+            "label": "Total supResponse_count",
+            "type": "text"
+          },
+          {
+            "id": "63",
+            "label": "Biller/roster record - Responsible for Clients",
+            "type": "text"
+          },
+          {
+            "id": "64",
+            "label": "Biller/roster record - weeklyGoal",
+            "type": "text"
+          },
+          {
+            "id": "65",
+            "label": "Biller/roster record - Maximum Record ID#",
+            "type": "text"
+          },
+          {
+            "id": "66",
+            "label": "Maximum Biller/roster record - weeklyGoal",
+            "type": "text"
+          },
+          {
+            "id": "67",
+            "label": "weeklyGoal",
+            "type": "text"
+          },
+          {
+            "id": "68",
+            "label": "workedCurrentWeek",
+            "type": "text"
+          },
+          {
+            "id": "69",
+            "label": "claimWorked_btn",
+            "type": "text"
+          },
+          {
+            "id": "70",
+            "label": "Change Completed By",
+            "type": "text"
+          },
+          {
+            "id": "71",
+            "label": "Pipeline Name",
+            "type": "text"
+          },
+          {
+            "id": "72",
+            "label": "Status",
+            "type": "text"
+          },
+          {
+            "id": "1",
+            "label": "Date Created",
+            "type": "datetime"
+          },
+          {
+            "id": "2",
+            "label": "Date Modified",
+            "type": "datetime"
+          },
+          {
+            "id": "3",
+            "label": "Record ID#",
+            "type": "text"
+          },
+          {
+            "id": "4",
+            "label": "Record Owner",
+            "type": "user"
+          },
+          {
+            "id": "5",
+            "label": "Last Modified By",
+            "type": "user"
+          }
+        ]
+      },
+      {
+        "id": "bvhv5nges",
+        "name": "Primary Insurance Companies",
+        "description": "Quickbase table",
+        "fields": [
+          {
+            "id": "6",
+            "label": "Name",
+            "type": "text"
+          },
+          {
+            "id": "14",
+            "label": "Related Customer",
+            "type": "text"
+          },
+          {
+            "id": "7",
+            "label": "Assigned User",
+            "type": "text"
+          },
+          {
+            "id": "27",
+            "label": "Customer-Insurance",
+            "type": "text"
+          },
+          {
+            "id": "3",
+            "label": "Record ID#",
+            "type": "text"
+          },
+          {
+            "id": "10",
+            "label": "Add Claim",
+            "type": "text"
+          },
+          {
+            "id": "17",
+            "label": "Add Claim2",
+            "type": "text"
+          },
+          {
+            "id": "24",
+            "label": "Add Insurance by Agency Company",
+            "type": "text"
+          },
+          {
+            "id": "22",
+            "label": "Add Sub Insurance Company",
+            "type": "text"
+          },
+          {
+            "id": "12",
+            "label": "Agency",
+            "type": "text"
+          },
+          {
+            "id": "13",
+            "label": "Assign this User",
+            "type": "text"
+          },
+          {
+            "id": "8",
+            "label": "Assigned User - fullName",
+            "type": "text"
+          },
+          {
+            "id": "28",
+            "label": "Backups",
+            "type": "text"
+          },
+          {
+            "id": "9",
+            "label": "Claim records",
+            "type": "text"
+          },
+          {
+            "id": "16",
+            "label": "Claim records2",
+            "type": "text"
+          },
+          {
+            "id": "20",
+            "label": "Combined Text Related Customer",
+            "type": "multiselect"
+          },
+          {
+            "id": "1",
+            "label": "Date Created",
+            "type": "datetime"
+          },
+          {
+            "id": "2",
+            "label": "Date Modified",
+            "type": "datetime"
+          },
+          {
+            "id": "11",
+            "label": "Include Agency in Assignment",
+            "type": "text"
+          },
+          {
+            "id": "23",
+            "label": "Insurance by Agency Company records",
+            "type": "text"
+          },
+          {
+            "id": "18",
+            "label": "insurance-D-tot#-NeedsWorked",
+            "type": "text"
+          },
+          {
+            "id": "19",
+            "label": "insurance-D-tot#-PendingPayment",
+            "type": "text"
+          },
+          {
+            "id": "5",
+            "label": "Last Modified By",
+            "type": "user"
+          },
+          {
+            "id": "25",
+            "label": "leftDash",
+            "type": "text"
+          },
+          {
+            "id": "4",
+            "label": "Record Owner",
+            "type": "user"
+          },
+          {
+            "id": "21",
+            "label": "Sub Insurance Company records",
+            "type": "text"
+          },
+          {
+            "id": "26",
+            "label": "textleftdash",
+            "type": "text"
+          },
+          {
+            "id": "15",
+            "label": "Field 15",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "id": "bvctb74m2",
+        "name": "Questions/Answers Between Team",
+        "description": "Quickbase table",
+        "fields": [
+          {
+            "id": "72",
+            "label": "Related Claim (ref) - Claim Status",
+            "type": "text"
+          },
+          {
+            "id": "1",
+            "label": "Date Created",
+            "type": "datetime"
+          },
+          {
+            "id": "26",
+            "label": "Claim - Biller/roster record - Supervisor Email",
+            "type": "text"
+          },
+          {
+            "id": "23",
+            "label": "Claim - Biller/roster record",
+            "type": "text"
+          },
+          {
+            "id": "42",
+            "label": "CurrentUserEmail",
+            "type": "text"
+          },
+          {
+            "id": "54",
+            "label": "Related Claim (ref) - Sup Email",
+            "type": "text"
+          },
+          {
+            "id": "3",
+            "label": "Record ID#",
+            "type": "text"
+          },
+          {
+            "id": "32",
+            "label": "Claim Number",
+            "type": "text"
+          },
+          {
+            "id": "19",
+            "label": "Related Claim",
+            "type": "text"
+          },
+          {
+            "id": "39",
+            "label": "questionClosed_cb",
+            "type": "text"
+          },
+          {
+            "id": "17",
+            "label": "initiatorRole",
+            "type": "text"
+          },
+          {
+            "id": "53",
+            "label": "responderRole",
+            "type": "text"
+          },
+          {
+            "id": "55",
+            "label": "initiator_email",
+            "type": "text"
+          },
+          {
+            "id": "56",
+            "label": "responder_email",
+            "type": "text"
+          },
+          {
+            "id": "57",
+            "label": "initiatorIsCurrentUser",
+            "type": "text"
+          },
+          {
+            "id": "58",
+            "label": "responderIsCurrentUser",
+            "type": "text"
+          },
+          {
+            "id": "15",
+            "label": "initiator_count",
+            "type": "text"
+          },
+          {
+            "id": "12",
+            "label": "responder_count",
+            "type": "text"
+          },
+          {
+            "id": "6",
+            "label": "Question",
+            "type": "text"
+          },
+          {
+            "id": "7",
+            "label": "Response",
+            "type": "text"
+          },
+          {
+            "id": "46",
+            "label": "Close Type",
+            "type": "text"
+          },
+          {
+            "id": "47",
+            "label": "Close Reason",
+            "type": "text"
+          },
+          {
+            "id": "41",
+            "label": "Add User Action",
+            "type": "text"
+          },
+          {
+            "id": "30",
+            "label": "billerEmailToUser",
+            "type": "user"
+          },
+          {
+            "id": "9",
+            "label": "billerResponse_btn",
+            "type": "text"
+          },
+          {
+            "id": "13",
+            "label": "billerResponse_date",
+            "type": "date"
+          },
+          {
+            "id": "24",
+            "label": "Claim - Biller/roster record - Employee Phone",
+            "type": "text"
+          },
+          {
+            "id": "22",
+            "label": "Claim - Biller/roster record - Last Name",
+            "type": "text"
+          },
+          {
+            "id": "25",
+            "label": "Claim - Biller/roster record - Supervisor Name",
+            "type": "text"
+          },
+          {
+            "id": "27",
+            "label": "Claim - Biller/roster record - Supervisor Phone",
+            "type": "text"
+          },
+          {
+            "id": "21",
+            "label": "Claim - Biller/roster record Name",
+            "type": "text"
+          },
+          {
+            "id": "20",
+            "label": "Customer",
+            "type": "text"
+          },
+          {
+            "id": "38",
+            "label": "closeQuestion_btn",
+            "type": "text"
+          },
+          {
+            "id": "18",
+            "label": "currentUser",
+            "type": "user"
+          },
+          {
+            "id": "2",
+            "label": "Date Modified",
+            "type": "datetime"
+          },
+          {
+            "id": "59",
+            "label": "Display Status",
+            "type": "text"
+          },
+          {
+            "id": "14",
+            "label": "initiator_user",
+            "type": "user"
+          },
+          {
+            "id": "51",
+            "label": "initiatorSubmitText_btn",
+            "type": "text"
+          },
+          {
+            "id": "5",
+            "label": "Last Modified By",
+            "type": "user"
+          },
+          {
+            "id": "28",
+            "label": "openRecord_btn",
+            "type": "text"
+          },
+          {
+            "id": "36",
+            "label": "questionClosedByUser",
+            "type": "user"
+          },
+          {
+            "id": "37",
+            "label": "questionClosedDate",
+            "type": "datetime"
+          },
+          {
+            "id": "4",
+            "label": "Record Owner",
+            "type": "user"
+          },
+          {
+            "id": "74",
+            "label": "Related Claim (ref) - Agency",
+            "type": "text"
+          },
+          {
+            "id": "64",
+            "label": "Related Claim (ref) - Billed Date",
+            "type": "date"
+          },
+          {
+            "id": "73",
+            "label": "Related Claim (ref) - Branch",
+            "type": "text"
+          },
+          {
+            "id": "71",
+            "label": "Related Claim (ref) - Claim Number",
+            "type": "text"
+          },
+          {
+            "id": "43",
+            "label": "Insurance",
+            "type": "text"
+          },
+          {
+            "id": "65",
+            "label": "Related Claim (ref) - Medicare / Subscriber Number",
+            "type": "text"
+          },
+          {
+            "id": "66",
+            "label": "Related Claim (ref) - Notes",
+            "type": "text"
+          },
+          {
+            "id": "67",
+            "label": "Related Claim (ref) - Paid Status",
+            "type": "text"
+          },
+          {
+            "id": "68",
+            "label": "Patient Name",
+            "type": "text"
+          },
+          {
+            "id": "69",
+            "label": "Related Claim (ref) - Payer Type",
+            "type": "text"
+          },
+          {
+            "id": "70",
+            "label": "Related Claim (ref) - Policy Number",
+            "type": "text"
+          },
+          {
+            "id": "75",
+            "label": "Related Claim (ref) - Subscriber ID",
+            "type": "text"
+          },
+          {
+            "id": "61",
+            "label": "Related Claim (ref) - Test Record_cb",
+            "type": "text"
+          },
+          {
+            "id": "11",
+            "label": "responder_user",
+            "type": "user"
+          },
+          {
+            "id": "52",
+            "label": "responderSubmitText_btn",
+            "type": "text"
+          },
+          {
+            "id": "16",
+            "label": "saveAndSend_btn",
+            "type": "text"
+          },
+          {
+            "id": "31",
+            "label": "supEmailToUser",
+            "type": "user"
+          },
+          {
+            "id": "8",
+            "label": "supResponse_btn",
+            "type": "text"
+          },
+          {
+            "id": "10",
+            "label": "supResponse_date",
+            "type": "date"
+          },
+          {
+            "id": "44",
+            "label": "ToText Question",
+            "type": "text"
+          },
+          {
+            "id": "45",
+            "label": "ToText Response",
+            "type": "text"
+          },
+          {
+            "id": "40",
+            "label": "User Action records",
+            "type": "text"
+          },
+          {
+            "id": "78",
+            "label": "Full Insurance",
+            "type": "text"
+          },
+          {
+            "id": "79",
+            "label": "Sub Insurance Company",
+            "type": "text"
+          },
+          {
+            "id": "80",
+            "label": "Insurance by Agency Company",
+            "type": "text"
+          },
+          {
+            "id": "81",
+            "label": "Biller Full-Name",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "id": "bvysvpq8m",
+        "name": "Report Version History",
+        "description": "Quickbase table",
+        "fields": [
+          {
+            "id": "6",
+            "label": "Version",
+            "type": "text"
+          },
+          {
+            "id": "7",
+            "label": "Json",
+            "type": "text"
+          },
+          {
+            "id": "8",
+            "label": "Updated At",
+            "type": "datetime"
+          },
+          {
+            "id": "9",
+            "label": "Updated By",
+            "type": "text"
+          },
+          {
+            "id": "10",
+            "label": "Platform Key",
+            "type": "text"
+          },
+          {
+            "id": "1",
+            "label": "Date Created",
+            "type": "datetime"
+          },
+          {
+            "id": "2",
+            "label": "Date Modified",
+            "type": "datetime"
+          },
+          {
+            "id": "3",
+            "label": "Record ID#",
+            "type": "text"
+          },
+          {
+            "id": "4",
+            "label": "Record Owner",
+            "type": "user"
+          },
+          {
+            "id": "5",
+            "label": "Last Modified By",
+            "type": "user"
+          }
+        ]
+      },
+      {
+        "id": "bvysukdeq",
+        "name": "Saved Reports",
+        "description": "Quickbase table",
+        "fields": [
+          {
+            "id": "6",
+            "label": "Type",
+            "type": "text"
+          },
+          {
+            "id": "7",
+            "label": "Name",
+            "type": "text"
+          },
+          {
+            "id": "8",
+            "label": "JSON Config",
+            "type": "text"
+          },
+          {
+            "id": "9",
+            "label": "Owner",
+            "type": "text"
+          },
+          {
+            "id": "10",
+            "label": "Updated",
+            "type": "datetime"
+          },
+          {
+            "id": "12",
+            "label": "Platform Key",
+            "type": "text"
+          },
+          {
+            "id": "1",
+            "label": "Date Created",
+            "type": "datetime"
+          },
+          {
+            "id": "2",
+            "label": "Date Modified",
+            "type": "datetime"
+          },
+          {
+            "id": "3",
+            "label": "Record ID#",
+            "type": "text"
+          },
+          {
+            "id": "4",
+            "label": "Record Owner",
+            "type": "user"
+          },
+          {
+            "id": "5",
+            "label": "Last Modified By",
+            "type": "user"
+          }
+        ]
+      },
+      {
+        "id": "bvbne5cyi",
+        "name": "Statuses",
+        "description": "Quickbase table",
+        "fields": [
+          {
+            "id": "6",
+            "label": "Status",
+            "type": "text"
+          },
+          {
+            "id": "10",
+            "label": "Add Claim",
+            "type": "text"
+          },
+          {
+            "id": "8",
+            "label": "Add Substatus",
+            "type": "text"
+          },
+          {
+            "id": "9",
+            "label": "Claim records",
+            "type": "text"
+          },
+          {
+            "id": "1",
+            "label": "Date Created",
+            "type": "datetime"
+          },
+          {
+            "id": "2",
+            "label": "Date Modified",
+            "type": "datetime"
+          },
+          {
+            "id": "5",
+            "label": "Last Modified By",
+            "type": "user"
+          },
+          {
+            "id": "3",
+            "label": "Record ID#",
+            "type": "text"
+          },
+          {
+            "id": "4",
+            "label": "Record Owner",
+            "type": "user"
+          },
+          {
+            "id": "7",
+            "label": "Substatus records",
+            "type": "text"
+          },
+          {
+            "id": "11",
+            "label": "Combined Text Substatus",
+            "type": "multiselect"
+          },
+          {
+            "id": "12",
+            "label": "Active",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "id": "bvr4dkehe",
+        "name": "Sub Insurance Companies",
+        "description": "Quickbase table",
+        "fields": [
+          {
+            "id": "6",
+            "label": "Related Customer",
+            "type": "text"
+          },
+          {
+            "id": "24",
+            "label": "Related Primary Primary Insurance Company - Name2",
+            "type": "text"
+          },
+          {
+            "id": "8",
+            "label": "Sub Insurance",
+            "type": "text"
+          },
+          {
+            "id": "11",
+            "label": "Assigned User Email",
+            "type": "text"
+          },
+          {
+            "id": "36",
+            "label": "Add Insurance by Agency Company",
+            "type": "text"
+          },
+          {
+            "id": "25",
+            "label": "Agency",
+            "type": "text"
+          },
+          {
+            "id": "10",
+            "label": "Assign this User",
+            "type": "text"
+          },
+          {
+            "id": "33",
+            "label": "Assigned User Email - Email",
+            "type": "text"
+          },
+          {
+            "id": "34",
+            "label": "Assigned User Email - fullName",
+            "type": "text"
+          },
+          {
+            "id": "30",
+            "label": "Customer - Email",
+            "type": "text"
+          },
+          {
+            "id": "41",
+            "label": "Customer-Insurance-Sub Insurance",
+            "type": "text"
+          },
+          {
+            "id": "1",
+            "label": "Date Created",
+            "type": "datetime"
+          },
+          {
+            "id": "2",
+            "label": "Date Modified",
+            "type": "datetime"
+          },
+          {
+            "id": "35",
+            "label": "Insurance by Agency Company records",
+            "type": "text"
+          },
+          {
+            "id": "5",
+            "label": "Last Modified By",
+            "type": "user"
+          },
+          {
+            "id": "7",
+            "label": "Name",
+            "type": "text"
+          },
+          {
+            "id": "12",
+            "label": "PrimarySub",
+            "type": "text"
+          },
+          {
+            "id": "13",
+            "label": "projectPrimary",
+            "type": "text"
+          },
+          {
+            "id": "14",
+            "label": "projectPrimarySub",
+            "type": "text"
+          },
+          {
+            "id": "3",
+            "label": "Record ID#",
+            "type": "text"
+          },
+          {
+            "id": "4",
+            "label": "Record Owner",
+            "type": "user"
+          },
+          {
+            "id": "15",
+            "label": "Related Insurance by Agency Company",
+            "type": "text"
+          },
+          {
+            "id": "16",
+            "label": "Related Primary Primary Insurance Company",
+            "type": "text"
+          },
+          {
+            "id": "23",
+            "label": "Related Primary Primary Insurance Company - Agency",
+            "type": "text"
+          },
+          {
+            "id": "22",
+            "label": "Related Primary Primary Insurance Company - Name",
+            "type": "text"
+          },
+          {
+            "id": "17",
+            "label": "text PrimarySub",
+            "type": "text"
+          },
+          {
+            "id": "18",
+            "label": "text projectPrimary",
+            "type": "text"
+          },
+          {
+            "id": "19",
+            "label": "text projectPrimarySub",
+            "type": "text"
+          },
+          {
+            "id": "20",
+            "label": "textInsurance",
+            "type": "text"
+          },
+          {
+            "id": "21",
+            "label": "Field 21",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "id": "bvbne6rv9",
+        "name": "Substatuses",
+        "description": "Quickbase table",
+        "fields": [
+          {
+            "id": "7",
+            "label": "Status",
+            "type": "text"
+          },
+          {
+            "id": "10",
+            "label": "Substatus",
+            "type": "text"
+          },
+          {
+            "id": "11",
+            "label": "Claim records",
+            "type": "text"
+          },
+          {
+            "id": "12",
+            "label": "Add Claim",
+            "type": "text"
+          },
+          {
+            "id": "14",
+            "label": "trimSub",
+            "type": "text"
+          },
+          {
+            "id": "15",
+            "label": "trimStatus",
+            "type": "text"
+          },
+          {
+            "id": "3",
+            "label": "Record ID#",
+            "type": "text"
+          },
+          {
+            "id": "1",
+            "label": "Date Created",
+            "type": "datetime"
+          },
+          {
+            "id": "2",
+            "label": "Date Modified",
+            "type": "datetime"
+          },
+          {
+            "id": "5",
+            "label": "Last Modified By",
+            "type": "user"
+          },
+          {
+            "id": "4",
+            "label": "Record Owner",
+            "type": "user"
+          },
+          {
+            "id": "13",
+            "label": "Status2",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "id": "bvinaibak",
+        "name": "User Actions",
+        "description": "Quickbase table",
+        "fields": [
+          {
+            "id": "6",
+            "label": "User",
+            "type": "user"
+          },
+          {
+            "id": "7",
+            "label": "Date",
+            "type": "datetime"
+          },
+          {
+            "id": "8",
+            "label": "Action Description",
+            "type": "text"
+          },
+          {
+            "id": "9",
+            "label": "Related Team Questions/Response",
+            "type": "text"
+          },
+          {
+            "id": "1",
+            "label": "Date Created",
+            "type": "datetime"
+          },
+          {
+            "id": "2",
+            "label": "Date Modified",
+            "type": "datetime"
+          },
+          {
+            "id": "5",
+            "label": "Last Modified By",
+            "type": "user"
+          },
+          {
+            "id": "3",
+            "label": "Record ID#",
+            "type": "text"
+          },
+          {
+            "id": "4",
+            "label": "Record Owner",
+            "type": "user"
+          }
+        ]
+      },
+      {
+        "id": "bvysupuj7",
+        "name": "User Report Settings",
+        "description": "Quickbase table",
+        "fields": [
+          {
+            "id": "6",
+            "label": "User",
+            "type": "text"
+          },
+          {
+            "id": "7",
+            "label": "Object",
+            "type": "text"
+          },
+          {
+            "id": "8",
+            "label": "Json",
+            "type": "text"
+          },
+          {
+            "id": "9",
+            "label": "Updated By",
+            "type": "text"
+          },
+          {
+            "id": "10",
+            "label": "Platform Key",
+            "type": "text"
+          },
+          {
+            "id": "1",
+            "label": "Date Created",
+            "type": "datetime"
+          },
+          {
+            "id": "2",
+            "label": "Date Modified",
+            "type": "datetime"
+          },
+          {
+            "id": "3",
+            "label": "Record ID#",
+            "type": "text"
+          },
+          {
+            "id": "4",
+            "label": "Record Owner",
+            "type": "user"
+          },
+          {
+            "id": "5",
+            "label": "Last Modified By",
+            "type": "user"
+          }
+        ]
+      }
+    ],
+    "data": {
+      "bvbnfz6pb": [],
+      "bvbng4g7f": [],
+      "bvbnfuiqy": [],
+      "bvbbv3eb6": [],
+      "bvbbv8kay": [],
+      "bvmz4vyhn": [],
+      "bvbngqc6v": [],
+      "bvj9ti3bd": [],
+      "bvvjfetye": [],
+      "bvjwih4t5": [],
+      "bvyf99n3v": [],
+      "bvkp6n4tp": [],
+      "bvhvwkx47": [],
+      "bvr4dk5r9": [],
+      "bvsaujsau": [],
+      "bvbnf59qf": [],
+      "bvbbvspja": [],
+      "bvhv5nges": [],
+      "bvctb74m2": [],
+      "bvysvpq8m": [],
+      "bvysukdeq": [],
+      "bvbne5cyi": [],
+      "bvr4dkehe": [],
+      "bvbne6rv9": [],
+      "bvinaibak": [],
+      "bvysupuj7": []
+    },
+    "objects": {
+      "dashboard-1cl9mk6x": {
+        "id": "dashboard-1cl9mk6x",
+        "type": "dashboard",
+        "name": "Home Care Dashboard",
+        "description": "",
+        "folder": "Custom",
+        "category": "Dashboard",
+        "tags": [],
+        "updatedAt": "2026-04-18T21:01:43.736Z",
+        "runtimeFilters": [],
+        "tabs": [
+          {
+            "id": "tab-dga53m70",
+            "name": "Overview",
+            "widgets": []
+          }
+        ]
+      },
+      "report-ps9uqpau": {
+        "id": "report-ps9uqpau",
+        "type": "report",
+        "name": "AR Report",
+        "description": "",
+        "folder": "Custom",
+        "category": "Reporting",
+        "tags": [],
+        "updatedAt": "2026-04-18T21:15:49.836Z",
+        "sourceTableId": "bvbbv3eb6",
+        "selectedFieldIds": [
+          "37",
+          "15",
+          "23",
+          "24",
+          "22",
+          "186"
+        ],
+        "filters": [
+          {
+            "id": "filter-81s0sy4m",
+            "fieldId": "79",
+            "operator": "equals",
+            "value": "1"
+          }
+        ],
+        "groups": [],
+        "sorts": [],
+        "summaryMetrics": [
+          {
+            "id": "metric-rkfb6ld3",
+            "fieldId": "37",
+            "op": "count",
+            "label": "Rows"
+          }
+        ],
+        "view": {
+          "mode": "table",
+          "chartType": "bar",
+          "chartFieldId": "37",
+          "timelineDateField": "",
+          "timelineEndField": "",
+          "calendarDateField": "",
+          "kanbanField": "",
+          "titleFieldId": "15"
+        }
+      }
+    },
+    "order": [
+      "report-ps9uqpau",
+      "dashboard-1cl9mk6x"
+    ]
+  },
+  "favorites": [
+    "dashboard-executive-pulse"
+  ],
+  "recent": [
+    "report-ps9uqpau",
+    "dashboard-executive-pulse"
+  ],
+  "branding": {
+    "platformName": "Cadence Reporting Portal",
+    "navigationLabel": "Reports and Dashboards",
+    "homeLabel": "Workspace"
+  },
+  "quickbase": {
+    "realmHostname": "cadencec.quickbase.com",
+    "userToken": "cazjr3_rnua_0_c5r36vs4exw6v2fi93pdn9gfng",
+    "appToken": "",
+    "appId": "bva8ar4ad",
+    "apiBaseUrl": "https://api.quickbase.com/v1",
+    "objectTableId": "bvysukdeq",
+    "objectKeyFieldId": "12",
+    "objectTypeFieldId": "6",
+    "objectNameFieldId": "7",
+    "objectConfigFieldId": "8",
+    "objectOwnerFieldId": "9",
+    "objectUpdatedAtFieldId": "10",
+    "objectUpdatedByFieldId": "",
+    "settingsTableId": "bvysupuj7",
+    "settingsUserFieldId": "6",
+    "settingsObjectFieldId": "7",
+    "settingsObjectKeyFieldId": "10",
+    "settingsJsonFieldId": "8",
+    "settingsUpdatedByFieldId": "9",
+    "versionTableId": "bvysvpq8m",
+    "versionObjectFieldId": "6",
+    "versionObjectKeyFieldId": "10",
+    "versionSnapshotFieldId": "7",
+    "versionChangedAtFieldId": "8",
+    "versionChangedByFieldId": "9",
+    "versionUpdatedByFieldId": "9"
+  },
+  "templates": {
+    "layouts": [
+      {
+        "id": "template-layout-executive",
+        "type": "layout",
+        "name": "Executive starter",
+        "object": {
+          "id": "dashboard-executive-pulse",
+          "type": "dashboard",
+          "name": "Executive Pulse",
+          "description": "Operations, delivery, and finance in one hosted dashboard.",
+          "folder": "Executive",
+          "category": "Dashboard",
+          "tags": [
+            "executive",
+            "weekly"
+          ],
+          "updatedAt": "2026-01-19T12:00:00.000Z",
+          "tabs": [
+            {
+              "id": "tab-overview",
+              "name": "Overview",
+              "widgets": [
+                {
+                  "id": "widget-overview-projects",
+                  "title": "Project Portfolio",
+                  "mode": "linked",
+                  "reportId": "report-project-portfolio",
+                  "layout": {
+                    "w": 7,
+                    "h": 4
+                  }
+                },
+                {
+                  "id": "widget-overview-tasks",
+                  "title": "Task Pipeline",
+                  "mode": "linked",
+                  "reportId": "report-task-pipeline",
+                  "layout": {
+                    "w": 5,
+                    "h": 4
+                  }
+                }
+              ]
+            },
+            {
+              "id": "tab-finance",
+              "name": "Finance",
+              "widgets": [
+                {
+                  "id": "widget-finance-invoices",
+                  "title": "Invoice Health",
+                  "mode": "linked",
+                  "reportId": "report-invoice-health",
+                  "layout": {
+                    "w": 6,
+                    "h": 4
+                  }
+                },
+                {
+                  "id": "widget-finance-projects",
+                  "title": "Regional Portfolio Mix",
+                  "mode": "copied",
+                  "reportId": "report-project-portfolio",
+                  "layout": {
+                    "w": 6,
+                    "h": 4
+                  },
+                  "snapshot": {
+                    "id": "snapshot-project-portfolio",
+                    "type": "report",
+                    "name": "Project Portfolio",
+                    "description": "Portfolio health and delivery progress across active and planned work.",
+                    "folder": "Operations",
+                    "category": "Reporting",
+                    "tags": [
+                      "portfolio",
+                      "delivery"
+                    ],
+                    "updatedAt": "2026-01-16T12:00:00.000Z",
+                    "sourceTableId": "projects",
+                    "selectedFieldIds": [
+                      "recordId",
+                      "projectName",
+                      "status",
+                      "owner",
+                      "region",
+                      "budget",
+                      "startDate",
+                      "completion"
+                    ],
+                    "filters": [
+                      {
+                        "id": "filter-project-status",
+                        "fieldId": "status",
+                        "operator": "equals",
+                        "value": "Active"
+                      }
+                    ],
+                    "groups": [],
+                    "sorts": [],
+                    "summaryMetrics": [
+                      {
+                        "id": "metric-project-count",
+                        "fieldId": "recordId",
+                        "op": "count",
+                        "label": "Projects"
+                      },
+                      {
+                        "id": "metric-project-budget",
+                        "fieldId": "budget",
+                        "op": "sum",
+                        "label": "Budget"
+                      },
+                      {
+                        "id": "metric-project-completion",
+                        "fieldId": "completion",
+                        "op": "avg",
+                        "label": "Avg progress"
+                      }
+                    ],
+                    "view": {
+                      "mode": "chart",
+                      "chartType": "donut",
+                      "chartFieldId": "region",
+                      "timelineDateField": "",
+                      "timelineEndField": "",
+                      "calendarDateField": "",
+                      "kanbanField": "",
+                      "titleFieldId": "projectName"
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "runtimeFilters": [
+            {
+              "id": "runtime-status",
+              "label": "Status",
+              "fieldId": "status",
+              "mode": "global",
+              "targetReportIds": [],
+              "defaultValue": ""
+            },
+            {
+              "id": "runtime-start-date",
+              "label": "Date range",
+              "fieldId": "startDate",
+              "mode": "selected",
+              "targetReportIds": [
+                "report-project-portfolio"
+              ],
+              "defaultValue": "CURRENT_MONTH"
+            }
+          ]
+        }
+      }
+    ],
+    "yaml": [
+      {
+        "id": "template-yaml-task-pipeline",
+        "type": "yaml",
+        "name": "Grouped task report",
+        "object": {
+          "id": "report-task-pipeline",
+          "type": "report",
+          "name": "Task Pipeline",
+          "description": "Execution pipeline by status and assignee.",
+          "folder": "Operations",
+          "category": "Reporting",
+          "tags": [
+            "tasks",
+            "operations"
+          ],
+          "updatedAt": "2026-01-17T12:00:00.000Z",
+          "sourceTableId": "tasks",
+          "selectedFieldIds": [
+            "recordId",
+            "taskName",
+            "projectName",
+            "status",
+            "assignee",
+            "priority",
+            "dueDate",
+            "hours"
+          ],
+          "filters": [],
+          "groups": [
+            {
+              "id": "group-task-status",
+              "fieldId": "status"
+            }
+          ],
+          "sorts": [],
+          "summaryMetrics": [
+            {
+              "id": "metric-task-count",
+              "fieldId": "recordId",
+              "op": "count",
+              "label": "Tasks"
+            },
+            {
+              "id": "metric-task-hours",
+              "fieldId": "hours",
+              "op": "sum",
+              "label": "Hours"
+            }
+          ],
+          "view": {
+            "mode": "kanban",
+            "chartType": "bar",
+            "chartFieldId": "",
+            "timelineDateField": "",
+            "timelineEndField": "",
+            "calendarDateField": "",
+            "kanbanField": "status",
+            "titleFieldId": "taskName"
+          }
+        }
+      }
+    ],
+    "upload": [
+      {
+        "id": "template-upload-invoice-mapping",
+        "type": "upload",
+        "name": "Invoice import mapping",
+        "tableId": "invoices",
+        "columnMap": {
+          "Customer": "customer",
+          "Region": "region",
+          "Amount": "amount",
+          "Status": "status"
+        },
+        "object": null
+      }
+    ]
+  },
+  "versions": {
+    "dashboard-executive-pulse": [
+      {
+        "id": "version-ee6unje2",
+        "label": "Smoke snapshot",
+        "savedAt": "2026-04-18T19:00:32.010Z",
+        "object": {
+          "id": "dashboard-executive-pulse",
+          "type": "dashboard",
+          "name": "Executive Pulse",
+          "description": "Operations, delivery, and finance in one hosted dashboard.",
+          "folder": "Executive",
+          "category": "Dashboard",
+          "tags": [
+            "executive",
+            "weekly"
+          ],
+          "updatedAt": "2026-01-19T12:00:00.000Z",
+          "tabs": [
+            {
+              "id": "tab-overview",
+              "name": "Overview",
+              "widgets": [
+                {
+                  "id": "widget-overview-projects",
+                  "title": "Project Portfolio",
+                  "mode": "linked",
+                  "reportId": "report-project-portfolio",
+                  "layout": {
+                    "w": 7,
+                    "h": 4
+                  }
+                },
+                {
+                  "id": "widget-overview-tasks",
+                  "title": "Task Pipeline",
+                  "mode": "linked",
+                  "reportId": "report-task-pipeline",
+                  "layout": {
+                    "w": 5,
+                    "h": 4
+                  }
+                }
+              ]
+            },
+            {
+              "id": "tab-finance",
+              "name": "Finance",
+              "widgets": [
+                {
+                  "id": "widget-finance-invoices",
+                  "title": "Invoice Health",
+                  "mode": "linked",
+                  "reportId": "report-invoice-health",
+                  "layout": {
+                    "w": 6,
+                    "h": 4
+                  }
+                },
+                {
+                  "id": "widget-finance-projects",
+                  "title": "Regional Portfolio Mix",
+                  "mode": "copied",
+                  "reportId": "report-project-portfolio",
+                  "layout": {
+                    "w": 6,
+                    "h": 4
+                  },
+                  "snapshot": {
+                    "id": "snapshot-project-portfolio",
+                    "type": "report",
+                    "name": "Project Portfolio",
+                    "description": "Portfolio health and delivery progress across active and planned work.",
+                    "folder": "Operations",
+                    "category": "Reporting",
+                    "tags": [
+                      "portfolio",
+                      "delivery"
+                    ],
+                    "updatedAt": "2026-01-16T12:00:00.000Z",
+                    "sourceTableId": "projects",
+                    "selectedFieldIds": [
+                      "recordId",
+                      "projectName",
+                      "status",
+                      "owner",
+                      "region",
+                      "budget",
+                      "startDate",
+                      "completion"
+                    ],
+                    "filters": [
+                      {
+                        "id": "filter-project-status",
+                        "fieldId": "status",
+                        "operator": "equals",
+                        "value": "Active"
+                      }
+                    ],
+                    "groups": [],
+                    "sorts": [],
+                    "summaryMetrics": [
+                      {
+                        "id": "metric-project-count",
+                        "fieldId": "recordId",
+                        "op": "count",
+                        "label": "Projects"
+                      },
+                      {
+                        "id": "metric-project-budget",
+                        "fieldId": "budget",
+                        "op": "sum",
+                        "label": "Budget"
+                      },
+                      {
+                        "id": "metric-project-completion",
+                        "fieldId": "completion",
+                        "op": "avg",
+                        "label": "Avg progress"
+                      }
+                    ],
+                    "view": {
+                      "mode": "chart",
+                      "chartType": "donut",
+                      "chartFieldId": "region",
+                      "timelineDateField": "",
+                      "timelineEndField": "",
+                      "calendarDateField": "",
+                      "kanbanField": "",
+                      "titleFieldId": "projectName"
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "runtimeFilters": [
+            {
+              "id": "runtime-status",
+              "label": "Status",
+              "fieldId": "status",
+              "mode": "global",
+              "targetReportIds": [],
+              "defaultValue": ""
+            },
+            {
+              "id": "runtime-start-date",
+              "label": "Date range",
+              "fieldId": "startDate",
+              "mode": "selected",
+              "targetReportIds": [
+                "report-project-portfolio"
+              ],
+              "defaultValue": "CURRENT_MONTH"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "exportJobs": [],
+  "sync": {
+    "providerMode": "api",
+    "lastSavedAt": "2026-04-18T19:54:35.221Z",
+    "lastLoadedAt": "2026-04-18T21:28:26.881Z"
+  }
+}

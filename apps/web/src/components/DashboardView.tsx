@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { buildDashboardFilters, formatReportCellValue, getReportFieldLabel, type DashboardDefinition, type DashboardRunResult, type ExportJobStatus, type ReportRunResult, type TableDefinition } from "@studio/shared";
+import { buildDashboardFilters, formatReportCellValue, getDashboardWidgetLayoutStyle, getDashboardWidgetPlacements, getReportFieldLabel, resolveActiveDashboardTabId, type DashboardDefinition, type DashboardRunResult, type ExportJobStatus, type ReportRunResult, type TableDefinition } from "@studio/shared";
 import { downloadExportJob, fetchExportJobStatus, renderDashboard, runReportPage, startDashboardExportJob } from "../lib/api";
 import { LinkToolbar } from "./LinkToolbar";
 import { ChartPreview } from "./ChartPreview";
@@ -13,6 +13,28 @@ interface DashboardViewProps {
   getQuickbaseLinkContext?: (tableId: string) => QuickbaseTableLinkContext | null;
   refreshNonce?: number;
   onRefresh?: () => void;
+  initialRuntimeFilters?: Record<string, string>;
+  initialActiveTabId?: string;
+  initialFocusedWidgetId?: string;
+  isFavorite?: boolean;
+  onToggleFavorite?: () => void;
+  savedViews?: Array<{
+    id: string;
+    name: string;
+    runtimeFilters: Record<string, string>;
+    activeTabId: string;
+    focusedWidgetId: string;
+    updatedAt: string;
+  }>;
+  onSaveView?: (view: {
+    id: string;
+    name: string;
+    runtimeFilters: Record<string, string>;
+    activeTabId: string;
+    focusedWidgetId: string;
+  }) => void;
+  onDeleteView?: (viewId: string) => void;
+  onStateChange?: (state: { runtimeFilters: Record<string, string>; activeTabId: string; focusedWidgetId: string }) => void;
   forceLive?: boolean;
   openLinksInNewTab?: boolean;
 }
@@ -67,19 +89,59 @@ function getChartAxisLabels(
   };
 }
 
-function getWidgetLayoutStyle(layout: { w: number; h: number }) {
-  const width = Math.max(1, Math.min(12, Math.round(layout.w || 6)));
-  const height = Math.max(2, Math.min(10, Math.round(layout.h || 4)));
-  return {
-    gridColumn: `span ${width}`,
-    minHeight: `${height * 96}px`
-  };
-}
-
 function formatFreshnessTimestamp(value?: string) {
   if (!value) return "";
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
+function runtimeFilterAppliesToReport(
+  filter: DashboardDefinition["runtimeFilters"][number],
+  reportId: string
+) {
+  return filter.mode === "global" || !filter.targetReportIds.length || filter.targetReportIds.includes(reportId);
+}
+
+function getDashboardCrossFilterOptions(
+  dashboard: DashboardDefinition,
+  report: DashboardRunResult["tabs"][number]["widgets"][number]["report"],
+  chartData: DashboardRunResult["tabs"][number]["widgets"][number]["result"]["chartData"]
+) {
+  const labelFieldId = report.view.chartFieldId || report.groups[0]?.fieldId || "";
+  const seriesFieldId = report.view.chartSeriesFieldId || "";
+  const options: Array<{ filterId: string; filterLabel: string; value: string }> = [];
+  const seen = new Set<string>();
+
+  function pushOptions(fieldId: string, values: string[]) {
+    if (!fieldId) return;
+    const matchingFilters = dashboard.runtimeFilters.filter((filter) => filter.fieldId === fieldId && runtimeFilterAppliesToReport(filter, report.id));
+    matchingFilters.forEach((filter) => {
+      values
+        .filter(Boolean)
+        .slice(0, 6)
+        .forEach((value) => {
+          const key = `${filter.id}:${value}`;
+          if (seen.has(key)) return;
+          seen.add(key);
+          options.push({
+            filterId: filter.id,
+            filterLabel: filter.label,
+            value
+          });
+        });
+    });
+  }
+
+  pushOptions(
+    labelFieldId,
+    Array.from(new Set(chartData.map((datum) => String(datum.rawLabel ?? datum.label ?? "").trim())))
+  );
+  pushOptions(
+    seriesFieldId,
+    Array.from(new Set(chartData.map((datum) => String(datum.rawSeries ?? datum.series ?? "").trim())))
+  );
+
+  return options;
 }
 
 export function DashboardView({
@@ -88,6 +150,15 @@ export function DashboardView({
   getQuickbaseLinkContext,
   refreshNonce = 0,
   onRefresh,
+  initialRuntimeFilters,
+  initialActiveTabId = "",
+  initialFocusedWidgetId = "",
+  isFavorite = false,
+  onToggleFavorite,
+  savedViews = [],
+  onSaveView,
+  onDeleteView,
+  onStateChange,
   forceLive = false,
   openLinksInNewTab = false
 }: DashboardViewProps) {
@@ -100,51 +171,154 @@ export function DashboardView({
       ),
     [dashboard]
   );
-  const [runtimeFilters, setRuntimeFilters] = useState<Record<string, string>>(defaults);
-  const [result, setResult] = useState<DashboardRunResult | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [activeTabId, setActiveTabId] = useState(dashboard.tabs[0]?.id || "");
+  const mergedDefaults = useMemo(
+    () => ({ ...defaults, ...(initialRuntimeFilters || {}) }),
+    [defaults, initialRuntimeFilters]
+  );
+  const [runtimeFilters, setRuntimeFilters] = useState<Record<string, string>>(mergedDefaults);
+  const [tabResults, setTabResults] = useState<Record<string, DashboardRunResult["tabs"][number]>>({});
+  const [tabLoading, setTabLoading] = useState<Record<string, boolean>>({});
+  const [tabErrors, setTabErrors] = useState<Record<string, string>>({});
+  const [activeTabId, setActiveTabId] = useState(initialActiveTabId || dashboard.tabs[0]?.id || "");
   const [exportJob, setExportJob] = useState<ExportJobStatus | null>(null);
   const [downloadedJobId, setDownloadedJobId] = useState("");
   const [exportPopup, setExportPopup] = useState<Window | null>(null);
   const [widgetPages, setWidgetPages] = useState<Record<string, number>>({});
   const [widgetPageResults, setWidgetPageResults] = useState<Record<string, ReportRunResult>>({});
   const [widgetPageLoading, setWidgetPageLoading] = useState<Record<string, boolean>>({});
+  const [focusedWidgetId, setFocusedWidgetId] = useState(initialFocusedWidgetId);
+  const [tabReloadNonce, setTabReloadNonce] = useState(0);
+  const skipStateBroadcastRef = useRef(true);
+  const tabResultsRef = useRef(tabResults);
+  const tabLoadingRef = useRef(tabLoading);
+  const resolvedActiveTabId = resolveActiveDashboardTabId(dashboard, activeTabId);
+  const activeTabResult = tabResults[resolvedActiveTabId] || null;
+  const activeTabLayout = useMemo(() => {
+    const tab = dashboard.tabs.find((item) => item.id === resolvedActiveTabId);
+    return new Map((tab ? getDashboardWidgetPlacements(tab) : []).map((placement) => [placement.widgetId, placement]));
+  }, [dashboard.tabs, resolvedActiveTabId]);
+  const loading = Boolean(tabLoading[resolvedActiveTabId]);
+
+  useEffect(() => {
+    skipStateBroadcastRef.current = true;
+  }, [dashboard.id]);
+
+  useEffect(() => {
+    tabResultsRef.current = tabResults;
+  }, [tabResults]);
+
+  useEffect(() => {
+    tabLoadingRef.current = tabLoading;
+  }, [tabLoading]);
 
   function freshnessLabel() {
-    if (result?.freshness?.source === "quickbase-live") return "Live Quickbase data";
-    if (result?.freshness?.source === "scheduled-cache") return "Scheduled refresh cache";
+    const freshness = activeTabResult?.widgets.find((widget) => widget.result.freshness)?.result.freshness;
+    if (freshness?.source === "quickbase-live") return "Live Quickbase data";
+    if (freshness?.source === "scheduled-cache") return "Scheduled refresh cache";
     return "Local fallback data";
   }
 
   useEffect(() => {
-    setRuntimeFilters(defaults);
-  }, [defaults]);
+    setRuntimeFilters(mergedDefaults);
+  }, [mergedDefaults]);
 
   useEffect(() => {
+    setFocusedWidgetId(initialFocusedWidgetId || "");
+  }, [dashboard.id, initialFocusedWidgetId]);
+
+  useEffect(() => {
+    tabResultsRef.current = {};
+    tabLoadingRef.current = {};
     setWidgetPages({});
     setWidgetPageResults({});
     setWidgetPageLoading({});
-  }, [dashboard.id, JSON.stringify(runtimeFilters)]);
+    setTabResults({});
+    setTabLoading({});
+    setTabErrors({});
+  }, [dashboard.id, forceLive, refreshNonce, JSON.stringify(runtimeFilters)]);
 
   useEffect(() => {
-    setActiveTabId((current) => dashboard.tabs.some((tab) => tab.id === current) ? current : (dashboard.tabs[0]?.id || ""));
-  }, [dashboard.id, dashboard.tabs]);
+    setActiveTabId((current) => {
+      if (initialActiveTabId && dashboard.tabs.some((tab) => tab.id === initialActiveTabId)) {
+        return initialActiveTabId;
+      }
+      return resolveActiveDashboardTabId(dashboard, current);
+    });
+  }, [dashboard.id, dashboard.tabs, initialActiveTabId]);
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
-    renderDashboard(dashboard.id, runtimeFilters, activeTabId || dashboard.tabs[0]?.id || "", { forceLive })
-      .then((next) => {
-        if (active) setResult(next);
-      })
-      .finally(() => {
-        if (active) setLoading(false);
+    async function loadTab(tabId: string) {
+      if (!tabId || tabResultsRef.current[tabId] || tabLoadingRef.current[tabId]) return;
+      setTabLoading((current) => ({ ...current, [tabId]: true }));
+      setTabErrors((current) => {
+        if (!current[tabId]) return current;
+        const next = { ...current };
+        delete next[tabId];
+        return next;
       });
+      try {
+        const next = await renderDashboard(dashboard.id, runtimeFilters, tabId, { forceLive });
+        if (!active) return;
+        const renderedTab = next.tabs.find((tab) => tab.id === tabId) || next.tabs[0];
+        if (renderedTab) {
+          setTabResults((current) => ({ ...current, [renderedTab.id]: renderedTab }));
+        }
+      } catch (error) {
+        if (!active) return;
+        setTabErrors((current) => ({
+          ...current,
+          [tabId]: error instanceof Error ? error.message : "Dashboard tab failed to load."
+        }));
+      } finally {
+        if (active) {
+          setTabLoading((current) => ({ ...current, [tabId]: false }));
+        }
+      }
+    }
+    void loadTab(resolvedActiveTabId);
     return () => {
       active = false;
     };
-  }, [activeTabId, dashboard.id, dashboard.tabs, forceLive, refreshNonce, runtimeFilters]);
+  }, [dashboard.id, forceLive, resolvedActiveTabId, runtimeFilters, tabReloadNonce]);
+
+  useEffect(() => {
+    if (!activeTabResult) return;
+    let cancelled = false;
+    window.setTimeout(() => {
+      if (cancelled) return;
+      const remainingTabIds = dashboard.tabs
+        .map((tab) => tab.id)
+        .filter((tabId) => tabId !== resolvedActiveTabId && !tabResultsRef.current[tabId] && !tabLoadingRef.current[tabId]);
+      if (!remainingTabIds.length) return;
+      remainingTabIds.forEach((tabId) => {
+        setTabLoading((current) => ({ ...current, [tabId]: true }));
+        renderDashboard(dashboard.id, runtimeFilters, tabId, { forceLive })
+          .then((next) => {
+            if (cancelled) return;
+            const renderedTab = next.tabs.find((tab) => tab.id === tabId) || next.tabs[0];
+            if (renderedTab) {
+              setTabResults((current) => ({ ...current, [renderedTab.id]: renderedTab }));
+            }
+          })
+          .catch((error) => {
+            if (cancelled) return;
+            setTabErrors((current) => ({
+              ...current,
+              [tabId]: error instanceof Error ? error.message : "Dashboard tab failed to load."
+            }));
+          })
+          .finally(() => {
+            if (!cancelled) {
+              setTabLoading((current) => ({ ...current, [tabId]: false }));
+            }
+          });
+      });
+    }, 150);
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTabResult, dashboard.id, dashboard.tabs, forceLive, resolvedActiveTabId, runtimeFilters, tabReloadNonce]);
 
   useEffect(() => {
     if (!exportJob || exportJob.status === "complete" || exportJob.status === "failed") return;
@@ -163,6 +337,48 @@ export function DashboardView({
     setExportPopup(null);
   }, [downloadedJobId, exportJob, exportPopup, hosted.embed]);
 
+  useEffect(() => {
+    if (!onStateChange) return;
+    if (skipStateBroadcastRef.current) {
+      skipStateBroadcastRef.current = false;
+      return;
+    }
+    const handle = window.setTimeout(() => {
+      onStateChange({
+        runtimeFilters,
+        activeTabId,
+        focusedWidgetId
+      });
+    }, 250);
+    return () => window.clearTimeout(handle);
+  }, [activeTabId, focusedWidgetId, onStateChange, runtimeFilters]);
+
+  function resetView() {
+    setRuntimeFilters(defaults);
+    setActiveTabId(dashboard.tabs[0]?.id || "");
+    setFocusedWidgetId("");
+  }
+
+  function saveCurrentView() {
+    if (!onSaveView) return;
+    const entered = window.prompt("Save dashboard view as", `${dashboard.name} view`);
+    const name = String(entered || "").trim();
+    if (!name) return;
+    onSaveView({
+      id: `dashboard-view-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+      name,
+      runtimeFilters,
+      activeTabId: resolvedActiveTabId,
+      focusedWidgetId
+    });
+  }
+
+  function applySavedView(view: NonNullable<DashboardViewProps["savedViews"]>[number]) {
+    setRuntimeFilters({ ...defaults, ...(view.runtimeFilters || {}) });
+    setActiveTabId(resolveActiveDashboardTabId(dashboard, view.activeTabId));
+    setFocusedWidgetId(view.focusedWidgetId || "");
+  }
+
   async function beginExport() {
     if (hosted.embed) {
       const popup = window.open("", "_blank");
@@ -176,8 +392,12 @@ export function DashboardView({
     setDownloadedJobId("");
   }
 
-  const tabs = result?.tabs || dashboard.tabs.map((tab) => ({ id: tab.id, name: tab.name, widgets: [] }));
-  const activeTab = tabs.find((tab) => tab.id === activeTabId) || tabs[0];
+  const tabs = dashboard.tabs.map((tab) => tabResults[tab.id] || ({ id: tab.id, name: tab.name, widgets: [] }));
+  const activeTab = tabs.find((tab) => tab.id === resolvedActiveTabId) || tabs[0];
+  const focusedWidget = activeTab?.widgets.find((widget) => widget.widgetId === focusedWidgetId) || null;
+  const focusedWidgetCrossFilterOptions = focusedWidget
+    ? getDashboardCrossFilterOptions(dashboard, focusedWidget.report, focusedWidget.result.chartData)
+    : [];
 
   async function changeWidgetPage(widget: DashboardRunResult["tabs"][number]["widgets"][number], page: number) {
     if (page < 1) return;
@@ -208,10 +428,16 @@ export function DashboardView({
               <>
                 <button className="ghost-button" onClick={() => window.history.back()}>Back</button>
                 <Link className="ghost-button" to="/">Home</Link>
+                <Link className="ghost-button" to="/help">Open manual</Link>
                 <Link className="ghost-button" to={`/studio/${dashboard.id}`} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>Open in building area</Link>
               </>
             )}
-            <button className="ghost-button" onClick={() => { void beginExport(); }} disabled={!result || exportJob?.status === "queued" || exportJob?.status === "running"}>
+            {onToggleFavorite ? (
+              <button className="ghost-button" onClick={onToggleFavorite}>
+                {isFavorite ? "Unfavorite" : "Favorite"}
+              </button>
+            ) : null}
+            <button className="ghost-button" onClick={() => { void beginExport(); }} disabled={!activeTabResult || exportJob?.status === "queued" || exportJob?.status === "running"}>
               {exportJob?.status === "queued" || exportJob?.status === "running"
                 ? `Exporting ${exportJob.progress}%`
                 : "Download xlsx"}
@@ -221,15 +447,34 @@ export function DashboardView({
                 {loading ? "Refreshing…" : "Refresh now"}
               </button>
             ) : null}
+            <button className="ghost-button" onClick={resetView}>Reset view</button>
+            {onSaveView ? <button className="ghost-button" onClick={saveCurrentView}>Save view</button> : null}
           </div>
           {hosted.embed ? null : <LinkToolbar type="dashboard" id={dashboard.id} />}
         </div>
       </div>
 
-      {result?.freshness ? (
-        <div className={`sync-status ${result.freshness.source === "quickbase-live" || result.freshness.source === "scheduled-cache" ? "sync-status-ok" : "sync-status-warn"}`}>
+      {savedViews.length ? (
+        <div className="card">
+          <div className="card-head">
+            <strong>Saved views</strong>
+            <span className="micro">Personal bookmarks for filters, tabs, and focused cards</span>
+          </div>
+          <div className="saved-view-toolbar">
+            {savedViews.map((view) => (
+              <div className="saved-view-chip" key={view.id}>
+                <button className="ghost-button" onClick={() => applySavedView(view)}>{view.name}</button>
+                {onDeleteView ? <button className="ghost-button" onClick={() => onDeleteView(view.id)}>Remove</button> : null}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {activeTabResult?.widgets.some((widget) => widget.result.freshness) ? (
+        <div className={`sync-status ${activeTabResult.widgets.some((widget) => widget.result.freshness?.source === "quickbase-live" || widget.result.freshness?.source === "scheduled-cache") ? "sync-status-ok" : "sync-status-warn"}`}>
           <strong>{freshnessLabel()}</strong>
-          <span>Fetched {formatFreshnessTimestamp(result.freshness.fetchedAt)}</span>
+          <span>Fetched {formatFreshnessTimestamp(activeTabResult.widgets.find((widget) => widget.result.freshness)?.result.freshness?.fetchedAt)}</span>
         </div>
       ) : null}
 
@@ -246,6 +491,18 @@ export function DashboardView({
           <div className="progress-meter" aria-hidden="true">
             <div className="progress-meter-fill" style={{ width: `${exportJob.progress}%` }} />
           </div>
+        </div>
+      ) : null}
+
+      {activeTabResult?.widgets.some((widget) => widget.status === "failed" || widget.result.warnings.length) ? (
+        <div className="sync-status sync-status-warn">
+          <strong>Active tab warnings</strong>
+          <ul className="flat-list import-review-list">
+            {activeTabResult.widgets.flatMap((widget) => [
+              ...(widget.status === "failed" ? [`${widget.widget.title || widget.report.name}: ${widget.error || widget.message}`] : []),
+              ...widget.result.warnings.map((warning) => `${widget.widget.title || widget.report.name}: ${warning}`)
+            ]).map((warning) => <li key={warning}>{warning}</li>)}
+          </ul>
         </div>
       ) : null}
 
@@ -279,10 +536,11 @@ export function DashboardView({
           {tabs.map((tab) => (
             <button
               key={tab.id}
-              className={`dashboard-tab-button ${tab.id === activeTab?.id ? "active" : ""}`}
+              className={`dashboard-tab-button ${tab.id === activeTab?.id ? "active" : ""} ${tabLoading[tab.id] ? "dashboard-tab-button-loading" : ""} ${tabErrors[tab.id] ? "dashboard-tab-button-error" : tabResults[tab.id] ? "dashboard-tab-button-ready" : ""}`}
               onClick={() => setActiveTabId(tab.id)}
             >
               {tab.name}
+              {tabLoading[tab.id] ? " · loading" : tabErrors[tab.id] ? " · error" : tabResults[tab.id] ? " · ready" : ""}
             </button>
           ))}
         </div>
@@ -294,6 +552,30 @@ export function DashboardView({
             <strong>{activeTab.name}</strong>
             <span className="micro">{activeTab.widgets.length || 0} cards</span>
           </div>
+          {tabErrors[activeTab.id] ? (
+            <div className="sync-status sync-status-warn">
+              <strong>Tab failed to load</strong>
+              <span>{tabErrors[activeTab.id]}</span>
+              <button
+                className="ghost-button"
+                onClick={() => {
+                  setTabResults((current) => {
+                    const next = { ...current };
+                    delete next[activeTab.id];
+                    return next;
+                  });
+                  setTabLoading((current) => {
+                    const next = { ...current };
+                    delete next[activeTab.id];
+                    return next;
+                  });
+                  setTabReloadNonce((current) => current + 1);
+                }}
+              >
+                Retry tab
+              </button>
+            </div>
+          ) : null}
           <div className="widget-grid dashboard-layout-grid">
             {activeTab.widgets.map((widget) => {
               const pagedResult = widgetPageResults[widget.widgetId] || widget.result;
@@ -310,13 +592,28 @@ export function DashboardView({
                 widget.report,
                 buildDashboardFilters(dashboard, widget.report.id, runtimeFilters)
               );
+              const crossFilterOptions = getDashboardCrossFilterOptions(dashboard, widget.report, widget.result.chartData);
+              const clearableFilterIds = Array.from(new Set(
+                crossFilterOptions
+                  .map((option) => option.filterId)
+                  .filter((filterId) => String(runtimeFilters[filterId] || "").trim())
+              ));
               return (
-                <article className="widget-card dashboard-layout-item" key={widget.widgetId} style={getWidgetLayoutStyle(widget.widget.layout)}>
+                <article className="widget-card dashboard-layout-item" key={widget.widgetId} style={getDashboardWidgetLayoutStyle(widget.widget, activeTabLayout.get(widget.widgetId) || null)}>
                 <div className="widget-head">
                   <strong>{widget.widget.title || widget.report.name}</strong>
-                  <Link to={`/report/${widget.report.id}`} className="widget-link" target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>Open report</Link>
+                  <div className="widget-preview-controls">
+                    <button className="link-like" onClick={() => setFocusedWidgetId(widget.widgetId)}>Focus card</button>
+                    {widget.report.sourceTableId ? (
+                      <Link to={`/report/${widget.report.id}`} className="widget-link" target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>Open report</Link>
+                    ) : null}
+                  </div>
                 </div>
-                {widget.widget.showSummary ? (
+                <div className={`widget-state-banner ${widget.status === "failed" ? "widget-state-banner-failed" : "widget-state-banner-ready"}`}>
+                  <strong>{widget.status === "failed" ? "Widget unavailable" : "Widget ready"}</strong>
+                  <span>{widget.error || widget.message}</span>
+                </div>
+                {widget.status === "complete" && widget.widget.showSummary ? (
                   <div className="widget-metrics">
                     {summaryData.map((item) => (
                       <div key={item.label} className="mini-stat">
@@ -326,7 +623,42 @@ export function DashboardView({
                     ))}
                   </div>
                 ) : null}
-                {widgetShowsChart(widget.widget, widget.report) ? (
+                {widget.status === "complete" && crossFilterOptions.length ? (
+                  <div className="widget-filter-toolbar">
+                    <span className="micro">Cross-filter</span>
+                    <div className="link-toolbar">
+                      {crossFilterOptions.map((option) => (
+                        <button
+                          key={`${widget.widgetId}-${option.filterId}-${option.value}`}
+                          className={`ghost-button ${runtimeFilters[option.filterId] === option.value ? "active-tab" : ""}`}
+                          onClick={() =>
+                            setRuntimeFilters((current) => ({
+                              ...current,
+                              [option.filterId]: option.value
+                            }))
+                          }
+                        >
+                          {option.filterLabel}: {option.value}
+                        </button>
+                      ))}
+                      {clearableFilterIds.map((filterId) => (
+                        <button
+                          key={`${widget.widgetId}-${filterId}-clear`}
+                          className="ghost-button"
+                          onClick={() =>
+                            setRuntimeFilters((current) => ({
+                              ...current,
+                              [filterId]: defaults[filterId] || ""
+                            }))
+                          }
+                        >
+                          Clear {dashboard.runtimeFilters.find((filter) => filter.id === filterId)?.label || filterId}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {widget.status === "complete" && widgetShowsChart(widget.widget, widget.report) ? (
                   <div className="mini-chart">
                     <ChartPreview
                       chartType={widget.report.view.chartType}
@@ -347,7 +679,7 @@ export function DashboardView({
                     />
                   </div>
                 ) : null}
-                {widgetRenderMode(widget.widget, widget.report) === "table" || widgetRenderMode(widget.widget, widget.report) === "timeline" || widgetRenderMode(widget.widget, widget.report) === "calendar" || widgetRenderMode(widget.widget, widget.report) === "kanban" || widget.widget.showDetails ? (
+                {widget.status === "complete" && (widgetRenderMode(widget.widget, widget.report) === "table" || widgetRenderMode(widget.widget, widget.report) === "timeline" || widgetRenderMode(widget.widget, widget.report) === "calendar" || widgetRenderMode(widget.widget, widget.report) === "kanban" || widget.widget.showDetails) ? (
                   <div className="compact-table-shell">
                     <div className="widget-table-toolbar">
                       <button className="ghost-button" disabled={currentPage <= 1 || pageLoading} onClick={() => { void changeWidgetPage(widget, currentPage - 1); }}>Previous</button>
@@ -447,7 +779,96 @@ export function DashboardView({
                 </article>
               );
             })}
-            {loading ? <div className="empty">Rendering dashboard…</div> : null}
+            {loading && !activeTab.widgets.length ? <div className="empty">Rendering dashboard…</div> : null}
+          </div>
+        </div>
+      ) : null}
+
+      {focusedWidget ? (
+        <div className="focus-overlay" role="dialog" aria-modal="true">
+          <div className="focus-overlay-card">
+            <div className="card-head">
+              <strong>{focusedWidget.widget.title || focusedWidget.report.name}</strong>
+              <div className="link-toolbar">
+                {focusedWidget.report.sourceTableId ? (
+                  <Link className="ghost-button" to={`/report/${focusedWidget.report.id}`} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>Open report</Link>
+                ) : null}
+                <button className="ghost-button" onClick={() => setFocusedWidgetId("")}>Close</button>
+              </div>
+            </div>
+            {focusedWidget.widget.showSummary ? (
+              <div className="widget-metrics">
+                {focusedWidget.result.summary.map((item) => (
+                  <div key={item.label} className="mini-stat">
+                    <strong>{item.value}</strong>
+                    <span>{item.label}</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {focusedWidgetCrossFilterOptions.length ? (
+              <div className="widget-filter-toolbar">
+                <span className="micro">Cross-filter</span>
+                <div className="link-toolbar">
+                  {focusedWidgetCrossFilterOptions.map((option) => (
+                    <button
+                      key={`${focusedWidget.widgetId}-${option.filterId}-${option.value}`}
+                      className={`ghost-button ${runtimeFilters[option.filterId] === option.value ? "active-tab" : ""}`}
+                      onClick={() =>
+                        setRuntimeFilters((current) => ({
+                          ...current,
+                          [option.filterId]: option.value
+                        }))
+                      }
+                    >
+                      {option.filterLabel}: {option.value}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {widgetShowsChart(focusedWidget.widget, focusedWidget.report) ? (
+              <div className="card">
+                <ChartPreview
+                  chartType={focusedWidget.report.view.chartType}
+                  data={focusedWidget.result.chartData}
+                  title={focusedWidget.report.view.chartTitle || focusedWidget.widget.title}
+                  decimalPlaces={focusedWidget.report.view.decimalPlaces}
+                  chartColors={focusedWidget.report.view.chartColors}
+                  chartOrientation={focusedWidget.report.view.chartOrientation}
+                  xAxisLabel={getChartAxisLabels(tables, focusedWidget.report).xAxisLabel}
+                  yAxisLabel={getChartAxisLabels(tables, focusedWidget.report).yAxisLabel}
+                  secondaryYAxisLabel={getChartAxisLabels(tables, focusedWidget.report).secondaryYAxisLabel}
+                  secondarySeriesType={focusedWidget.report.view.chartSecondarySeriesType}
+                  showLegend={focusedWidget.report.view.chartShowLegend}
+                  showValues={focusedWidget.report.view.chartShowValues}
+                  openLinksInNewTab={openLinksInNewTab}
+                />
+              </div>
+            ) : null}
+            {(widgetRenderMode(focusedWidget.widget, focusedWidget.report) === "table" || focusedWidget.widget.showDetails) ? (
+              <div className="table-shell">
+                <table>
+                  <thead>
+                    <tr>
+                      {focusedWidget.report.selectedFieldIds.slice(0, 8).map((fieldId) => (
+                        <th key={fieldId}>{getFieldLabel(tables, focusedWidget.report, fieldId)}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {focusedWidget.result.rows.slice(0, 20).map((row, index) => (
+                      <tr key={index}>
+                        {focusedWidget.report.selectedFieldIds.slice(0, 8).map((fieldId) => {
+                          const focusedWidgetTable = tables?.find((item) => item.id === focusedWidget.report.sourceTableId || item.quickbaseTableId === focusedWidget.report.sourceTableId);
+                          return <td key={fieldId}>{focusedWidgetTable ? formatReportCellValue(focusedWidget.report, focusedWidgetTable, fieldId, row[fieldId]) : String(row[fieldId] ?? "")}</td>;
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}

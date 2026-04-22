@@ -1,9 +1,10 @@
 import type { FastifyInstance } from "fastify";
-import type { StudioDocument } from "@studio/shared";
+import { normalizeStudioDocument, type StudioDocument } from "@studio/shared";
 import { studioStore } from "../services/studio-store.js";
-import { ensureQuickbaseStorageForProfiles, syncStudioDocumentToQuickbase } from "../services/quickbase-storage.js";
+import { ensureQuickbaseStorageForProfiles, syncStudioDocumentToQuickbase, syncStudioUserSettingsToQuickbase } from "../services/quickbase-storage.js";
 import { refreshAllCachedDataWithProgress, refreshObjectCachedDataWithProgress, updateRefreshScheduleMetadata } from "../services/refresh-cache.js";
 import { refreshJobStore } from "../services/refresh-jobs.js";
+import { importWorkbookIntoStudioDocument } from "../services/xlsx-import.js";
 
 function synthesizeRefreshJob(id: string) {
   const document = studioStore.getLiveDocument();
@@ -35,10 +36,11 @@ function synthesizeRefreshJob(id: string) {
 export async function registerStudioRoutes(app: FastifyInstance) {
   app.get("/api/studio/document", async () => {
     await studioStore.hydrateFromQuickbase();
-    const document = studioStore.getLiveDocument();
-    updateRefreshScheduleMetadata(document);
-    studioStore.flushCurrent({ markSavedAt: false });
-    return { document: studioStore.getDocument() };
+    const hydrated = studioStore.getLiveDocument();
+    updateRefreshScheduleMetadata(hydrated);
+    const provisioned = await ensureQuickbaseStorageForProfiles(hydrated);
+    const document = studioStore.saveDocument(provisioned, { markSavedAt: false });
+    return { document };
   });
 
   app.get("/api/studio/cache/summary", async () => {
@@ -62,7 +64,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
       return { message: "Document payload is required." };
     }
     const current = studioStore.getLiveDocument();
-    const mergedDocument: StudioDocument = {
+    const mergedDocument: StudioDocument = normalizeStudioDocument({
       ...body.document,
       bundle: {
         ...body.document.bundle,
@@ -77,10 +79,11 @@ export async function registerStudioRoutes(app: FastifyInstance) {
         const existing = current.quickbaseProfiles.find((item) => item.id === profile.id);
         return {
           ...profile,
+          bootstrap: existing?.bootstrap || profile.bootstrap,
           refreshStatus: existing?.refreshStatus || profile.refreshStatus
         };
       })
-    };
+    });
     updateRefreshScheduleMetadata(mergedDocument);
     const provisioned = await ensureQuickbaseStorageForProfiles(mergedDocument);
     const document = studioStore.saveDocument(provisioned);
@@ -94,6 +97,89 @@ export async function registerStudioRoutes(app: FastifyInstance) {
       savedStorageConfig: 0
     }));
     return { document, sync };
+  });
+
+  app.patch("/api/studio/user-settings", async (request, reply) => {
+    const body = (request.body as {
+      favorites?: string[];
+      recent?: string[];
+      personalOverrides?: StudioDocument["personalOverrides"];
+    } | undefined) || {};
+    const current = studioStore.getLiveDocument();
+    const document = studioStore.saveDocument(normalizeStudioDocument({
+      ...current,
+      favorites: Array.isArray(body.favorites) ? body.favorites.map(String) : current.favorites,
+      recent: Array.isArray(body.recent) ? body.recent.map(String) : current.recent,
+      personalOverrides: body.personalOverrides || current.personalOverrides
+    }), { markSavedAt: false });
+    const sync = await syncStudioUserSettingsToQuickbase(document).catch((error) => ({
+      enabled: true,
+      ok: false,
+      message: error instanceof Error ? error.message : "Quickbase user settings sync failed.",
+      savedObjects: 0,
+      savedSettings: 0,
+      savedVersions: 0,
+      savedStorageConfig: 0
+    }));
+    return { document, sync };
+  });
+
+  app.patch("/api/studio/session", async (request, reply) => {
+    const body = (request.body as { session?: Partial<StudioDocument["session"]> } | undefined) || {};
+    if (!body.session) {
+      reply.code(400);
+      return { message: "Session payload is required." };
+    }
+    const current = studioStore.getLiveDocument();
+    const document = studioStore.saveDocument(normalizeStudioDocument({
+      ...current,
+      session: {
+        ...current.session,
+        ...body.session
+      }
+    }), { markSavedAt: false });
+    return { document };
+  });
+
+  app.post("/api/studio/import/xlsx", async (request, reply) => {
+    const body = (request.body as { filename?: string; base64?: string } | undefined) || {};
+    if (!body.filename || !body.base64) {
+      reply.code(400);
+      return { message: "Workbook filename and base64 payload are required." };
+    }
+    try {
+      await studioStore.hydrateFromQuickbase();
+      const current = studioStore.getLiveDocument();
+      const imported = await importWorkbookIntoStudioDocument(
+        current,
+        body.filename,
+        Buffer.from(body.base64, "base64")
+      );
+      const document = studioStore.saveDocument(imported.document);
+      const sync = await syncStudioDocumentToQuickbase(studioStore.getLiveDocument()).catch((error) => ({
+        enabled: true,
+        ok: false,
+        message: error instanceof Error ? error.message : "Quickbase sync failed.",
+        savedObjects: 0,
+        savedSettings: 0,
+        savedVersions: 0,
+        savedStorageConfig: 0
+      }));
+      return {
+        document,
+        primaryObjectId: imported.primaryObjectId,
+        importedObjectIds: imported.importedObjectIds,
+        importedTableIds: imported.importedTableIds,
+        warnings: imported.warnings,
+        review: imported.review,
+        sync
+      };
+    } catch (error) {
+      reply.code(400);
+      return {
+        message: error instanceof Error ? error.message : "Workbook import failed."
+      };
+    }
   });
 
   app.get("/api/studio/objects/:id/versions", async (request) => {

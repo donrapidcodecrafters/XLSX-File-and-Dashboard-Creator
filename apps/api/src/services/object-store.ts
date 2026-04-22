@@ -47,11 +47,14 @@ export class ObjectStore {
       .map((object) => ({
         id: object.id,
         type: object.type,
+        schemaVersion: object.schemaVersion,
         name: object.name,
         description: object.description,
         folder: object.folder,
         category: object.category,
         tags: object.tags,
+        scope: object.scope,
+        ownerUserId: object.ownerUserId,
         updatedAt: object.updatedAt
       }));
   }
