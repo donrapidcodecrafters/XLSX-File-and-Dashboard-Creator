@@ -216,6 +216,22 @@ function paginateReportResult(
   };
 }
 
+function sortLocalRows(rows: DataRow[], sorts: ReportDefinition["sorts"]): DataRow[] {
+  if (!sorts.length) return rows;
+  return [...rows].sort((left, right) => {
+    for (const sort of sorts) {
+      const leftValue = left[sort.fieldId];
+      const rightValue = right[sort.fieldId];
+      const leftText = String(Array.isArray(leftValue) ? leftValue.join(", ") : leftValue ?? "");
+      const rightText = String(Array.isArray(rightValue) ? rightValue.join(", ") : rightValue ?? "");
+      if (leftText === rightText) continue;
+      const direction = sort.direction === "desc" ? -1 : 1;
+      return leftText.localeCompare(rightText, undefined, { numeric: true }) * direction;
+    }
+    return 0;
+  });
+}
+
 function getCombinedFilterTree(report: ReportDefinition, extraFilters: FilterDefinition[]) {
   return buildCombinedFilterTree(report, extraFilters);
 }
@@ -431,6 +447,34 @@ function projectRows(report: ReportDefinition, rows: DataRow[]) {
       ...next
     };
   });
+}
+
+function executeLocalReportPageOnly(
+  report: ReportDefinition,
+  table: TableDefinition,
+  rows: DataRow[],
+  extraFilters: FilterDefinition[],
+  options: ExecuteReportOptions
+): ReportRunResult {
+  const { page, pageSize, includeRows, startIndex, endIndexExclusive } = normalizePageOptions(options);
+  const filterTree = getCombinedFilterTree(report, extraFilters);
+  const filtered = filterTree ? rows.filter((row) => matchesFilterNode(row, filterTree)) : rows;
+  const sorted = sortLocalRows(filtered, report.sorts);
+  const warnings = report.selectedFieldIds.length || !report.view.showDetails ? [] : ["This report has no selected fields."];
+  return {
+    reportId: report.id,
+    tableId: table.id,
+    totalRows: sorted.length,
+    rows: includeRows ? projectRows(report, sorted.slice(startIndex, endIndexExclusive)) : [],
+    summary: [],
+    chartData: [],
+    warnings,
+    page,
+    pageSize,
+    totalPages: Math.max(1, Math.ceil(sorted.length / pageSize)),
+    hasNextPage: includeRows ? page * pageSize < sorted.length : false,
+    freshness: getCachedFreshness(table.id) || freshness("local-fallback")
+  };
 }
 
 function aggregateChartValues(values: number[], aggregation: ChartAggregation) {
@@ -768,6 +812,11 @@ export async function fetchReportPage(report: ReportDefinition, extraFilters: Fi
 
   if (shouldUseLiveQuickbase(table.id, options.forceLive)) {
     return fetchQuickbaseReportPageOnly(report, table, extraFilters, options);
+  }
+
+  if (!reportNeedsAggregates(report)) {
+    const rows = await getExecutionRows(table, { objectId: report.id });
+    return executeLocalReportPageOnly(report, table, rows, extraFilters, options);
   }
 
   const full = await cache.getOrCreate(cacheKey(report, table, extraFilters), async () => {
