@@ -55,6 +55,7 @@ interface ExportProgressCallback {
 
 const DATE_TOKENS = new Set(["CURRENT_MONTH", "LAST_30_DAYS", "CURRENT_YEAR"]);
 const EXECUTION_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const DASHBOARD_WIDGET_CONCURRENCY = 2;
 const reportCache = new ExecutionCache<ReportRunResult>(EXECUTION_CACHE_TTL_MS, 500);
 const reportPageCache = new ExecutionCache<ReportRunResult>(EXECUTION_CACHE_TTL_MS, 1_500);
 const dashboardCache = new ExecutionCache<DashboardRunResult>(EXECUTION_CACHE_TTL_MS, 200);
@@ -314,6 +315,20 @@ function isPushdownSafeTree(group: FilterGroupDefinition | null): group is Filte
 function extractFlatPushdownFilters(group: FilterGroupDefinition | null): FilterDefinition[] {
   if (!isPushdownSafeTree(group)) return [];
   return group.conditions.filter((condition): condition is FilterDefinition => !isFilterGroupNode(condition));
+}
+
+async function mapWithConcurrency<T, R>(items: T[], concurrency: number, worker: (item: T, index: number) => Promise<R>) {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const runners = Array.from({ length: Math.max(1, Math.min(concurrency, items.length || 1)) }, async () => {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await worker(items[currentIndex], currentIndex);
+    }
+  });
+  await Promise.all(runners);
+  return results;
 }
 
 function buildQuickbaseWhere(filters: FilterDefinition[]) {
@@ -1077,9 +1092,13 @@ async function executeDashboardUncached(
   options: ExecuteDashboardOptions = {}
 ) {
   const executionCache = new Map<string, Promise<ReportRunResult>>();
-  const widgetResults = await Promise.all(
-    tabsToRender.flatMap((tab) =>
-      tab.widgets.map(async (widget) => {
+  const widgetJobs = tabsToRender.flatMap((tab) =>
+    tab.widgets.map((widget) => ({ tab, widget }))
+  );
+  const widgetResults = await mapWithConcurrency(
+    widgetJobs,
+    DASHBOARD_WIDGET_CONCURRENCY,
+    async ({ widget }) => {
         const report = objectStore.resolveWidgetReport(widget);
         if (!report) {
           const message = "Widget report not found.";
@@ -1130,8 +1149,7 @@ async function executeDashboardUncached(
             error: message
           };
         }
-      })
-    )
+      }
   );
 
   const built = buildDashboardResult(dashboard, widgetResults);
