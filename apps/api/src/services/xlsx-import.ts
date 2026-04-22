@@ -1761,8 +1761,8 @@ export async function importWorkbookIntoStudioDocument(
     ...document.bundle.tables.map((table) => table.id)
   ]);
   const importedAt = new Date().toISOString();
-  const ownerUserId = String(document.session.currentUserId || "").trim();
-  const scope: StudioObjectScope = ownerUserId ? "personal" : "global";
+  const ownerUserId = "";
+  const scope: StudioObjectScope = "global";
   const workbookName = filename.replace(/\.xlsx$/i, "").trim() || "Imported Workbook";
   const importedTables: TableDefinition[] = [];
   const importedRows: Record<string, DataRow[]> = {};

@@ -87,8 +87,11 @@ export function FieldTransferPicker({
               onDoubleClick={() => addField(field.id)}
               onClick={() => addField(field.id)}
             >
-              <strong>{field.label}</strong>
-              <span>FID {field.id} · {field.type}</span>
+              <div className="field-transfer-meta">
+                <strong>{field.label}</strong>
+                <span>FID {field.id} · {field.type}</span>
+              </div>
+              <span className="field-transfer-add">Add</span>
             </button>
           )) : <div className="empty-hint">No matching available fields.</div>}
         </div>
@@ -109,19 +112,23 @@ export function FieldTransferPicker({
           />
         </label>
         <div className="field-transfer-list">
-          {visibleSelectedFields.length ? visibleSelectedFields.map((field) => (
+          {visibleSelectedFields.length ? visibleSelectedFields.map((field) => {
+            const currentIndex = selectedFieldIds.indexOf(field.id);
+            return (
             <div className="field-transfer-item selected" key={field.id}>
+              <div className="field-transfer-order">{currentIndex + 1}</div>
               <button type="button" className="field-transfer-main" onDoubleClick={() => removeField(field.id)}>
                 <strong>{field.label}</strong>
                 <span>FID {field.id} · {field.type}</span>
               </button>
               <div className="field-transfer-actions">
-                <button type="button" className="ghost-button" onClick={() => moveField(field.id, -1)} disabled={selectedFieldIds.indexOf(field.id) <= 0}>Up</button>
-                <button type="button" className="ghost-button" onClick={() => moveField(field.id, 1)} disabled={selectedFieldIds.indexOf(field.id) === selectedFieldIds.length - 1}>Down</button>
-                <button type="button" className="ghost-button" onClick={() => removeField(field.id)}>Remove</button>
+                <button type="button" className="ghost-button field-transfer-action-button" onClick={() => moveField(field.id, -1)} disabled={currentIndex <= 0}>Up</button>
+                <button type="button" className="ghost-button field-transfer-action-button" onClick={() => moveField(field.id, 1)} disabled={currentIndex === selectedFieldIds.length - 1}>Down</button>
+                <button type="button" className="ghost-button field-transfer-action-button remove" onClick={() => removeField(field.id)}>Remove</button>
               </div>
             </div>
-          )) : <div className="empty-hint">No matching selected fields.</div>}
+          );
+          }) : <div className="empty-hint">No matching selected fields.</div>}
         </div>
         <div className="micro">The order here is the report column order. Double click or remove a field to take it out.</div>
       </div>

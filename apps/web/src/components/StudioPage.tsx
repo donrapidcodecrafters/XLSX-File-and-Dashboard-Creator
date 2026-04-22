@@ -2809,7 +2809,7 @@ export function StudioPage({
     setXlsxImporting(true);
     importStudioWorkbook(file)
       .then((response) => {
-        const sourceTableId = activeTable?.id || bundle.tables[0]?.id || "";
+        const sourceTableId = "";
         const baseObjects = Object.fromEntries(
           response.importedObjectIds
             .map((objectId) => response.document.bundle.objects[objectId])
