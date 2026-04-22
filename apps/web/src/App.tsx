@@ -40,6 +40,23 @@ const SESSION_RECENT_KEY = "studio-session-recent";
 const SESSION_PERSIST_INTERVAL_MS = 5 * 60_000;
 const SHARED_BROWSER_SESSION_KEY = "studio-shared-browser-session-v1";
 const SESSION_ACTIVITY_TOUCH_INTERVAL_MS = 60_000;
+const CACHED_STUDIO_DOCUMENT_KEY = "hosted-reporting-studio-v2";
+
+function loadCachedStudioDocument() {
+  try {
+    const raw = window.localStorage.getItem(CACHED_STUDIO_DOCUMENT_KEY);
+    return raw ? normalizeStudioDocument(JSON.parse(raw) as StudioDocument) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveCachedStudioDocument(document: StudioDocument | null) {
+  if (!document) return;
+  try {
+    window.localStorage.setItem(CACHED_STUDIO_DOCUMENT_KEY, JSON.stringify(document));
+  } catch {}
+}
 
 function parseSharedBrowserSession(raw: string | null) {
   if (!raw) return null;
@@ -85,7 +102,7 @@ function getQuickbaseLinkContextForTable(table: TableDefinition | undefined, stu
 function useCatalog() {
   const [objects, setObjects] = useState<CatalogSummaryItem[]>([]);
   const [tables, setTables] = useState<TableDefinition[]>([]);
-  const [studioDocument, setStudioDocument] = useState<StudioDocument | null>(null);
+  const [studioDocument, setStudioDocument] = useState<StudioDocument | null>(() => loadCachedStudioDocument());
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalogError, setCatalogError] = useState("");
   const lastPersistedSessionKey = useRef("");
@@ -126,14 +143,19 @@ function useCatalog() {
       lastPersistedSessionKey.current = JSON.stringify(normalized.session || {});
       lastPersistedSessionAt.current = Date.now();
       setStudioDocument(normalized);
-    } else if (studioResponse.status === "rejected") {
-      setStudioDocument(null);
+      saveCachedStudioDocument(normalized);
+    } else if (!studioDocument) {
+      const cachedDocument = loadCachedStudioDocument();
+      if (cachedDocument) {
+        setStudioDocument(cachedDocument);
+        setCatalogError("Using the last saved platform snapshot because the hosted studio document did not load cleanly.");
+      }
     }
     if (catalogResponse.status === "rejected" || tablesResponse.status === "rejected") {
       setCatalogError("Some platform data took too long to load. The app is using what it could load and you can retry with Refresh all.");
     }
     setCatalogLoading(false);
-  }, []);
+  }, [studioDocument]);
 
   const updateUserSettings = useCallback(async (payload: {
     favorites?: string[];
@@ -196,6 +218,10 @@ function useCatalog() {
   useEffect(() => {
     void reloadCatalog();
   }, []);
+
+  useEffect(() => {
+    saveCachedStudioDocument(studioDocument);
+  }, [studioDocument]);
 
   return { objects, tables, studioDocument, recentIds, reloadCatalog, markObjectAsRecent, updateUserSettings, persistSession, setStudioDocument, catalogLoading, catalogError };
 }
@@ -908,7 +934,13 @@ export function App() {
               </div>
             </section>
           ) : null}
-          {requiresHostedStudioDocument && !studioDocument ? null : (
+          {requiresHostedStudioDocument && !studioDocument ? (
+            <section className="empty-page">
+              <h1>Saved platform content is not available yet</h1>
+              <p>The hosted studio document did not load, so the platform is holding on the last safe state instead of falling back to a blank or seeded workspace.</p>
+              <button type="button" onClick={() => void reloadCatalog()}>Retry loading platform</button>
+            </section>
+          ) : (
             <Routes>
               <Route path="/" element={<HomePage objects={visibleObjects} studioDocument={displayDocument} recentIds={recentIds} refreshAllSignal={homeRefreshSignal} openLinksInNewTab={openLinksInNewTab} onRefreshComplete={reloadCatalog} onToggleFavorite={toggleFavorite} />} />
               <Route path="/viewer" element={<ViewerPage objects={visibleObjects} studioDocument={displayDocument} recentIds={recentIds} refreshAllSignal={viewerRefreshSignal} openLinksInNewTab={openLinksInNewTab} onRefreshComplete={reloadCatalog} onToggleFavorite={toggleFavorite} />} />
