@@ -117,14 +117,16 @@ export function FieldTransferPicker({
             return (
             <div className="field-transfer-item selected" key={field.id}>
               <div className="field-transfer-order">{currentIndex + 1}</div>
-              <button type="button" className="field-transfer-main" onDoubleClick={() => removeField(field.id)}>
-                <strong>{field.label}</strong>
-                <span>FID {field.id} · {field.type}</span>
-              </button>
-              <div className="field-transfer-actions">
-                <button type="button" className="ghost-button field-transfer-action-button" onClick={() => moveField(field.id, -1)} disabled={currentIndex <= 0}>Up</button>
-                <button type="button" className="ghost-button field-transfer-action-button" onClick={() => moveField(field.id, 1)} disabled={currentIndex === selectedFieldIds.length - 1}>Down</button>
-                <button type="button" className="ghost-button field-transfer-action-button remove" onClick={() => removeField(field.id)}>Remove</button>
+              <div className="field-transfer-main">
+                <button type="button" className="field-transfer-main-button" onDoubleClick={() => removeField(field.id)}>
+                  <strong>{field.label}</strong>
+                  <span>FID {field.id} · {field.type}</span>
+                </button>
+                <div className="field-transfer-actions">
+                  <button type="button" className="ghost-button field-transfer-action-button" onClick={() => moveField(field.id, -1)} disabled={currentIndex <= 0}>Up</button>
+                  <button type="button" className="ghost-button field-transfer-action-button" onClick={() => moveField(field.id, 1)} disabled={currentIndex === selectedFieldIds.length - 1}>Down</button>
+                  <button type="button" className="ghost-button field-transfer-action-button remove" onClick={() => removeField(field.id)}>Remove</button>
+                </div>
               </div>
             </div>
           );
