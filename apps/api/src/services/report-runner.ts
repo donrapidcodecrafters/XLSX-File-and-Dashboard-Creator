@@ -155,10 +155,46 @@ function getTableCacheVersion(table: TableDefinition): string {
   return `rows:${objectStore.getRows(table.id).length}`;
 }
 
+function buildReportExecutionShape(report: ReportDefinition) {
+  return {
+    sourceTableId: report.sourceTableId,
+    selectedFieldIds: report.selectedFieldIds || [],
+    filters: (report.filters || []).map((filter) => [filter.fieldId, filter.operator, filter.value]),
+    filterTree: report.filterTree || null,
+    groups: (report.groups || []).map((group) => group.fieldId),
+    sorts: (report.sorts || []).map((sort) => [sort.fieldId, sort.direction]),
+    summaryMetrics: (report.summaryMetrics || []).map((metric) => [metric.fieldId, metric.op, metric.label]),
+    view: {
+      mode: report.view.mode,
+      showChartInTable: report.view.showChartInTable,
+      showSummary: report.view.showSummary,
+      showDetails: report.view.showDetails,
+      chartType: report.view.chartType,
+      chartOrientation: report.view.chartOrientation,
+      chartFieldId: report.view.chartFieldId,
+      chartSeriesFieldId: report.view.chartSeriesFieldId,
+      chartValueFieldId: report.view.chartValueFieldId,
+      chartAggregation: report.view.chartAggregation,
+      chartSecondaryValueFieldId: report.view.chartSecondaryValueFieldId,
+      chartSecondaryAggregation: report.view.chartSecondaryAggregation,
+      chartUseSecondaryAxis: report.view.chartUseSecondaryAxis,
+      chartSecondarySeriesType: report.view.chartSecondarySeriesType,
+      chartTopN: report.view.chartTopN,
+      chartSort: report.view.chartSort,
+      timelineDateField: report.view.timelineDateField,
+      timelineEndField: report.view.timelineEndField,
+      calendarDateField: report.view.calendarDateField,
+      kanbanField: report.view.kanbanField,
+      titleFieldId: report.view.titleFieldId
+    }
+  };
+}
+
 function cacheKey(report: ReportDefinition, table: TableDefinition, extraFilters: FilterDefinition[]): string {
   return JSON.stringify({
     reportId: report.id,
     updatedAt: report.updatedAt,
+    reportShape: buildReportExecutionShape(report),
     tableVersion: getTableCacheVersion(table),
     filters: extraFilters
       .filter((filter) => Boolean(filter.value))
@@ -962,6 +998,7 @@ function buildDashboardExecutionKey(report: ReportDefinition, widget: DashboardR
   return JSON.stringify({
     reportId: report.id,
     updatedAt: report.updatedAt,
+    reportShape: buildReportExecutionShape(report),
     heavy: widgetNeedsAggregates(report, widget),
     filters: extraFilters
       .filter((filter) => Boolean(filter.value))
