@@ -164,7 +164,7 @@ export function saveStudioUserSettings(payload: {
 }
 
 export function updateStudioSession(session: Partial<StudioDocument["session"]>) {
-  return request<{ document: StudioDocument }>("/api/studio/session", {
+  return request<{ session: StudioDocument["session"] }>("/api/studio/session", {
     method: "PATCH",
     body: JSON.stringify({ session })
   });

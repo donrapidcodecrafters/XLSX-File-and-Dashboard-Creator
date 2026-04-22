@@ -119,7 +119,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
         ...body.session
       }
     }), { markSavedAt: false });
-    return { document };
+    return { session: document.session };
   });
 
   app.post("/api/studio/import/xlsx", async (request, reply) => {

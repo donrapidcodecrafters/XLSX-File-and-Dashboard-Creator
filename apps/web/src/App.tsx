@@ -171,10 +171,9 @@ function useCatalog() {
           continue;
         }
         const response = await updateStudioSession(nextPayload);
-        const normalized = normalizeStudioDocument(response.document);
-        lastPersistedSessionKey.current = JSON.stringify(normalized.session || {});
+        lastPersistedSessionKey.current = JSON.stringify(response.session || {});
         lastPersistedSessionAt.current = Date.now();
-        setStudioDocument(normalized);
+        setStudioDocument((current) => applySessionToDocument(current, response.session));
       }
     })().finally(() => {
       sessionPersistPromise.current = null;
@@ -209,6 +208,14 @@ function formatTimestamp(value?: string) {
 
 function sessionsMatch(left: StudioDocument["session"] | null | undefined, right: StudioDocument["session"] | null | undefined) {
   return JSON.stringify(left || {}) === JSON.stringify(right || {});
+}
+
+function applySessionToDocument(document: StudioDocument | null, session: StudioDocument["session"]) {
+  if (!document || sessionsMatch(document.session, session)) return document;
+  return {
+    ...document,
+    session
+  };
 }
 
 function getDashboardPersonalOverride(dashboardId: string, studioDocument: StudioDocument | null) {
@@ -602,7 +609,7 @@ export function App() {
   );
   const sessionScopedDocument = useMemo(
     () => studioDocument && sessionPreview
-      ? normalizeStudioDocument({ ...studioDocument, session: sessionPreview })
+      ? applySessionToDocument(studioDocument, sessionPreview)
       : studioDocument,
     [sessionPreview, studioDocument]
   );
@@ -700,7 +707,7 @@ export function App() {
       requiresLaunch: true
     });
     if (sessionsMatch(studioDocument.session, nextSession)) return;
-    setStudioDocument((current) => current ? normalizeStudioDocument({ ...current, session: nextSession }) : current);
+    setStudioDocument((current) => applySessionToDocument(current, nextSession));
     void persistSession(nextSession).catch(() => undefined);
   }, [hosted.appId, hosted.launchSource, hosted.realmHostname, hosted.userId, persistSession, setStudioDocument, studioDocument]);
 
@@ -711,7 +718,7 @@ export function App() {
       if (now - lastSessionTouchAt.current < SESSION_ACTIVITY_TOUCH_INTERVAL_MS) return;
       lastSessionTouchAt.current = now;
       const nextSession = touchStudioSession(sessionPreview || studioDocument.session, { now });
-      setStudioDocument((current) => current ? normalizeStudioDocument({ ...current, session: nextSession }) : current);
+      setStudioDocument((current) => applySessionToDocument(current, nextSession));
       void persistSession(nextSession).catch(() => undefined);
     };
     const handleVisibility = () => {
@@ -743,7 +750,7 @@ export function App() {
     if (!stored?.session) return;
     if (normalizeSessionScopeKey(stored.session) !== sessionScopeKey) return;
     if (!sessionIsNewer(stored.session, sessionPreview || studioDocument.session)) return;
-    setStudioDocument((current) => current ? normalizeStudioDocument({ ...current, session: stored.session! }) : current);
+    setStudioDocument((current) => applySessionToDocument(current, stored.session!));
   }, [sessionPreview, sessionScopeKey, setStudioDocument, studioDocument]);
 
   useEffect(() => {
@@ -754,7 +761,7 @@ export function App() {
       if (!stored?.session) return;
       if (normalizeSessionScopeKey(stored.session) !== sessionScopeKey) return;
       if (!sessionIsNewer(stored.session, sessionPreview || studioDocument?.session || null)) return;
-      setStudioDocument((current) => current ? normalizeStudioDocument({ ...current, session: stored.session! }) : current);
+      setStudioDocument((current) => applySessionToDocument(current, stored.session!));
     };
     window.addEventListener("storage", handleStorage);
     return () => window.removeEventListener("storage", handleStorage);

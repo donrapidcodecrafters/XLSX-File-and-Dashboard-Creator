@@ -2376,8 +2376,8 @@ th {
 }
 
 .field-transfer-item.selected {
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
   padding: 10px 12px;
 }
 
@@ -2444,14 +2444,16 @@ th {
   gap: 4px;
   min-width: 0;
   text-align: left;
+  align-self: start;
 }
 
 .field-transfer-actions {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: flex-start;
   align-items: center;
+  grid-column: 2;
 }
 
 .field-transfer-action-button {
@@ -2474,6 +2476,10 @@ th {
   .field-transfer-item.selected {
     grid-template-columns: 1fr;
     align-items: start;
+  }
+
+  .field-transfer-actions {
+    grid-column: auto;
   }
 
   .field-transfer-actions {
