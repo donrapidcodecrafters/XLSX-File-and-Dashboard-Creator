@@ -1,5 +1,7 @@
 import { Link } from "react-router-dom";
 
+// Keep this manual aligned with the current live product flow whenever labels,
+// routes, builder steps, or reader behavior change.
 const helpSections = [
   { id: "first-day", title: "First Day Setup", summary: "What to click the first time you open the platform" },
   { id: "admin-setup", title: "Admin Setup And Connected Apps", summary: "How to connect, bootstrap, and refresh Quickbase apps safely" },
@@ -21,7 +23,7 @@ export function HelpPage() {
         <div>
           <span className="badge brand">Help</span>
           <h1>Platform Manual</h1>
-          <p>Everything here is written for a first-time business user. Use these links in order if you are new, or jump directly to the task you need.</p>
+          <p>Everything here is written for a first-time business user and reflects the current live workflow. Use these links in order if you are new, or jump directly to the task you need.</p>
         </div>
         <div className="link-toolbar viewer-actions">
           <Link className="ghost-button" to="/">Home</Link>
@@ -54,6 +56,7 @@ export function HelpPage() {
           <ol className="flat-list">
             <li>Open the platform from your Quickbase dashboard button. Do not try to start from an expired bookmarked tab.</li>
             <li>When the top bar appears, use `Home` if you want guided starting points, `Viewing` if you want to open existing work, or `Building` if you need to create something new.</li>
+            <li>When you open `Building`, you now land on a workspace home first. Choose an existing report or dashboard, a template, or `Add new report` or `Add new dashboard` before any setup screen opens.</li>
             <li>If the page says the session expired, go back to Quickbase and launch again from the original button.</li>
             <li>If you only need to read reports or dashboards, stay in `Home` or `Viewing`. You do not need Studio for normal day-to-day use.</li>
           </ol>
@@ -96,6 +99,7 @@ export function HelpPage() {
             <li>Check the freshness banner near the top of the page before sharing or exporting. This tells you whether you are looking at cached or live data.</li>
             <li>Use `Save view` to keep your own preferred page or focus mode without changing the shared report for everyone else.</li>
             <li>Use `Focus chart` or `Focus details` when you need a larger reading surface.</li>
+            <li>Large report tables scroll inside the report itself. You should not need to scroll the entire page just to read more rows.</li>
             <li>Use `Download xlsx` to export the report you are currently viewing. Wait until the export status says the file is ready.</li>
           </ol>
         </article>
@@ -111,6 +115,7 @@ export function HelpPage() {
             <li>Use `Save view` if you want to keep your own tab/filter/focus combination as a personal bookmark.</li>
             <li>Use `Focus card` on any widget when you need to inspect that card in a larger dialog.</li>
             <li>Dashboard table cards scroll inside their own frame. If a card shows more rows than fit, scroll inside the card instead of the full page.</li>
+            <li>Charts and reports are clipped to the size of each dashboard card. If a card needs more room, resize that card in Building rather than expecting the widget to overflow.</li>
           </ol>
         </article>
 
@@ -121,10 +126,13 @@ export function HelpPage() {
           </div>
           <ol className="flat-list">
             <li>Open <Link to="/studio">Building</Link> to create or edit reports, dashboards, and workbook imports.</li>
+            <li>Start on the Building home. That page shows your current reports and dashboards, templates, import actions, and `Add new` actions before you enter any setup screen.</li>
+            <li>Click an existing item to edit it, or choose `Add new report`, `Add new dashboard`, `Templates`, or `Import xlsx` to start something new.</li>
             <li>Choose `Shared` if everyone should see the object, or `Personal` if the object should stay private to you.</li>
             <li>For reports, move through the builder in this order: basics, data, filters, view, review.</li>
             <li>For dashboards, save the starter dashboard first, then use the canvas to add tabs and cards.</li>
             <li>Click a dashboard card on the canvas to edit only that card. The selected-card inspector controls its report, size, position, display mode, and tab actions.</li>
+            <li>Use Settings only when you need to connect or maintain apps. Normal building starts from the workspace home, not from Settings.</li>
           </ol>
         </article>
 
@@ -137,6 +145,7 @@ export function HelpPage() {
             <li>Open a dashboard in <Link to="/studio">Building</Link> and click the card you want to change. The selected-card panel always edits only that card.</li>
             <li>Drag the card on the canvas to move it. The preview highlights the destination row and shows when other cards will reflow.</li>
             <li>Use the size controls in the selected-card area when you need exact width, height, or x/y placement.</li>
+            <li>Widgets stay inside the card size you set. If a chart or report feels cramped, increase that card’s width or height instead of expecting it to overlap nearby cards.</li>
             <li>Use row actions such as `Balance row`, `Split evenly`, `Emphasize first`, or `Emphasize last` when you want a cleaner layout without manually adjusting every card.</li>
             <li>Use `Balance tab` or `Balance dashboard` after larger edits so cards fill rows cleanly and stay readable.</li>
           </ol>
@@ -191,6 +200,7 @@ export function HelpPage() {
             <li>If content looks stale, use `Refresh now` on the current object or `Refresh all` from settings when you are responsible for the app cache.</li>
             <li>If a field is missing, reload the app metadata or refresh the source report cache so new Quickbase fields become available.</li>
             <li>If a dashboard widget fails, open the source report from Studio or the reader to isolate the problem.</li>
+            <li>If you cannot find where to start building, go back to <Link to="/studio">Building</Link>. The first Building screen is the workspace home where you choose an existing item or create a new one.</li>
             <li>If the platform says the session expired, relaunch from Quickbase.</li>
             <li>If an imported workbook does not look right, read the import review, fix the workbook, and import again.</li>
           </ol>

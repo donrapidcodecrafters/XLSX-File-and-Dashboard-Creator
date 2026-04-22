@@ -17,6 +17,9 @@ describe("HelpPage", () => {
     expect(screen.getByRole("link", { name: "Go to Building" }).getAttribute("href")).toMatch(/^#?\/studio$/);
     expect(screen.getByRole("link", { name: "First Day Setup" })).toHaveAttribute("href", "#first-day");
     expect(screen.getByText(/Open the platform from your Quickbase dashboard button/i)).toBeInTheDocument();
+    expect(screen.getByText(/you now land on a workspace home first/i)).toBeInTheDocument();
+    expect(screen.getByText(/Large report tables scroll inside the report itself/i)).toBeInTheDocument();
+    expect(screen.getByText(/Start on the Building home/i)).toBeInTheDocument();
     expect(screen.getAllByText("Admin Setup And Connected Apps").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Move And Resize Dashboard Cards").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Use Multiple Apps Together").length).toBeGreaterThan(0);
