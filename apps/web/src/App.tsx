@@ -267,9 +267,10 @@ function ObjectPage({
 
   async function cancelObjectRefresh() {
     if (!refreshJob?.id) return;
-    const response = await cancelStudioRefreshJob(refreshJob.id);
-    setRefreshJob(response.job.status === "cancelled" ? null : response.job);
+    const refreshJobId = refreshJob.id;
+    setRefreshJob(null);
     setLoading(false);
+    await cancelStudioRefreshJob(refreshJobId).catch(() => undefined);
   }
 
   if (!params.objectId) return null;

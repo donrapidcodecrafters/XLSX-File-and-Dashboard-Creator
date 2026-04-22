@@ -316,12 +316,28 @@ function getPersistedRefreshStatus(jobId?: string): RefreshJobStatus | null {
   if (!status) return null;
   const effectiveJobId = jobId || status.activeJobId || randomJobFallbackId(status);
   if (!effectiveJobId) return null;
+  if (status.cancelRequested) {
+    return {
+      id: effectiveJobId,
+      status: "cancelled",
+      progress: Math.max(status.progress || 1, 1),
+      message: status.message || "Cancelling refresh…",
+      reason: "manual",
+      createdAt: status.lastStartedAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      startedAt: status.lastStartedAt || undefined,
+      completedAt: status.lastCancelledAt || undefined,
+      estimatedSecondsRemaining: 0,
+      tableCount: status.cachedTableIds?.length || undefined,
+      rowCount: status.cachedRowCount || undefined
+    };
+  }
   if (status.running) {
     return {
       id: effectiveJobId,
       status: "running",
       progress: status.progress || 0,
-      message: status.cancelRequested ? "Cancelling refresh…" : (status.message || "Refreshing…"),
+      message: status.message || "Refreshing…",
       reason: "manual",
       createdAt: status.lastStartedAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -401,13 +417,16 @@ export async function cancelRefreshJob(jobId: string) {
   if (!matched) {
     const current = refreshJobStore.getJob(jobId);
     if (current) {
-      refreshJobStore.cancelJob(jobId);
-      return current;
+      return {
+        ...current,
+        status: "cancelled",
+        message: "Cancelling refresh…",
+        estimatedSecondsRemaining: 0
+      } as RefreshJobStatus;
     }
     return getPersistedRefreshStatus(jobId);
   }
   studioStore.flushDocument(document, { markSavedAt: false });
-  refreshJobStore.cancelJob(jobId, "Cancelling refresh…");
   return getPersistedRefreshStatus(jobId);
 }
 

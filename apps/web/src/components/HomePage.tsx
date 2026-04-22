@@ -123,8 +123,9 @@ export function HomePage({
 
   async function cancelRefresh() {
     if (!refreshJob?.id) return;
-    const response = await cancelStudioRefreshJob(refreshJob.id);
-    setRefreshJob(response.job);
+    const refreshJobId = refreshJob.id;
+    setRefreshJob(null);
+    await cancelStudioRefreshJob(refreshJobId).catch(() => undefined);
   }
 
   return (

@@ -2312,9 +2312,11 @@ export function StudioPage({ openSettingsSignal = 0, refreshAllSignal = 0 }: { o
 
   async function cancelRefreshNow() {
     if (!refreshJob?.id) return;
-    const response = await cancelStudioRefreshJob(refreshJob.id);
-    setRefreshJob(response.job.status === "cancelled" ? null : response.job);
+    const refreshJobId = refreshJob.id;
+    setRefreshJob(null);
     setRefreshingCache(false);
+    pushToast("Cancelling refresh…", "warn");
+    await cancelStudioRefreshJob(refreshJobId).catch(() => undefined);
   }
 
   async function restoreVersion(versionId: string) {
