@@ -288,6 +288,25 @@ function estimateRefreshProgress(
   };
 }
 
+function savedReportRowSignature(row: DataRow) {
+  const recordId = String(row.__recordId || "").trim();
+  if (recordId) return `rid:${recordId}`;
+  const entries = Object.entries(row)
+    .filter(([key]) => key !== "__recordId")
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => `${key}=${String(value ?? "")}`);
+  return entries.join("|");
+}
+
+function savedReportPageSignature(rows: DataRow[]) {
+  if (!rows.length) return "empty";
+  return JSON.stringify({
+    length: rows.length,
+    first: rows.slice(0, 3).map(savedReportRowSignature),
+    last: rows.slice(-3).map(savedReportRowSignature)
+  });
+}
+
 function persistRefreshProgress(
   document: StudioDocument,
   progress: number,
@@ -557,11 +576,12 @@ async function fetchAllTableRows(
       if (typeof page.totalRecords === "number" && page.totalRecords > 0) {
         totalRowsHint = page.totalRecords;
       }
-      page.rows.forEach((row) => {
-        const recordId = String(row.__recordId || "");
-        const existing = merged.get(recordId) || { __recordId: recordId };
+      page.rows.forEach((row, rowIndex) => {
+        const recordId = String(row.__recordId || "").trim();
+        const mergedKey = recordId || `offset:${skip + rowIndex}`;
+        const existing = merged.get(mergedKey) || { __recordId: recordId };
         Object.assign(existing, row);
-        merged.set(recordId, existing);
+        merged.set(mergedKey, existing);
       });
       document.bundle.data[table.id] = Array.from(merged.values());
       studioStore.touchCacheEntry(table.id, merged.size);
@@ -577,7 +597,7 @@ async function fetchAllTableRows(
           ? `Loading ${table.name}: ${merged.size.toLocaleString()} / ${totalRowsHint.toLocaleString()} rows cached across ${fetchedPages.toLocaleString()} pages`
           : `Loading ${table.name}: ${merged.size.toLocaleString()} rows cached across ${fetchedPages.toLocaleString()} pages`
       });
-      const currentPageSignature = `${page.rows[0]?.__recordId || ""}:${page.rows[page.rows.length - 1]?.__recordId || ""}:${page.rows.length}`;
+      const currentPageSignature = savedReportPageSignature(page.rows);
       if (page.rows.length < pageSize) break;
       if (merged.size === beforeSize || currentPageSignature === previousPageSignature) {
         throw new Error(`Refresh could not move past the same saved report page for ${table.name}. Check Quickbase source report ${savedReportId} and make sure it returns all records in a stable order.`);
