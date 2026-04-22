@@ -56,7 +56,7 @@ export function HelpPage() {
           <ol className="flat-list">
             <li>Open the platform from your Quickbase dashboard button. Do not try to start from an expired bookmarked tab.</li>
             <li>When the top bar appears, use `Home` if you want guided starting points, `Viewing` if you want to open existing work, or `Building` if you need to create something new.</li>
-            <li>When you open `Building`, you now land on a workspace home first. Choose an existing report or dashboard, a template, or `Add new report` or `Add new dashboard` before any setup screen opens.</li>
+            <li>When you open `Building`, you now land on a workspace home first. The first large card shows the workspace status, and the `Quick start` row directly under it is the only place for `Add new report`, `Add new dashboard`, `Use a template`, and `Import xlsx`.</li>
             <li>If the page says the session expired, go back to Quickbase and launch again from the original button.</li>
             <li>If you only need to read reports or dashboards, stay in `Home` or `Viewing`. You do not need Studio for normal day-to-day use.</li>
           </ol>
@@ -126,7 +126,7 @@ export function HelpPage() {
           </div>
           <ol className="flat-list">
             <li>Open <Link to="/studio">Building</Link> to create or edit reports, dashboards, and workbook imports.</li>
-            <li>Start on the Building home. That page shows your current reports and dashboards, templates, import actions, and `Add new` actions before you enter any setup screen.</li>
+            <li>Start on the Building home. Use the `Quick start` row below the top workspace card when you want to create something new, use a template, or import a workbook. Use the browse section underneath when you want to open an existing item.</li>
             <li>Click an existing item to edit it, or choose `Add new report`, `Add new dashboard`, `Templates`, or `Import xlsx` to start something new.</li>
             <li>Choose `Shared` if everyone should see the object, or `Personal` if the object should stay private to you.</li>
             <li>For reports, move through the builder in this order: basics, data, filters, view, review.</li>

@@ -70,22 +70,39 @@ export function StudioWorkspaceHome({
         </div>
         <div className="link-toolbar">
           <button onClick={onSave} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save"}</button>
-          <button onClick={onCreateReport}>Add new report</button>
-          <button onClick={onCreateDashboard}>Add new dashboard</button>
-          <button onClick={onImportXlsx} disabled={xlsxImporting}>{xlsxImporting ? "Importing xlsx…" : "Import xlsx"}</button>
-          <button onClick={onUseTemplate}>Templates</button>
         </div>
       </div>
+
+      <section className="surface stack">
+        <div className="card-head">
+          <strong>Quick start</strong>
+          <span className="micro">Use this row when you want to begin something new.</span>
+        </div>
+        <div className="summary-grid">
+          <button className="template-card-button" onClick={onCreateReport}>
+            <strong>Add new report</strong>
+            <span>Choose a table, fields, filters, and a report or chart view.</span>
+          </button>
+          <button className="template-card-button" onClick={onCreateDashboard}>
+            <strong>Add new dashboard</strong>
+            <span>Start a dashboard canvas and add reports, charts, and summary cards.</span>
+          </button>
+          <button className="template-card-button" onClick={onUseTemplate}>
+            <strong>Use a template</strong>
+            <span>Apply an existing dashboard or report structure.</span>
+          </button>
+          <button className="template-card-button" onClick={onImportXlsx} disabled={xlsxImporting}>
+            <strong>{xlsxImporting ? "Importing xlsx" : "Import xlsx"}</strong>
+            <span>Reconstruct workbook sheets into reports and dashboards.</span>
+          </button>
+        </div>
+      </section>
 
       <section className="surface stack">
         <div className="card-head">
           <div>
             <strong>Browse workspace items</strong>
             <div className="micro">Pick an existing report or dashboard before entering the builder.</div>
-          </div>
-          <div className="studio-actions">
-            <button type="button" onClick={onCreateReport}>New report</button>
-            <button type="button" onClick={onCreateDashboard}>New dashboard</button>
           </div>
         </div>
         <div className="filter-grid compact-grid studio-home-filter-grid">
@@ -165,7 +182,6 @@ export function StudioWorkspaceHome({
             <strong>Start from a template</strong>
             <div className="micro">Templates let you begin with a saved structure instead of starting blank.</div>
           </div>
-          <button type="button" onClick={onUseTemplate}>Manage templates</button>
         </div>
         {templates.length ? (
           <div className="summary-grid">
@@ -179,31 +195,6 @@ export function StudioWorkspaceHome({
         ) : (
           <div className="empty-hint">No templates yet. Save a report or dashboard as a template once you have a layout you want to reuse.</div>
         )}
-      </section>
-
-      <section className="surface stack">
-        <div className="card-head">
-          <strong>Quick start</strong>
-          <span className="micro">Choose how you want to begin.</span>
-        </div>
-        <div className="summary-grid">
-          <button className="template-card-button" onClick={onCreateReport}>
-            <strong>Create a report</strong>
-            <span>Choose a table, fields, filters, and a report or chart view.</span>
-          </button>
-          <button className="template-card-button" onClick={onCreateDashboard}>
-            <strong>Create a dashboard</strong>
-            <span>Start a dashboard canvas and add reports, charts, and summary cards.</span>
-          </button>
-          <button className="template-card-button" onClick={onUseTemplate}>
-            <strong>Use a template</strong>
-            <span>Apply an existing dashboard or report structure.</span>
-          </button>
-          <button className="template-card-button" onClick={onImportXlsx} disabled={xlsxImporting}>
-            <strong>{xlsxImporting ? "Importing xlsx" : "Import xlsx"}</strong>
-            <span>Reconstruct workbook sheets into reports and dashboards.</span>
-          </button>
-        </div>
       </section>
     </div>
   );
