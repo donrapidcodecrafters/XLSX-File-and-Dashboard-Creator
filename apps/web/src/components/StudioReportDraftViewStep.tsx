@@ -11,10 +11,12 @@ import {
   chartTypeSelectOptions,
   chartUsesAxes,
   chartValueFieldLabel,
+  getSortedFieldOptions,
   reportShowsChart,
   reportShowsDetails,
   reportShowsSummary
 } from "./studioReportUtils";
+import { SearchableSelect } from "./SearchableSelect";
 
 export function StudioReportDraftViewStep({
   createDraft,
@@ -25,6 +27,7 @@ export function StudioReportDraftViewStep({
   createDraftTable: TableDefinition;
   setCreateDraft: Dispatch<SetStateAction<StudioBuilderDraft>>;
 }) {
+  const fieldOptions = getSortedFieldOptions(createDraftTable);
   return (
     <div className="card">
       <div className="card-head">
@@ -61,9 +64,7 @@ export function StudioReportDraftViewStep({
             </label>
             <label className="field">
               <span>Record title field</span>
-              <select value={createDraft.view.titleFieldId} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, titleFieldId: event.target.value } }))}>
-                {createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}
-              </select>
+              <SearchableSelect value={createDraft.view.titleFieldId} options={fieldOptions} onChange={(value) => setCreateDraft((current) => ({ ...current, view: { ...current.view, titleFieldId: value } }))} />
             </label>
             <label className="field">
               <span>Decimal places</span>
@@ -117,17 +118,14 @@ export function StudioReportDraftViewStep({
               {(createDraft.view.chartType === "bar" || createDraft.view.chartType === "stacked-bar") ? (
                 <label className="field"><span>Bar direction</span><select value={createDraft.view.chartOrientation} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartOrientation: event.target.value as "vertical" | "horizontal" } }))}><option value="vertical">Vertical</option><option value="horizontal">Horizontal</option></select></label>
               ) : null}
-              <label className="field"><span>X axis field</span><select value={createDraft.view.chartFieldId} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartFieldId: event.target.value } }))}>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>
+              <label className="field"><span>X axis field</span><SearchableSelect value={createDraft.view.chartFieldId} options={fieldOptions} onChange={(value) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartFieldId: value } }))} /></label>
               {chartSupportsSeries(createDraft.view.chartType) ? (
                 <label className="field">
                   <span>Series field</span>
-                  <select value={createDraft.view.chartSeriesFieldId} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartSeriesFieldId: event.target.value } }))}>
-                    <option value="">Single series</option>
-                    {createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}
-                  </select>
+                  <SearchableSelect value={createDraft.view.chartSeriesFieldId} options={fieldOptions} allowEmpty emptyOptionLabel="Single series" onChange={(value) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartSeriesFieldId: value } }))} />
                 </label>
               ) : null}
-              <label className="field"><span>{chartValueFieldLabel(createDraft.view.chartType)}</span><select value={createDraft.view.chartValueFieldId} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartValueFieldId: event.target.value } }))}><option value="">Count rows</option>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>
+              <label className="field"><span>{chartValueFieldLabel(createDraft.view.chartType)}</span><SearchableSelect value={createDraft.view.chartValueFieldId} options={fieldOptions} allowEmpty emptyOptionLabel="Count rows" onChange={(value) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartValueFieldId: value } }))} /></label>
               <label className="field"><span>Primary aggregation</span><select value={createDraft.view.chartAggregation} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartAggregation: event.target.value as ChartAggregation, chartValueFieldId: event.target.value === "count" ? "" : current.view.chartValueFieldId } }))}>{CHART_AGGREGATION_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
             </div>
             <details className="builder-details">
@@ -159,7 +157,7 @@ export function StudioReportDraftViewStep({
                       {createDraft.view.chartUseSecondaryAxis ? (
                         <>
                           <label className="field"><span>Secondary series type</span><select value={createDraft.view.chartSecondarySeriesType} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartSecondarySeriesType: event.target.value as ChartSeriesType } }))}>{CHART_SERIES_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-                          <label className="field"><span>Secondary Y axis field</span><select value={createDraft.view.chartSecondaryValueFieldId} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartSecondaryValueFieldId: event.target.value } }))}><option value="">Count rows</option>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>
+                          <label className="field"><span>Secondary Y axis field</span><SearchableSelect value={createDraft.view.chartSecondaryValueFieldId} options={fieldOptions} allowEmpty emptyOptionLabel="Count rows" onChange={(value) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartSecondaryValueFieldId: value } }))} /></label>
                           <label className="field"><span>Secondary aggregation</span><select value={createDraft.view.chartSecondaryAggregation} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartSecondaryAggregation: event.target.value as ChartAggregation, chartSecondaryValueFieldId: event.target.value === "count" ? "" : current.view.chartSecondaryValueFieldId } }))}>{CHART_AGGREGATION_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
                           <label className="field"><span>Secondary Y axis label</span><input value={createDraft.view.chartSecondaryYAxisLabel} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartSecondaryYAxisLabel: event.target.value } }))} placeholder="Optional secondary axis label" /></label>
                         </>
@@ -212,14 +210,14 @@ export function StudioReportDraftViewStep({
               <span className="micro">Only the fields needed for the selected layout are shown here.</span>
             </div>
             <div className="builder-subsection-grid">
-              {createDraft.view.mode === "kanban" ? <label className="field"><span>Kanban field</span><select value={createDraft.view.kanbanField} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, kanbanField: event.target.value } }))}><option value="">Select a field</option>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label> : null}
+              {createDraft.view.mode === "kanban" ? <label className="field"><span>Kanban field</span><SearchableSelect value={createDraft.view.kanbanField} options={fieldOptions} allowEmpty emptyOptionLabel="Select a field" onChange={(value) => setCreateDraft((current) => ({ ...current, view: { ...current.view, kanbanField: value } }))} /></label> : null}
               {createDraft.view.mode === "timeline" ? (
                 <>
-                  <label className="field"><span>Timeline start</span><select value={createDraft.view.timelineDateField} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, timelineDateField: event.target.value } }))}><option value="">Select a field</option>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>
-                  <label className="field"><span>Timeline end</span><select value={createDraft.view.timelineEndField} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, timelineEndField: event.target.value } }))}><option value="">Select a field</option>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>
+                  <label className="field"><span>Timeline start</span><SearchableSelect value={createDraft.view.timelineDateField} options={fieldOptions} allowEmpty emptyOptionLabel="Select a field" onChange={(value) => setCreateDraft((current) => ({ ...current, view: { ...current.view, timelineDateField: value } }))} /></label>
+                  <label className="field"><span>Timeline end</span><SearchableSelect value={createDraft.view.timelineEndField} options={fieldOptions} allowEmpty emptyOptionLabel="Select a field" onChange={(value) => setCreateDraft((current) => ({ ...current, view: { ...current.view, timelineEndField: value } }))} /></label>
                 </>
               ) : null}
-              {createDraft.view.mode === "calendar" ? <label className="field"><span>Calendar date</span><select value={createDraft.view.calendarDateField} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, calendarDateField: event.target.value } }))}><option value="">Select a field</option>{createDraftTable.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label> : null}
+              {createDraft.view.mode === "calendar" ? <label className="field"><span>Calendar date</span><SearchableSelect value={createDraft.view.calendarDateField} options={fieldOptions} allowEmpty emptyOptionLabel="Select a field" onChange={(value) => setCreateDraft((current) => ({ ...current, view: { ...current.view, calendarDateField: value } }))} /></label> : null}
             </div>
           </section>
         ) : null}

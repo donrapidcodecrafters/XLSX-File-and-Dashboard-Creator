@@ -10,6 +10,7 @@ import {
   type ReportViewMode,
   type TableDefinition
 } from "@studio/shared";
+import type { SearchableSelectOption } from "./SearchableSelect";
 
 export const DEFAULT_CHART_COLORS = STUDIO_DEFAULT_CHART_COLORS;
 
@@ -100,6 +101,33 @@ export const CHART_SORT_OPTIONS: Array<{ value: ChartSortMode; label: string }> 
   { value: "label-asc", label: "Label A to Z" },
   { value: "label-desc", label: "Label Z to A" }
 ];
+
+export function sortAlphabetically<T>(items: T[], getLabel: (item: T) => string) {
+  return [...items].sort((left, right) =>
+    getLabel(left).localeCompare(getLabel(right), undefined, { numeric: true, sensitivity: "base" })
+  );
+}
+
+export function getSortedFieldOptions(table: TableDefinition): SearchableSelectOption[] {
+  return sortAlphabetically(table.fields, (field) => field.label || field.id).map((field) => ({
+    value: field.id,
+    label: field.label,
+    keywords: [field.id, field.type]
+  }));
+}
+
+export function getSortedDashboardFieldOptions(tables: TableDefinition[]): SearchableSelectOption[] {
+  return sortAlphabetically(
+    tables.flatMap((table) =>
+      table.fields.map((field) => ({
+        value: field.id,
+        label: `${table.name} · ${field.label}`,
+        keywords: [table.name, field.label, field.id, field.type]
+      }))
+    ),
+    (option) => option.label
+  );
+}
 
 function formatFallbackFieldLabel(fieldId: string) {
   const trimmed = String(fieldId || "").trim();

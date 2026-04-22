@@ -141,6 +141,7 @@ export function HelpPage() {
             <li>Click an existing item to edit it, or choose `Add new report`, `Add new dashboard`, `Templates`, or `Import xlsx` to start something new.</li>
             <li>Choose `Shared` if everyone should see the object, or `Personal` if the object should stay private to you.</li>
             <li>For reports, move through the builder in this order: basics, data, filters, view, review.</li>
+            <li>Field pickers are alphabetical and searchable. Type any partial text, such as `curr`, to find matching fields and choose the one you want.</li>
             <li>For dashboards, save the starter dashboard first, then use the canvas to add tabs and cards.</li>
             <li>Click a dashboard card on the canvas to edit only that card. The selected-card inspector controls its report, size, position, display mode, and tab actions.</li>
             <li>Use Settings only when you need to connect or maintain apps. Normal building starts from the workspace home, not from Settings.</li>

@@ -100,12 +100,15 @@ import { StudioDashboardPreview } from "./StudioDashboardPreview";
 import { StudioReportDraftDataStep } from "./StudioReportDraftDataStep";
 import { StudioReportDraftViewStep } from "./StudioReportDraftViewStep";
 import { StudioReportPreview } from "./StudioReportPreview";
+import { SearchableSelect } from "./SearchableSelect";
 import { StudioSettingsPanel } from "./StudioSettingsPanel";
 import { StudioWorkspaceEmptyState } from "./StudioWorkspaceEmptyState";
 import { StudioWorkspaceHome } from "./StudioWorkspaceHome";
 import {
   DEFAULT_CHART_COLORS,
   getChartAxisLabels,
+  getSortedDashboardFieldOptions,
+  getSortedFieldOptions,
   reportShowsChart,
   reportShowsDetails,
   reportShowsSummary
@@ -652,6 +655,7 @@ function FilterGroupEditor({
   canRemove?: boolean;
   onRemove?: () => void;
 }) {
+  const fieldOptions = getSortedFieldOptions(table);
   return (
     <div className="filter-group-editor">
       <div className="card-head">
@@ -711,24 +715,23 @@ function FilterGroupEditor({
           const operatorOptions = filterOperatorOptionsForField(field);
           return (
             <div className="inline-edit-row filter-rule-row" key={rule.id}>
-              <select
+              <SearchableSelect
                 value={rule.fieldId}
-                onChange={(event) => onChange(updateFilterRuleInGroup(group, rule.id, (currentRule) => {
-                  const nextField = table.fields.find((candidate) => candidate.id === event.target.value) || null;
+                options={fieldOptions}
+                onChange={(value) => onChange(updateFilterRuleInGroup(group, rule.id, (currentRule) => {
+                  const nextField = table.fields.find((candidate) => candidate.id === value) || null;
                   const nextOptions = filterOperatorOptionsForField(nextField);
                   const nextOperator = nextOptions.some((option) => option.value === currentRule.operator)
                     ? currentRule.operator
                     : nextOptions[0]?.value || "equals";
                   return {
                     ...currentRule,
-                    fieldId: event.target.value,
+                    fieldId: value,
                     operator: nextOperator,
                     value: filterNeedsValue(nextOperator) ? currentRule.value : ""
                   };
                 }))}
-              >
-                {table.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}
-              </select>
+              />
               <select
                 value={rule.operator}
                 onChange={(event) => onChange(updateFilterRuleInGroup(group, rule.id, (currentRule) => ({ ...currentRule, operator: event.target.value as FilterOperator, value: filterNeedsValue(event.target.value as FilterOperator) ? currentRule.value : "" })))}
@@ -787,9 +790,7 @@ function ReportFiltersAndSortsEditor({
         <div className="stack-compact">
           {sorts.length ? sorts.map((sort) => (
             <div className="inline-edit-row" key={sort.id}>
-              <select value={sort.fieldId} onChange={(event) => onChangeSorts(sorts.map((item) => item.id === sort.id ? { ...item, fieldId: event.target.value } : item))}>
-                {table.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}
-              </select>
+              <SearchableSelect value={sort.fieldId} options={getSortedFieldOptions(table)} onChange={(value) => onChangeSorts(sorts.map((item) => item.id === sort.id ? { ...item, fieldId: value } : item))} />
               <select value={sort.direction} onChange={(event) => onChangeSorts(sorts.map((item) => item.id === sort.id ? { ...item, direction: event.target.value as "asc" | "desc" } : item))}>
                 <option value="asc">Ascending</option>
                 <option value="desc">Descending</option>
@@ -913,6 +914,18 @@ export function StudioPage({
   const bundle = documentState.bundle;
   const currentUserId = String(documentState.session.currentUserId || "").trim();
   const objects = useMemo(() => bundle.order.map((id) => bundle.objects[id]).filter(Boolean), [bundle]);
+  const dashboardFieldOptions = useMemo(() => getSortedDashboardFieldOptions(bundle.tables), [bundle.tables]);
+  const reportObjectOptions = useMemo(
+    () => objects
+      .filter((object): object is ReportDefinition => object.type === "report")
+      .map((report) => ({
+        value: report.id,
+        label: report.name,
+        keywords: [report.folder, report.category, ...(report.tags || [])]
+      }))
+      .sort((left, right) => left.label.localeCompare(right.label, undefined, { numeric: true, sensitivity: "base" })),
+    [objects]
+  );
   const visibleObjects = useMemo(
     () => filterStudioLibraryItems(objects, { currentUserId }),
     [currentUserId, objects]
@@ -969,9 +982,12 @@ export function StudioPage({
   const validation = activeObject ? validationMessages(activeObject, activeTable) : [];
   const visibleCreateFields = useMemo(() => {
     if (!createDraftTable) return [];
+    const sortedFields = getSortedFieldOptions(createDraftTable).map((option) =>
+      createDraftTable.fields.find((field) => field.id === option.value)
+    ).filter((field): field is NonNullable<typeof createDraftTable.fields[number]> => Boolean(field));
     const query = createFieldQuery.trim().toLowerCase();
-    if (!query) return createDraftTable.fields;
-    return createDraftTable.fields.filter((field) => `${field.label} ${field.id} ${field.type}`.toLowerCase().includes(query));
+    if (!query) return sortedFields;
+    return sortedFields.filter((field) => `${field.label} ${field.id} ${field.type}`.toLowerCase().includes(query));
   }, [createDraftTable, createFieldQuery]);
   const createDraftPreviewReport = useMemo<ReportDefinition | null>(() => {
     if (createDraft.type !== "report" || !createDraftTable) return null;
@@ -3326,7 +3342,7 @@ export function StudioPage({
                         <div className="widget-editor-grid">
                           <label className="field">
                             <span>Report</span>
-                            <select value={selectedDashboardWidget.reportId} onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, (candidate) => ({ ...candidate, reportId: event.target.value, snapshot: undefined, mode: "linked" }))}>{objects.filter((object): object is ReportDefinition => object.type === "report").map((report) => <option key={report.id} value={report.id}>{report.name}</option>)}</select>
+                            <SearchableSelect value={selectedDashboardWidget.reportId} options={reportObjectOptions} onChange={(value) => updateActiveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, (candidate) => ({ ...candidate, reportId: value, snapshot: undefined, mode: "linked" }))} />
                           </label>
                           <label className="field">
                             <span>Connection</span>
@@ -3498,7 +3514,7 @@ export function StudioPage({
                         <button onClick={() => updateObject({ ...activeDashboard, runtimeFilters: activeDashboard.runtimeFilters.filter((item) => item.id !== filter.id) })}>Remove</button>
                       </div>
                       <label className="field"><span>Label</span><input value={filter.label} onChange={(event) => updateObject({ ...activeDashboard, runtimeFilters: activeDashboard.runtimeFilters.map((item) => item.id === filter.id ? { ...item, label: event.target.value } : item) })} /></label>
-                      <label className="field"><span>Field</span><select value={filter.fieldId} onChange={(event) => updateObject({ ...activeDashboard, runtimeFilters: activeDashboard.runtimeFilters.map((item) => item.id === filter.id ? { ...item, fieldId: event.target.value } : item) })}>{bundle.tables.flatMap((table) => table.fields.map((field) => <option key={`${table.id}-${field.id}`} value={field.id}>{table.name} · {field.label}</option>))}</select></label>
+                      <label className="field"><span>Field</span><SearchableSelect value={filter.fieldId} options={dashboardFieldOptions} onChange={(value) => updateObject({ ...activeDashboard, runtimeFilters: activeDashboard.runtimeFilters.map((item) => item.id === filter.id ? { ...item, fieldId: value } : item) })} /></label>
                       <label className="field"><span>Mode</span><select value={filter.mode} onChange={(event) => updateObject({ ...activeDashboard, runtimeFilters: activeDashboard.runtimeFilters.map((item) => item.id === filter.id ? { ...item, mode: event.target.value as "global" | "selected" } : item) })}><option value="global">global</option><option value="selected">selected</option></select></label>
                       <label className="field"><span>Default value</span><input value={filter.defaultValue} onChange={(event) => updateObject({ ...activeDashboard, runtimeFilters: activeDashboard.runtimeFilters.map((item) => item.id === filter.id ? { ...item, defaultValue: event.target.value } : item) })} /></label>
                     </div>
