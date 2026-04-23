@@ -36,6 +36,8 @@ async function downloadExportBlob(url: string, fallbackFilename: string, popupWi
   const anchor = document.createElement("a");
   anchor.href = objectUrl;
   anchor.download = filename;
+  anchor.target = "_blank";
+  anchor.rel = "noopener";
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
@@ -56,7 +58,7 @@ async function downloadExportBlob(url: string, fallbackFilename: string, popupWi
       // If the popup document is no longer scriptable, the main-window anchor click above is the fallback.
     }
   }
-  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 5 * 60_000);
 }
 
 function ensureDownloadFrame() {
@@ -274,7 +276,24 @@ export function fetchExportJobs() {
 export function downloadExportJob(id: string, options: { directDownload?: boolean; popupWindow?: Window | null } = {}) {
   const downloadUrl = API_BASE + "/api/exports/jobs/" + encodeURIComponent(id) + "/download";
   if (options.directDownload) {
-    void downloadExportBlob(downloadUrl, `export-${id}.xlsx`, options.popupWindow);
+    if (options.popupWindow && !options.popupWindow.closed) {
+      try {
+        options.popupWindow.location.replace(downloadUrl);
+        return;
+      } catch {
+        // Fall through to non-popup download strategies.
+      }
+    }
+    const anchor = document.createElement("a");
+    anchor.href = downloadUrl;
+    anchor.target = "_blank";
+    anchor.rel = "noopener";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => {
+      void downloadExportBlob(downloadUrl, `export-${id}.xlsx`, options.popupWindow).catch(() => undefined);
+    }, 1500);
     return;
   }
   if (options.popupWindow && !options.popupWindow.closed) {
