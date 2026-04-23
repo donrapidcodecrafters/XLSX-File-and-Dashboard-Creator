@@ -20,6 +20,11 @@ interface ImportedDashboardBuildResult {
   notes: string[];
 }
 
+interface ImportedReportDraft {
+  report: ReportDefinition;
+  sheetName: string;
+}
+
 interface WorksheetRowSnapshot {
   rowNumber: number;
   values: Array<string | number | boolean | null>;
@@ -78,6 +83,7 @@ interface WorksheetStructuredTableHints {
 
 interface ImportedWorkbookSheetReview {
   sheetName: string;
+  worksheetName?: string;
   status: "imported" | "skipped";
   headerRowNumber: number;
   rowCount: number;
@@ -509,7 +515,6 @@ function buildWorksheetRegions(
 
   const hasMergedPresentation = Array.isArray(worksheet.model?.merges) && worksheet.model.merges.length > 0;
   const hasPrintArea = Boolean(String(worksheet.pageSetup?.printArea || "").trim());
-  const hasCustomZoom = Array.isArray(worksheet.views) && worksheet.views.some((view) => Number(view?.zoomScale || 100) !== 100);
   const isHiddenWorksheet = worksheet.state === "hidden" || worksheet.state === "veryHidden";
   const occupiedColumnCount = Array.from(new Set(
     rows.flatMap((row) =>
@@ -526,7 +531,6 @@ function buildWorksheetRegions(
       isHiddenWorksheet
       || hasMergedPresentation
       || hasPrintArea
-      || hasCustomZoom
     );
   if (looksLikeDashboardCanvas) {
     return buildSingleWorksheetRegion(worksheet.name, rows);
@@ -1306,7 +1310,7 @@ function resolveAttachedSupportReports(
 
 function buildImportedDashboard(
   workbookName: string,
-  reports: ReportDefinition[],
+  importedReportDrafts: ImportedReportDraft[],
   layoutHintsByReportId: Record<string, WorksheetLayoutHints>,
   tablesById: Record<string, TableDefinition>,
   rowsByTableId: Record<string, DataRow[]>,
@@ -1319,6 +1323,7 @@ function buildImportedDashboard(
   const MAX_OVERVIEW_SPOTLIGHTS = 2;
   const dashboardId = uniqueId("dashboard", workbookName, existingIds);
   const notes: string[] = [];
+  const reports = importedReportDrafts.map((entry) => entry.report);
   const visibleReports = reports.filter((report) => {
     const state = layoutHintsByReportId[report.id]?.state || "visible";
     return state === "visible";
@@ -1367,33 +1372,29 @@ function buildImportedDashboard(
       showSummary: true,
       reportId: report.id
     }));
+  const reportsBySheet = new Map<string, ImportedReportDraft[]>();
+  importedReportDrafts.forEach((entry) => {
+    const key = entry.sheetName || entry.report.name;
+    const current = reportsBySheet.get(key) || [];
+    current.push(entry);
+    reportsBySheet.set(key, current);
+  });
+  const visibleSheetGroups = Array.from(reportsBySheet.entries())
+    .map(([sheetName, drafts]) => ({
+      sheetName,
+      drafts: drafts.filter((draft) => visibleReports.includes(draft.report))
+    }))
+    .filter((group) => group.drafts.length);
   const tabs = [
     {
       id: uniqueId("tab", `${workbookName}-overview`, existingIds),
       name: "Overview",
       widgets: [...overviewWidgets, ...overviewSpotlights]
     },
-    ...visibleReports.map((report, index) => {
-      const layoutHints = layoutHintsByReportId[report.id];
-      const wideLayout = Boolean(layoutHints?.wideLayout);
-      const tableFocused = Boolean(layoutHints?.tableFocused);
-      const visualFirst = Boolean(layoutHints && (
-        layoutHints.viewStyle !== "normal"
-        || !layoutHints.showGridLines
-        || layoutHints.centeredHorizontally
-        || layoutHints.centeredVertically
-        || layoutHints.imageCount
-      ));
-      const attachedSupportReports = resolveAttachedSupportReports(
-        report,
-        supportReports,
-        layoutHintsByReportId,
-        tablesById
-      );
+    ...visibleSheetGroups.map(({ sheetName, drafts }, index) => {
       const widgets: WidgetDefinition[] = [];
-      const summaryFirst = report.view.mode === "timeline" || report.view.mode === "kanban" || (report.view.mode === "chart" && (wideLayout || visualFirst || report.view.chartType === "line" || report.view.chartType === "line-bar"));
-      const wantsSummaryStrip = Boolean(report.summaryMetrics.length || report.view.showSummary);
-      const addSummaryWidget = (layout: WidgetDefinition["layout"], title = `${report.name} Summary`) => {
+      let nextY = 1;
+      const addSummaryWidget = (report: ReportDefinition, layout: WidgetDefinition["layout"], title = `${report.name} Summary`) => {
         widgets.push({
           id: uniqueId("widget", `${report.name}-${index + 1}-summary`, existingIds),
           title,
@@ -1405,19 +1406,19 @@ function buildImportedDashboard(
           reportId: report.id
         });
       };
-      const addMainWidget = (layout: WidgetDefinition["layout"]) => {
+      const addMainWidget = (report: ReportDefinition, layout: WidgetDefinition["layout"], displayMode: WidgetDefinition["displayMode"] = "inherit", title = "") => {
         widgets.push({
           id: uniqueId("widget", `${report.name}-${index + 1}-main`, existingIds),
-          title: layoutHints?.title || report.name,
+          title: title || layoutHintsByReportId[report.id]?.title || report.name,
           layout,
           mode: "linked",
-          displayMode: report.view.mode === "chart" ? "chart" : "inherit",
-          showDetails: report.view.mode !== "chart",
+          displayMode,
+          showDetails: displayMode !== "chart",
           showSummary: true,
           reportId: report.id
         });
       };
-      const addDetailWidget = (layout: WidgetDefinition["layout"]) => {
+      const addDetailWidget = (report: ReportDefinition, layout: WidgetDefinition["layout"]) => {
         widgets.push({
           id: uniqueId("widget", `${report.name}-${index + 1}-detail`, existingIds),
           title: `${report.name} Details`,
@@ -1430,62 +1431,88 @@ function buildImportedDashboard(
         });
       };
 
-      if (summaryFirst && wantsSummaryStrip) {
-        addSummaryWidget({ w: 12, h: 3, x: 1, y: 1 }, `${report.name} Highlights`);
-      }
-
-      if (report.view.mode === "chart") {
-        const chartStartsAfterSummary = summaryFirst && wantsSummaryStrip ? 4 : 1;
-        addMainWidget(
-          wideLayout || summaryFirst || tableFocused || visualFirst
-            ? { w: 12, h: 5, x: 1, y: chartStartsAfterSummary }
-            : { w: 8, h: 4, x: 1, y: 1 }
-        );
-        if (!summaryFirst && wantsSummaryStrip) {
-          addSummaryWidget({ w: 4, h: 3, x: 9, y: 1 }, `${report.name} Highlights`);
+      drafts.forEach(({ report }) => {
+        const layoutHints = layoutHintsByReportId[report.id];
+        const wideLayout = Boolean(layoutHints?.wideLayout);
+        const tableFocused = Boolean(layoutHints?.tableFocused);
+        const visualFirst = Boolean(layoutHints && (
+          layoutHints.viewStyle !== "normal"
+          || !layoutHints.showGridLines
+          || layoutHints.centeredHorizontally
+          || layoutHints.centeredVertically
+          || layoutHints.imageCount
+        ));
+        const summaryFirst = report.view.mode === "timeline" || report.view.mode === "kanban" || (report.view.mode === "chart" && (wideLayout || visualFirst || report.view.chartType === "line" || report.view.chartType === "line-bar"));
+        const wantsSummaryStrip = Boolean(report.summaryMetrics.length || report.view.showSummary);
+        const startY = nextY;
+        if (summaryFirst && wantsSummaryStrip) {
+          addSummaryWidget(report, { w: 12, h: 3, x: 1, y: startY }, `${report.name} Highlights`);
         }
-        if (report.view.showDetails) {
-          addDetailWidget(
+        if (report.view.mode === "chart") {
+          const chartStartsAfterSummary = summaryFirst && wantsSummaryStrip ? startY + 3 : startY;
+          addMainWidget(
+            report,
             wideLayout || summaryFirst || tableFocused || visualFirst
-              ? { w: 12, h: 5, x: 1, y: chartStartsAfterSummary + 5 }
-              : { w: 12, h: 4, x: 1, y: 5 }
+              ? { w: 12, h: 5, x: 1, y: chartStartsAfterSummary }
+              : { w: 8, h: 4, x: 1, y: startY },
+            "chart"
           );
+          if (!summaryFirst && wantsSummaryStrip) {
+            addSummaryWidget(report, { w: 4, h: 3, x: 9, y: startY }, `${report.name} Highlights`);
+          }
+          nextY = wideLayout || summaryFirst || tableFocused || visualFirst
+            ? chartStartsAfterSummary + 5
+            : startY + 4;
+        } else if (report.view.mode === "timeline" || report.view.mode === "kanban") {
+          addMainWidget(report, { w: 12, h: 5, x: 1, y: summaryFirst && wantsSummaryStrip ? startY + 3 : startY });
+          nextY = (summaryFirst && wantsSummaryStrip ? startY + 3 : startY) + 5;
+        } else if (tableFocused) {
+          if (wantsSummaryStrip) {
+            addSummaryWidget(report, { w: 12, h: 3, x: 1, y: startY }, `${report.name} Highlights`);
+          }
+          addMainWidget(report, { w: 12, h: wideLayout ? 6 : 5, x: 1, y: wantsSummaryStrip ? startY + 3 : startY });
+          nextY = (wantsSummaryStrip ? startY + 3 : startY) + (wideLayout ? 6 : 5);
+        } else {
+          addMainWidget(report, { w: wideLayout ? 12 : 9, h: wideLayout ? 5 : 4, x: 1, y: startY });
+          if (wantsSummaryStrip) {
+            addSummaryWidget(
+              report,
+              wideLayout
+                ? { w: 12, h: 3, x: 1, y: startY + 5 }
+                : { w: 3, h: 3, x: 10, y: startY }
+            );
+          }
+          nextY = wideLayout ? startY + 8 : startY + 4;
         }
-      } else if (report.view.mode === "timeline" || report.view.mode === "kanban") {
-        addMainWidget({ w: 12, h: 5, x: 1, y: summaryFirst && wantsSummaryStrip ? 4 : 1 });
-      } else if (tableFocused) {
-        if (wantsSummaryStrip) {
-          addSummaryWidget({ w: 12, h: 3, x: 1, y: 1 }, `${report.name} Highlights`);
+        if (report.view.showDetails && report.view.mode === "chart") {
+          addDetailWidget(report, { w: 12, h: 4, x: 1, y: nextY });
+          nextY += 4;
         }
-        addMainWidget({ w: 12, h: wideLayout ? 6 : 5, x: 1, y: wantsSummaryStrip ? 4 : 1 });
-      } else {
-        addMainWidget({ w: wideLayout ? 12 : 9, h: wideLayout ? 5 : 4, x: 1, y: 1 });
-        if (wantsSummaryStrip) {
-          addSummaryWidget(
-            wideLayout
-              ? { w: 12, h: 3, x: 1, y: 6 }
-              : { w: 3, h: 3, x: 10, y: 1 }
-          );
-        }
-      }
-      let nextSupportY = widgets.reduce((max, widget) => Math.max(max, Number(widget.layout.y || 1) + widget.layout.h), 1);
+        nextY += 1;
+      });
+      const attachedSupportReports = drafts.flatMap(({ report }) => resolveAttachedSupportReports(
+        report,
+        supportReports,
+        layoutHintsByReportId,
+        tablesById
+      )).filter((report, idx, list) => list.findIndex((item) => item.id === report.id) === idx);
       attachedSupportReports.forEach((supportReport) => {
         widgets.push({
-          id: uniqueId("widget", `${report.name}-${supportReport.name}-support`, existingIds),
+          id: uniqueId("widget", `${sheetName}-${supportReport.name}-support`, existingIds),
           title: `${supportReport.name} Support`,
-          layout: { w: 12, h: 4, x: 1, y: nextSupportY },
+          layout: { w: 12, h: 4, x: 1, y: nextY },
           mode: "linked",
           displayMode: "table",
           showDetails: true,
           showSummary: false,
           reportId: supportReport.id
         });
-        nextSupportY += 4;
+        nextY += 4;
       });
 
       return {
-        id: uniqueId("tab", report.name, existingIds),
-        name: report.name,
+        id: uniqueId("tab", sheetName, existingIds),
+        name: sheetName,
         widgets
       };
     })
@@ -1888,6 +1915,7 @@ export async function importWorkbookIntoStudioDocument(
       if (parsed.status === "skipped") {
         sheetReviews.push({
           sheetName: parsed.sheetName,
+          worksheetName: worksheet.name,
           status: parsed.status,
           headerRowNumber: parsed.headerRowNumber,
           rowCount: parsed.rowCount,
@@ -1916,6 +1944,7 @@ export async function importWorkbookIntoStudioDocument(
       layoutHintsByReportId[report.id] = parsed.layout;
       sheetReviews.push({
         sheetName: parsed.sheetName,
+        worksheetName: worksheet.name,
         status: parsed.status,
         headerRowNumber: parsed.headerRowNumber,
         rowCount: parsed.rowCount,
@@ -1959,9 +1988,15 @@ export async function importWorkbookIntoStudioDocument(
   let dashboardCreated = false;
   if (importedReports.length > 1) {
     debugImportStep(`building dashboard from ${importedReports.length} imported report(s)`);
+    const importedReportDrafts = importedReports.map((report) => ({
+      report,
+      sheetName: sheetReviews.find((review) => review.importedReportId === report.id)?.worksheetName
+        || sheetReviews.find((review) => review.importedReportId === report.id)?.sheetName
+        || report.name
+    }));
     const builtDashboard = buildImportedDashboard(
       workbookName,
-      importedReports,
+      importedReportDrafts,
       layoutHintsByReportId,
       Object.fromEntries(importedTables.map((table) => [table.id, table])),
       importedRowsByTableId,
