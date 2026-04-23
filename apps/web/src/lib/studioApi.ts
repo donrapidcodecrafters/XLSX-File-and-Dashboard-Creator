@@ -133,17 +133,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
-function arrayBufferToBase64(buffer: ArrayBuffer) {
-  const bytes = new Uint8Array(buffer);
-  const chunkSize = 0x8000;
-  let binary = "";
-  for (let index = 0; index < bytes.length; index += chunkSize) {
-    const chunk = bytes.subarray(index, Math.min(index + chunkSize, bytes.length));
-    binary += String.fromCharCode(...chunk);
-  }
-  return btoa(binary);
-}
-
 export function fetchStudioDocument() {
   return request<{ document: StudioDocument }>("/api/studio/document");
 }
@@ -174,14 +163,18 @@ export function updateStudioSession(session: Partial<StudioDocument["session"]>)
 }
 
 export async function importStudioWorkbook(file: File) {
-  const base64 = arrayBufferToBase64(await file.arrayBuffer());
-  return request<StudioWorkbookImportResult>("/api/studio/import/xlsx", {
+  const formData = new FormData();
+  formData.append("file", file, file.name);
+  const response = await fetch(API_BASE + "/api/studio/import/xlsx", {
     method: "POST",
-    body: JSON.stringify({
-      filename: file.name,
-      base64
-    })
+    body: formData
   });
+  const text = await response.text();
+  const body = text ? JSON.parse(text) : {};
+  if (!response.ok) {
+    throw new Error(body?.message || `Request failed with status ${response.status}`);
+  }
+  return body as StudioWorkbookImportResult;
 }
 
 export function fetchStudioVersions(objectId: string) {

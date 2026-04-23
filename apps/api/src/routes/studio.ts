@@ -161,18 +161,31 @@ export async function registerStudioRoutes(app: FastifyInstance) {
   });
 
   app.post("/api/studio/import/xlsx", async (request, reply) => {
-    const body = (request.body as { filename?: string; base64?: string } | undefined) || {};
-    if (!body.filename || !body.base64) {
-      reply.code(400);
-      return { message: "Workbook filename and base64 payload are required." };
-    }
     try {
-      await studioStore.hydrateFromQuickbase();
+      let filename = "";
+      let workbookBuffer: Buffer | null = null;
+      if (request.isMultipart()) {
+        const file = await request.file();
+        if (file) {
+          filename = file.filename || "";
+          workbookBuffer = await file.toBuffer();
+        }
+      } else {
+        const body = (request.body as { filename?: string; base64?: string } | undefined) || {};
+        if (body.filename && body.base64) {
+          filename = body.filename;
+          workbookBuffer = Buffer.from(body.base64, "base64");
+        }
+      }
+      if (!filename || !workbookBuffer) {
+        reply.code(400);
+        return { message: "Workbook file upload is required." };
+      }
       const current = studioStore.getLiveDocument();
       const imported = await importWorkbookIntoStudioDocument(
         current,
-        body.filename,
-        Buffer.from(body.base64, "base64")
+        filename,
+        workbookBuffer
       );
       return {
         document: imported.document,

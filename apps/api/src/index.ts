@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import formbody from "@fastify/formbody";
+import multipart from "@fastify/multipart";
 import { registerCatalogRoutes } from "./routes/catalog.js";
 import { registerQuickbaseRoutes } from "./routes/quickbase.js";
 import { registerRenderRoutes } from "./routes/render.js";
@@ -30,6 +31,11 @@ await app.register(cors, {
   maxAge: 60 * 60
 });
 await app.register(formbody);
+await app.register(multipart, {
+  limits: {
+    fileSize: 25 * 1024 * 1024
+  }
+});
 
 await registerCatalogRoutes(app);
 await registerQuickbaseRoutes(app);

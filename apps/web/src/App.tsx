@@ -62,6 +62,35 @@ function saveCachedStudioDocument(document: StudioDocument | null) {
   } catch {}
 }
 
+function buildCatalogItemsFromDocument(document: StudioDocument): CatalogSummaryItem[] {
+  const objects = document.bundle.objects || {};
+  const orderedIds = [
+    ...(document.bundle.order || []),
+    ...Object.keys(objects)
+  ].filter((id, index, list) => Boolean(objects[id]) && list.indexOf(id) === index);
+  const items: CatalogSummaryItem[] = [];
+  orderedIds.forEach((id) => {
+    const object = objects[id];
+    if (!object) return;
+    items.push({
+        id: object.id,
+        type: object.type,
+        schemaVersion: object.schemaVersion,
+        name: object.name,
+        description: object.description,
+        folder: object.folder,
+        category: object.category,
+        tags: object.tags,
+        scope: object.scope,
+        createdByUserId: object.createdByUserId,
+        ownerUserId: object.ownerUserId,
+        sharedUserIds: object.sharedUserIds,
+        updatedAt: object.updatedAt
+      });
+  });
+  return items;
+}
+
 function parseSharedBrowserSession(raw: string | null) {
   if (!raw) return null;
   try {
@@ -135,10 +164,22 @@ function useCatalog() {
   const reloadCatalog = useCallback(async () => {
     setCatalogLoading(true);
     setCatalogError("");
-    const [catalogResponse, tablesResponse, studioResponse] = await Promise.allSettled([
+    const studioResponse = await fetchStudioDocument().catch(() => null);
+    if (studioResponse?.document) {
+      const normalized = normalizeStudioDocument(studioResponse.document);
+      lastPersistedSessionKey.current = JSON.stringify(normalized.session || {});
+      lastPersistedSessionAt.current = Date.now();
+      setStudioDocument(normalized);
+      setObjects(buildCatalogItemsFromDocument(normalized));
+      setTables(normalized.bundle.tables || []);
+      saveCachedStudioDocument(normalized);
+      setCatalogLoading(false);
+      return;
+    }
+
+    const [catalogResponse, tablesResponse] = await Promise.allSettled([
       fetchCatalog(),
-      fetchTables(),
-      fetchStudioDocument().catch(() => null)
+      fetchTables()
     ]);
     if (catalogResponse.status === "fulfilled") {
       setObjects(catalogResponse.value.objects);
@@ -150,16 +191,12 @@ function useCatalog() {
     } else {
       setTables([]);
     }
-    if (studioResponse.status === "fulfilled" && studioResponse.value?.document) {
-      const normalized = normalizeStudioDocument(studioResponse.value.document);
-      lastPersistedSessionKey.current = JSON.stringify(normalized.session || {});
-      lastPersistedSessionAt.current = Date.now();
-      setStudioDocument(normalized);
-      saveCachedStudioDocument(normalized);
-    } else if (!studioDocument) {
+    if (!studioDocument) {
       const cachedDocument = loadCachedStudioDocument();
       if (cachedDocument) {
         setStudioDocument(cachedDocument);
+        setObjects(buildCatalogItemsFromDocument(cachedDocument));
+        setTables(cachedDocument.bundle.tables || []);
         setCatalogError("Using the last saved platform snapshot because the hosted studio document did not load cleanly.");
       }
     }

@@ -13,6 +13,7 @@
   "dependencies": {
     "@fastify/cors": "^10.0.1",
     "@fastify/formbody": "^8.0.2",
+    "@fastify/multipart": "^9.0.3",
     "@studio/shared": "*",
     "exceljs": "^4.4.0",
     "fast-xml-parser": "^5.7.1",
