@@ -484,8 +484,8 @@ function ObjectPage({
     let active = true;
     setLoading(true);
     const fetcher = page === 1
-      ? runReport(object.id, [], { forceLive: liveModeEnabled })
-      : runReportPage(object.id, page, pageSize, [], { forceLive: liveModeEnabled });
+      ? runReport(object.id, [], { forceLive: liveModeEnabled, report: object })
+      : runReportPage(object.id, page, pageSize, [], { forceLive: liveModeEnabled, report: object });
     fetcher
       .then((reportResult) => {
         if (!active) return;

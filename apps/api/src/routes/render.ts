@@ -173,8 +173,38 @@ export async function registerRenderRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string };
     const report = objectStore.getReport(id);
     if (!report) {
-      reply.code(404);
-      return { message: "Report not found." };
+      const body = (request.body as {
+        report?: ReportDefinition;
+      } | undefined) || {};
+      if (!body.report || body.report.id !== id) {
+        reply.code(404);
+        return { message: "Report not found." };
+      }
+      const fallbackReport = body.report;
+      const fullBody = (request.body as {
+        filters?: Array<{ fieldId: string; operator?: string; value: string }>;
+        page?: number;
+        pageSize?: number;
+        forceLive?: boolean;
+        report?: ReportDefinition;
+      } | undefined) || {};
+      const extraFilters = normalizeClientFilters(fullBody.filters || []);
+      const pendingRefresh = await maybeStartAutoRefreshForReport(fallbackReport);
+      if (pendingRefresh?.refreshJob && pendingRefresh.needsBlockingLoad) {
+        return buildPendingReportResult(fallbackReport, pendingRefresh.refreshJob, fullBody.page || 1, fullBody.pageSize || 100);
+      }
+      const result = await executeReport(fallbackReport, extraFilters, {
+        page: fullBody.page || 1,
+        pageSize: fullBody.pageSize || 100,
+        forceLive: fullBody.forceLive === true
+      });
+      if (pendingRefresh?.refreshJob) {
+        return {
+          ...result,
+          refreshJob: pendingRefresh.refreshJob
+        };
+      }
+      return result;
     }
     const body = (request.body as {
       filters?: Array<{ fieldId: string; operator?: string; value: string }>;
@@ -206,8 +236,38 @@ export async function registerRenderRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string };
     const report = objectStore.getReport(id);
     if (!report) {
-      reply.code(404);
-      return { message: "Report not found." };
+      const body = (request.body as {
+        report?: ReportDefinition;
+      } | undefined) || {};
+      if (!body.report || body.report.id !== id) {
+        reply.code(404);
+        return { message: "Report not found." };
+      }
+      const fallbackReport = body.report;
+      const fullBody = (request.body as {
+        filters?: Array<{ fieldId: string; operator?: string; value: string }>;
+        page?: number;
+        pageSize?: number;
+        forceLive?: boolean;
+        report?: ReportDefinition;
+      } | undefined) || {};
+      const extraFilters = normalizeClientFilters(fullBody.filters || []);
+      const pendingRefresh = await maybeStartAutoRefreshForReport(fallbackReport);
+      if (pendingRefresh?.refreshJob && pendingRefresh.needsBlockingLoad) {
+        return buildPendingReportResult(fallbackReport, pendingRefresh.refreshJob, fullBody.page || 1, fullBody.pageSize || 100);
+      }
+      const result = await fetchReportPage(fallbackReport, extraFilters, {
+        page: fullBody.page || 1,
+        pageSize: fullBody.pageSize || 100,
+        forceLive: fullBody.forceLive === true
+      });
+      if (pendingRefresh?.refreshJob) {
+        return {
+          ...result,
+          refreshJob: pendingRefresh.refreshJob
+        };
+      }
+      return result;
     }
     const body = (request.body as {
       filters?: Array<{ fieldId: string; operator?: string; value: string }>;
@@ -399,9 +459,15 @@ export async function registerRenderRoutes(app: FastifyInstance) {
   app.post("/api/dashboards/:id/render", async (request, reply) => {
     studioStore.getDocument();
     const { id } = request.params as { id: string };
-    const body = (request.body as { runtimeFilters?: Record<string, string>; activeTabId?: string; forceLive?: boolean } | undefined) || {};
+    const body = (request.body as {
+      runtimeFilters?: Record<string, string>;
+      activeTabId?: string;
+      forceLive?: boolean;
+      dashboard?: DashboardDefinition;
+    } | undefined) || {};
     try {
-      const dashboard = objectStore.getDashboard(id) as DashboardDefinition | undefined;
+      const dashboard = (objectStore.getDashboard(id) as DashboardDefinition | undefined)
+        || (body.dashboard && body.dashboard.id === id ? body.dashboard : undefined);
       if (!dashboard) {
         reply.code(404);
         return { message: "Dashboard not found." };

@@ -281,7 +281,7 @@ export function DashboardView({
         return next;
       });
       try {
-        const next = await renderDashboard(dashboard.id, runtimeFilters, tabId, { forceLive });
+        const next = await renderDashboard(dashboard.id, runtimeFilters, tabId, { forceLive, dashboard });
         if (!active) return;
         onRefreshJobDetected?.(next.refreshJob || null);
         const renderedTab = next.tabs.find((tab) => tab.id === tabId) || next.tabs[0];
@@ -318,7 +318,7 @@ export function DashboardView({
       if (!remainingTabIds.length) return;
       remainingTabIds.forEach((tabId) => {
         setTabLoading((current) => ({ ...current, [tabId]: true }));
-        renderDashboard(dashboard.id, runtimeFilters, tabId, { forceLive })
+        renderDashboard(dashboard.id, runtimeFilters, tabId, { forceLive, dashboard })
           .then((next) => {
             if (cancelled) return;
             const renderedTab = next.tabs.find((tab) => tab.id === tabId) || next.tabs[0];
@@ -429,7 +429,7 @@ export function DashboardView({
     setWidgetPageLoading((current) => ({ ...current, [widget.widgetId]: true }));
     try {
       const filters = buildDashboardFilters(dashboard, widget.report.id, runtimeFilters, widget.report.sourceTableId);
-      const next = await runReportPage(widget.report.id, page, 100, filters, { forceLive });
+      const next = await runReportPage(widget.report.id, page, 100, filters, { forceLive, report: widget.report });
       setWidgetPages((current) => ({ ...current, [widget.widgetId]: page }));
       setWidgetPageResults((current) => ({ ...current, [widget.widgetId]: next }));
     } finally {

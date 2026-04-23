@@ -128,11 +128,17 @@ export function fetchObject(id: string) {
 export function runReport(
   id: string,
   filters: Array<{ fieldId: string; value: string; operator?: string }> = [],
-  options: { forceLive?: boolean } = {}
+  options: { forceLive?: boolean; report?: unknown } = {}
 ) {
   return request<ReportRunResult>("/api/reports/" + encodeURIComponent(id) + "/run", {
     method: "POST",
-    body: JSON.stringify({ filters, page: 1, pageSize: 100, forceLive: options.forceLive === true })
+    body: JSON.stringify({
+      filters,
+      page: 1,
+      pageSize: 100,
+      forceLive: options.forceLive === true,
+      report: options.report
+    })
   });
 }
 
@@ -141,11 +147,17 @@ export function runReportPage(
   page: number,
   pageSize: number,
   filters: Array<{ fieldId: string; value: string; operator?: string }> = [],
-  options: { forceLive?: boolean } = {}
+  options: { forceLive?: boolean; report?: unknown } = {}
 ) {
   return request<ReportRunResult>("/api/reports/" + encodeURIComponent(id) + "/page", {
     method: "POST",
-    body: JSON.stringify({ filters, page, pageSize, forceLive: options.forceLive === true })
+    body: JSON.stringify({
+      filters,
+      page,
+      pageSize,
+      forceLive: options.forceLive === true,
+      report: options.report
+    })
   });
 }
 
@@ -185,10 +197,20 @@ export async function fetchAllReportRows(
   return rows;
 }
 
-export function renderDashboard(id: string, runtimeFilters: Record<string, string>, activeTabId = "", options: { forceLive?: boolean } = {}) {
+export function renderDashboard(
+  id: string,
+  runtimeFilters: Record<string, string>,
+  activeTabId = "",
+  options: { forceLive?: boolean; dashboard?: unknown } = {}
+) {
   return request<DashboardRunResult>("/api/dashboards/" + encodeURIComponent(id) + "/render", {
     method: "POST",
-    body: JSON.stringify({ runtimeFilters, activeTabId, forceLive: options.forceLive === true }),
+    body: JSON.stringify({
+      runtimeFilters,
+      activeTabId,
+      forceLive: options.forceLive === true,
+      dashboard: options.dashboard
+    }),
     timeoutMs: DASHBOARD_RENDER_TIMEOUT_MS
   });
 }
