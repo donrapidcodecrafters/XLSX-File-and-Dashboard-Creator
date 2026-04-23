@@ -174,24 +174,13 @@ export async function registerStudioRoutes(app: FastifyInstance) {
         body.filename,
         Buffer.from(body.base64, "base64")
       );
-      const document = studioStore.saveDocument(imported.document);
-      const sync = await syncStudioDocumentToQuickbase(studioStore.getLiveDocument()).catch((error) => ({
-        enabled: true,
-        ok: false,
-        message: error instanceof Error ? error.message : "Quickbase sync failed.",
-        savedObjects: 0,
-        savedSettings: 0,
-        savedVersions: 0,
-        savedStorageConfig: 0
-      }));
       return {
-        document,
+        document: imported.document,
         primaryObjectId: imported.primaryObjectId,
         importedObjectIds: imported.importedObjectIds,
         importedTableIds: imported.importedTableIds,
         warnings: imported.warnings,
-        review: imported.review,
-        sync
+        review: imported.review
       };
     } catch (error) {
       reply.code(400);

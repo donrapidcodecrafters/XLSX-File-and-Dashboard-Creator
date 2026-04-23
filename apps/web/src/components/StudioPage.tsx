@@ -1736,6 +1736,32 @@ export function StudioPage({
     }
   }
 
+  async function runWorkbookImportWithOverlay<T>(fileName: string, action: () => Promise<T>) {
+    const phases = [
+      `Uploading ${fileName}…`,
+      "Reading workbook sheets and tabs…",
+      "Building draft reports and dashboard tabs…",
+      "Preparing the import review…"
+    ];
+    let phaseIndex = 0;
+    setActivityOverlay({ title: "Importing xlsx", message: phases[phaseIndex] });
+    const phaseTimer = window.setInterval(() => {
+      phaseIndex = Math.min(phaseIndex + 1, phases.length - 1);
+      setActivityOverlay({ title: "Importing xlsx", message: phases[phaseIndex] });
+    }, 4000);
+    const startedAt = Date.now();
+    try {
+      return await action();
+    } finally {
+      window.clearInterval(phaseTimer);
+      const elapsed = Date.now() - startedAt;
+      if (elapsed < ACTIVITY_OVERLAY_MIN_MS) {
+        await new Promise((resolve) => window.setTimeout(resolve, ACTIVITY_OVERLAY_MIN_MS - elapsed));
+      }
+      setActivityOverlay(null);
+    }
+  }
+
   function upsertStudioExportJob(entry: StudioExportJob) {
     applyDocumentUpdate((draft) => {
       const currentIndex = draft.exportJobs.findIndex((job) =>
@@ -3249,54 +3275,52 @@ export function StudioPage({
     });
   }
 
-  function handleImportXlsx(event: ChangeEvent<HTMLInputElement>) {
+  async function handleImportXlsx(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
     setXlsxImporting(true);
-    importStudioWorkbook(file)
-      .then((response) => {
-        const sourceTableId = "";
-        lastImportPreloadTableIdRef.current = "";
-        const baseObjects = Object.fromEntries(
-          response.importedObjectIds
-            .map((objectId) => response.document.bundle.objects[objectId])
-            .filter((object): object is StudioObject => Boolean(object))
-            .map((object) => [object.id, clone(object)])
-        );
-        const importedTablesById = Object.fromEntries(
-          response.importedTableIds
-            .map((tableId) => response.document.bundle.tables.find((table) => table.id === tableId))
-            .filter((table): table is TableDefinition => Boolean(table))
-            .map((table) => [table.id, clone(table)])
-        );
-        const targetTable = sourceTableId ? bundle.tables.find((table) => table.id === sourceTableId) || null : null;
-        setPendingWorkbookImport({
-          review: response.review,
-          warnings: response.warnings,
-          primaryObjectId: response.primaryObjectId,
-          importedObjectIds: response.importedObjectIds,
-          sourceTableId,
-          baseObjects,
-          currentObjects: rebuildPendingWorkbookImportObjects(baseObjects, importedTablesById, targetTable),
-          importedTablesById
-        });
-        setImportReviewModalOpen(true);
-        const importedType = response.review.dashboardCreated ? "dashboard workbook" : response.importedObjectIds.length > 1 ? "workbook" : "sheet";
-        pushToast(`Parsed ${importedType} from ${file.name}. Choose the real source table before creating anything.`);
-        if (!bundle.tables.length) {
-          pushToast("Load or configure a real platform table first. Imported workbooks no longer create placeholder tables.", "warn");
-        }
-        if (response.warnings.length) {
-          pushToast(`${response.warnings.length} import note${response.warnings.length === 1 ? "" : "s"} recorded. Review the import summary for details.`, "warn");
-        }
-      })
-      .catch((error) => {
-        pushToast(error instanceof Error ? error.message : "XLSX import failed.", "danger");
-      })
-      .finally(() => {
-        setXlsxImporting(false);
-        if (event.target) event.target.value = "";
+    try {
+      const response = await runWorkbookImportWithOverlay(file.name, () => importStudioWorkbook(file));
+      const sourceTableId = "";
+      lastImportPreloadTableIdRef.current = "";
+      const baseObjects = Object.fromEntries(
+        response.importedObjectIds
+          .map((objectId) => response.document.bundle.objects[objectId])
+          .filter((object): object is StudioObject => Boolean(object))
+          .map((object) => [object.id, clone(object)])
+      );
+      const importedTablesById = Object.fromEntries(
+        response.importedTableIds
+          .map((tableId) => response.document.bundle.tables.find((table) => table.id === tableId))
+          .filter((table): table is TableDefinition => Boolean(table))
+          .map((table) => [table.id, clone(table)])
+      );
+      const targetTable = sourceTableId ? bundle.tables.find((table) => table.id === sourceTableId) || null : null;
+      setPendingWorkbookImport({
+        review: response.review,
+        warnings: response.warnings,
+        primaryObjectId: response.primaryObjectId,
+        importedObjectIds: response.importedObjectIds,
+        sourceTableId,
+        baseObjects,
+        currentObjects: rebuildPendingWorkbookImportObjects(baseObjects, importedTablesById, targetTable),
+        importedTablesById
       });
+      setImportReviewModalOpen(true);
+      const importedType = response.review.dashboardCreated ? "dashboard workbook" : response.importedObjectIds.length > 1 ? "workbook" : "sheet";
+      pushToast(`Parsed ${importedType} from ${file.name}. Choose the real source table before creating anything.`);
+      if (!bundle.tables.length) {
+        pushToast("Load or configure a real platform table first. Imported workbooks no longer create placeholder tables.", "warn");
+      }
+      if (response.warnings.length) {
+        pushToast(`${response.warnings.length} import note${response.warnings.length === 1 ? "" : "s"} recorded. Review the import summary for details.`, "warn");
+      }
+    } catch (error) {
+      pushToast(error instanceof Error ? error.message : "XLSX import failed.", "danger");
+    } finally {
+      setXlsxImporting(false);
+      if (event.target) event.target.value = "";
+    }
   }
 
   function exportJson() {
