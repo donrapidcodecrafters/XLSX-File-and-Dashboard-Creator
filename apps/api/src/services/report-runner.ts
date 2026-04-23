@@ -47,6 +47,7 @@ interface ExecuteReportOptions {
 interface ExecuteDashboardOptions {
   activeTabId?: string;
   forceLive?: boolean;
+  dashboard?: DashboardDefinition;
 }
 
 interface ExportProgressCallback {
@@ -1249,7 +1250,9 @@ export async function executeDashboard(
   runtimeValues: Record<string, string>,
   options: ExecuteDashboardOptions = {}
 ): Promise<DashboardRunResult> {
-  const dashboard = objectStore.getDashboard(dashboardId);
+  const dashboard = options.dashboard?.id === dashboardId
+    ? options.dashboard
+    : objectStore.getDashboard(dashboardId);
   if (!dashboard) {
     throw new Error("Dashboard not found.");
   }

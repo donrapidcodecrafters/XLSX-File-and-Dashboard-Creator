@@ -171,47 +171,18 @@ export async function registerRenderRoutes(app: FastifyInstance) {
   app.post("/api/reports/:id/run", async (request, reply) => {
     studioStore.getDocument();
     const { id } = request.params as { id: string };
-    const report = objectStore.getReport(id);
-    if (!report) {
-      const body = (request.body as {
-        report?: ReportDefinition;
-      } | undefined) || {};
-      if (!body.report || body.report.id !== id) {
-        reply.code(404);
-        return { message: "Report not found." };
-      }
-      const fallbackReport = body.report;
-      const fullBody = (request.body as {
-        filters?: Array<{ fieldId: string; operator?: string; value: string }>;
-        page?: number;
-        pageSize?: number;
-        forceLive?: boolean;
-        report?: ReportDefinition;
-      } | undefined) || {};
-      const extraFilters = normalizeClientFilters(fullBody.filters || []);
-      const pendingRefresh = await maybeStartAutoRefreshForReport(fallbackReport);
-      if (pendingRefresh?.refreshJob && pendingRefresh.needsBlockingLoad) {
-        return buildPendingReportResult(fallbackReport, pendingRefresh.refreshJob, fullBody.page || 1, fullBody.pageSize || 100);
-      }
-      const result = await executeReport(fallbackReport, extraFilters, {
-        page: fullBody.page || 1,
-        pageSize: fullBody.pageSize || 100,
-        forceLive: fullBody.forceLive === true
-      });
-      if (pendingRefresh?.refreshJob) {
-        return {
-          ...result,
-          refreshJob: pendingRefresh.refreshJob
-        };
-      }
-      return result;
-    }
     const body = (request.body as {
       filters?: Array<{ fieldId: string; operator?: string; value: string }>;
       page?: number;
       pageSize?: number;
       forceLive?: boolean;
+      report?: ReportDefinition;
     } | undefined) || {};
+    const report = body.report?.id === id ? body.report : objectStore.getReport(id);
+    if (!report) {
+      reply.code(404);
+      return { message: "Report not found." };
+    }
     const extraFilters = normalizeClientFilters(body.filters || []);
     const pendingRefresh = await maybeStartAutoRefreshForReport(report);
     if (pendingRefresh?.refreshJob && pendingRefresh.needsBlockingLoad) {
@@ -234,47 +205,18 @@ export async function registerRenderRoutes(app: FastifyInstance) {
   app.post("/api/reports/:id/page", async (request, reply) => {
     studioStore.getDocument();
     const { id } = request.params as { id: string };
-    const report = objectStore.getReport(id);
-    if (!report) {
-      const body = (request.body as {
-        report?: ReportDefinition;
-      } | undefined) || {};
-      if (!body.report || body.report.id !== id) {
-        reply.code(404);
-        return { message: "Report not found." };
-      }
-      const fallbackReport = body.report;
-      const fullBody = (request.body as {
-        filters?: Array<{ fieldId: string; operator?: string; value: string }>;
-        page?: number;
-        pageSize?: number;
-        forceLive?: boolean;
-        report?: ReportDefinition;
-      } | undefined) || {};
-      const extraFilters = normalizeClientFilters(fullBody.filters || []);
-      const pendingRefresh = await maybeStartAutoRefreshForReport(fallbackReport);
-      if (pendingRefresh?.refreshJob && pendingRefresh.needsBlockingLoad) {
-        return buildPendingReportResult(fallbackReport, pendingRefresh.refreshJob, fullBody.page || 1, fullBody.pageSize || 100);
-      }
-      const result = await fetchReportPage(fallbackReport, extraFilters, {
-        page: fullBody.page || 1,
-        pageSize: fullBody.pageSize || 100,
-        forceLive: fullBody.forceLive === true
-      });
-      if (pendingRefresh?.refreshJob) {
-        return {
-          ...result,
-          refreshJob: pendingRefresh.refreshJob
-        };
-      }
-      return result;
-    }
     const body = (request.body as {
       filters?: Array<{ fieldId: string; operator?: string; value: string }>;
       page?: number;
       pageSize?: number;
       forceLive?: boolean;
+      report?: ReportDefinition;
     } | undefined) || {};
+    const report = body.report?.id === id ? body.report : objectStore.getReport(id);
+    if (!report) {
+      reply.code(404);
+      return { message: "Report not found." };
+    }
     const extraFilters = normalizeClientFilters(body.filters || []);
     const pendingRefresh = await maybeStartAutoRefreshForReport(report);
     if (pendingRefresh?.refreshJob && pendingRefresh.needsBlockingLoad) {
@@ -466,8 +408,9 @@ export async function registerRenderRoutes(app: FastifyInstance) {
       dashboard?: DashboardDefinition;
     } | undefined) || {};
     try {
-      const dashboard = (objectStore.getDashboard(id) as DashboardDefinition | undefined)
-        || (body.dashboard && body.dashboard.id === id ? body.dashboard : undefined);
+      const dashboard = body.dashboard?.id === id
+        ? body.dashboard
+        : (objectStore.getDashboard(id) as DashboardDefinition | undefined);
       if (!dashboard) {
         reply.code(404);
         return { message: "Dashboard not found." };
@@ -475,7 +418,8 @@ export async function registerRenderRoutes(app: FastifyInstance) {
       const pendingRefresh = await maybeStartAutoRefreshForDashboard(dashboard, body.activeTabId || "");
       const result = await executeDashboard(id, body.runtimeFilters || {}, {
         activeTabId: body.activeTabId || "",
-        forceLive: body.forceLive === true
+        forceLive: body.forceLive === true,
+        dashboard
       });
       if (pendingRefresh?.refreshJob) {
         return {
