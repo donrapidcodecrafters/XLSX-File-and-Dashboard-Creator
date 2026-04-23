@@ -167,10 +167,48 @@ function qbFieldKey(fid: string) {
   return String(qbFieldId(fid));
 }
 
+function quickbaseDisplayText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) {
+    const parts = value
+      .map((entry) => quickbaseDisplayText(entry))
+      .filter(Boolean);
+    return parts.join(", ");
+  }
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const preferredKeys = ["displayValue", "label", "name", "text", "value"];
+    for (const key of preferredKeys) {
+      const next = record[key];
+      if (next === undefined || next === null) continue;
+      const text = quickbaseDisplayText(next);
+      if (text) return text;
+    }
+  }
+  return "";
+}
+
 function qbFieldValue(record: Record<string, any>, fid: string) {
   if (!record || !fid) return "";
   const entry = record[qbFieldKey(fid)] || record[String(fid)];
-  return entry && typeof entry === "object" && "value" in entry ? entry.value : "";
+  if (!entry) return "";
+  if (entry && typeof entry === "object" && "displayValue" in entry) {
+    const display = quickbaseDisplayText((entry as Record<string, unknown>).displayValue);
+    if (display) return display;
+  }
+  if (entry && typeof entry === "object" && "value" in entry) {
+    const rawValue = (entry as Record<string, unknown>).value;
+    const display = quickbaseDisplayText(rawValue);
+    if (display) return display;
+    if (typeof rawValue === "number" || typeof rawValue === "boolean") return rawValue;
+    if (rawValue === null) return null;
+    if (Array.isArray(rawValue)) {
+      return rawValue.map((item) => quickbaseDisplayText(item)).filter(Boolean);
+    }
+    return "";
+  }
+  return quickbaseDisplayText(entry);
 }
 
 function qbSetField(record: QuickbaseRecord, fid: string, value: unknown) {
