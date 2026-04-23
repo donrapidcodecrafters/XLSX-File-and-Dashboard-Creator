@@ -42,6 +42,8 @@ const SESSION_PERSIST_INTERVAL_MS = 5 * 60_000;
 const SHARED_BROWSER_SESSION_KEY = "studio-shared-browser-session-v1";
 const SESSION_ACTIVITY_TOUCH_INTERVAL_MS = 60_000;
 const CACHED_STUDIO_DOCUMENT_KEY = "hosted-reporting-studio-v2";
+const WORKSPACE_REFRESH_SIGNAL_KEY = "hosted-reporting-workspace-refresh-v1";
+const WORKSPACE_REFRESH_EVENT = "studio:workspace-updated";
 
 function loadCachedStudioDocument() {
   try {
@@ -256,6 +258,22 @@ function useCatalog() {
   useEffect(() => {
     saveCachedStudioDocument(studioDocument);
   }, [studioDocument]);
+
+  useEffect(() => {
+    const handleWorkspaceUpdated = () => {
+      void reloadCatalog();
+    };
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== WORKSPACE_REFRESH_SIGNAL_KEY) return;
+      void reloadCatalog();
+    };
+    window.addEventListener(WORKSPACE_REFRESH_EVENT, handleWorkspaceUpdated);
+    window.addEventListener("storage", handleStorage);
+    return () => {
+      window.removeEventListener(WORKSPACE_REFRESH_EVENT, handleWorkspaceUpdated);
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, [reloadCatalog]);
 
   return { objects, tables, studioDocument, recentIds, reloadCatalog, markObjectAsRecent, updateUserSettings, persistSession, setStudioDocument, catalogLoading, catalogError };
 }

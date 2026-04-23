@@ -117,6 +117,8 @@ import {
 
 const STORAGE_KEY = "hosted-reporting-studio-v2";
 const ACTIVITY_OVERLAY_MIN_MS = 700;
+const WORKSPACE_REFRESH_SIGNAL_KEY = "hosted-reporting-workspace-refresh-v1";
+const WORKSPACE_REFRESH_EVENT = "studio:workspace-updated";
 const WIDGET_LAYOUT_PRESETS = [
   { id: "quarter", label: "Quarter", w: 3, h: 3 },
   { id: "third", label: "Third", w: 4, h: 3 },
@@ -317,6 +319,14 @@ function saveLocalDocument(document: StudioDocument) {
   } catch {
     // Ignore browser storage quota failures so large workspaces do not crash the app.
   }
+}
+
+function notifyWorkspaceUpdated() {
+  const signal = String(Date.now());
+  try {
+    window.localStorage.setItem(WORKSPACE_REFRESH_SIGNAL_KEY, signal);
+  } catch {}
+  window.dispatchEvent(new CustomEvent(WORKSPACE_REFRESH_EVENT, { detail: { signal } }));
 }
 
 function isFilterGroupNode(node: FilterNodeDefinition): node is FilterGroupDefinition {
@@ -2497,6 +2507,7 @@ export function StudioPage({
         stripRemovedObjectIds(persistedDocument, options.removedObjectIds);
       }
       setDocumentState(scopeDocument(persistedDocument));
+      notifyWorkspaceUpdated();
       setLastQuickbaseSync(response.sync || null);
       if (response.sync?.enabled) {
         if (response.sync.ok) {
@@ -2541,6 +2552,7 @@ export function StudioPage({
         setDocumentState(scopeDocument(normalizeStudioDocument(response.document)));
         setHistory([]);
         setFuture([]);
+        notifyWorkspaceUpdated();
         pushToast("Reloaded hosted studio.");
       } catch (error) {
         pushToast(error instanceof Error ? error.message : "Reload failed.", "danger");

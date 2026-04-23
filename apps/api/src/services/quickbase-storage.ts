@@ -1,5 +1,5 @@
 import { XMLParser } from "fast-xml-parser";
-import { normalizeStudioDocument, type DataRow, type FieldType, type QuickbaseBootstrapStatus, type StudioDocument, type StudioObject, type StudioVersionRecord, type TableDefinition } from "@studio/shared";
+import { buildStudioDocument, normalizeStudioDocument, type DataRow, type FieldType, type QuickbaseBootstrapStatus, type StudioDocument, type StudioObject, type StudioVersionRecord, type TableDefinition } from "@studio/shared";
 import { loadQuickbaseSchema, type QuickbaseAppSchema } from "./quickbase-schema.js";
 
 interface QuickbaseUser {
@@ -87,6 +87,7 @@ const bootstrapRowsCache = new Map<string, CacheEntry<Array<Record<string, { val
 const currentUserCache = new Map<string, CacheEntry<QuickbaseUser>>();
 const storedObjectsCache = new Map<string, CacheEntry<StudioObject[]>>();
 const schemaCache = new Map<string, CacheEntry<Awaited<ReturnType<typeof loadQuickbaseSchema>> | null>>();
+const SEEDED_OBJECT_IDS = new Set(Object.keys(buildStudioDocument().bundle.objects || {}));
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -1631,7 +1632,7 @@ async function syncObjectRecords(document: StudioDocument, user: QuickbaseUser, 
   try {
     const existing = await quickbaseFetchRecordIdMap(config, config.objectTableId, [config.objectKeyFieldId]);
     const rows: QuickbaseRecord[] = [];
-    const objects = Object.values(document.bundle.objects || {});
+    const objects = Object.values(document.bundle.objects || {}).filter((object) => !SEEDED_OBJECT_IDS.has(object.id));
     objects.forEach((object) => {
       const launchUserId = String(document.session.currentUserId || "").trim();
       const effectiveOwnerUserId = object.scope === "personal"
