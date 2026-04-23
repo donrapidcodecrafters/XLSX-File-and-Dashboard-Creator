@@ -1304,6 +1304,35 @@ function mergeProfileRefreshSource(
   };
 }
 
+function normalizeStoredObjectOwnerUserId(
+  object: StudioObject,
+  currentSessionUserId: string,
+  quickbaseUser: QuickbaseUser
+) {
+  if (object.scope !== "personal") return object;
+  const normalizedSessionUserId = String(currentSessionUserId || "").trim();
+  const normalizedOwnerUserId = String(object.ownerUserId || "").trim();
+  const quickbaseAliases = new Set(
+    [quickbaseUser.id, quickbaseUser.email, quickbaseUser.login]
+      .map((value) => String(value || "").trim())
+      .filter(Boolean)
+  );
+  if (
+    normalizedSessionUserId
+    && (
+      !normalizedOwnerUserId
+      || normalizedOwnerUserId === "demo.user"
+      || quickbaseAliases.has(normalizedOwnerUserId)
+    )
+  ) {
+    return {
+      ...object,
+      ownerUserId: normalizedSessionUserId
+    };
+  }
+  return object;
+}
+
 export async function hydrateStudioDocumentFromQuickbase(document: StudioDocument): Promise<StudioDocument> {
   const base = normalizeStudioDocument(document);
   const bootstrapConfig =
@@ -1382,9 +1411,10 @@ export async function hydrateStudioDocumentFromQuickbase(document: StudioDocumen
   );
   const mergedObjects = new Map<string, StudioObject>();
   storedByProfile.flatMap((entry) => entry.objects).forEach((object) => {
-    const current = mergedObjects.get(object.id);
-    if (!current || String(object.updatedAt || "") >= String(current.updatedAt || "")) {
-      mergedObjects.set(object.id, object);
+    const normalizedObject = normalizeStoredObjectOwnerUserId(object, base.session.currentUserId, user);
+    const current = mergedObjects.get(normalizedObject.id);
+    if (!current || String(normalizedObject.updatedAt || "") >= String(current.updatedAt || "")) {
+      mergedObjects.set(normalizedObject.id, normalizedObject);
     }
   });
   const mergedVersions: Record<string, StudioVersionRecord[]> = {};

@@ -3847,6 +3847,26 @@ export function StudioPage({
   const defaultUrl = buildHostedHashUrl(`/${activeObject.type}/${activeObject.id}`);
   const viewerUrl = buildHostedHashUrl(`/${activeObject.type}/${activeObject.id}`, { viewer: true });
   const embedUrl = buildHostedHashUrl(`/${activeObject.type}/${activeObject.id}`, { embed: true, viewer: true });
+  const shortcutsSection = hasActiveObject ? (
+    <div className="surface stack">
+      <div className="card-head">
+        <strong>Shortcuts</strong>
+        <span className="micro">Open, share, save, and export this workspace.</span>
+      </div>
+      <div className="nav-list">
+        <Link className="nav-card" to={buildHostedRoute(`/${activeObject.type}/${activeObject.id}`)} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>
+          <span className="badge">Full screen</span>
+          <strong>Open full-screen view</strong>
+          <span className="micro">{defaultUrl}</span>
+        </Link>
+      </div>
+      <div className="studio-actions">
+        <button onClick={() => addTemplate(activeObject.type === "dashboard" ? "layout" : "yaml")}>Save as template</button>
+        <button onClick={snapshotCurrentObject}>Save version</button>
+        <button onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save to server"}</button>
+      </div>
+    </div>
+  ) : null;
 
   return (
     <>
@@ -3855,6 +3875,7 @@ export function StudioPage({
       ) : null}
       <section className={`studio-page ${activeDashboard ? "studio-page-dashboard" : "studio-page-report"}`}>
       <div className="studio-canvas">
+        {shortcutsSection}
         <div className="hero studio-hero">
           <div>
             <span className="badge brand">{hasActiveObject ? typeLabel(activeObject.type) : "Workspace"}</span>
@@ -4430,25 +4451,6 @@ export function StudioPage({
               </>
             ) : null}
           </div>
-
-        <div className="surface stack">
-          <div className="card-head">
-            <strong>Shortcuts</strong>
-            <span className="micro">Open, share, save, and export this workspace.</span>
-          </div>
-          <div className="nav-list">
-            <Link className="nav-card" to={buildHostedRoute(`/${activeObject.type}/${activeObject.id}`)} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>
-              <span className="badge">Full screen</span>
-              <strong>Open full-screen view</strong>
-              <span className="micro">{defaultUrl}</span>
-            </Link>
-          </div>
-          <div className="studio-actions">
-            <button onClick={() => addTemplate(activeObject.type === "dashboard" ? "layout" : "yaml")}>Save as template</button>
-            <button onClick={snapshotCurrentObject}>Save version</button>
-            <button onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save to server"}</button>
-          </div>
-        </div>
         </aside>
       ) : null}
 
