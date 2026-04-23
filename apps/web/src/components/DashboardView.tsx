@@ -365,12 +365,11 @@ export function DashboardView({
 
   useEffect(() => {
     if (hosted.autoDownload !== "xlsx") return;
-    if (hosted.sandboxedFrame) return;
     if (autoExportStartedRef.current) return;
     autoExportStartedRef.current = true;
     window.history.replaceState({}, document.title, buildObjectUrl("dashboard", dashboard.id, { viewer: true }));
-    void beginExport();
-  }, [dashboard.id, hosted.autoDownload, hosted.sandboxedFrame]);
+    void beginExportInPlace();
+  }, [dashboard.id, hosted.autoDownload]);
 
   useEffect(() => {
     if (!onStateChange) return;
@@ -414,15 +413,15 @@ export function DashboardView({
     setFocusedWidgetId(view.focusedWidgetId || "");
   }
 
-  async function beginExport() {
-    if (hosted.sandboxedFrame) {
-      window.open(buildObjectUrl("dashboard", dashboard.id, { viewer: true, download: "xlsx" }), "_blank", "noopener,noreferrer");
-      return;
-    }
+  async function beginExportInPlace() {
     setExportPopup(null);
     const response = await startDashboardExportJob({ dashboardId: dashboard.id, dashboard, runtimeFilters });
     setExportJob(response.job);
     setDownloadedJobId("");
+  }
+
+  async function beginExport() {
+    window.open(buildObjectUrl("dashboard", dashboard.id, { viewer: true, download: "xlsx" }), "_blank", "noopener,noreferrer");
   }
 
   const tabs = dashboard.tabs.map((tab) => tabResults[tab.id] || ({ id: tab.id, name: tab.name, widgets: [] }));

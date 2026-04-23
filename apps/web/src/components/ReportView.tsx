@@ -247,22 +247,21 @@ export function ReportView({
 
   useEffect(() => {
     if (hosted.autoDownload !== "xlsx") return;
-    if (hosted.sandboxedFrame) return;
     if (autoExportStartedRef.current) return;
     autoExportStartedRef.current = true;
     window.history.replaceState({}, document.title, buildObjectUrl("report", report.id, { viewer: true }));
-    void beginExport();
-  }, [hosted.autoDownload, hosted.sandboxedFrame, report.id]);
+    void beginExportInPlace();
+  }, [hosted.autoDownload, report.id]);
 
-  async function beginExport() {
-    if (hosted.sandboxedFrame) {
-      window.open(buildObjectUrl("report", report.id, { viewer: true, download: "xlsx" }), "_blank", "noopener,noreferrer");
-      return;
-    }
+  async function beginExportInPlace() {
     setExportPopup(null);
     const response = await startReportExportJob({ reportId: report.id, report, table });
     setExportJob(response.job);
     setDownloadedJobId("");
+  }
+
+  async function beginExport() {
+    window.open(buildObjectUrl("report", report.id, { viewer: true, download: "xlsx" }), "_blank", "noopener,noreferrer");
   }
 
   function freshnessLabel() {
