@@ -735,15 +735,19 @@ export function App() {
     [displayDocument, objects, requiresHostedStudioDocument]
   );
   const scopedTables = useMemo(
-    () => requiresHostedStudioDocument && !sessionScopedDocument
-      ? []
-      : filterTablesForLaunchScope(tables, sessionScopedDocument, {
-          launchSource: hosted.launchSource,
-          currentUserId,
-          launchRealmHostname: hosted.realmHostname,
-          launchAppId: hosted.appId
-        }),
-    [currentUserId, hosted.appId, hosted.launchSource, hosted.realmHostname, requiresHostedStudioDocument, sessionScopedDocument, tables]
+    () => {
+      if (requiresHostedStudioDocument && !sessionScopedDocument) return [];
+      const sourceTables = displayDocument?.bundle.tables?.length
+        ? displayDocument.bundle.tables
+        : tables;
+      return filterTablesForLaunchScope(sourceTables, sessionScopedDocument, {
+        launchSource: hosted.launchSource,
+        currentUserId,
+        launchRealmHostname: hosted.realmHostname,
+        launchAppId: hosted.appId
+      });
+    },
+    [currentUserId, displayDocument, hosted.appId, hosted.launchSource, hosted.realmHostname, requiresHostedStudioDocument, sessionScopedDocument, tables]
   );
   const bootstrapIssues = useMemo(
     () => (displayDocument?.quickbaseProfiles || []).filter((profile) => !profile.bootstrap.ready || profile.bootstrap.autoProvisioned || profile.bootstrap.error),

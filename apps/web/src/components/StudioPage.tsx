@@ -1186,13 +1186,19 @@ export function StudioPage({
     [documentState, activeQuickbaseProfile]
   );
 
+  const activeProfileRefreshValidation = getActiveProfileRefreshValidation(documentState, false);
+  const staleMissingReportIdError = Boolean(
+    activeQuickbaseProfile?.refreshStatus.lastError
+    && /no quickbase source report id is configured/i.test(activeQuickbaseProfile.refreshStatus.lastError)
+    && !activeProfileRefreshValidation
+  );
   const savedRowsForApp = activeQuickbaseProfile?.refreshStatus.cachedRowCount || 0;
   const refreshStatusTitle = activeQuickbaseProfile?.refreshStatus.running
     ? "Refreshing saved data"
     : activeQuickbaseProfile?.refreshStatus.lastSuccessAt
       ? (savedRowsForApp > 0 ? "Saved data is ready" : "Refresh finished but nothing was saved")
       : "No saved data yet";
-  const refreshStatusDetail = activeQuickbaseProfile?.refreshStatus.lastError
+  const refreshStatusDetail = (!staleMissingReportIdError ? activeQuickbaseProfile?.refreshStatus.lastError : "")
     || (activeQuickbaseProfile?.refreshStatus.running
       ? "We are updating the saved Quickbase data for this app now."
       : activeQuickbaseProfile?.refreshStatus.lastSuccessAt
