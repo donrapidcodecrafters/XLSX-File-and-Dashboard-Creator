@@ -164,16 +164,6 @@ function getDashboardCrossFilterOptions(
   return options;
 }
 
-function navigateTopLevel(url: string) {
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.target = "_top";
-  anchor.rel = "noopener noreferrer";
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-}
-
 function buildExportFilename(name: string) {
   const safe = String(name || "dashboard")
     .replace(/[\\/:*?"<>|]+/g, " ")
@@ -377,6 +367,7 @@ export function DashboardView({
 
   useEffect(() => {
     if (!exportJob || exportJob.status !== "complete" || downloadedJobId === exportJob.id) return;
+    if (hosted.embed || hosted.sandboxedFrame) return;
     downloadExportJob(exportJob.id, {
       directDownload: hosted.embed,
       popupWindow: exportPopup,
@@ -386,7 +377,7 @@ export function DashboardView({
     setDownloadedJobId(exportJob.id);
     setExportPopup(null);
     setExportSaveTarget(null);
-  }, [dashboard.name, downloadedJobId, exportJob, exportPopup, exportSaveTarget, hosted.embed]);
+  }, [dashboard.name, downloadedJobId, exportJob, exportPopup, exportSaveTarget, hosted.embed, hosted.sandboxedFrame]);
 
   useEffect(() => {
     if (hosted.autoDownload !== "xlsx") return;
@@ -446,13 +437,21 @@ export function DashboardView({
   }
 
   async function beginExport() {
-    const saveTarget = await createExportSaveTarget(buildExportFilename(dashboard.name));
-    if (saveTarget === null && hosted.sandboxedFrame) {
-      const url = buildObjectUrl("dashboard", dashboard.id, { viewer: true, download: "xlsx" });
-      navigateTopLevel(url);
+    if (exportJob?.status === "complete" && downloadedJobId !== exportJob.id) {
+      const saveTarget = await createExportSaveTarget(buildExportFilename(dashboard.name));
+      if (!saveTarget) return;
+      setExportSaveTarget(saveTarget);
+      downloadExportJob(exportJob.id, {
+        directDownload: hosted.embed,
+        popupWindow: exportPopup,
+        saveTarget,
+        fallbackFilename: buildExportFilename(dashboard.name)
+      });
+      setDownloadedJobId(exportJob.id);
+      setExportPopup(null);
+      setExportSaveTarget(null);
       return;
     }
-    setExportSaveTarget(saveTarget);
     await beginExportInPlace();
   }
 
