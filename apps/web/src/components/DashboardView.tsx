@@ -223,6 +223,8 @@ export function DashboardView({
   const skipStateBroadcastRef = useRef(true);
   const tabResultsRef = useRef(tabResults);
   const tabLoadingRef = useRef(tabLoading);
+  const onRefreshJobDetectedRef = useRef(onRefreshJobDetected);
+  const tabRequestSequenceRef = useRef<Record<string, number>>({});
   const resolvedActiveTabId = resolveActiveDashboardTabId(dashboard, activeTabId);
   const activeTabResult = tabResults[resolvedActiveTabId] || null;
   const activeTabLayout = useMemo(() => {
@@ -245,6 +247,10 @@ export function DashboardView({
     tabLoadingRef.current = tabLoading;
   }, [tabLoading]);
 
+  useEffect(() => {
+    onRefreshJobDetectedRef.current = onRefreshJobDetected;
+  }, [onRefreshJobDetected]);
+
   function freshnessLabel() {
     const freshness = activeTabResult?.widgets.find((widget) => widget.result.freshness)?.result.freshness;
     if (freshness?.source === "quickbase-live") return "Live Quickbase data";
@@ -263,6 +269,7 @@ export function DashboardView({
   useEffect(() => {
     tabResultsRef.current = {};
     tabLoadingRef.current = {};
+    tabRequestSequenceRef.current = {};
     setWidgetPages({});
     setWidgetPageResults({});
     setWidgetPageLoading({});
@@ -281,9 +288,10 @@ export function DashboardView({
   }, [dashboard.id, dashboard.tabs, initialActiveTabId]);
 
   useEffect(() => {
-    let active = true;
     async function loadTab(tabId: string) {
       if (!tabId || tabResultsRef.current[tabId] || tabLoadingRef.current[tabId]) return;
+      const requestSequence = (tabRequestSequenceRef.current[tabId] || 0) + 1;
+      tabRequestSequenceRef.current[tabId] = requestSequence;
       setTabLoading((current) => ({ ...current, [tabId]: true }));
       setTabErrors((current) => {
         if (!current[tabId]) return current;
@@ -293,67 +301,61 @@ export function DashboardView({
       });
       try {
         const next = await renderDashboard(dashboard.id, runtimeFilters, tabId, { forceLive, dashboard });
-        if (!active) return;
-        onRefreshJobDetected?.(next.refreshJob || null);
+        if (tabRequestSequenceRef.current[tabId] !== requestSequence) return;
+        onRefreshJobDetectedRef.current?.(next.refreshJob || null);
         const renderedTab = next.tabs.find((tab) => tab.id === tabId) || next.tabs[0];
         if (renderedTab) {
           setTabResults((current) => ({ ...current, [renderedTab.id]: renderedTab }));
         }
       } catch (error) {
-        if (!active) return;
+        if (tabRequestSequenceRef.current[tabId] !== requestSequence) return;
         setTabErrors((current) => ({
           ...current,
           [tabId]: error instanceof Error ? error.message : "Dashboard tab failed to load."
         }));
       } finally {
-        if (active) {
+        if (tabRequestSequenceRef.current[tabId] === requestSequence) {
           setTabLoading((current) => ({ ...current, [tabId]: false }));
         }
       }
     }
     void loadTab(resolvedActiveTabId);
-    return () => {
-      active = false;
-    };
-  }, [dashboard.id, forceLive, onRefreshJobDetected, resolvedActiveTabId, runtimeFiltersKey, tabReloadNonce]);
+  }, [dashboard.id, forceLive, resolvedActiveTabId, runtimeFiltersKey, tabReloadNonce]);
 
   useEffect(() => {
     if (!shouldPreloadRemainingTabs) return;
     if (!activeTabResult) return;
-    let cancelled = false;
     window.setTimeout(() => {
-      if (cancelled) return;
       const remainingTabIds = dashboard.tabs
         .map((tab) => tab.id)
         .filter((tabId) => tabId !== resolvedActiveTabId && !tabResultsRef.current[tabId] && !tabLoadingRef.current[tabId]);
       if (!remainingTabIds.length) return;
       remainingTabIds.forEach((tabId) => {
+        const requestSequence = (tabRequestSequenceRef.current[tabId] || 0) + 1;
+        tabRequestSequenceRef.current[tabId] = requestSequence;
         setTabLoading((current) => ({ ...current, [tabId]: true }));
         renderDashboard(dashboard.id, runtimeFilters, tabId, { forceLive, dashboard })
           .then((next) => {
-            if (cancelled) return;
+            if (tabRequestSequenceRef.current[tabId] !== requestSequence) return;
             const renderedTab = next.tabs.find((tab) => tab.id === tabId) || next.tabs[0];
             if (renderedTab) {
               setTabResults((current) => ({ ...current, [renderedTab.id]: renderedTab }));
             }
           })
           .catch((error) => {
-            if (cancelled) return;
+            if (tabRequestSequenceRef.current[tabId] !== requestSequence) return;
             setTabErrors((current) => ({
               ...current,
               [tabId]: error instanceof Error ? error.message : "Dashboard tab failed to load."
             }));
           })
           .finally(() => {
-            if (!cancelled) {
+            if (tabRequestSequenceRef.current[tabId] === requestSequence) {
               setTabLoading((current) => ({ ...current, [tabId]: false }));
             }
           });
       });
     }, 150);
-    return () => {
-      cancelled = true;
-    };
   }, [activeTabResult, dashboard.id, dashboard.tabs, forceLive, resolvedActiveTabId, runtimeFiltersKey, shouldPreloadRemainingTabs, tabReloadNonce]);
 
   useEffect(() => {
