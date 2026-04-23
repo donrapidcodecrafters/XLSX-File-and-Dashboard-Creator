@@ -405,13 +405,7 @@ export function DashboardView({
   }
 
   async function beginExport() {
-    if (hosted.embed) {
-      const popup = window.open("", "_blank");
-      if (popup && !popup.closed) {
-        popup.document.write("<title>Preparing export</title><p style=\"font-family: sans-serif; padding: 16px;\">Preparing your export…</p>");
-      }
-      setExportPopup(popup);
-    }
+    setExportPopup(null);
     const response = await startDashboardExportJob({ dashboardId: dashboard.id, runtimeFilters });
     setExportJob(response.job);
     setDownloadedJobId("");

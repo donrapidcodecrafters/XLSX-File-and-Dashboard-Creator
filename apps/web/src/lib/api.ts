@@ -275,13 +275,13 @@ export function fetchExportJobs() {
 
 export function downloadExportJob(id: string, options: { directDownload?: boolean; popupWindow?: Window | null } = {}) {
   const downloadUrl = API_BASE + "/api/exports/jobs/" + encodeURIComponent(id) + "/download";
-  if (options.directDownload) {
+  void downloadExportBlob(downloadUrl, `export-${id}.xlsx`, options.popupWindow).catch(() => {
     if (options.popupWindow && !options.popupWindow.closed) {
       try {
         options.popupWindow.location.replace(downloadUrl);
         return;
       } catch {
-        // Fall through to non-popup download strategies.
+        // Fall through to the anchor fallback below.
       }
     }
     const anchor = document.createElement("a");
@@ -291,14 +291,5 @@ export function downloadExportJob(id: string, options: { directDownload?: boolea
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
-    window.setTimeout(() => {
-      void downloadExportBlob(downloadUrl, `export-${id}.xlsx`, options.popupWindow).catch(() => undefined);
-    }, 1500);
-    return;
-  }
-  if (options.popupWindow && !options.popupWindow.closed) {
-    options.popupWindow.location.href = downloadUrl;
-    return;
-  }
-  ensureDownloadFrame().src = downloadUrl;
+  });
 }
