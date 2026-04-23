@@ -143,6 +143,16 @@ function normalizeReportFocusMode(
   return candidate && modes.includes(candidate) ? candidate : "default";
 }
 
+function navigateTopLevel(url: string) {
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.target = "_top";
+  anchor.rel = "noopener noreferrer";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+}
+
 export function ReportView({
   report,
   table,
@@ -261,7 +271,12 @@ export function ReportView({
   }
 
   async function beginExport() {
-    window.open(buildObjectUrl("report", report.id, { viewer: true, download: "xlsx" }), "_blank", "noopener,noreferrer");
+    const url = buildObjectUrl("report", report.id, { viewer: true, download: "xlsx" });
+    if (hosted.sandboxedFrame) {
+      navigateTopLevel(url);
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
   }
 
   function freshnessLabel() {

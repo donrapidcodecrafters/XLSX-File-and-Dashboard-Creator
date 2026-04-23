@@ -164,6 +164,16 @@ function getDashboardCrossFilterOptions(
   return options;
 }
 
+function navigateTopLevel(url: string) {
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.target = "_top";
+  anchor.rel = "noopener noreferrer";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+}
+
 export function DashboardView({
   dashboard,
   tables,
@@ -421,7 +431,12 @@ export function DashboardView({
   }
 
   async function beginExport() {
-    window.open(buildObjectUrl("dashboard", dashboard.id, { viewer: true, download: "xlsx" }), "_blank", "noopener,noreferrer");
+    const url = buildObjectUrl("dashboard", dashboard.id, { viewer: true, download: "xlsx" });
+    if (hosted.sandboxedFrame) {
+      navigateTopLevel(url);
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
   }
 
   const tabs = dashboard.tabs.map((tab) => tabResults[tab.id] || ({ id: tab.id, name: tab.name, widgets: [] }));
