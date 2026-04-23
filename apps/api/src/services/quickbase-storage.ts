@@ -577,7 +577,7 @@ async function quickbaseQueryRecordsBySavedReportXml(
     "API_DoQuery",
     [
       `<qid>${escapeXml(String(reportId))}</qid>`,
-      "<clist>a</clist>",
+      "<clist>3.a</clist>",
       `<options>${escapeXml(optionParts.join("."))}</options>`,
       "<fmt>structured</fmt>"
     ].join("")
@@ -754,7 +754,11 @@ export async function fetchQuickbaseSavedReportPage(
           top: Math.max(1, Math.min(Number(options.top) || 1000, 1000)),
           skip: Math.max(0, Number(options.skip) || 0)
         });
-        if ((restResponse.data?.length || 0) > 0 || Math.max(0, Number(options.skip) || 0) > 0) {
+        const restHasRecordIds = (restResponse.data || []).some((row) => {
+          const recordId = String(qbFieldValue(row, "3") || "").trim();
+          return Boolean(recordId);
+        });
+        if (restHasRecordIds || (restResponse.data?.length || 0) === 0 || Math.max(0, Number(options.skip) || 0) > 0) {
           return restResponse;
         }
         return quickbaseQueryRecordsBySavedReportXml(config, tableId, reportId, {
