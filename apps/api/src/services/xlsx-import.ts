@@ -98,6 +98,11 @@ interface ImportedWorkbookReview {
   sheets: ImportedWorkbookSheetReview[];
 }
 
+function debugImportStep(message: string) {
+  if (process.env.DEBUG_XLSX_IMPORT !== "1") return;
+  console.error(`[xlsx-import] ${message}`);
+}
+
 interface WorksheetRegion {
   candidateName: string;
   rows: WorksheetRowSnapshot[];
@@ -825,28 +830,55 @@ function buildImportedReport(
   const fields = table.fields;
   const visibleFields = fields.filter((field) => !hiddenFieldIds.includes(field.id));
   const preferredFields = visibleFields.length ? visibleFields : fields;
-  const labelTokens = (value: string) => String(value || "").toLowerCase();
-  const distinctValues = (fieldId: string) => new Set(
-    rows
-      .map((row) => String(row[fieldId] ?? "").trim())
-      .filter(Boolean)
-  );
-  const distinctCount = (fieldId: string) => distinctValues(fieldId).size;
-  const distinctLabels = (fieldId: string) => Array.from(distinctValues(fieldId));
-  const numericValuesForField = (fieldId: string) =>
-    rows
-      .map((row) => Number(row[fieldId]))
-      .filter((value) => Number.isFinite(value));
+  const fieldById = new Map(fields.map((field) => [field.id, field]));
+  const fieldStats = new Map(fields.map((field) => [field.id, {
+    distinctValues: new Set<string>(),
+    distinctLabels: [] as string[],
+    numericCount: 0,
+    percentLike: true,
+    hasPositive: false,
+    hasNegative: false,
+    descending: true,
+    lastNumeric: null as number | null
+  }]));
+  rows.forEach((row) => {
+    fields.forEach((field) => {
+      const stats = fieldStats.get(field.id);
+      if (!stats) return;
+      const rawValue = row[field.id];
+      const normalized = String(rawValue ?? "").trim();
+      if (normalized) {
+        stats.distinctValues.add(normalized);
+      }
+      const numericValue = Number(rawValue);
+      if (!Number.isFinite(numericValue)) return;
+      stats.numericCount += 1;
+      if (numericValue < 0 || numericValue > 100) {
+        stats.percentLike = false;
+      }
+      if (numericValue > 0) stats.hasPositive = true;
+      if (numericValue < 0) stats.hasNegative = true;
+      if (stats.lastNumeric !== null && numericValue > stats.lastNumeric) {
+        stats.descending = false;
+      }
+      stats.lastNumeric = numericValue;
+    });
+  });
+  fieldStats.forEach((stats) => {
+    stats.distinctLabels = Array.from(stats.distinctValues);
+  });
+  const distinctCount = (fieldId: string) => fieldStats.get(fieldId)?.distinctValues.size || 0;
+  const distinctLabels = (fieldId: string) => fieldStats.get(fieldId)?.distinctLabels || [];
   const isPercentLikeField = (fieldId: string) => {
-    const values = numericValuesForField(fieldId);
-    return values.length > 0 && values.every((value) => value >= 0 && value <= 100);
+    const stats = fieldStats.get(fieldId);
+    return Boolean(stats && stats.numericCount > 0 && stats.percentLike);
   };
   const hasMixedDirectionField = (fieldId: string) => {
-    const values = numericValuesForField(fieldId);
-    return values.some((value) => value > 0) && values.some((value) => value < 0);
+    const stats = fieldStats.get(fieldId);
+    return Boolean(stats?.hasPositive && stats?.hasNegative);
   };
   const looksLikeTargetField = (fieldId: string) => {
-    const field = fields.find((candidate) => candidate.id === fieldId);
+    const field = fieldById.get(fieldId);
     return /(target|goal|quota|plan|benchmark|budget|expected)/i.test(field?.label || "");
   };
   const periodicCategoryLabel = (value: string) => {
@@ -868,8 +900,8 @@ function buildImportedReport(
     return labels.length >= 3 && labels.length <= 8 && labels.some((label) => stageLikeToken(label));
   };
   const isDescendingField = (fieldId: string) => {
-    const values = numericValuesForField(fieldId);
-    return values.length >= 3 && values.every((value, index) => index === 0 || value <= values[index - 1]);
+    const stats = fieldStats.get(fieldId);
+    return Boolean(stats && stats.numericCount >= 3 && stats.descending);
   };
   const textFields = preferredFields.filter((field) => field.type === "text" || field.type === "user");
   const dateFields = preferredFields.filter((field) => field.type === "date" || field.type === "datetime");
@@ -1770,13 +1802,17 @@ function readWorksheetRegion(
 function readWorksheet(worksheet: ExcelJS.Worksheet): WorksheetReadResult[] {
   const rows: WorksheetRowSnapshot[] = [];
   worksheet.eachRow({ includeEmpty: false }, (row) => {
-    const values = Array.from({ length: Math.max(worksheet.actualColumnCount, row.cellCount || 0) }, (_, index) =>
-      normalizeCellValue(row.getCell(index + 1).value)
+    const values = (Array.isArray(row.values) ? row.values.slice(1) : []).map((value) =>
+      normalizeCellValue(value as ExcelJS.CellValue)
     );
     if (values.some((value) => !isBlankCell(value))) {
       rows.push({ rowNumber: row.number, values });
+      if (process.env.DEBUG_XLSX_IMPORT === "1" && rows.length % 5000 === 0) {
+        debugImportStep(`worksheet ${worksheet.name}: captured ${rows.length} row snapshot(s)`);
+      }
     }
   });
+  debugImportStep(`worksheet ${worksheet.name}: collected ${rows.length} non-blank row snapshot(s)`);
 
   if (!rows.length) {
     return [{
@@ -1791,6 +1827,7 @@ function readWorksheet(worksheet: ExcelJS.Worksheet): WorksheetReadResult[] {
   }
 
   const regions = buildWorksheetRegions(worksheet, rows);
+  debugImportStep(`worksheet ${worksheet.name}: built ${regions.length} region candidate(s)`);
   if (!regions.length) {
     return [{
       sheetName: worksheet.name,
@@ -1803,13 +1840,18 @@ function readWorksheet(worksheet: ExcelJS.Worksheet): WorksheetReadResult[] {
     }];
   }
 
-  return regions.map((region) => readWorksheetRegion(
-    worksheet,
-    region.candidateName,
-    region.rows,
-    region.columnNumbers,
-    region.structuredTable
-  ));
+  return regions.map((region) => {
+    debugImportStep(`worksheet ${worksheet.name}: reading region ${region.candidateName} with ${region.rows.length} row(s)`);
+    const result = readWorksheetRegion(
+      worksheet,
+      region.candidateName,
+      region.rows,
+      region.columnNumbers,
+      region.structuredTable
+    );
+    debugImportStep(`worksheet ${worksheet.name}: finished region ${region.candidateName}`);
+    return result;
+  });
 }
 
 export async function importWorkbookIntoStudioDocument(
@@ -1817,9 +1859,11 @@ export async function importWorkbookIntoStudioDocument(
   filename: string,
   buffer: Uint8Array
 ): Promise<ImportedWorkbookResult> {
+  debugImportStep(`start ${filename}`);
   const workbook = new ExcelJS.Workbook();
   const workbookPayload = Buffer.from(buffer) as unknown as Parameters<typeof workbook.xlsx.load>[0];
   await workbook.xlsx.load(workbookPayload);
+  debugImportStep(`loaded workbook ${filename} with ${workbook.worksheets.length} sheet(s)`);
   const warnings: string[] = [];
   const existingIds = new Set<string>([
     ...document.bundle.order,
@@ -1837,7 +1881,9 @@ export async function importWorkbookIntoStudioDocument(
   const layoutHintsByReportId: Record<string, WorksheetLayoutHints> = {};
 
   workbook.worksheets.forEach((worksheet, index) => {
+    debugImportStep(`reading worksheet ${index + 1}/${workbook.worksheets.length}: ${worksheet.name}`);
     const parsedRegions = readWorksheet(worksheet);
+    debugImportStep(`worksheet ${worksheet.name} produced ${parsedRegions.length} region(s)`);
     parsedRegions.forEach((parsed, regionIndex) => {
       if (parsed.status === "skipped") {
         sheetReviews.push({
@@ -1864,6 +1910,7 @@ export async function importWorkbookIntoStudioDocument(
       importedRows[tableId] = parsed.rows;
       importedRowsByTableId[tableId] = parsed.rows;
       const inferred = buildImportedReport(table.name, table, parsed.rows, parsed.layout, parsed.hiddenFieldIds, scope, ownerUserId, importedAt, existingIds);
+      debugImportStep(`built report ${inferred.report.name} from ${parsed.sheetName} (${parsed.rows.length} row(s))`);
       const report = inferred.report;
       importedReports.push(report);
       layoutHintsByReportId[report.id] = parsed.layout;
@@ -1911,6 +1958,7 @@ export async function importWorkbookIntoStudioDocument(
   let primaryObjectId = importedReports[0].id;
   let dashboardCreated = false;
   if (importedReports.length > 1) {
+    debugImportStep(`building dashboard from ${importedReports.length} imported report(s)`);
     const builtDashboard = buildImportedDashboard(
       workbookName,
       importedReports,
@@ -1922,6 +1970,7 @@ export async function importWorkbookIntoStudioDocument(
       importedAt,
       existingIds
     );
+    debugImportStep(`built dashboard ${builtDashboard.dashboard.name}`);
     const dashboard = builtDashboard.dashboard;
     nextDocument.bundle.objects[dashboard.id] = dashboard;
     nextDocument.bundle.order = [dashboard.id, ...nextDocument.bundle.order];
