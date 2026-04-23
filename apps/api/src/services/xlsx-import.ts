@@ -386,6 +386,44 @@ function splitNumberSeriesIntoBands(values: number[], minimumGap = 1) {
   return bands;
 }
 
+function countNonBlankCells(rows: WorksheetRowSnapshot[]) {
+  return rows.reduce((sum, row) => sum + row.values.filter((value) => !isBlankCell(value)).length, 0);
+}
+
+function countFormulaLikeCells(rows: WorksheetRowSnapshot[]) {
+  return rows.reduce(
+    (sum, row) => sum + row.values.filter((value) => typeof value === "string" && String(value).trim().startsWith("=")).length,
+    0
+  );
+}
+
+function buildSingleWorksheetRegion(candidateName: string, rows: WorksheetRowSnapshot[]): WorksheetRegion[] {
+  const occupiedColumns = Array.from(new Set(
+    rows.flatMap((row) =>
+      row.values
+        .map((value, index) => (!isBlankCell(value) ? index + 1 : 0))
+        .filter((columnNumber) => columnNumber > 0)
+    )
+  )).sort((left, right) => left - right);
+  if (!occupiedColumns.length) return [];
+  const startColumn = occupiedColumns[0];
+  const endColumn = occupiedColumns[occupiedColumns.length - 1];
+  const columnNumbers = Array.from({ length: endColumn - startColumn + 1 }, (_, offset) => startColumn + offset);
+  const regionRows = rows
+    .map((row) => ({
+      rowNumber: row.rowNumber,
+      values: extractRowValuesByColumnNumbers(row.values, columnNumbers)
+    }))
+    .filter((row) => row.values.some((value) => !isBlankCell(value)));
+  if (!regionRows.length) return [];
+  return [{
+    candidateName,
+    rows: regionRows,
+    columnNumbers: Array.from({ length: columnNumbers.length }, (_, offset) => offset + 1),
+    structuredTable: null
+  }];
+}
+
 function deriveWorksheetRegionName(sheetName: string, rows: WorksheetRowSnapshot[], index: number, total: number) {
   if (total <= 1) return sheetName;
   const ignoreValues = new Set(["all", "total", "grand total", "column labels", "row labels", "sum of ar"]);
@@ -462,6 +500,31 @@ function buildWorksheetRegions(
         structuredTable: null
       }];
     }
+  }
+
+  const hasMergedPresentation = Array.isArray(worksheet.model?.merges) && worksheet.model.merges.length > 0;
+  const hasPrintArea = Boolean(String(worksheet.pageSetup?.printArea || "").trim());
+  const hasCustomZoom = Array.isArray(worksheet.views) && worksheet.views.some((view) => Number(view?.zoomScale || 100) !== 100);
+  const isHiddenWorksheet = worksheet.state === "hidden" || worksheet.state === "veryHidden";
+  const occupiedColumnCount = Array.from(new Set(
+    rows.flatMap((row) =>
+      row.values
+        .map((value, index) => (!isBlankCell(value) ? index + 1 : 0))
+        .filter((columnNumber) => columnNumber > 0)
+    )
+  )).length;
+  const looksLikeDashboardCanvas =
+    rows.length >= 4
+    && rows.length <= 80
+    && occupiedColumnCount >= 4
+    && (
+      isHiddenWorksheet
+      || hasMergedPresentation
+      || hasPrintArea
+      || hasCustomZoom
+    );
+  if (looksLikeDashboardCanvas) {
+    return buildSingleWorksheetRegion(worksheet.name, rows);
   }
 
   const rowBands = rows.reduce<WorksheetRowSnapshot[][]>((bands, row) => {
