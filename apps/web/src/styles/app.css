@@ -2417,6 +2417,8 @@ th {
   align-items: start;
   gap: 10px;
   padding: 10px 12px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .field-transfer-item strong,
@@ -2483,15 +2485,21 @@ th {
   min-width: 0;
   text-align: left;
   align-self: start;
+  width: 100%;
 }
 
 .field-transfer-main-button {
   display: grid;
   gap: 4px;
+  align-items: start;
+  justify-items: start;
+  width: 100%;
+  min-height: 0;
   min-width: 0;
   padding: 0;
   text-align: left;
   border: 0;
+  box-shadow: none;
   background: transparent;
   color: inherit;
 }
@@ -2502,15 +2510,26 @@ th {
   flex-wrap: wrap;
   justify-content: flex-start;
   align-items: center;
+  width: 100%;
 }
 
 .field-transfer-action-button {
+  display: inline-flex;
   min-width: 0;
-  min-height: 0;
-  padding: 5px 10px;
+  min-height: 32px;
+  padding: 4px 10px;
   border-radius: 999px;
   font-size: 0.77rem;
   line-height: 1.1;
+  box-shadow: none;
+  transform: none;
+  align-self: flex-start;
+}
+
+.field-transfer-action-button:hover,
+.field-transfer-action-button:focus-visible,
+.field-transfer-action-button:active {
+  transform: none;
 }
 
 .field-transfer-action-button.remove {
