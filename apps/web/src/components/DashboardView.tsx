@@ -231,6 +231,7 @@ export function DashboardView({
   }, [dashboard.tabs, resolvedActiveTabId]);
   const loading = Boolean(tabLoading[resolvedActiveTabId]);
   const shouldPreloadRemainingTabs = dashboard.tabs.length <= 4;
+  const runtimeFiltersKey = useMemo(() => JSON.stringify(runtimeFilters), [runtimeFilters]);
 
   useEffect(() => {
     skipStateBroadcastRef.current = true;
@@ -268,7 +269,7 @@ export function DashboardView({
     setTabResults({});
     setTabLoading({});
     setTabErrors({});
-  }, [dashboard.id, forceLive, refreshNonce, JSON.stringify(runtimeFilters)]);
+  }, [dashboard.id, forceLive, refreshNonce, runtimeFiltersKey]);
 
   useEffect(() => {
     setActiveTabId((current) => {
@@ -314,7 +315,7 @@ export function DashboardView({
     return () => {
       active = false;
     };
-  }, [dashboard.id, forceLive, onRefreshJobDetected, resolvedActiveTabId, runtimeFilters, tabReloadNonce]);
+  }, [dashboard.id, forceLive, onRefreshJobDetected, resolvedActiveTabId, runtimeFiltersKey, tabReloadNonce]);
 
   useEffect(() => {
     if (!shouldPreloadRemainingTabs) return;
@@ -353,7 +354,7 @@ export function DashboardView({
     return () => {
       cancelled = true;
     };
-  }, [activeTabResult, dashboard.id, dashboard.tabs, forceLive, resolvedActiveTabId, runtimeFilters, shouldPreloadRemainingTabs, tabReloadNonce]);
+  }, [activeTabResult, dashboard.id, dashboard.tabs, forceLive, resolvedActiveTabId, runtimeFiltersKey, shouldPreloadRemainingTabs, tabReloadNonce]);
 
   useEffect(() => {
     if (!exportJob || exportJob.status === "complete" || exportJob.status === "failed") return;
