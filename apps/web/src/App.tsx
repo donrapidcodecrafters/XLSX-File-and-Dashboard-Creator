@@ -45,6 +45,7 @@ const SESSION_ACTIVITY_TOUCH_INTERVAL_MS = 60_000;
 const CACHED_STUDIO_DOCUMENT_KEY = "hosted-reporting-studio-v2";
 const WORKSPACE_REFRESH_SIGNAL_KEY = "hosted-reporting-workspace-refresh-v1";
 const WORKSPACE_REFRESH_EVENT = "studio:workspace-updated";
+const SHARED_WORKSPACE_SNAPSHOT_KEY = "studio-shared-workspace-snapshot-v1";
 
 function loadCachedStudioDocument() {
   try {
@@ -60,6 +61,15 @@ function saveCachedStudioDocument(document: StudioDocument | null) {
   try {
     window.localStorage.setItem(CACHED_STUDIO_DOCUMENT_KEY, JSON.stringify(document));
   } catch {}
+}
+
+function loadSharedWorkspaceSnapshot() {
+  try {
+    const raw = window.localStorage.getItem(SHARED_WORKSPACE_SNAPSHOT_KEY);
+    return raw ? normalizeStudioDocument(JSON.parse(raw) as StudioDocument) : null;
+  } catch {
+    return null;
+  }
 }
 
 function buildCatalogItemsFromDocument(document: StudioDocument): CatalogSummaryItem[] {
@@ -299,10 +309,26 @@ function useCatalog() {
 
   useEffect(() => {
     const handleWorkspaceUpdated = () => {
+      const snapshot = loadSharedWorkspaceSnapshot();
+      if (snapshot) {
+        setStudioDocument(snapshot);
+        setObjects(buildCatalogItemsFromDocument(snapshot));
+        setTables(snapshot.bundle.tables || []);
+        saveCachedStudioDocument(snapshot);
+        return;
+      }
       void reloadCatalog();
     };
     const handleStorage = (event: StorageEvent) => {
       if (event.key !== WORKSPACE_REFRESH_SIGNAL_KEY) return;
+      const snapshot = loadSharedWorkspaceSnapshot();
+      if (snapshot) {
+        setStudioDocument(snapshot);
+        setObjects(buildCatalogItemsFromDocument(snapshot));
+        setTables(snapshot.bundle.tables || []);
+        saveCachedStudioDocument(snapshot);
+        return;
+      }
       void reloadCatalog();
     };
     window.addEventListener(WORKSPACE_REFRESH_EVENT, handleWorkspaceUpdated);

@@ -120,6 +120,7 @@ const STORAGE_KEY = "hosted-reporting-studio-v2";
 const ACTIVITY_OVERLAY_MIN_MS = 700;
 const WORKSPACE_REFRESH_SIGNAL_KEY = "hosted-reporting-workspace-refresh-v1";
 const WORKSPACE_REFRESH_EVENT = "studio:workspace-updated";
+const SHARED_WORKSPACE_SNAPSHOT_KEY = "studio-shared-workspace-snapshot-v1";
 const WIDGET_LAYOUT_PRESETS = [
   { id: "quarter", label: "Quarter", w: 3, h: 3 },
   { id: "third", label: "Third", w: 4, h: 3 },
@@ -478,9 +479,12 @@ function saveLocalDocument(document: StudioDocument) {
   }
 }
 
-function notifyWorkspaceUpdated() {
+function notifyWorkspaceUpdated(document?: StudioDocument) {
   const signal = String(Date.now());
   try {
+    if (document) {
+      window.localStorage.setItem(SHARED_WORKSPACE_SNAPSHOT_KEY, JSON.stringify(stripLocalDocumentData(document)));
+    }
     window.localStorage.setItem(WORKSPACE_REFRESH_SIGNAL_KEY, signal);
   } catch {}
   window.dispatchEvent(new CustomEvent(WORKSPACE_REFRESH_EVENT, { detail: { signal } }));
@@ -1896,6 +1900,7 @@ export function StudioPage({
 
   useEffect(() => {
     saveLocalDocument(documentState);
+    notifyWorkspaceUpdated(documentState);
   }, [documentState]);
 
   useEffect(() => {
@@ -2823,7 +2828,6 @@ export function StudioPage({
         setDocumentState(scopeDocument(normalizeStudioDocument(response.document)));
         setHistory([]);
         setFuture([]);
-        notifyWorkspaceUpdated();
         pushToast("Reloaded hosted studio.");
       } catch (error) {
         pushToast(error instanceof Error ? error.message : "Reload failed.", "danger");
