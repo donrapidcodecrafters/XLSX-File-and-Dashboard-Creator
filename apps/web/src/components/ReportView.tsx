@@ -169,6 +169,7 @@ export function ReportView({
   const [downloadedJobId, setDownloadedJobId] = useState("");
   const [exportPopup, setExportPopup] = useState<Window | null>(null);
   const [toolbarCollapsed, setToolbarCollapsed] = useState(true);
+  const autoExportStartedRef = useRef(false);
   const summaryAvailable = reportShowsSummary(report) && Boolean(result?.summary?.length);
   const chartAvailable = reportShowsChart(report) && (loading || Boolean(result?.chartData?.length));
   const detailsAvailable = reportShowsDetails(report) && (
@@ -244,9 +245,22 @@ export function ReportView({
     setExportPopup(null);
   }, [downloadedJobId, exportJob, exportPopup, hosted.embed]);
 
+  useEffect(() => {
+    if (hosted.autoDownload !== "xlsx") return;
+    if (hosted.sandboxedFrame) return;
+    if (autoExportStartedRef.current) return;
+    autoExportStartedRef.current = true;
+    window.history.replaceState({}, document.title, buildObjectUrl("report", report.id, { viewer: true }));
+    void beginExport();
+  }, [hosted.autoDownload, hosted.sandboxedFrame, report.id]);
+
   async function beginExport() {
+    if (hosted.sandboxedFrame) {
+      window.open(buildObjectUrl("report", report.id, { viewer: true, download: "xlsx" }), "_blank", "noopener,noreferrer");
+      return;
+    }
     setExportPopup(null);
-    const response = await startReportExportJob({ reportId: report.id });
+    const response = await startReportExportJob({ reportId: report.id, report, table });
     setExportJob(response.job);
     setDownloadedJobId("");
   }

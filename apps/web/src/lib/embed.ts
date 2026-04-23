@@ -35,14 +35,22 @@ export function getHostedContext() {
     : params.get("launch") === "local"
       ? "local-dev"
       : null;
+  let sandboxedFrame = false;
+  try {
+    sandboxedFrame = window.self !== window.top;
+  } catch {
+    sandboxedFrame = true;
+  }
   return {
     embed: params.get("embed") === "1",
     mode: rawMode.startsWith("viewer") ? "viewer" : "builder",
+    autoDownload: String(params.get("download") || "").trim().toLowerCase(),
     search: params.toString() ? "?" + params.toString() : "",
     launchSource,
     userId,
     realmHostname,
     appId,
+    sandboxedFrame,
     hasAnyQuickbaseLaunchContext,
     hasCompleteQuickbaseLaunchContext,
     missingQuickbaseLaunchFields,
@@ -58,18 +66,20 @@ export function buildHostedRoute(pathname: string) {
   };
 }
 
-export function buildHostedHashUrl(pathname: string, options?: { embed?: boolean; viewer?: boolean }) {
+export function buildHostedHashUrl(pathname: string, options?: { embed?: boolean; viewer?: boolean; download?: string }) {
   const url = new URL(window.location.href);
   const params = new URLSearchParams(normalizeHostedSearch(url.search));
   if (options?.embed) params.set("embed", "1");
   else params.delete("embed");
   if (options?.viewer) params.set("mode", "viewer");
   else params.delete("mode");
+  if (options?.download) params.set("download", options.download);
+  else params.delete("download");
   url.search = params.toString() ? "?" + params.toString() : "";
   url.hash = "#" + (pathname.startsWith("/") ? pathname : `/${pathname}`);
   return url.toString();
 }
 
-export function buildObjectUrl(type: "report" | "dashboard", id: string, options?: { embed?: boolean; viewer?: boolean }) {
+export function buildObjectUrl(type: "report" | "dashboard", id: string, options?: { embed?: boolean; viewer?: boolean; download?: string }) {
   return buildHostedHashUrl(`/${type}/${id}`, options);
 }

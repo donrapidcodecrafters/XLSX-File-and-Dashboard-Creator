@@ -307,9 +307,12 @@ export async function registerRenderRoutes(app: FastifyInstance) {
     const body = (request.body as { payload?: string } | undefined) || {};
     const payload = parsePayload(body.payload) as {
       dashboardId?: string;
+      dashboard?: DashboardDefinition;
       runtimeFilters?: Record<string, string>;
     };
-    const dashboard = payload.dashboardId ? objectStore.getDashboard(payload.dashboardId) as DashboardDefinition | undefined : undefined;
+    const dashboard = payload.dashboard?.id
+      ? payload.dashboard
+      : (payload.dashboardId ? objectStore.getDashboard(payload.dashboardId) as DashboardDefinition | undefined : undefined);
     if (!dashboard) {
       reply.code(404);
       return { message: "Dashboard not found." };

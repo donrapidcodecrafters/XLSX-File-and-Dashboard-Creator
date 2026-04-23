@@ -204,6 +204,7 @@ export function DashboardView({
   const [exportJob, setExportJob] = useState<ExportJobStatus | null>(null);
   const [downloadedJobId, setDownloadedJobId] = useState("");
   const [exportPopup, setExportPopup] = useState<Window | null>(null);
+  const autoExportStartedRef = useRef(false);
   const [toolbarCollapsed, setToolbarCollapsed] = useState(true);
   const [widgetPages, setWidgetPages] = useState<Record<string, number>>({});
   const [widgetPageResults, setWidgetPageResults] = useState<Record<string, ReportRunResult>>({});
@@ -363,6 +364,15 @@ export function DashboardView({
   }, [downloadedJobId, exportJob, exportPopup, hosted.embed]);
 
   useEffect(() => {
+    if (hosted.autoDownload !== "xlsx") return;
+    if (hosted.sandboxedFrame) return;
+    if (autoExportStartedRef.current) return;
+    autoExportStartedRef.current = true;
+    window.history.replaceState({}, document.title, buildObjectUrl("dashboard", dashboard.id, { viewer: true }));
+    void beginExport();
+  }, [dashboard.id, hosted.autoDownload, hosted.sandboxedFrame]);
+
+  useEffect(() => {
     if (!onStateChange) return;
     if (skipStateBroadcastRef.current) {
       skipStateBroadcastRef.current = false;
@@ -405,8 +415,12 @@ export function DashboardView({
   }
 
   async function beginExport() {
+    if (hosted.sandboxedFrame) {
+      window.open(buildObjectUrl("dashboard", dashboard.id, { viewer: true, download: "xlsx" }), "_blank", "noopener,noreferrer");
+      return;
+    }
     setExportPopup(null);
-    const response = await startDashboardExportJob({ dashboardId: dashboard.id, runtimeFilters });
+    const response = await startDashboardExportJob({ dashboardId: dashboard.id, dashboard, runtimeFilters });
     setExportJob(response.job);
     setDownloadedJobId("");
   }

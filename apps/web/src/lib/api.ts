@@ -252,6 +252,7 @@ export function startReportExportJob(payload: {
 
 export function startDashboardExportJob(payload: {
   dashboardId?: string;
+  dashboard?: unknown;
   runtimeFilters?: Record<string, string>;
 }) {
   return request<{ job: ExportJobStatus }>("/api/exports/dashboard/start", {

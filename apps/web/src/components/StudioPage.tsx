@@ -1820,7 +1820,8 @@ export function StudioPage({
       return null;
     }
     if (object.type === "report") {
-      const response = await startReportExportJob({ reportId: object.id });
+      const table = bundle.tables.find((item) => item.id === object.sourceTableId || item.quickbaseTableId === object.sourceTableId);
+      const response = await startReportExportJob({ reportId: object.id, report: object, table });
       const jobEntry: StudioExportJob = {
         id: `history-${response.job.id}`,
         objectId: object.id,
@@ -1844,6 +1845,7 @@ export function StudioPage({
     const runtimeFilters = options?.runtimeFilters || {};
     const response = await startDashboardExportJob({
       dashboardId: object.id,
+      dashboard: object,
       runtimeFilters
     });
     const jobEntry: StudioExportJob = {
