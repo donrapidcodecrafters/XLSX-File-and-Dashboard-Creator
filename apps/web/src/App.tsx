@@ -397,6 +397,12 @@ function ObjectPage({
     () => params.objectId && studioDocument ? studioDocument.bundle.objects[params.objectId] || null : null,
     [params.objectId, studioDocument]
   );
+  const scopedObjectVersion = useMemo(
+    () => scopedObjectFromDocument
+      ? `${scopedObjectFromDocument.id}:${scopedObjectFromDocument.updatedAt}:${scopedObjectFromDocument.type}`
+      : "",
+    [scopedObjectFromDocument]
+  );
   const liveModeEnabled = useMemo(
     () => getProfileIdsForObject(object, tables, studioDocument)
       .some((profileId) => studioDocument?.quickbaseProfiles.find((profile) => profile.id === profileId)?.liveMode === true),
@@ -417,14 +423,19 @@ function ObjectPage({
   useEffect(() => {
     if (!params.objectId) return;
     if (scopedObjectFromDocument) {
+      const isSameObject = object?.id === scopedObjectFromDocument.id;
       const reportOverride = scopedObjectFromDocument.type === "report" && scopedObjectFromDocument.scope !== "personal"
         ? getReportPersonalOverride(scopedObjectFromDocument.id, studioDocument)
         : null;
       setPage(reportOverride?.currentPage || 1);
       setObject(scopedObjectFromDocument);
-      setResult(null);
+      if (!isSameObject) {
+        setResult(null);
+        setRefreshNonce(0);
+        setRefreshJob(null);
+        onObjectViewed(scopedObjectFromDocument.id);
+      }
       setLoading(false);
-      onObjectViewed(scopedObjectFromDocument.id);
       return;
     }
     let active = true;
@@ -434,13 +445,16 @@ function ObjectPage({
     fetchObject(params.objectId)
       .then((response) => {
         if (!active) return;
+        const isSameObject = object?.id === response.object.id;
         const reportOverride = response.object.type === "report" && response.object.scope !== "personal"
           ? getReportPersonalOverride(response.object.id, studioDocument)
           : null;
         setPage(reportOverride?.currentPage || 1);
         setObject(response.object);
-        setResult(null);
-        onObjectViewed(response.object.id);
+        if (!isSameObject) {
+          setResult(null);
+          onObjectViewed(response.object.id);
+        }
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -448,7 +462,7 @@ function ObjectPage({
     return () => {
       active = false;
     };
-  }, [onObjectViewed, params.objectId, scopedObjectFromDocument, studioDocument]);
+  }, [object?.id, onObjectViewed, params.objectId, scopedObjectFromDocument, scopedObjectVersion, studioDocument]);
 
   useEffect(() => {
     if (object) {
