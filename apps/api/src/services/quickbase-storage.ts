@@ -972,7 +972,8 @@ async function resolveStoredQuickbaseConfig(
   bootstrapRows: Array<Record<string, { value: unknown }>>;
 }> {
   let bootstrapConfig = config;
-  if (hasQuickbaseConnection(config) && !config.settingsTableId) {
+  let detectedConfig: Partial<StudioDocument["quickbase"]> | null = null;
+  if (hasQuickbaseConnection(config)) {
     const schema = await loadQuickbaseSchema({
       realmHostname: config.realmHostname,
       userToken: config.userToken,
@@ -980,7 +981,8 @@ async function resolveStoredQuickbaseConfig(
       appId: config.appId
     }).catch(() => null);
     if (schema) {
-      bootstrapConfig = mergeQuickbaseConfig(config, detectQuickbaseStorageConfig(schema));
+      detectedConfig = detectQuickbaseStorageConfig(schema);
+      bootstrapConfig = mergeQuickbaseConfig(config, detectedConfig);
     }
   }
   const bootstrapRows = await loadQuickbaseBootstrapRows(bootstrapConfig).catch(() => []);
@@ -993,7 +995,10 @@ async function resolveStoredQuickbaseConfig(
   );
 
   return {
-    config: mergeQuickbaseConfig(bootstrapConfig, storagePayload?.storage || null),
+    config: mergeQuickbaseConfig(
+      mergeQuickbaseConfig(bootstrapConfig, storagePayload?.storage || null),
+      detectedConfig
+    ),
     bootstrapRows
   };
 }
@@ -1009,19 +1014,32 @@ async function loadStoredObjects(config: StudioDocument["quickbase"]) {
         config.objectKeyFieldId,
         config.objectTypeFieldId,
         config.objectNameFieldId,
-        config.objectConfigFieldId
+        config.objectConfigFieldId,
+        "6",
+        "7",
+        "8",
+        "12",
+        "13"
       ]);
       const rows = await quickbaseFetchAllRecords(config, config.objectTableId, select, "", { top: 200 });
       const objects: StudioObject[] = [];
       rows.forEach((row) => {
-        const payload = parseJsonValue(qbFieldValue(row, config.objectConfigFieldId));
+        const payload = [config.objectConfigFieldId, "8", "7"]
+          .map((fid) => parseJsonValue(qbFieldValue(row, fid)))
+          .find(Boolean) as Partial<StudioObject> | undefined;
         if (!payload || (payload.type !== "report" && payload.type !== "dashboard")) return;
         const object = payload as StudioObject;
         if (!object.id) {
-          object.id = String(qbFieldValue(row, config.objectKeyFieldId) || qbFieldValue(row, "3") || "");
+          object.id = String(
+            qbFieldValue(row, config.objectKeyFieldId)
+            || qbFieldValue(row, "12")
+            || qbFieldValue(row, "13")
+            || qbFieldValue(row, "3")
+            || ""
+          );
         }
         if (!object.name) {
-          object.name = String(qbFieldValue(row, config.objectNameFieldId) || object.id || "Saved Object");
+          object.name = String(qbFieldValue(row, config.objectNameFieldId) || qbFieldValue(row, "7") || object.id || "Saved Object");
         }
         if (!object.updatedAt) {
           object.updatedAt = new Date().toISOString();
@@ -1039,19 +1057,30 @@ async function loadStoredVersions(config: StudioDocument["quickbase"]) {
     "3",
     config.versionObjectKeyFieldId,
     config.versionSnapshotFieldId,
-    config.versionChangedAtFieldId
+    config.versionChangedAtFieldId,
+    "6",
+    "7",
+    "8",
+    "10"
   ]);
   const rows = await quickbaseFetchAllRecords(config, config.versionTableId, select, "", { top: 200 });
   const versions: Record<string, StudioVersionRecord[]> = {};
   rows.forEach((row) => {
-    const objectId = String(qbFieldValue(row, config.versionObjectKeyFieldId) || "").trim();
+    const payload = [config.versionSnapshotFieldId, "7", "8"]
+      .map((fid) => parseJsonValue(qbFieldValue(row, fid)))
+      .find(Boolean);
+    const objectId = String(
+      qbFieldValue(row, config.versionObjectKeyFieldId)
+      || qbFieldValue(row, "10")
+      || payload?.snapshot?.id
+      || ""
+    ).trim();
     if (!objectId) return;
-    const payload = parseJsonValue(qbFieldValue(row, config.versionSnapshotFieldId));
     if (!payload?.snapshot) return;
     const version: StudioVersionRecord = {
       id: String(payload.id || qbFieldValue(row, "3") || `version-${Math.random().toString(36).slice(2, 10)}`),
       label: String(payload.label || "Version"),
-      savedAt: String(payload.changedAt || qbFieldValue(row, config.versionChangedAtFieldId) || new Date().toISOString()),
+      savedAt: String(payload.changedAt || qbFieldValue(row, config.versionChangedAtFieldId) || qbFieldValue(row, "8") || new Date().toISOString()),
       object: payload.snapshot
     };
     versions[objectId] ||= [];
@@ -1112,7 +1141,7 @@ function detectQuickbaseStorageConfig(schema: QuickbaseAppSchema) {
   ]);
   if (objectTable) {
     detected.objectTableId = objectTable.id;
-    detected.objectKeyFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, ["Object ID", "Studio Item Key", "Studio Item ID", "Item Key", "Report ID"]);
+    detected.objectKeyFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, ["Platform Key", "Object ID", "Studio Item Key", "Studio Item ID", "Item Key", "Report ID"]);
     detected.objectTypeFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, ["Type", "Object Type"]);
     detected.objectNameFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, ["Name", "Object Name", "Report Name"]);
     detected.objectConfigFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, ["JSON Config", "Config JSON", "Json", "Configuration"]);
@@ -1131,7 +1160,7 @@ function detectQuickbaseStorageConfig(schema: QuickbaseAppSchema) {
     detected.settingsTableId = settingsTable.id;
     detected.settingsUserFieldId = findQuickbaseFieldIdByLabels(settingsTable.fields, ["User", "User ID", "Email"]);
     detected.settingsObjectFieldId = findQuickbaseFieldIdByLabels(settingsTable.fields, ["Object Record", "Studio Item Record"]);
-    detected.settingsObjectKeyFieldId = findQuickbaseFieldIdByLabels(settingsTable.fields, ["Object", "Object ID", "Studio Item Key", "Report ID"]);
+    detected.settingsObjectKeyFieldId = findQuickbaseFieldIdByLabels(settingsTable.fields, ["Platform Key", "Object", "Object ID", "Studio Item Key", "Report ID"]);
     detected.settingsJsonFieldId = findQuickbaseFieldIdByLabels(settingsTable.fields, ["Json", "JSON", "Settings JSON"]);
     detected.settingsUpdatedByFieldId = findQuickbaseFieldIdByLabels(settingsTable.fields, ["Updated By", "Modified By"]);
   }
@@ -1145,7 +1174,7 @@ function detectQuickbaseStorageConfig(schema: QuickbaseAppSchema) {
   if (versionTable) {
     detected.versionTableId = versionTable.id;
     detected.versionObjectFieldId = findQuickbaseFieldIdByLabels(versionTable.fields, ["Object Record", "Studio Item Record"]);
-    detected.versionObjectKeyFieldId = findQuickbaseFieldIdByLabels(versionTable.fields, ["Object", "Object ID", "Studio Item Key", "Report ID", "Version"]);
+    detected.versionObjectKeyFieldId = findQuickbaseFieldIdByLabels(versionTable.fields, ["Platform Key", "Object", "Object ID", "Studio Item Key", "Report ID", "Version"]);
     detected.versionSnapshotFieldId = findQuickbaseFieldIdByLabels(versionTable.fields, ["Json", "JSON", "Snapshot JSON"]);
     detected.versionChangedAtFieldId = findQuickbaseFieldIdByLabels(versionTable.fields, ["Changed At", "Updated At", "Updated", "Modified At"]);
     detected.versionChangedByFieldId = findQuickbaseFieldIdByLabels(versionTable.fields, ["Changed By", "Updated By", "Modified By"]);

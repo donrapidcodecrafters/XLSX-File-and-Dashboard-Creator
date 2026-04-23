@@ -7,7 +7,7 @@ const STORAGE_PATH = resolve(process.cwd(), ".data/studio-document.json");
 const CACHE_PATH = resolve(process.cwd(), ".data/studio-cache.json");
 const CACHE_META_PATH = resolve(process.cwd(), ".data/studio-cache-meta.json");
 const HYDRATE_TTL_MS = 24 * 60 * 60 * 1000;
-const HYDRATE_TIMEOUT_MS = 8_000;
+const HYDRATE_TIMEOUT_MS = 35_000;
 const DISK_RELOAD_TTL_MS = 250;
 export const CACHE_RETENTION_MS = 24 * 60 * 60 * 1000;
 
@@ -219,11 +219,10 @@ export class StudioStore {
     let expired = false;
     const hydrateTask = hydrateStudioDocumentFromQuickbase(this.document)
       .then((document) => {
-        if (expired) return this.getDocument();
         this.document = document;
         this.lastHydratedAt = Date.now();
         this.persist(this.document);
-        return this.getDocument();
+        return expired ? clone(stripCachedRows(this.document)) : this.getDocument();
       })
       .catch(() => this.getDocument());
     const timeoutTask = new Promise<StudioDocument>((resolve) => {
