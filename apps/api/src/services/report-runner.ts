@@ -174,7 +174,7 @@ async function ensureRowsContainRequiredFields(
   if (!rows.length || !requiredFieldIds.length) return rows;
 
   const missingFieldIds = Array.from(new Set(requiredFieldIds.filter(Boolean).map(String))).filter((fieldId) => (
-    !rows.some((row) => rowHasField(row, fieldId))
+    rows.some((row) => !rowHasField(row, fieldId))
   ));
   if (!missingFieldIds.length) return rows;
 
