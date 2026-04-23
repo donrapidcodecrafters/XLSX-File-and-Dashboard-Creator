@@ -40,6 +40,10 @@ const parser = new XMLParser({
 
 const STORAGE_CONFIG_KEY = "__studioStorageConfig__";
 const USER_SETTINGS_KEY = "__studioUserSettings__";
+const MAX_SYNCED_VERSIONS_PER_OBJECT = 10;
+const MAX_LOADED_VERSIONS_PER_OBJECT = 10;
+const QUICKBASE_REST_WRITE_BATCH_SIZE = 25;
+const QUICKBASE_REST_WRITE_BATCH_BYTES = 2 * 1024 * 1024;
 const QUICKBASE_RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
 const QUICKBASE_CACHE_TTL_MS = 60_000;
 const STORAGE_TABLE_NAMES = {
@@ -795,14 +799,33 @@ async function quickbaseWriteRecordsRest(
   tableId: string,
   rows: QuickbaseRecord[]
 ) {
-  return quickbaseRestRequest(config, "/records", {
-    method: "POST",
-    body: {
-      to: tableId,
-      data: rows,
-      fieldsToReturn: [3]
+  const savedRows: QuickbaseRecord[] = [];
+  let batch: QuickbaseRecord[] = [];
+  let batchBytes = 0;
+  const flush = async () => {
+    if (!batch.length) return;
+    const response = await quickbaseRestRequest(config, "/records", {
+      method: "POST",
+      body: {
+        to: tableId,
+        data: batch,
+        fieldsToReturn: [3]
+      }
+    }) as { data: QuickbaseRecord[] };
+    savedRows.push(...(response.data || []));
+    batch = [];
+    batchBytes = 0;
+  };
+  for (const row of rows || []) {
+    const rowBytes = Buffer.byteLength(JSON.stringify(row || {}), "utf8");
+    if (batch.length && (batch.length >= QUICKBASE_REST_WRITE_BATCH_SIZE || batchBytes + rowBytes > QUICKBASE_REST_WRITE_BATCH_BYTES)) {
+      await flush();
     }
-  }) as Promise<{ data: QuickbaseRecord[] }>;
+    batch.push(row);
+    batchBytes += rowBytes;
+  }
+  await flush();
+  return { data: savedRows };
 }
 
 async function quickbaseWriteRecords(
@@ -1088,6 +1111,7 @@ async function loadStoredVersions(config: StudioDocument["quickbase"]) {
   });
   Object.values(versions).forEach((entries) => {
     entries.sort((left, right) => String(right.savedAt || "").localeCompare(String(left.savedAt || "")));
+    entries.splice(MAX_LOADED_VERSIONS_PER_OBJECT);
   });
   return versions;
 }
@@ -1559,7 +1583,7 @@ export async function ensureQuickbaseStorageForProfiles(document: StudioDocument
   return normalizeStudioDocument(next);
 }
 
-async function syncObjectRecords(document: StudioDocument, user: QuickbaseUser) {
+async function syncObjectRecords(document: StudioDocument, user: QuickbaseUser, removedObjectIds: string[] = []) {
   const config = document.quickbase;
   if (!hasObjectStorage(config)) return { count: 0, objectRecordIds: {} as Record<string, string> };
   try {
@@ -1581,9 +1605,9 @@ async function syncObjectRecords(document: StudioDocument, user: QuickbaseUser) 
     });
 
     await quickbaseWriteRecords(config, config.objectTableId, rows);
-    const desiredKeys = new Set(objects.map((object) => makeCompositeKey([object.id])));
+    const deletedKeys = new Set(removedObjectIds.map((objectId) => makeCompositeKey([objectId])));
     const deletedRecordIds = Array.from(existing.entries())
-      .filter(([key]) => !desiredKeys.has(key))
+      .filter(([key]) => deletedKeys.has(key))
       .map(([, recordId]) => recordId)
       .filter(Boolean);
     if (deletedRecordIds.length) {
@@ -1701,7 +1725,10 @@ async function syncVersionRecords(document: StudioDocument, user: QuickbaseUser,
     const rows: QuickbaseRecord[] = [];
 
     Object.entries(document.versions || {}).forEach(([objectId, versions]) => {
-      (versions || []).forEach((entry) => {
+      const recentVersions = [...(versions || [])]
+        .sort((left, right) => String(right.savedAt || "").localeCompare(String(left.savedAt || "")))
+        .slice(0, MAX_SYNCED_VERSIONS_PER_OBJECT);
+      recentVersions.forEach((entry) => {
         const changedAt = entry.savedAt || new Date().toISOString();
         const payload = {
           id: entry.id,
@@ -1728,7 +1755,10 @@ async function syncVersionRecords(document: StudioDocument, user: QuickbaseUser,
     const verified = await quickbaseFetchRecordIdMap(config, config.versionTableId, [config.versionObjectKeyFieldId, config.versionChangedAtFieldId]);
     let verifiedCount = 0;
     Object.entries(document.versions || {}).forEach(([objectId, versions]) => {
-      (versions || []).forEach((entry) => {
+      const recentVersions = [...(versions || [])]
+        .sort((left, right) => String(right.savedAt || "").localeCompare(String(left.savedAt || "")))
+        .slice(0, MAX_SYNCED_VERSIONS_PER_OBJECT);
+      recentVersions.forEach((entry) => {
         const changedAt = entry.savedAt || "";
         if (changedAt && verified.get(makeCompositeKey([objectId, changedAt]))) {
           verifiedCount += 1;
@@ -1790,7 +1820,7 @@ export async function syncStudioUserSettingsToQuickbase(document: StudioDocument
   };
 }
 
-export async function syncStudioDocumentToQuickbase(document: StudioDocument): Promise<QuickbaseSyncSummary> {
+export async function syncStudioDocumentToQuickbase(document: StudioDocument, options?: { removedObjectIds?: string[] }): Promise<QuickbaseSyncSummary> {
   const provisionedDocument = await ensureQuickbaseStorageForProfiles(document);
   const connectedProfiles = provisionedDocument.quickbaseProfiles.filter((profile) => hasQuickbaseConnection(profile.quickbase));
   if (!connectedProfiles.length) {
@@ -1809,6 +1839,7 @@ export async function syncStudioDocumentToQuickbase(document: StudioDocument): P
   let savedSettings = 0;
   let savedVersions = 0;
   let savedStorageConfig = 0;
+  const warnings: string[] = [];
 
   for (const profile of connectedProfiles) {
     const config = profile.quickbase;
@@ -1838,9 +1869,14 @@ export async function syncStudioDocumentToQuickbase(document: StudioDocument): P
       quickbase: config,
       activeQuickbaseProfileId: profile.id
     });
-    const syncedObjects = await syncObjectRecords(profileDocument, user);
+    const syncedObjects = await syncObjectRecords(profileDocument, user, options?.removedObjectIds || []);
     const syncedSettings = await syncSettingsRecords(profileDocument, user);
-    const syncedVersions = await syncVersionRecords(profileDocument, user, syncedObjects.objectRecordIds);
+    let syncedVersions = { count: 0 };
+    try {
+      syncedVersions = await syncVersionRecords(profileDocument, user, syncedObjects.objectRecordIds);
+    } catch (error) {
+      warnings.push(error instanceof Error ? error.message : "Version history sync failed.");
+    }
     savedObjects += syncedObjects.count;
     savedSettings += syncedSettings.count;
     savedVersions += syncedVersions.count;
@@ -1853,7 +1889,9 @@ export async function syncStudioDocumentToQuickbase(document: StudioDocument): P
   return {
     enabled: true,
     ok: allVerified,
-    message: allVerified ? "Saved to Quickbase tables." : "Quickbase save requests completed, but no rows could be verified afterward.",
+    message: warnings.length
+      ? `${allVerified ? "Saved reports, dashboards, and settings to Quickbase." : "Quickbase save requests completed, but no rows could be verified afterward."} Version history needs attention: ${warnings.join(" ")}`
+      : (allVerified ? "Saved to Quickbase tables." : "Quickbase save requests completed, but no rows could be verified afterward."),
     savedObjects,
     savedSettings,
     savedVersions,

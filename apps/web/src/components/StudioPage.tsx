@@ -2481,7 +2481,7 @@ export function StudioPage({
   async function persistRemote(nextDocument: StudioDocument, options?: { removedObjectIds?: string[] }) {
     setSavingRemote(true);
     try {
-      const response = await saveStudioDocument(nextDocument);
+      const response = await saveStudioDocument(nextDocument, { removedObjectIds: options?.removedObjectIds || [] });
       const persistedDocument = normalizeStudioDocument(response.document);
       if (options?.removedObjectIds?.length) {
         stripRemovedObjectIds(persistedDocument, options.removedObjectIds);

@@ -55,27 +55,42 @@ export async function registerStudioRoutes(app: FastifyInstance) {
   });
 
   app.put("/api/studio/document", async (request, reply) => {
-    const body = request.body as { document?: StudioDocument } | undefined;
+    const body = request.body as { document?: StudioDocument; removedObjectIds?: string[] } | undefined;
     if (!body?.document) {
       reply.code(400);
       return { message: "Document payload is required." };
     }
+    const incomingDocument = body.document;
     const current = studioStore.getLiveDocument();
+    const removedObjectIds = Array.isArray(body.removedObjectIds) ? body.removedObjectIds.map(String).filter(Boolean) : [];
+    const mergedObjects = {
+      ...(current.bundle.objects || {}),
+      ...(incomingDocument.bundle?.objects || {})
+    };
+    removedObjectIds.forEach((objectId) => {
+      delete mergedObjects[objectId];
+    });
+    const mergedOrder = [
+      ...((incomingDocument.bundle?.order || []).filter((id) => !removedObjectIds.includes(id))),
+      ...(current.bundle.order || []).filter((id) => !removedObjectIds.includes(id) && !((incomingDocument.bundle?.order || []).includes(id)))
+    ].filter((id, index, list) => Boolean(mergedObjects[id]) && list.indexOf(id) === index);
     const mergedDocument: StudioDocument = normalizeStudioDocument({
-      ...body.document,
+      ...incomingDocument,
       // Version history and export jobs stay on the server; the browser does not upload them on save.
       versions: current.versions,
       exportJobs: current.exportJobs,
       bundle: {
-        ...body.document.bundle,
+        ...incomingDocument.bundle,
+        objects: mergedObjects,
+        order: mergedOrder,
         // Keep server-side cached rows instead of requiring the browser to upload them on every save.
         data: current.bundle.data
       },
       sync: {
-        ...body.document.sync,
+        ...incomingDocument.sync,
         refreshStatus: current.sync.refreshStatus
       },
-      quickbaseProfiles: body.document.quickbaseProfiles.map((profile) => {
+      quickbaseProfiles: incomingDocument.quickbaseProfiles.map((profile) => {
         const existing = current.quickbaseProfiles.find((item) => item.id === profile.id);
         return {
           ...profile,
@@ -87,7 +102,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
     updateRefreshScheduleMetadata(mergedDocument);
     const provisioned = await ensureQuickbaseStorageForProfiles(mergedDocument);
     const document = studioStore.saveDocument(provisioned);
-    const sync = await syncStudioDocumentToQuickbase(document).catch((error) => ({
+    const sync = await syncStudioDocumentToQuickbase(document, { removedObjectIds }).catch((error) => ({
       enabled: true,
       ok: false,
       message: error instanceof Error ? error.message : "Quickbase sync failed.",

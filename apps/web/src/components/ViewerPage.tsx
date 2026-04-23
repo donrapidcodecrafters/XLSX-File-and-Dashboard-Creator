@@ -36,9 +36,30 @@ export function ViewerPage({
   const [refreshFeedback, setRefreshFeedback] = useState<{ tone: "warn" | "danger"; message: string } | null>(null);
   const favorites = studioDocument?.favorites || [];
   const currentUserId = String(studioDocument?.session.currentUserId || "").trim();
+  const sourceObjects = useMemo(
+    () => studioDocument
+      ? (studioDocument.bundle.order || [])
+          .map((id) => studioDocument.bundle.objects[id])
+          .filter((item): item is NonNullable<typeof item> => Boolean(item))
+          .map((object) => ({
+            id: object.id,
+            type: object.type,
+            schemaVersion: object.schemaVersion,
+            name: object.name,
+            description: object.description,
+            folder: object.folder,
+            category: object.category,
+            tags: object.tags,
+            scope: object.scope,
+            ownerUserId: object.ownerUserId,
+            updatedAt: object.updatedAt
+          }))
+      : objects,
+    [objects, studioDocument]
+  );
   const visibleObjects = useMemo(
-    () => filterStudioLibraryItems(objects, { currentUserId }),
-    [currentUserId, objects]
+    () => filterStudioLibraryItems(sourceObjects, { currentUserId }),
+    [currentUserId, sourceObjects]
   );
   const filtered = useMemo(() => {
     return filterStudioLibraryItems(visibleObjects, {

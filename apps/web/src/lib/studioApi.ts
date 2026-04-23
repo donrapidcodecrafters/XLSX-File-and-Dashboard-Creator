@@ -148,10 +148,10 @@ export function fetchStudioDocument() {
   return request<{ document: StudioDocument }>("/api/studio/document");
 }
 
-export function saveStudioDocument(document: StudioDocument) {
+export function saveStudioDocument(document: StudioDocument, options?: { removedObjectIds?: string[] }) {
   return request<{ document: StudioDocument; sync?: QuickbaseSyncResult }>("/api/studio/document", {
     method: "PUT",
-    body: JSON.stringify({ document: buildSavePayload(document) })
+    body: JSON.stringify({ document: buildSavePayload(document), removedObjectIds: options?.removedObjectIds || [] })
   });
 }
 
