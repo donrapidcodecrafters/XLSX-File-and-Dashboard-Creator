@@ -649,10 +649,11 @@ export async function fetchQuickbaseTablePage(
   if (!hasQuickbaseConnection(config) || !tableId) {
     return { rows: [], totalRecords: 0 };
   }
-  const select = Array.from(new Set((fieldIds || []).filter(Boolean).map(String))).slice(0, 30);
-  if (!select.length) {
+  const requestedFieldIds = Array.from(new Set((fieldIds || []).filter(Boolean).map(String)));
+  if (!requestedFieldIds.length) {
     return { rows: [], totalRecords: 0 };
   }
+  const select = Array.from(new Set(["3", ...requestedFieldIds.filter((fieldId) => fieldId !== "3")])).slice(0, 30);
   const response = await quickbaseQueryRecords(
     config,
     tableId,
@@ -673,7 +674,7 @@ export async function fetchQuickbaseTablePage(
       const data: DataRow = {
         __recordId: String(qbFieldValue(row, "3") || "")
       };
-      select.forEach((fieldId) => {
+      requestedFieldIds.forEach((fieldId) => {
         data[fieldId] = qbFieldValue(row, fieldId);
       });
       return data;

@@ -116,12 +116,6 @@ function getQuickbaseTableId(table: TableDefinition) {
   return table.quickbaseTableId || table.id;
 }
 
-async function getExecutionRows(table: TableDefinition, options: { objectId?: string } = {}) {
-  const existingRows = objectStore.getRows(table.id);
-  if (existingRows.length) return existingRows;
-  return ensureTableRowsAvailable(table.id, options);
-}
-
 function asNumber(value: unknown): number {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : 0;
@@ -137,11 +131,12 @@ function normalizeChartGroupValue(value: unknown): string {
   return String(value ?? "").trim();
 }
 
-function collectReportFieldIds(report: ReportDefinition) {
+function collectReportFieldIds(report: ReportDefinition, extraFilters: FilterDefinition[] = []) {
   return Array.from(new Set(
     [
       ...(report.selectedFieldIds || []),
       ...collectFilterFieldIds(report.filterTree || createFilterGroup("and", report.filters || [])),
+      ...(extraFilters || []).map((filter) => filter.fieldId),
       ...(report.groups || []).map((item) => item.fieldId),
       ...(report.sorts || []).map((item) => item.fieldId),
       ...((report.summaryMetrics || []).map((item) => item.fieldId)),
@@ -156,6 +151,89 @@ function collectReportFieldIds(report: ReportDefinition) {
       report.view.titleFieldId
     ].filter(Boolean).map(String)
   ));
+}
+
+function chunk<T>(items: T[], size: number) {
+  const groups: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    groups.push(items.slice(index, index + size));
+  }
+  return groups;
+}
+
+function rowHasField(row: DataRow, fieldId: string) {
+  return Object.prototype.hasOwnProperty.call(row, fieldId);
+}
+
+async function ensureRowsContainRequiredFields(
+  table: TableDefinition,
+  rows: DataRow[],
+  requiredFieldIds: string[]
+) {
+  if (!rows.length || !requiredFieldIds.length) return rows;
+
+  const missingFieldIds = Array.from(new Set(requiredFieldIds.filter(Boolean).map(String))).filter((fieldId) => (
+    !rows.some((row) => rowHasField(row, fieldId))
+  ));
+  if (!missingFieldIds.length) return rows;
+
+  const quickbase = getQuickbaseConfigForTable(table);
+  if (!quickbase.realmHostname || !quickbase.userToken || !quickbase.appId) {
+    return rows;
+  }
+
+  const rowsByRecordId = new Map<string, DataRow>();
+  rows.forEach((row) => {
+    const recordId = String(row.__recordId || "").trim();
+    if (recordId) {
+      rowsByRecordId.set(recordId, row);
+    }
+  });
+  if (!rowsByRecordId.size) return rows;
+
+  const fieldChunks = chunk(missingFieldIds, 29);
+  for (const fieldChunk of fieldChunks) {
+    let skip = 0;
+    while (true) {
+      const page = await fetchQuickbaseTablePage(quickbase, getQuickbaseTableId(table), fieldChunk, {
+        top: 1000,
+        skip,
+        sortBy: [{ fieldId: "3", order: "ASC" }]
+      });
+      if (!page.rows.length) break;
+      page.rows.forEach((row) => {
+        const recordId = String(row.__recordId || "").trim();
+        if (!recordId) return;
+        const existing = rowsByRecordId.get(recordId);
+        if (!existing) return;
+        fieldChunk.forEach((fieldId) => {
+          existing[fieldId] = row[fieldId];
+        });
+      });
+      if (page.rows.length < 1000) break;
+      skip += page.rows.length;
+    }
+  }
+
+  const document = studioStore.getDocument();
+  document.bundle.data[table.id] = rows;
+  if (table.quickbaseTableId) {
+    document.bundle.data[table.quickbaseTableId] = rows;
+  }
+  studioStore.flushDocument(document, { markSavedAt: false });
+  return rows;
+}
+
+async function getExecutionRows(
+  table: TableDefinition,
+  options: { objectId?: string; requiredFieldIds?: string[] } = {}
+) {
+  const existingRows = objectStore.getRows(table.id);
+  if (existingRows.length) {
+    return ensureRowsContainRequiredFields(table, existingRows, options.requiredFieldIds || []);
+  }
+  const rows = await ensureTableRowsAvailable(table.id, options);
+  return ensureRowsContainRequiredFields(table, rows, options.requiredFieldIds || []);
 }
 
 function getTableCacheVersion(table: TableDefinition): string {
@@ -675,7 +753,7 @@ async function fetchQuickbaseReportPageOnly(
   const { page, pageSize, includeRows, startIndex } = normalizePageOptions(options);
   const filterTree = getCombinedFilterTree(report, extraFilters);
   const filters = extractFlatPushdownFilters(filterTree);
-  const requestedFieldIds = collectReportFieldIds(report);
+  const requestedFieldIds = collectReportFieldIds(report, extraFilters);
   const warnings = report.selectedFieldIds.length || !report.view.showDetails ? [] : ["This report has no selected fields."];
   const { where } = buildQuickbaseWhere(filters);
   const sortBy = buildQuickbaseSort(report);
@@ -752,7 +830,7 @@ async function executeQuickbaseReportPage(
   const { page, pageSize, includeRows, startIndex, endIndexExclusive } = normalizePageOptions(options);
   const filterTree = getCombinedFilterTree(report, extraFilters);
   const filters = extractFlatPushdownFilters(filterTree);
-  const requestedFieldIds = collectReportFieldIds(report);
+  const requestedFieldIds = collectReportFieldIds(report, extraFilters);
   const metricSet = report.summaryMetrics.length
     ? report.summaryMetrics
     : [{ id: "default-count", fieldId: report.selectedFieldIds[0] || "recordId", op: "count" as const, label: "Rows" }];
@@ -873,7 +951,7 @@ export async function executeReportPage(report: ReportDefinition, extraFilters: 
   }
 
   const full = await reportCache.getOrCreate(cacheKey(report, table, extraFilters), async () => {
-    const rows = await getExecutionRows(table, { objectId: report.id });
+    const rows = await getExecutionRows(table, { objectId: report.id, requiredFieldIds: collectReportFieldIds(report, extraFilters) });
     const result = rows.length <= 1500
       ? runReport(report, table, rows, extraFilters)
       : await runReportWorker({ report, table, rows, extraFilters });
@@ -897,13 +975,13 @@ export async function fetchReportPage(report: ReportDefinition, extraFilters: Fi
 
   if (!reportNeedsAggregates(report)) {
     return reportPageCache.getOrCreate(pageCacheKey(report, table, extraFilters, options), async () => {
-      const rows = await getExecutionRows(table, { objectId: report.id });
+      const rows = await getExecutionRows(table, { objectId: report.id, requiredFieldIds: collectReportFieldIds(report, extraFilters) });
       return executeLocalReportPageOnly(report, table, rows, extraFilters, options);
     });
   }
 
   const full = await reportCache.getOrCreate(cacheKey(report, table, extraFilters), async () => {
-    const rows = await getExecutionRows(table, { objectId: report.id });
+    const rows = await getExecutionRows(table, { objectId: report.id, requiredFieldIds: collectReportFieldIds(report, extraFilters) });
     const result = rows.length <= 1500
       ? runReport(report, table, rows, extraFilters)
       : await runReportWorker({ report, table, rows, extraFilters });
@@ -930,7 +1008,7 @@ export async function fetchReportExportBundle(
   if (shouldUseLiveQuickbase(table.id, options.forceLive) && quickbase.realmHostname && quickbase.userToken && quickbase.appId) {
     const filterTree = getCombinedFilterTree(report, extraFilters);
     const filters = extractFlatPushdownFilters(filterTree);
-    const requestedFieldIds = collectReportFieldIds(report);
+    const requestedFieldIds = collectReportFieldIds(report, extraFilters);
     const { where } = buildQuickbaseWhere(filters);
     const sortBy = buildQuickbaseSort(report);
     const metricSet = report.summaryMetrics.length
@@ -981,7 +1059,7 @@ export async function fetchReportExportBundle(
 
   onProgress?.(68, "Preparing export data");
   return reportCache.getOrCreate(cacheKey(report, table, extraFilters), async () => {
-    const rows = await getExecutionRows(table, { objectId: report.id });
+    const rows = await getExecutionRows(table, { objectId: report.id, requiredFieldIds: collectReportFieldIds(report, extraFilters) });
     const result = rows.length <= 1500
       ? runReport(report, table, rows, extraFilters)
       : await runReportWorker({ report, table, rows, extraFilters });
@@ -1011,7 +1089,7 @@ export async function executeReport(report: ReportDefinition, extraFilters: Filt
 
   const key = cacheKey(report, table, extraFilters);
   const full = await reportCache.getOrCreate(key, async () => {
-    const rows = await getExecutionRows(table, { objectId: report.id });
+    const rows = await getExecutionRows(table, { objectId: report.id, requiredFieldIds: collectReportFieldIds(report, extraFilters) });
     const result = rows.length <= 1500
       ? runReport(report, table, rows, extraFilters)
       : await runReportWorker({ report, table, rows, extraFilters });
