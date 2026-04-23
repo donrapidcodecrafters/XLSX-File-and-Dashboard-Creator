@@ -157,7 +157,7 @@ export function saveStudioUserSettings(payload: {
   recent?: string[];
   personalOverrides?: StudioDocument["personalOverrides"];
 }) {
-  return request<{ document: StudioDocument; sync?: QuickbaseSyncResult }>("/api/studio/user-settings", {
+  return request<{ settings: { favorites: string[]; recent: string[]; personalOverrides: StudioDocument["personalOverrides"] }; sync?: QuickbaseSyncResult }>("/api/studio/user-settings", {
     method: "PATCH",
     body: JSON.stringify(payload)
   });

@@ -206,6 +206,7 @@ export interface RuntimeFilterDefinition {
   id: string;
   label: string;
   fieldId: string;
+  sourceTableId?: string;
   mode: RuntimeFilterMode;
   targetReportIds: string[];
   defaultValue: string;

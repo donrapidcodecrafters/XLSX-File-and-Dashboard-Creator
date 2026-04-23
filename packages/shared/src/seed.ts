@@ -689,6 +689,15 @@ export function normalizeStudioDocument(input: Partial<StudioDocument> | null | 
             },
             snapshot: widget.snapshot
           }))
+        })),
+        runtimeFilters: (object.runtimeFilters || []).map((filter, filterIndex) => ({
+          id: String(filter?.id || `runtime-${filterIndex + 1}`),
+          label: String(filter?.label || "Runtime filter"),
+          fieldId: String(filter?.fieldId || ""),
+          sourceTableId: String(filter?.sourceTableId || ""),
+          mode: filter?.mode === "selected" ? "selected" : "global",
+          targetReportIds: Array.isArray(filter?.targetReportIds) ? filter.targetReportIds.map(String).filter(Boolean) : [],
+          defaultValue: String(filter?.defaultValue || "")
         }))
       }];
     })

@@ -317,7 +317,7 @@ export async function registerRenderRoutes(app: FastifyInstance) {
       await runWithConcurrency(widgetReportIds, 2, async (reportId, index) => {
         const report = objectStore.getReport(reportId) as ReportDefinition | undefined;
         if (!report) return;
-        const filters = buildDashboardFilters(dashboard, report.id, runtimeFilters);
+        const filters = buildDashboardFilters(dashboard, report.id, runtimeFilters, report.sourceTableId);
         reportProgress.set(report.id, 0);
         reportMessage.set(report.id, `Loading ${report.name}`);
         updateOverallProgress();

@@ -110,7 +110,7 @@ function executeDashboard(document: StudioDocument, dashboard: DashboardDefiniti
     tab.widgets.map((widget) => {
       const report = (widget.mode === "copied" && widget.snapshot ? widget.snapshot : getObject(document, widget.reportId)) as ReportDefinition;
       const table = getTable(document, report.sourceTableId) as TableDefinition;
-      const result = runReport(report, table, document.bundle.data[table.id] || [], buildDashboardFilters(dashboard, report.id, runtimeFilters));
+      const result = runReport(report, table, document.bundle.data[table.id] || [], buildDashboardFilters(dashboard, report.id, runtimeFilters, report.sourceTableId));
       return {
         widgetId: widget.id,
         widget,

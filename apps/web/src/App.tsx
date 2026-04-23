@@ -37,6 +37,7 @@ import type { QuickbaseTableLinkContext } from "./lib/quickbaseLinks";
 import { fetchStudioDocument, fetchStudioRefreshJob, saveStudioUserSettings, startStudioObjectRefresh, updateStudioSession } from "./lib/studioApi";
 
 const SESSION_RECENT_KEY = "studio-session-recent";
+const USER_SETTINGS_PERSIST_DELAY_MS = 500;
 const SESSION_PERSIST_INTERVAL_MS = 5 * 60_000;
 const SHARED_BROWSER_SESSION_KEY = "studio-shared-browser-session-v1";
 const SESSION_ACTIVITY_TOUCH_INTERVAL_MS = 60_000;
@@ -107,6 +108,14 @@ function useCatalog() {
   const [catalogError, setCatalogError] = useState("");
   const lastPersistedSessionKey = useRef("");
   const lastPersistedSessionAt = useRef(0);
+  const lastPersistedUserSettingsKey = useRef("");
+  const userSettingsPersistPromise = useRef<Promise<void> | null>(null);
+  const queuedUserSettingsPayload = useRef<{
+    favorites?: string[];
+    recent?: string[];
+    personalOverrides?: StudioDocument["personalOverrides"];
+  } | null>(null);
+  const userSettingsPersistTimer = useRef<number | null>(null);
   const sessionPersistPromise = useRef<Promise<void> | null>(null);
   const queuedSessionPayload = useRef<Partial<StudioDocument["session"]> | null>(null);
   const queuedSessionKey = useRef("");
@@ -162,8 +171,33 @@ function useCatalog() {
     recent?: string[];
     personalOverrides?: StudioDocument["personalOverrides"];
   }) => {
-    const response = await saveStudioUserSettings(payload);
-    setStudioDocument(normalizeStudioDocument(response.document));
+    setStudioDocument((current) => applyUserSettingsToDocument(current, payload));
+    queuedUserSettingsPayload.current = {
+      ...(queuedUserSettingsPayload.current || {}),
+      ...payload
+    };
+    if (userSettingsPersistTimer.current) {
+      window.clearTimeout(userSettingsPersistTimer.current);
+    }
+    userSettingsPersistTimer.current = window.setTimeout(() => {
+      userSettingsPersistTimer.current = null;
+      if (userSettingsPersistPromise.current) return;
+      userSettingsPersistPromise.current = (async () => {
+        while (queuedUserSettingsPayload.current) {
+          const nextPayload = queuedUserSettingsPayload.current;
+          queuedUserSettingsPayload.current = null;
+          const nextKey = JSON.stringify(nextPayload || {});
+          if (nextKey === lastPersistedUserSettingsKey.current) {
+            continue;
+          }
+          const response = await saveStudioUserSettings(nextPayload);
+          lastPersistedUserSettingsKey.current = JSON.stringify(response.settings || {});
+          setStudioDocument((current) => applyUserSettingsToDocument(current, response.settings || nextPayload));
+        }
+      })().finally(() => {
+        userSettingsPersistPromise.current = null;
+      });
+    }, USER_SETTINGS_PERSIST_DELAY_MS);
   }, []);
 
   const persistSession = useCallback(async (session: Partial<StudioDocument["session"]>) => {
@@ -242,6 +276,23 @@ function applySessionToDocument(document: StudioDocument | null, session: Studio
     ...document,
     session
   };
+}
+
+function applyUserSettingsToDocument(
+  document: StudioDocument | null,
+  payload: {
+    favorites?: string[];
+    recent?: string[];
+    personalOverrides?: StudioDocument["personalOverrides"];
+  }
+) {
+  if (!document) return document;
+  return normalizeStudioDocument({
+    ...document,
+    favorites: payload.favorites ?? document.favorites,
+    recent: payload.recent ?? document.recent,
+    personalOverrides: payload.personalOverrides ?? document.personalOverrides
+  });
 }
 
 function getDashboardPersonalOverride(dashboardId: string, studioDocument: StudioDocument | null) {

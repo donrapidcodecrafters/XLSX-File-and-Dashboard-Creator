@@ -97,7 +97,7 @@ async function main() {
     }]
   };
   const runtimeValues = { "runtime-region": "North" };
-  const widgetFilters = buildDashboardFilters(dashboard, report.id, runtimeValues);
+  const widgetFilters = buildDashboardFilters(dashboard, report.id, runtimeValues, report.sourceTableId);
   const dashboardReportResult = runReport(report, table, document.bundle.data[table.id], widgetFilters);
   const rendered = {
     dashboard,

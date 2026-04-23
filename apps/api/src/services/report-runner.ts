@@ -1077,7 +1077,7 @@ function buildDashboardCacheKey(
         return {
           tabId: tab.id,
           widgetId: widget.id,
-          widgetExecution: buildDashboardExecutionKey(report, widget, buildDashboardFilters(dashboard, report.id, runtimeValues)),
+          widgetExecution: buildDashboardExecutionKey(report, widget, buildDashboardFilters(dashboard, report.id, runtimeValues, report.sourceTableId)),
           tableVersion: table ? getTableCacheVersion(table) : ""
         };
       })
@@ -1113,7 +1113,7 @@ async function executeDashboardUncached(
             error: message
           };
         }
-        const extraFilters = buildDashboardFilters(dashboard, report.id, runtimeValues);
+        const extraFilters = buildDashboardFilters(dashboard, report.id, runtimeValues, report.sourceTableId);
         const executionKey = buildDashboardExecutionKey(report, widget, extraFilters);
         try {
           let pending = executionCache.get(executionKey);

@@ -1063,7 +1063,7 @@ export async function streamDashboardWorkbook(
       if (!table || !exportResult.rows.length) return;
       const detailSheet = workbook.addWorksheet(safeSheetName(`${tab.name} ${widget.report.name} Data`, usedNames));
       detailSheetNames[widget.widgetId] = detailSheet.name;
-      const widgetFilters = buildDashboardFilters(dashboard, widget.report.id, runtimeFilters);
+      const widgetFilters = buildDashboardFilters(dashboard, widget.report.id, runtimeFilters, widget.report.sourceTableId);
       const filterDescriptions = [
         ...widget.report.filters.map((filter) => describeReportFilter(widget.report, table, filter)),
         ...widgetFilters.map((filter) => describeReportFilter(widget.report, table, filter))
@@ -1076,7 +1076,7 @@ export async function streamDashboardWorkbook(
     tab.widgets.forEach((widget) => {
       const table = tablesById[widget.report.sourceTableId];
       const runtimeWidgetFilters = table
-        ? buildDashboardFilters(dashboard, widget.report.id, runtimeFilters).map((filter) => describeReportFilter(widget.report, table, filter))
+        ? buildDashboardFilters(dashboard, widget.report.id, runtimeFilters, widget.report.sourceTableId).map((filter) => describeReportFilter(widget.report, table, filter))
         : [];
       const savedFilters = table
         ? widget.report.filters.map((filter) => describeReportFilter(widget.report, table, filter))

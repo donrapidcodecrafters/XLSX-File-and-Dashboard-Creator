@@ -428,7 +428,7 @@ export function DashboardView({
     if (page < 1) return;
     setWidgetPageLoading((current) => ({ ...current, [widget.widgetId]: true }));
     try {
-      const filters = buildDashboardFilters(dashboard, widget.report.id, runtimeFilters);
+      const filters = buildDashboardFilters(dashboard, widget.report.id, runtimeFilters, widget.report.sourceTableId);
       const next = await runReportPage(widget.report.id, page, 100, filters, { forceLive });
       setWidgetPages((current) => ({ ...current, [widget.widgetId]: page }));
       setWidgetPageResults((current) => ({ ...current, [widget.widgetId]: next }));
@@ -650,7 +650,7 @@ export function DashboardView({
               const axisLabels = getChartAxisLabels(tables, widget.report);
               const widgetQuickbaseFilterTree = buildQuickbaseReportFilterTree(
                 widget.report,
-                buildDashboardFilters(dashboard, widget.report.id, runtimeFilters)
+                buildDashboardFilters(dashboard, widget.report.id, runtimeFilters, widget.report.sourceTableId)
               );
               const crossFilterOptions = getDashboardCrossFilterOptions(dashboard, widget.report, widget.result.chartData);
               const clearableFilterIds = Array.from(new Set(

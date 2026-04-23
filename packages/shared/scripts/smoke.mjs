@@ -100,7 +100,7 @@ function testReportExecutionAndDashboardFilters() {
   const filters = buildDashboardFilters(dashboard, "report-task-pipeline", {
     "runtime-status": "Blocked",
     "runtime-start-date": "CURRENT_MONTH"
-  });
+  }, "tasks");
   assert.ok(filters.some((filter) => filter.fieldId === "status" && filter.value === "Blocked"), "expected dashboard runtime filter to target the task report");
 }
 

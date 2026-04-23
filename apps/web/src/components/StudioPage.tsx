@@ -49,6 +49,7 @@ import {
   type DashboardWidgetDropPosition,
   type DashboardWidgetRowEdge,
   type DashboardWidgetMoveDirection,
+  type DataRow,
   type ExportJobStatus,
   type FieldType,
   type FilterDefinition,
@@ -108,7 +109,6 @@ import { ClearableInputField } from "./ClearableInputField";
 import {
   DEFAULT_CHART_COLORS,
   getChartAxisLabels,
-  getSortedDashboardFieldOptions,
   getSortedFieldOptions,
   reportShowsChart,
   reportShowsDetails,
@@ -931,12 +931,14 @@ function validationMessages(object: StudioObject, table?: TableDefinition | null
 
 function FilterGroupEditor({
   table,
+  rows,
   group,
   onChange,
   canRemove,
   onRemove
 }: {
   table: TableDefinition;
+  rows?: DataRow[];
   group: FilterGroupDefinition;
   onChange: (group: FilterGroupDefinition) => void;
   canRemove?: boolean;
@@ -1000,6 +1002,15 @@ function FilterGroupEditor({
           const rule = condition;
           const field = table.fields.find((candidate) => candidate.id === rule.fieldId) || null;
           const operatorOptions = filterOperatorOptionsForField(field);
+          const valueOptions = Array.from(new Set([
+            ...((field?.options || []).map((value) => String(value || "").trim()).filter(Boolean)),
+            ...((rows || [])
+              .map((row) => row[rule.fieldId])
+              .flatMap((value) => Array.isArray(value) ? value : [value])
+              .map((value) => String(value ?? "").trim())
+              .filter(Boolean))
+          ])).sort((left, right) => left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" }))
+            .map((value) => ({ value, label: value }));
           return (
             <div className="inline-edit-row filter-rule-row" key={rule.id}>
               <SearchableSelect
@@ -1025,13 +1036,23 @@ function FilterGroupEditor({
               >
                 {operatorOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
-              <input
-                type={field?.type === "date" ? "date" : field?.type === "datetime" ? "datetime-local" : field?.type === "number" || field?.type === "currency" ? "number" : "text"}
-                value={rule.value}
-                disabled={!filterNeedsValue(rule.operator)}
-                onChange={(event) => onChange(updateFilterRuleInGroup(group, rule.id, (currentRule) => ({ ...currentRule, value: event.target.value })))}
-                placeholder={filterNeedsValue(rule.operator) ? "Filter value" : "No value needed"}
-              />
+              {valueOptions.length && field?.type !== "date" && field?.type !== "datetime" && field?.type !== "number" && field?.type !== "currency" ? (
+                <SearchableSelect
+                  value={rule.value}
+                  options={valueOptions}
+                  allowEmpty
+                  emptyOptionLabel={filterNeedsValue(rule.operator) ? "Choose a value" : "No value needed"}
+                  onChange={(value) => onChange(updateFilterRuleInGroup(group, rule.id, (currentRule) => ({ ...currentRule, value })))}
+                />
+              ) : (
+                <input
+                  type={field?.type === "date" ? "date" : field?.type === "datetime" ? "datetime-local" : field?.type === "number" || field?.type === "currency" ? "number" : "text"}
+                  value={rule.value}
+                  disabled={!filterNeedsValue(rule.operator)}
+                  onChange={(event) => onChange(updateFilterRuleInGroup(group, rule.id, (currentRule) => ({ ...currentRule, value: event.target.value })))}
+                  placeholder={filterNeedsValue(rule.operator) ? "Filter value" : "No value needed"}
+                />
+              )}
               <button type="button" onClick={() => onChange(removeFilterNodeFromGroup(group, rule.id))}>Remove</button>
             </div>
           );
@@ -1043,12 +1064,14 @@ function FilterGroupEditor({
 
 function ReportFiltersAndSortsEditor({
   table,
+  rows,
   filterTree,
   sorts,
   onChangeFilterTree,
   onChangeSorts
 }: {
   table: TableDefinition;
+  rows?: DataRow[];
   filterTree: FilterGroupDefinition;
   sorts: ReportDefinition["sorts"];
   onChangeFilterTree: (filterTree: FilterGroupDefinition) => void;
@@ -1057,7 +1080,7 @@ function ReportFiltersAndSortsEditor({
   return (
     <div className="stack">
       <div className="card">
-        <FilterGroupEditor table={table} group={filterTree} onChange={onChangeFilterTree} />
+        <FilterGroupEditor table={table} rows={rows} group={filterTree} onChange={onChangeFilterTree} />
       </div>
 
       <div className="card">
@@ -1137,6 +1160,7 @@ export function StudioPage({
   const [selectedWidgetId, setSelectedWidgetId] = useState("");
   const [widgetTargetTabId, setWidgetTargetTabId] = useState("");
   const [widgetSearch, setWidgetSearch] = useState("");
+  const [runtimeFilterModalOpen, setRuntimeFilterModalOpen] = useState(false);
   const [createStep, setCreateStep] = useState<CreateStep>("basics");
   const [createPreviewPage, setCreatePreviewPage] = useState(1);
   const [runtimeValues, setRuntimeValues] = useState<Record<string, string>>({});
@@ -1236,7 +1260,6 @@ export function StudioPage({
       .filter((object) => object?.type === "dashboard").length,
     [importReviewObjectIds, importReviewObjects]
   );
-  const dashboardFieldOptions = useMemo(() => getSortedDashboardFieldOptions(bundle.tables), [bundle.tables]);
   const reportObjectOptions = useMemo(
     () => objects
       .filter((object): object is ReportDefinition => object.type === "report")
@@ -1295,6 +1318,24 @@ export function StudioPage({
     });
     return tables;
   }, [activeDashboard, bundle.objects, bundle.tables]);
+  const activeDashboardReportOptions = useMemo(() => {
+    if (!activeDashboard) return [] as Array<{ value: string; label: string }>;
+    const seen = new Set<string>();
+    const reports: Array<{ value: string; label: string }> = [];
+    activeDashboard.tabs.forEach((tab) => {
+      tab.widgets.forEach((widget) => {
+        const report = widget.mode === "copied" && widget.snapshot ? widget.snapshot : (bundle.objects[widget.reportId] as ReportDefinition | undefined);
+        if (!report || seen.has(report.id)) return;
+        seen.add(report.id);
+        reports.push({ value: report.id, label: report.name });
+      });
+    });
+    return reports.sort((left, right) => left.label.localeCompare(right.label, undefined, { numeric: true, sensitivity: "base" }));
+  }, [activeDashboard, bundle.objects]);
+  const activeDashboardFieldOptionsByTableId = useMemo(
+    () => Object.fromEntries(activeDashboardRefreshTables.map((table) => [table.id, getSortedFieldOptions(table)])),
+    [activeDashboardRefreshTables]
+  );
   const createDraftTable = bundle.tables.find((table) => table.id === createDraft.tableId) || bundle.tables[0] || null;
   const createSteps = useMemo(() => getStudioBuilderSteps(createDraft.type), [createDraft.type]);
   const activeCreateStep = createSteps.includes(createStep) ? createStep : createSteps[0];
@@ -1850,7 +1891,7 @@ export function StudioPage({
           widgetId: widget.id,
           widget,
           report,
-          result: runReport(report, table, bundle.data[report.sourceTableId] || [], buildDashboardFilters(activeDashboard, report.id, runtimeValues)),
+          result: runReport(report, table, bundle.data[report.sourceTableId] || [], buildDashboardFilters(activeDashboard, report.id, runtimeValues, report.sourceTableId)),
           status: "complete" as const,
           message: "Preview ready"
         };
@@ -1870,6 +1911,31 @@ export function StudioPage({
 
   function updateObject(nextObject: StudioObject) {
     writeObject(nextObject);
+  }
+
+  function updateRuntimeFilter(filterId: string, updater: (filter: DashboardDefinition["runtimeFilters"][number]) => DashboardDefinition["runtimeFilters"][number]) {
+    if (!activeDashboard) return;
+    updateObject({
+      ...activeDashboard,
+      runtimeFilters: activeDashboard.runtimeFilters.map((filter) => filter.id === filterId ? updater(filter) : filter)
+    });
+  }
+
+  function collectFieldValueOptions(tableId: string, fieldId: string) {
+    if (!fieldId) return [] as Array<{ value: string; label: string }>;
+    const table = bundle.tables.find((item) => item.id === tableId) || null;
+    if (!table) return [] as Array<{ value: string; label: string }>;
+    const declaredOptions = (table.fields.find((field) => field.id === fieldId)?.options || [])
+      .map((value) => String(value || "").trim())
+      .filter(Boolean);
+    const rowValues = (bundle.data[tableId] || [])
+      .map((row) => row[fieldId])
+      .flatMap((value) => Array.isArray(value) ? value : [value])
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean);
+    return Array.from(new Set([...declaredOptions, ...rowValues]))
+      .sort((left, right) => left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" }))
+      .map((value) => ({ value, label: value }));
   }
 
   function updateActiveDashboardWidget(
@@ -3236,6 +3302,137 @@ export function StudioPage({
             </section>
           </div>
         ) : null}
+        {runtimeFilterModalOpen && activeDashboard ? (
+          <div className="studio-modal-backdrop" onClick={() => setRuntimeFilterModalOpen(false)}>
+            <section className="studio-modal" onClick={(event) => event.stopPropagation()}>
+              <div className="card-head">
+                <div>
+                  <strong>Dashboard runtime filters</strong>
+                  <div className="micro">{activeDashboard.name} · Configure runtime filters in one place.</div>
+                </div>
+                <button type="button" onClick={() => setRuntimeFilterModalOpen(false)}>Close</button>
+              </div>
+              <div className="stack">
+                {activeDashboard.runtimeFilters.length ? activeDashboard.runtimeFilters.map((filter) => {
+                  const resolvedTableId = filter.sourceTableId || (activeDashboardRefreshTables.length === 1 ? activeDashboardRefreshTables[0]?.id || "" : "");
+                  const selectedTable = activeDashboardRefreshTables.find((table) => table.id === resolvedTableId) || null;
+                  const fieldOptions = resolvedTableId ? (activeDashboardFieldOptionsByTableId[resolvedTableId] || []) : [];
+                  const valueOptions = resolvedTableId && filter.fieldId ? collectFieldValueOptions(resolvedTableId, filter.fieldId) : [];
+                  return (
+                    <div className="card" key={filter.id}>
+                      <div className="card-head">
+                        <strong>{filter.label || "Runtime filter"}</strong>
+                        <button type="button" onClick={() => updateObject({ ...activeDashboard, runtimeFilters: activeDashboard.runtimeFilters.filter((item) => item.id !== filter.id) })}>Remove</button>
+                      </div>
+                      <div className="filter-grid compact-grid">
+                        <label className="field">
+                          <span>Label</span>
+                          <input value={filter.label} onChange={(event) => updateRuntimeFilter(filter.id, (current) => ({ ...current, label: event.target.value }))} />
+                        </label>
+                        {activeDashboardRefreshTables.length > 1 ? (
+                          <label className="field">
+                            <span>Table</span>
+                            <SearchableSelect
+                              value={resolvedTableId}
+                              options={activeDashboardRefreshTables.map((table) => ({ value: table.id, label: table.name, keywords: [table.description] }))}
+                              allowEmpty
+                              emptyOptionLabel="Choose dashboard table"
+                              onChange={(value) => updateRuntimeFilter(filter.id, (current) => ({ ...current, sourceTableId: value, fieldId: "", defaultValue: "" }))}
+                            />
+                          </label>
+                        ) : (
+                          <label className="field">
+                            <span>Table</span>
+                            <input value={selectedTable?.name || "No dashboard table"} disabled />
+                          </label>
+                        )}
+                        <label className="field">
+                          <span>Field</span>
+                          <SearchableSelect
+                            value={filter.fieldId}
+                            options={fieldOptions}
+                            allowEmpty
+                            emptyOptionLabel={resolvedTableId ? "Choose table field" : "Choose a table first"}
+                            onChange={(value) => updateRuntimeFilter(filter.id, (current) => ({ ...current, fieldId: value, defaultValue: "" }))}
+                          />
+                        </label>
+                        <label className="field">
+                          <span>Mode</span>
+                          <select value={filter.mode} onChange={(event) => updateRuntimeFilter(filter.id, (current) => ({ ...current, mode: event.target.value as "global" | "selected", targetReportIds: event.target.value === "global" ? [] : current.targetReportIds }))}>
+                            <option value="global">Global</option>
+                            <option value="selected">Selected reports</option>
+                          </select>
+                        </label>
+                        {valueOptions.length ? (
+                          <label className="field">
+                            <span>Default value</span>
+                            <SearchableSelect
+                              value={filter.defaultValue}
+                              options={valueOptions}
+                              allowEmpty
+                              emptyOptionLabel="No default value"
+                              onChange={(value) => updateRuntimeFilter(filter.id, (current) => ({ ...current, defaultValue: value }))}
+                            />
+                          </label>
+                        ) : (
+                          <label className="field">
+                            <span>Default value</span>
+                            <input value={filter.defaultValue} onChange={(event) => updateRuntimeFilter(filter.id, (current) => ({ ...current, defaultValue: event.target.value }))} />
+                          </label>
+                        )}
+                      </div>
+                      {filter.mode === "selected" ? (
+                        <div className="stack-compact">
+                          <span className="micro">Select which reports on the current dashboard this runtime filter should affect.</span>
+                          <div className="filter-grid compact-grid">
+                            {activeDashboardReportOptions.map((reportOption) => (
+                              <label className="toggle-row" key={reportOption.value}>
+                                <input
+                                  type="checkbox"
+                                  checked={filter.targetReportIds.includes(reportOption.value)}
+                                  onChange={(event) => updateRuntimeFilter(filter.id, (current) => ({
+                                    ...current,
+                                    targetReportIds: event.target.checked
+                                      ? Array.from(new Set([...current.targetReportIds, reportOption.value]))
+                                      : current.targetReportIds.filter((item) => item !== reportOption.value)
+                                  }))}
+                                />
+                                {reportOption.label}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                }) : <div className="empty-hint">No runtime filters yet.</div>}
+                <div className="studio-actions modal-actions">
+                  <button
+                    type="button"
+                    onClick={() => updateObject({
+                      ...activeDashboard,
+                      runtimeFilters: [
+                        ...activeDashboard.runtimeFilters,
+                        {
+                          id: uid("runtime"),
+                          label: "New filter",
+                          fieldId: "",
+                          sourceTableId: activeDashboardRefreshTables.length === 1 ? activeDashboardRefreshTables[0].id : "",
+                          mode: "global",
+                          targetReportIds: [],
+                          defaultValue: ""
+                        }
+                      ]
+                    })}
+                  >
+                    Add runtime filter
+                  </button>
+                  <button type="button" className="ghost-button" onClick={() => setRuntimeFilterModalOpen(false)}>Done</button>
+                </div>
+              </div>
+            </section>
+          </div>
+        ) : null}
         {createModalOpen ? (
           <div className="studio-modal-backdrop" onClick={closeCreateModal}>
             <section className="studio-modal" onClick={(event) => event.stopPropagation()}>
@@ -3347,6 +3544,7 @@ export function StudioPage({
                 {activeCreateStep === "filters" && createDraft.type === "report" && createDraftTable ? (
                   <ReportFiltersAndSortsEditor
                     table={createDraftTable}
+                    rows={bundle.data[createDraftTable.id] || []}
                     filterTree={createDraft.filterTree}
                     sorts={createDraft.sorts}
                     onChangeFilterTree={(filterTree) => setCreateDraft((current) => ({ ...current, filterTree }))}
@@ -4198,21 +4396,31 @@ export function StudioPage({
             ) : null}
             {dashboardInspectorTab === "filters" ? (
               <>
-                <div className="stack-compact">
-                  {activeDashboard.runtimeFilters.map((filter) => (
-                    <div className="card" key={filter.id}>
-                      <div className="card-head">
-                        <strong>{filter.label}</strong>
-                        <button onClick={() => updateObject({ ...activeDashboard, runtimeFilters: activeDashboard.runtimeFilters.filter((item) => item.id !== filter.id) })}>Remove</button>
-                      </div>
-                      <label className="field"><span>Label</span><input value={filter.label} onChange={(event) => updateObject({ ...activeDashboard, runtimeFilters: activeDashboard.runtimeFilters.map((item) => item.id === filter.id ? { ...item, label: event.target.value } : item) })} /></label>
-                      <label className="field"><span>Field</span><SearchableSelect value={filter.fieldId} options={dashboardFieldOptions} onChange={(value) => updateObject({ ...activeDashboard, runtimeFilters: activeDashboard.runtimeFilters.map((item) => item.id === filter.id ? { ...item, fieldId: value } : item) })} /></label>
-                      <label className="field"><span>Mode</span><select value={filter.mode} onChange={(event) => updateObject({ ...activeDashboard, runtimeFilters: activeDashboard.runtimeFilters.map((item) => item.id === filter.id ? { ...item, mode: event.target.value as "global" | "selected" } : item) })}><option value="global">global</option><option value="selected">selected</option></select></label>
-                      <label className="field"><span>Default value</span><input value={filter.defaultValue} onChange={(event) => updateObject({ ...activeDashboard, runtimeFilters: activeDashboard.runtimeFilters.map((item) => item.id === filter.id ? { ...item, defaultValue: event.target.value } : item) })} /></label>
-                    </div>
-                  ))}
+                <div className="card">
+                  <div className="card-head">
+                    <strong>Runtime filters</strong>
+                    <button type="button" onClick={() => setRuntimeFilterModalOpen(true)}>Open runtime filters</button>
+                  </div>
+                  <div className="stack-compact">
+                    <span className="micro">
+                      Configure dashboard runtime filters in a dedicated modal. Fields are limited to the tables used by this dashboard.
+                    </span>
+                    {activeDashboard.runtimeFilters.length ? activeDashboard.runtimeFilters.map((filter) => {
+                      const sourceTableId = filter.sourceTableId || (activeDashboardRefreshTables.length === 1 ? activeDashboardRefreshTables[0]?.id || "" : "");
+                      const sourceTable = activeDashboardRefreshTables.find((table) => table.id === sourceTableId) || null;
+                      const fieldLabel = sourceTable?.fields.find((field) => field.id === filter.fieldId)?.label || filter.fieldId || "No field selected";
+                      return (
+                        <div className="inline-edit-row" key={filter.id}>
+                          <strong>{filter.label}</strong>
+                          <span className="micro">
+                            {sourceTable ? `${sourceTable.name} · ${fieldLabel}` : fieldLabel}
+                            {filter.mode === "selected" && filter.targetReportIds.length ? ` · ${filter.targetReportIds.length} selected report${filter.targetReportIds.length === 1 ? "" : "s"}` : " · all current dashboard reports"}
+                          </span>
+                        </div>
+                      );
+                    }) : <div className="empty-hint">No runtime filters yet.</div>}
+                  </div>
                 </div>
-                <button onClick={() => updateObject({ ...activeDashboard, runtimeFilters: [...activeDashboard.runtimeFilters, { id: uid("runtime"), label: "New filter", fieldId: bundle.tables[0]?.fields[0]?.id || "", mode: "global", targetReportIds: [], defaultValue: "" }] })}>Add runtime filter</button>
               </>
             ) : null}
           </div>
@@ -4349,6 +4557,7 @@ export function StudioPage({
               {activeCreateStep === "filters" && createDraft.type === "report" && createDraftTable ? (
                 <ReportFiltersAndSortsEditor
                   table={createDraftTable}
+                  rows={bundle.data[createDraftTable.id] || []}
                   filterTree={createDraft.filterTree}
                   sorts={createDraft.sorts}
                   onChangeFilterTree={(filterTree) => setCreateDraft((current) => ({ ...current, filterTree }))}

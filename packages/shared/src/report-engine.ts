@@ -453,10 +453,12 @@ export function runReport(
 export function buildDashboardFilters(
   dashboard: DashboardDefinition,
   reportId: string,
-  runtimeValues: Record<string, string>
+  runtimeValues: Record<string, string>,
+  reportSourceTableId = ""
 ): FilterDefinition[] {
   return dashboard.runtimeFilters
     .filter((filter) => {
+      if (filter.sourceTableId && reportSourceTableId && filter.sourceTableId !== reportSourceTableId) return false;
       if (filter.mode === "global") return true;
       return filter.targetReportIds.includes(reportId);
     })

@@ -111,7 +111,14 @@ export async function registerStudioRoutes(app: FastifyInstance) {
       savedVersions: 0,
       savedStorageConfig: 0
     }));
-    return { document, sync };
+    return {
+      settings: {
+        favorites: document.favorites,
+        recent: document.recent,
+        personalOverrides: document.personalOverrides
+      },
+      sync
+    };
   });
 
   app.patch("/api/studio/session", async (request, reply) => {
