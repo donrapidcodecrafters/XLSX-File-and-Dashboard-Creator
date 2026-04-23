@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEvent as ReactPointerEvent } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   applyDashboardRowPreset as applyDashboardRowPresetInDefinition,
   buildStudioBuilderDraft,
@@ -79,6 +79,7 @@ import {
   fetchQuickbaseApps,
   fetchQuickbaseReportPreview,
   fetchQuickbaseSchema,
+  fetchQuickbaseTablePreview,
   fetchStudioDocument,
   importStudioWorkbook,
   type QuickbaseRealmApp,
@@ -188,7 +189,7 @@ const TIMEZONE_OPTIONS = (() => {
 
 type DrawerKind = null | "settings" | "share" | "templates" | "export" | "versions";
 type LibraryFilter = "all" | "report" | "dashboard";
-type LibraryScopeFilter = "all" | "global" | "personal";
+type LibraryScopeFilter = "all" | "global" | "selected" | "personal";
 type ToastTone = "ok" | "warn" | "danger";
 type CreateModalType = "report" | "dashboard";
 
@@ -196,6 +197,15 @@ interface ToastItem {
   id: string;
   tone: ToastTone;
   message: string;
+}
+
+interface SharingRosterUser {
+  userId: string;
+  name: string;
+  email: string;
+  recordId: string;
+  label: string;
+  keywords: string[];
 }
 
 type CreateStep = StudioBuilderStep;
@@ -209,6 +219,7 @@ function buildDraftFromReport(report: ReportDefinition, table?: TableDefinition 
     description: report.description,
     scope: report.scope,
     ownerUserId: report.ownerUserId || "",
+    sharedUserIds: clone(report.sharedUserIds || []),
     tableId: sourceTableId,
     sourceReportOverrides: clone(report.sourceReportOverrides || {}),
     selectedFieldIds: clone(report.selectedFieldIds || []),
@@ -218,6 +229,152 @@ function buildDraftFromReport(report: ReportDefinition, table?: TableDefinition 
     view: clone(report.view),
     displayLabels: clone(report.displayLabels || { fields: {}, chartValues: {} })
   };
+}
+
+function normalizeSharedUserIds(userIds: string[]) {
+  return Array.from(new Set((userIds || []).map((value) => String(value || "").trim()).filter(Boolean)));
+}
+
+function hasSharingRosterConfig(config: QuickbaseConnectionConfig) {
+  return Boolean(
+    config.rosterTableId
+    && config.rosterUserIdFieldId
+    && config.rosterEmployeeNameFieldId
+    && config.rosterEmployeeEmailFieldId
+  );
+}
+
+function buildSharingRosterLabel(name: string, email: string, userId: string) {
+  const normalizedName = String(name || "").trim();
+  const normalizedEmail = String(email || "").trim();
+  if (normalizedName && normalizedEmail) return `${normalizedName} (${normalizedEmail})`;
+  if (normalizedName) return normalizedName;
+  if (normalizedEmail) return normalizedEmail;
+  return userId;
+}
+
+function SharingScopeEditor({
+  scope,
+  ownerUserId,
+  sharedUserIds,
+  currentUserId,
+  rosterUsers,
+  rosterLookup,
+  rosterLoading,
+  rosterError,
+  rosterConfigured,
+  rosterQuery,
+  onRosterQueryChange,
+  onScopeChange,
+  onSharedUsersChange
+}: {
+  scope: StudioObjectScope;
+  ownerUserId: string;
+  sharedUserIds: string[];
+  currentUserId: string;
+  rosterUsers: SharingRosterUser[];
+  rosterLookup: Map<string, SharingRosterUser>;
+  rosterLoading: boolean;
+  rosterError: string;
+  rosterConfigured: boolean;
+  rosterQuery: string;
+  onRosterQueryChange: (value: string) => void;
+  onScopeChange: (scope: StudioObjectScope) => void;
+  onSharedUsersChange: (userIds: string[]) => void;
+}) {
+  const selectedUsers = normalizeSharedUserIds(sharedUserIds)
+    .map((userId) => rosterLookup.get(userId) || {
+      userId,
+      name: "",
+      email: "",
+      recordId: "",
+      label: userId,
+      keywords: []
+    });
+  return (
+    <div className="card">
+      <div className="card-head">
+        <strong>Sharing</strong>
+        <span className="micro">Choose whether this object is shared with everyone, only selected users, or only the active user.</span>
+      </div>
+      <label className="field">
+        <span>Scope</span>
+        <select value={scope} onChange={(event) => onScopeChange(event.target.value as StudioObjectScope)}>
+          <option value="global">Shared with everyone</option>
+          <option value="selected">Share with selected users</option>
+          <option value="personal">Personal</option>
+        </select>
+      </label>
+      <label className="field">
+        <span>Owner</span>
+        <input
+          readOnly
+          value={scope === "personal" ? (ownerUserId || currentUserId || "No active user") : "Not used unless this object is personal"}
+        />
+      </label>
+      {scope === "selected" ? (
+        <div className="stack-compact">
+          {!rosterConfigured ? (
+            <div className="sync-status sync-status-warn">
+              <strong>Roster setup required</strong>
+              <span>Set the roster table DBID plus the user, name, and email field FIDs in Settings before sharing with selected users.</span>
+            </div>
+          ) : rosterError ? (
+            <div className="sync-status sync-status-warn">
+              <strong>Roster lookup failed</strong>
+              <span>{rosterError}</span>
+            </div>
+          ) : null}
+          <div className="micro">
+            {selectedUsers.length
+              ? `${selectedUsers.length} selected user${selectedUsers.length === 1 ? "" : "s"} will be able to open this object from the Quickbase launch button.`
+              : "Choose at least one user who should be able to see this report or dashboard."}
+          </div>
+          {selectedUsers.length ? (
+            <div className="badge-row">
+              {selectedUsers.slice(0, 8).map((user) => <span className="badge" key={user.userId}>{user.label}</span>)}
+            </div>
+          ) : null}
+          <ClearableInputField
+            label="Find people"
+            id="sharing-roster-search"
+            name="sharingRosterSearch"
+            value={rosterQuery}
+            onChange={onRosterQueryChange}
+            placeholder="Type part of a name, email, or user ID"
+          />
+          <div className="card surface stack-compact">
+            {rosterLoading ? (
+              <div className="empty-hint">Loading roster…</div>
+            ) : rosterUsers.length ? (
+              <div className="stack-compact">
+                {rosterUsers.map((user) => {
+                  const checked = sharedUserIds.includes(user.userId);
+                  return (
+                    <label className="toggle-row" key={user.userId}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(event) => {
+                          const next = event.target.checked
+                            ? normalizeSharedUserIds([...sharedUserIds, user.userId])
+                            : sharedUserIds.filter((candidate) => candidate !== user.userId);
+                          onSharedUsersChange(next);
+                        }}
+                      />
+                      <span>{user.label}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="empty-hint">No roster matches that search.</div>
+            )}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function clone<T>(value: T): T {
@@ -728,7 +885,8 @@ function detectQuickbaseStorageConfig(schema: QuickbaseAppSchema) {
     detected.objectTypeFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, ["Type", "Object Type"]);
     detected.objectNameFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, ["Name", "Object Name", "Report Name"]);
     detected.objectConfigFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, ["JSON Config", "Config JSON", "Json", "Configuration"]);
-    detected.objectOwnerFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, ["Owner", "Object Owner"]);
+    detected.objectOwnerFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, ["Owner", "Object Owner", "Owner User ID", "Owner User", "Created By"]);
+    detected.objectPersonalOwnerFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, ["Personal Report Owner", "Personal Dashboard Owner", "Personal Owner", "Private Owner"]);
     detected.objectUpdatedAtFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, ["Updated", "Updated At", "Modified", "Modified At"]);
     detected.objectUpdatedByFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, ["Updated By", "Modified By"]);
   }
@@ -837,6 +995,7 @@ function createUnavailableDashboardReport(widget: DashboardDefinition["tabs"][nu
     tags: [],
     scope: "global",
     ownerUserId: "",
+    sharedUserIds: [],
     updatedAt: new Date().toISOString(),
     sourceTableId: "",
     sourceReportOverrides: {},
@@ -1144,6 +1303,7 @@ export function StudioPage({
   launchContext: { launchSource: "quickbase-button" | "local-dev" | null; userId: string; realmHostname: string; appId: string };
 }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const params = useParams();
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const importXlsxInputRef = useRef<HTMLInputElement | null>(null);
@@ -1171,7 +1331,7 @@ export function StudioPage({
   const [future, setFuture] = useState<StudioDocument[]>([]);
   const [libraryQuery, setLibraryQuery] = useState("");
   const [libraryFilter, setLibraryFilter] = useState<LibraryFilter>("all");
-  const [libraryScopeFilter, setLibraryScopeFilter] = useState<LibraryScopeFilter>("global");
+  const [libraryScopeFilter, setLibraryScopeFilter] = useState<LibraryScopeFilter>("all");
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [recentOnly, setRecentOnly] = useState(false);
   const [selectedHomeReportIds, setSelectedHomeReportIds] = useState<string[]>([]);
@@ -1191,6 +1351,10 @@ export function StudioPage({
   const [quickbaseSchemaLoading, setQuickbaseSchemaLoading] = useState(false);
   const [realmApps, setRealmApps] = useState<QuickbaseRealmApp[]>([]);
   const [realmAppsLoading, setRealmAppsLoading] = useState(false);
+  const [sharingRosterUsers, setSharingRosterUsers] = useState<SharingRosterUser[]>([]);
+  const [sharingRosterLoading, setSharingRosterLoading] = useState(false);
+  const [sharingRosterError, setSharingRosterError] = useState("");
+  const [sharingRosterQuery, setSharingRosterQuery] = useState("");
   const [refreshingCache, setRefreshingCache] = useState(false);
   const [refreshJob, setRefreshJob] = useState<RefreshJobStatus | null>(null);
   const [activityOverlay, setActivityOverlay] = useState<{ title: string; message: string } | null>(null);
@@ -1205,6 +1369,77 @@ export function StudioPage({
     () => activeQuickbaseProfile ? getTablesForQuickbaseProfile(documentState, activeQuickbaseProfile.id) : [],
     [documentState, activeQuickbaseProfile]
   );
+  const sharingRosterLookup = useMemo(
+    () => new Map(sharingRosterUsers.map((user) => [user.userId, user])),
+    [sharingRosterUsers]
+  );
+  const filteredSharingRosterUsers = useMemo(() => {
+    const normalizedQuery = sharingRosterQuery.trim().toLowerCase();
+    if (!normalizedQuery) return sharingRosterUsers;
+    return sharingRosterUsers.filter((user) =>
+      [user.label, user.userId, user.name, user.email, ...user.keywords]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedQuery)
+    );
+  }, [sharingRosterQuery, sharingRosterUsers]);
+
+  useEffect(() => {
+    if (!hasSharingRosterConfig(activeQuickbaseConfig)) {
+      setSharingRosterUsers([]);
+      setSharingRosterError("");
+      setSharingRosterLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setSharingRosterLoading(true);
+    setSharingRosterError("");
+    void fetchQuickbaseTablePreview(
+      activeQuickbaseConfig,
+      activeQuickbaseConfig.rosterTableId,
+      [
+        activeQuickbaseConfig.rosterUserIdFieldId,
+        activeQuickbaseConfig.rosterEmployeeNameFieldId,
+        activeQuickbaseConfig.rosterEmployeeEmailFieldId,
+        activeQuickbaseConfig.rosterEmployeeRecordIdFieldId
+      ].filter(Boolean),
+      1000
+    )
+      .then((response) => {
+        if (cancelled) return;
+        const nextUsers = response.rows
+          .map((row) => {
+            const userId = String(row[activeQuickbaseConfig.rosterUserIdFieldId] || "").trim();
+            if (!userId) return null;
+            const name = String(row[activeQuickbaseConfig.rosterEmployeeNameFieldId] || "").trim();
+            const email = String(row[activeQuickbaseConfig.rosterEmployeeEmailFieldId] || "").trim();
+            const recordId = String(row[activeQuickbaseConfig.rosterEmployeeRecordIdFieldId] || "").trim();
+            return {
+              userId,
+              name,
+              email,
+              recordId,
+              label: buildSharingRosterLabel(name, email, userId),
+              keywords: [name, email, recordId]
+            } satisfies SharingRosterUser;
+          })
+          .filter((user): user is SharingRosterUser => Boolean(user))
+          .sort((left, right) => left.label.localeCompare(right.label, undefined, { sensitivity: "base", numeric: true }));
+        setSharingRosterUsers(nextUsers);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setSharingRosterUsers([]);
+        setSharingRosterError(error instanceof Error ? error.message : "Roster lookup failed.");
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setSharingRosterLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeQuickbaseConfig]);
 
   const activeProfileRefreshValidation = getActiveProfileRefreshValidation(documentState, false);
   const staleMissingReportIdError = Boolean(
@@ -1253,6 +1488,13 @@ export function StudioPage({
   } | null>(null);
   const resizeStartSnapshotRef = useRef<StudioDocument | null>(null);
   const lastImportPreloadTableIdRef = useRef("");
+
+  useEffect(() => {
+    const search = new URLSearchParams(location.search);
+    if (search.get("panel") === "settings") {
+      setDrawer("settings");
+    }
+  }, [location.search]);
 
   const bundle = documentState.bundle;
   const currentUserId = String(documentState.session.currentUserId || "").trim();
@@ -1403,6 +1645,7 @@ export function StudioPage({
       tags: [],
       scope: createDraft.scope,
       ownerUserId: createDraft.ownerUserId,
+      sharedUserIds: createDraft.sharedUserIds,
       updatedAt: new Date().toISOString(),
       sourceTableId: createDraft.tableId,
       sourceReportOverrides: createDraft.sourceReportOverrides,
@@ -2213,7 +2456,7 @@ export function StudioPage({
 
   function createFromDraft() {
     if (createDraft.type === "dashboard") {
-      const sharing = normalizeStudioBuilderScopeOwner(createDraft.scope, currentUserId, createDraft.ownerUserId);
+      const sharing = normalizeStudioBuilderScopeOwner(createDraft.scope, currentUserId, createDraft.ownerUserId, createDraft.sharedUserIds);
       const dashboard: DashboardDefinition = {
         id: uid("dashboard"),
         type: "dashboard",
@@ -2225,6 +2468,7 @@ export function StudioPage({
         tags: [],
         scope: sharing.scope,
         ownerUserId: sharing.ownerUserId,
+        sharedUserIds: sharing.sharedUserIds,
         updatedAt: new Date().toISOString(),
         runtimeFilters: [],
         sourceReportOverrides: {},
@@ -2256,7 +2500,7 @@ export function StudioPage({
           : bundle.objects[editingReportId]) as ReportDefinition | undefined
       )
       : undefined;
-    const sharing = normalizeStudioBuilderScopeOwner(createDraft.scope, currentUserId, createDraft.ownerUserId);
+    const sharing = normalizeStudioBuilderScopeOwner(createDraft.scope, currentUserId, createDraft.ownerUserId, createDraft.sharedUserIds);
     const report: ReportDefinition = {
       id: existingReport?.id || uid("report"),
       type: "report",
@@ -2268,6 +2512,7 @@ export function StudioPage({
       tags: existingReport?.tags || [],
       scope: sharing.scope,
       ownerUserId: sharing.ownerUserId,
+      sharedUserIds: sharing.sharedUserIds,
       updatedAt: new Date().toISOString(),
       sourceTableId: table.id,
       sourceReportOverrides: clone(createDraft.sourceReportOverrides),
@@ -3529,32 +3774,24 @@ export function StudioPage({
                       <span>Description</span>
                       <input value={createDraft.description} onChange={(event) => setCreateDraft((current) => ({ ...current, description: event.target.value }))} />
                     </label>
-                    <div className="card">
-                      <div className="card-head">
-                        <strong>Sharing</strong>
-                        <span className="micro">Choose whether this object is shared with everyone or only visible for the active user.</span>
-                      </div>
-                      <label className="field">
-                        <span>Scope</span>
-                        <select
-                          value={createDraft.scope}
-                          onChange={(event) => setCreateDraft((current) => ({
-                            ...current,
-                            ...normalizeStudioBuilderScopeOwner(event.target.value as StudioObjectScope, currentUserId, current.ownerUserId)
-                          }))}
-                        >
-                          <option value="global">Shared</option>
-                          <option value="personal">Personal</option>
-                        </select>
-                      </label>
-                      <label className="field">
-                        <span>Owner</span>
-                        <input
-                          readOnly
-                          value={createDraft.scope === "personal" ? (createDraft.ownerUserId || currentUserId || "No active user") : "Shared with everyone in this workspace"}
-                        />
-                      </label>
-                    </div>
+                    <SharingScopeEditor
+                      scope={createDraft.scope}
+                      ownerUserId={createDraft.ownerUserId}
+                      sharedUserIds={createDraft.sharedUserIds}
+                      currentUserId={currentUserId}
+                      rosterUsers={filteredSharingRosterUsers}
+                      rosterLookup={sharingRosterLookup}
+                      rosterLoading={sharingRosterLoading}
+                      rosterError={sharingRosterError}
+                      rosterConfigured={hasSharingRosterConfig(activeQuickbaseConfig)}
+                      rosterQuery={sharingRosterQuery}
+                      onRosterQueryChange={setSharingRosterQuery}
+                      onScopeChange={(scope) => setCreateDraft((current) => ({
+                        ...current,
+                        ...normalizeStudioBuilderScopeOwner(scope, currentUserId, current.ownerUserId, current.sharedUserIds)
+                      }))}
+                      onSharedUsersChange={(sharedUserIds) => setCreateDraft((current) => ({ ...current, sharedUserIds }))}
+                    />
                   </>
                 ) : null}
 
@@ -4145,32 +4382,24 @@ export function StudioPage({
               <>
                 <label className="field"><span>Name</span><input value={activeDashboard.name} onChange={(event) => updateObject({ ...activeDashboard, name: event.target.value })} /></label>
                 <label className="field"><span>Description</span><input value={activeDashboard.description} onChange={(event) => updateObject({ ...activeDashboard, description: event.target.value })} /></label>
-                <div className="card">
-                  <div className="card-head">
-                    <strong>Sharing</strong>
-                    <span className="micro">Shared dashboards appear in the global library. Personal dashboards stay private to the current session user.</span>
-                  </div>
-                  <label className="field">
-                    <span>Scope</span>
-                    <select
-                      value={activeDashboard.scope}
-                      onChange={(event) => updateObject({
-                        ...activeDashboard,
-                        ...normalizeStudioBuilderScopeOwner(event.target.value as StudioObjectScope, currentUserId, activeDashboard.ownerUserId)
-                      })}
-                    >
-                      <option value="global">Shared</option>
-                      <option value="personal">Personal</option>
-                    </select>
-                  </label>
-                  <label className="field">
-                    <span>Owner</span>
-                    <input
-                      readOnly
-                      value={activeDashboard.scope === "personal" ? (activeDashboard.ownerUserId || currentUserId || "No active user") : "Shared with everyone in this workspace"}
-                    />
-                  </label>
-                </div>
+                <SharingScopeEditor
+                  scope={activeDashboard.scope}
+                  ownerUserId={activeDashboard.ownerUserId}
+                  sharedUserIds={activeDashboard.sharedUserIds}
+                  currentUserId={currentUserId}
+                  rosterUsers={filteredSharingRosterUsers}
+                  rosterLookup={sharingRosterLookup}
+                  rosterLoading={sharingRosterLoading}
+                  rosterError={sharingRosterError}
+                  rosterConfigured={hasSharingRosterConfig(activeQuickbaseConfig)}
+                  rosterQuery={sharingRosterQuery}
+                  onRosterQueryChange={setSharingRosterQuery}
+                  onScopeChange={(scope) => updateObject({
+                    ...activeDashboard,
+                    ...normalizeStudioBuilderScopeOwner(scope, currentUserId, activeDashboard.ownerUserId, activeDashboard.sharedUserIds)
+                  })}
+                  onSharedUsersChange={(sharedUserIds) => updateObject({ ...activeDashboard, sharedUserIds })}
+                />
                 <div className="card">
                   <div className="card-head">
                     <strong>Tabs</strong>
@@ -4544,32 +4773,24 @@ export function StudioPage({
                     <span>Description</span>
                     <input value={createDraft.description} onChange={(event) => setCreateDraft((current) => ({ ...current, description: event.target.value }))} />
                   </label>
-                  <div className="card">
-                    <div className="card-head">
-                      <strong>Sharing</strong>
-                      <span className="micro">Choose whether this object is shared with everyone or only visible for the active user.</span>
-                    </div>
-                    <label className="field">
-                      <span>Scope</span>
-                      <select
-                        value={createDraft.scope}
-                        onChange={(event) => setCreateDraft((current) => ({
-                          ...current,
-                          ...normalizeStudioBuilderScopeOwner(event.target.value as StudioObjectScope, currentUserId, current.ownerUserId)
-                        }))}
-                      >
-                        <option value="global">Shared</option>
-                        <option value="personal">Personal</option>
-                      </select>
-                    </label>
-                    <label className="field">
-                      <span>Owner</span>
-                      <input
-                        readOnly
-                        value={createDraft.scope === "personal" ? (createDraft.ownerUserId || currentUserId || "No active user") : "Shared with everyone in this workspace"}
-                      />
-                    </label>
-                  </div>
+                  <SharingScopeEditor
+                    scope={createDraft.scope}
+                    ownerUserId={createDraft.ownerUserId}
+                    sharedUserIds={createDraft.sharedUserIds}
+                    currentUserId={currentUserId}
+                    rosterUsers={filteredSharingRosterUsers}
+                    rosterLookup={sharingRosterLookup}
+                    rosterLoading={sharingRosterLoading}
+                    rosterError={sharingRosterError}
+                    rosterConfigured={hasSharingRosterConfig(activeQuickbaseConfig)}
+                    rosterQuery={sharingRosterQuery}
+                    onRosterQueryChange={setSharingRosterQuery}
+                    onScopeChange={(scope) => setCreateDraft((current) => ({
+                      ...current,
+                      ...normalizeStudioBuilderScopeOwner(scope, currentUserId, current.ownerUserId, current.sharedUserIds)
+                    }))}
+                    onSharedUsersChange={(sharedUserIds) => setCreateDraft((current) => ({ ...current, sharedUserIds }))}
+                  />
                 </>
               ) : null}
 

@@ -1,5 +1,5 @@
 export type StudioObjectType = "report" | "dashboard";
-export type StudioObjectScope = "global" | "personal";
+export type StudioObjectScope = "global" | "personal" | "selected";
 export type FieldType = "text" | "number" | "currency" | "date" | "datetime" | "user" | "multiselect";
 export type FilterOperator =
   | "equals"
@@ -161,7 +161,9 @@ export interface BaseStudioObject {
   category: string;
   tags: string[];
   scope: StudioObjectScope;
+  createdByUserId?: string;
   ownerUserId: string;
+  sharedUserIds: string[];
   updatedAt: string;
 }
 
@@ -316,8 +318,14 @@ export interface QuickbaseConnectionConfig {
   objectNameFieldId: string;
   objectConfigFieldId: string;
   objectOwnerFieldId: string;
+  objectPersonalOwnerFieldId: string;
   objectUpdatedAtFieldId: string;
   objectUpdatedByFieldId: string;
+  rosterTableId: string;
+  rosterUserIdFieldId: string;
+  rosterEmployeeNameFieldId: string;
+  rosterEmployeeEmailFieldId: string;
+  rosterEmployeeRecordIdFieldId: string;
   settingsTableId: string;
   settingsUserFieldId: string;
   settingsObjectFieldId: string;
@@ -420,7 +428,9 @@ export interface CatalogSummaryItem {
   category: string;
   tags: string[];
   scope: StudioObjectScope;
+  createdByUserId?: string;
   ownerUserId: string;
+  sharedUserIds: string[];
   updatedAt: string;
 }
 

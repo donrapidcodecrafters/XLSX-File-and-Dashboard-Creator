@@ -50,7 +50,7 @@ export function HomePage({
     [currentUserId, objects]
   );
   const sharedObjects = useMemo(
-    () => visibleObjects.filter((item) => item.scope === "global"),
+    () => visibleObjects.filter((item) => item.scope !== "personal"),
     [visibleObjects]
   );
   const personalObjects = useMemo(
@@ -63,11 +63,11 @@ export function HomePage({
   const dashboards = rankedSharedObjects.filter((object) => object.type === "dashboard");
   const recentSharedObjects = recentIds
     .map((id) => catalogLookup.get(id))
-    .filter((item): item is CatalogSummaryItem => Boolean(item) && item != null && item.scope === "global" && isStudioItemVisibleToCurrentUser(item, currentUserId))
+    .filter((item): item is CatalogSummaryItem => Boolean(item) && item != null && item.scope !== "personal" && isStudioItemVisibleToCurrentUser(item, currentUserId))
     .slice(0, 6) || [];
   const favoriteSharedObjects = (studioDocument?.favorites || [])
     .map((id) => catalogLookup.get(id))
-    .filter((item): item is CatalogSummaryItem => Boolean(item) && item != null && item.scope === "global" && isStudioItemVisibleToCurrentUser(item, currentUserId))
+    .filter((item): item is CatalogSummaryItem => Boolean(item) && item != null && item.scope !== "personal" && isStudioItemVisibleToCurrentUser(item, currentUserId))
     .slice(0, 6) || [];
   const personalHighlights = Array.from(new Map(
     [
@@ -98,6 +98,13 @@ export function HomePage({
   const appProfiles = studioDocument?.quickbaseProfiles || [];
   const totalCachedRows = appProfiles.reduce((sum, profile) => sum + (profile.refreshStatus.cachedRowCount || 0), 0);
   const healthTone = totalCachedRows > 0 ? "Up to date" : "Needs refresh";
+  const settingsRoute = useMemo(() => {
+    const route = buildHostedRoute("/studio");
+    return {
+      ...route,
+      search: route.search ? `${route.search}&panel=settings` : "?panel=settings"
+    };
+  }, []);
 
   useEffect(() => {
     if (!refreshJob || refreshJob.status === "complete" || refreshJob.status === "failed" || refreshJob.status === "cancelled") return;
@@ -164,14 +171,15 @@ export function HomePage({
         <section className="home-hero-panel">
           <div className="home-hero-copy">
             <span className="badge brand">Home</span>
-            <h1>{studioDocument?.branding.homeLabel || "Reporting platform home"}</h1>
-            <p>Everything important in one place: refresh health, connected apps, recent activity, favorites, and fast access to the reports and dashboards people use every day.</p>
+            <h1>{studioDocument?.branding.platformName || studioDocument?.branding.homeLabel || "Reporting portal"}</h1>
+            <p>Open reports and dashboards, check refresh status, and manage the platform.</p>
           </div>
           <div className="home-hero-actions">
             <button className="ghost-button" onClick={() => { void startFullRefresh(); }}>Refresh all</button>
+            <Link className="ghost-button" to={settingsRoute}>Settings</Link>
             <Link className="ghost-button" to={buildHostedRoute("/viewer")}>Browse reports and dashboards</Link>
-            <Link className="ghost-button" to={buildHostedRoute("/help")}>Open manual</Link>
-            <Link className="ghost-button" to={buildHostedRoute("/studio")}>Open building area</Link>
+            <Link className="ghost-button" to={buildHostedRoute("/help")}>Help</Link>
+            <Link className="ghost-button" to={buildHostedRoute("/studio")}>Building</Link>
           </div>
           <div className="home-highlight-grid">
             <div className="home-highlight-card home-highlight-card-primary">
@@ -197,7 +205,7 @@ export function HomePage({
             <div className="card home-section-card">
               <div className="card-head">
                 <strong>{recentSharedObjects.length ? "Recently Opened Shared Content" : "Latest Shared Content"}</strong>
-                <span className="micro">{recentSharedObjects.length ? "Quickly reopen shared reports and dashboards" : "Start here if no shared content has been opened yet"}</span>
+                <span className="micro">Shared reports and dashboards</span>
               </div>
               <div className="viewer-grid home-object-grid">
                 {recentOrLatest.length ? recentOrLatest.map((object) => (
@@ -219,7 +227,7 @@ export function HomePage({
             <div className="card home-section-card">
               <div className="card-head">
                 <strong>{favoriteSharedObjects.length ? "Shared Favorites" : "Featured Shared Dashboards and Reports"}</strong>
-                <span className="micro">{favoriteSharedObjects.length ? "Pinned shared items for quick access" : "Helpful shared starting points until favorites are set"}</span>
+                <span className="micro">Shared reports and dashboards</span>
               </div>
               <div className="viewer-grid home-object-grid">
                 {favoritesOrFeatured.length ? favoritesOrFeatured.map((object) => (

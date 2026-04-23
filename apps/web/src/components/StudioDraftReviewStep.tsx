@@ -33,7 +33,7 @@ export function StudioDraftReviewStep({
             <span>Type</span>
           </div>
           <div className="summary-card">
-            <strong>{createDraft.scope === "personal" ? "Personal" : "Shared"}</strong>
+            <strong>{createDraft.scope === "personal" ? "Personal" : createDraft.scope === "selected" ? "Shared with selected users" : "Shared"}</strong>
             <span>Scope</span>
           </div>
           {createDraft.type === "report" ? (

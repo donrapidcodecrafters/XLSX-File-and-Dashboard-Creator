@@ -3,6 +3,7 @@ import { Link, NavLink, Navigate, Route, Routes, useLocation, useParams } from "
 import {
   filterStudioLibraryItems,
   getStudioObjectScopeLabel,
+  isStudioItemVisibleToCurrentUser,
   normalizeStudioDocument,
   resolveStudioSessionStatus,
   touchStudioSession,
@@ -34,7 +35,7 @@ import {
 } from "./lib/catalog";
 import { buildHostedRoute, getHostedContext } from "./lib/embed";
 import type { QuickbaseTableLinkContext } from "./lib/quickbaseLinks";
-import { fetchStudioDocument, fetchStudioRefreshJob, saveStudioUserSettings, startStudioObjectRefresh, updateStudioSession } from "./lib/studioApi";
+import { fetchStudioDocument, fetchStudioRefreshJob, saveStudioUserSettings, startStudioObjectRefresh, startStudioRefresh, updateStudioSession } from "./lib/studioApi";
 
 const SESSION_RECENT_KEY = "studio-session-recent";
 const USER_SETTINGS_PERSIST_DELAY_MS = 500;
@@ -379,7 +380,7 @@ function ObjectPage({
   useEffect(() => {
     if (!params.objectId) return;
     if (scopedObjectFromDocument) {
-      const reportOverride = scopedObjectFromDocument.type === "report" && scopedObjectFromDocument.scope === "global"
+      const reportOverride = scopedObjectFromDocument.type === "report" && scopedObjectFromDocument.scope !== "personal"
         ? getReportPersonalOverride(scopedObjectFromDocument.id, studioDocument)
         : null;
       setPage(reportOverride?.currentPage || 1);
@@ -396,7 +397,7 @@ function ObjectPage({
     fetchObject(params.objectId)
       .then((response) => {
         if (!active) return;
-        const reportOverride = response.object.type === "report" && response.object.scope === "global"
+        const reportOverride = response.object.type === "report" && response.object.scope !== "personal"
           ? getReportPersonalOverride(response.object.id, studioDocument)
           : null;
         setPage(reportOverride?.currentPage || 1);
@@ -419,7 +420,7 @@ function ObjectPage({
   }, [object, platformName]);
 
   useEffect(() => {
-    if (!object || object.type !== "report" || object.scope !== "global") return;
+    if (!object || object.type !== "report" || object.scope === "personal") return;
     const reportOverride = getReportPersonalOverride(object.id, studioDocument);
     const overridePage = Math.max(1, reportOverride?.currentPage || 1);
     if (overridePage !== page) {
@@ -495,14 +496,14 @@ function ObjectPage({
   if (!isObjectInLaunchScope(object, tables, studioDocument, launchContext)) {
     return <div className="empty-page">That report or dashboard is not available for this Quickbase realm and app.</div>;
   }
-  if (object.scope === "personal" && String(studioDocument?.session.currentUserId || "").trim() !== String(object.ownerUserId || "").trim()) {
-    return <div className="empty-page">That personal report or dashboard is not available for this session.</div>;
+  if (!isStudioItemVisibleToCurrentUser(object, studioDocument?.session.currentUserId || "")) {
+    return <div className="empty-page">That report or dashboard is not available for this session.</div>;
   }
 
   if (object.type === "report") {
     const table = resolveTableDefinition(tables, object.sourceTableId);
     const quickbaseLinkContext = getQuickbaseLinkContextForTable(table, studioDocument);
-    const personalOverride = object.scope === "global" ? getReportPersonalOverride(object.id, studioDocument) : null;
+    const personalOverride = object.scope !== "personal" ? getReportPersonalOverride(object.id, studioDocument) : null;
     return (
       <>
         {startingRefresh && !refreshJob ? (
@@ -530,7 +531,7 @@ function ObjectPage({
           initialFocusedSection={personalOverride?.focusedSection || ""}
           savedViews={personalOverride?.savedViews || []}
           onSaveView={(view) => {
-            if (object.scope !== "global" || !studioDocument) return;
+            if (object.scope === "personal" || !studioDocument) return;
             const nextPersonalOverrides: StudioDocument["personalOverrides"] = {
               ...studioDocument.personalOverrides,
               reports: {
@@ -547,7 +548,7 @@ function ObjectPage({
             void onUserSettingsChange({ personalOverrides: nextPersonalOverrides });
           }}
           onDeleteView={(viewId) => {
-            if (object.scope !== "global" || !studioDocument) return;
+            if (object.scope === "personal" || !studioDocument) return;
             const nextPersonalOverrides: StudioDocument["personalOverrides"] = {
               ...studioDocument.personalOverrides,
               reports: {
@@ -564,7 +565,7 @@ function ObjectPage({
             void onUserSettingsChange({ personalOverrides: nextPersonalOverrides });
           }}
           onStateChange={(state) => {
-            if (object.scope !== "global" || !studioDocument) return;
+            if (object.scope === "personal" || !studioDocument) return;
             const nextPersonalOverrides: StudioDocument["personalOverrides"] = {
               ...studioDocument.personalOverrides,
               reports: {
@@ -588,7 +589,7 @@ function ObjectPage({
     );
   }
 
-  const personalOverride = object.scope === "global" ? getDashboardPersonalOverride(object.id, studioDocument) : null;
+  const personalOverride = object.scope !== "personal" ? getDashboardPersonalOverride(object.id, studioDocument) : null;
 
   return (
     <>
@@ -615,7 +616,7 @@ function ObjectPage({
         initialFocusedWidgetId={personalOverride?.focusedWidgetId}
         savedViews={personalOverride?.savedViews || []}
         onSaveView={(view) => {
-          if (object.scope !== "global" || !studioDocument) return;
+          if (object.scope === "personal" || !studioDocument) return;
           const nextPersonalOverrides: StudioDocument["personalOverrides"] = {
             ...studioDocument.personalOverrides,
             dashboards: {
@@ -632,7 +633,7 @@ function ObjectPage({
           void onUserSettingsChange({ personalOverrides: nextPersonalOverrides });
         }}
         onDeleteView={(viewId) => {
-          if (object.scope !== "global" || !studioDocument) return;
+          if (object.scope === "personal" || !studioDocument) return;
           const nextPersonalOverrides: StudioDocument["personalOverrides"] = {
             ...studioDocument.personalOverrides,
             dashboards: {
@@ -651,7 +652,7 @@ function ObjectPage({
         isFavorite={(studioDocument?.favorites || []).includes(object.id)}
         onToggleFavorite={() => { void onToggleFavorite(object.id); }}
         onStateChange={(state) => {
-          if (object.scope !== "global" || !studioDocument) return;
+          if (object.scope === "personal" || !studioDocument) return;
           const nextPersonalOverrides: StudioDocument["personalOverrides"] = {
             ...studioDocument.personalOverrides,
             dashboards: {
@@ -747,6 +748,7 @@ export function App() {
             tags: object.tags,
             scope: object.scope,
             ownerUserId: object.ownerUserId,
+            sharedUserIds: object.sharedUserIds,
             updatedAt: object.updatedAt
           }))
       : requiresHostedStudioDocument ? [] : objects,
@@ -788,9 +790,9 @@ export function App() {
     [catalogSourceObjects, currentUserId, displayDocument, hosted.appId, hosted.launchSource, hosted.realmHostname, requiresHostedStudioDocument, sessionScopedDocument]
   );
   const [studioSettingsSignal, setStudioSettingsSignal] = useState(0);
-  const [studioRefreshSignal, setStudioRefreshSignal] = useState(0);
-  const [viewerRefreshSignal, setViewerRefreshSignal] = useState(0);
-  const [homeRefreshSignal, setHomeRefreshSignal] = useState(0);
+  const [topbarRefreshJob, setTopbarRefreshJob] = useState<RefreshJobStatus | null>(null);
+  const [topbarStartingRefresh, setTopbarStartingRefresh] = useState(false);
+  const [topbarRefreshFeedback, setTopbarRefreshFeedback] = useState<{ tone: "warn" | "danger"; message: string } | null>(null);
   const lastAppliedLaunchSessionKey = useRef("");
   const homeRoute = location.pathname === "/";
   const helpRoute = location.pathname === "/help";
@@ -807,6 +809,48 @@ export function App() {
     const next = toggleFavoriteIds(studioDocument.favorites || [], objectId);
     await updateUserSettings({ favorites: next });
   }, [studioDocument, updateUserSettings]);
+
+  useEffect(() => {
+    if (!topbarRefreshJob || topbarRefreshJob.status === "complete" || topbarRefreshJob.status === "failed" || topbarRefreshJob.status === "cancelled") return;
+    const handle = window.setInterval(() => {
+      fetchStudioRefreshJob(topbarRefreshJob.id)
+        .then((response) => {
+          setTopbarRefreshJob(response.job);
+          if (response.job.status === "complete") {
+            setTopbarRefreshFeedback(null);
+            void reloadCatalog();
+          } else if (response.job.status === "failed") {
+            setTopbarRefreshFeedback({
+              tone: "danger",
+              message: response.job.error || response.job.message || "Refresh failed."
+            });
+          } else if (response.job.status === "cancelled") {
+            setTopbarRefreshFeedback({
+              tone: "warn",
+              message: response.job.message || "Refresh cancelled."
+            });
+          }
+        })
+        .catch(() => undefined);
+    }, 1000);
+    return () => window.clearInterval(handle);
+  }, [reloadCatalog, topbarRefreshJob]);
+
+  async function startTopbarRefresh() {
+    setTopbarStartingRefresh(true);
+    setTopbarRefreshFeedback(null);
+    try {
+      const response = await startStudioRefresh();
+      setTopbarRefreshJob(response.job);
+    } catch (error) {
+      setTopbarRefreshFeedback({
+        tone: "danger",
+        message: error instanceof Error ? error.message : "Refresh failed to start."
+      });
+    } finally {
+      window.setTimeout(() => setTopbarStartingRefresh(false), 700);
+    }
+  }
 
   useEffect(() => {
     if (!studioDocument || !hosted.launchSource) return;
@@ -955,6 +999,18 @@ export function App() {
 
   return (
     <div className={`app-shell ${hosted.embed ? "embed-shell" : ""} ${readerFullScreen ? "reader-shell" : ""}`}>
+      {topbarStartingRefresh && !topbarRefreshJob ? (
+        <RefreshOverlay title="Starting refresh" indeterminate job={{ message: "Starting a full platform refresh…" }} />
+      ) : null}
+      {topbarRefreshJob && topbarRefreshJob.status !== "complete" && topbarRefreshJob.status !== "failed" && topbarRefreshJob.status !== "cancelled" ? (
+        <RefreshOverlay title="Refreshing all reports and dashboards" job={topbarRefreshJob} />
+      ) : null}
+      {topbarRefreshFeedback ? (
+        <section className="sync-status sync-status-warn">
+          <strong>{topbarRefreshFeedback.tone === "danger" ? "Refresh failed" : "Refresh stopped"}</strong>
+          <span>{topbarRefreshFeedback.message}</span>
+        </section>
+      ) : null}
       {hosted.embed || readerRoute ? null : (
         <header className="topbar">
           <div>
@@ -969,15 +1025,15 @@ export function App() {
             </div>
             {studioRoute ? (
               <>
-                <button className="ghost-button topbar-action" onClick={() => setStudioRefreshSignal((value) => value + 1)}>Refresh all</button>
+                <button className="ghost-button topbar-action" onClick={() => { void startTopbarRefresh(); }}>Refresh all</button>
                 <button className="ghost-button topbar-action" onClick={() => setStudioSettingsSignal((value) => value + 1)}>Settings</button>
               </>
             ) : null}
             {homeRoute ? (
-              <button className="ghost-button topbar-action" onClick={() => setHomeRefreshSignal((value) => value + 1)}>Refresh all</button>
+              <button className="ghost-button topbar-action" onClick={() => { void startTopbarRefresh(); }}>Refresh all</button>
             ) : null}
             {viewerRoute ? (
-              <button className="ghost-button topbar-action" onClick={() => setViewerRefreshSignal((value) => value + 1)}>Refresh all</button>
+              <button className="ghost-button topbar-action" onClick={() => { void startTopbarRefresh(); }}>Refresh all</button>
             ) : null}
             {!helpRoute ? <Link className="ghost-button topbar-action" to={buildHostedRoute("/help")}>Help</Link> : null}
             <span className="badge">{hosted.mode === "viewer" ? "Full-screen view" : navLabel}</span>
@@ -1049,11 +1105,11 @@ export function App() {
             </section>
           ) : (
             <Routes>
-              <Route path="/" element={<HomePage objects={visibleObjects} studioDocument={displayDocument} recentIds={recentIds} refreshAllSignal={homeRefreshSignal} openLinksInNewTab={openLinksInNewTab} onRefreshComplete={reloadCatalog} onToggleFavorite={toggleFavorite} />} />
-              <Route path="/viewer" element={<ViewerPage objects={visibleObjects} studioDocument={displayDocument} recentIds={recentIds} refreshAllSignal={viewerRefreshSignal} openLinksInNewTab={openLinksInNewTab} onRefreshComplete={reloadCatalog} onToggleFavorite={toggleFavorite} />} />
+              <Route path="/" element={<HomePage objects={visibleObjects} studioDocument={displayDocument} recentIds={recentIds} openLinksInNewTab={openLinksInNewTab} onRefreshComplete={reloadCatalog} onToggleFavorite={toggleFavorite} />} />
+              <Route path="/viewer" element={<ViewerPage objects={visibleObjects} studioDocument={displayDocument} recentIds={recentIds} openLinksInNewTab={openLinksInNewTab} onRefreshComplete={reloadCatalog} onToggleFavorite={toggleFavorite} />} />
               <Route path="/help" element={<HelpPage />} />
-              <Route path="/studio" element={<StudioPage openSettingsSignal={studioSettingsSignal} refreshAllSignal={studioRefreshSignal} launchContext={hosted} />} />
-              <Route path="/studio/:objectId" element={<StudioPage openSettingsSignal={studioSettingsSignal} refreshAllSignal={studioRefreshSignal} launchContext={hosted} />} />
+              <Route path="/studio" element={<StudioPage openSettingsSignal={studioSettingsSignal} launchContext={hosted} />} />
+              <Route path="/studio/:objectId" element={<StudioPage openSettingsSignal={studioSettingsSignal} launchContext={hosted} />} />
               <Route path="/:type/:objectId" element={<ObjectPage tables={scopedTables} platformName={platformName} studioDocument={displayDocument} launchContext={hosted} openLinksInNewTab={openLinksInNewTab} onObjectViewed={markObjectAsRecent} onUserSettingsChange={updateUserSettings} onToggleFavorite={toggleFavorite} />} />
               <Route path="*" element={<Navigate to={buildHostedRoute("/")} replace />} />
             </Routes>

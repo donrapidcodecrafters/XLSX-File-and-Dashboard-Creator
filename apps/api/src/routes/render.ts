@@ -45,17 +45,30 @@ function getTableRefreshState(tableId: string) {
   const keys = Array.from(new Set([tableId, table.id, table.quickbaseTableId || ""].filter(Boolean)));
   let hasRows = false;
   let isFresh = false;
+  let hasMeta = false;
+  let isExpired = false;
   for (const key of keys) {
     const rows = objectStore.getRows(key);
     if (rows.length) {
       hasRows = true;
-      if (studioStore.isCacheFresh(key)) {
-        isFresh = true;
-        break;
-      }
+    }
+    const meta = studioStore.getCacheMeta(key);
+    if (!meta) continue;
+    hasMeta = true;
+    const expiresAt = Date.parse(String(meta.expiresAt || ""));
+    if (!Number.isNaN(expiresAt) && expiresAt > Date.now()) {
+      isFresh = true;
+      isExpired = false;
+      break;
+    }
+    if (!Number.isNaN(expiresAt) && expiresAt <= Date.now()) {
+      isExpired = true;
     }
   }
-  return { hasRows, isFresh };
+  if (!hasMeta && hasRows) {
+    isFresh = true;
+  }
+  return { hasRows, isFresh, isExpired };
 }
 
 function hasQuickbaseSource(tableId: string) {
@@ -89,7 +102,7 @@ async function startAutoRefreshForObject(objectId: string) {
 
 async function maybeStartAutoRefreshForReport(report: ReportDefinition) {
   const state = getTableRefreshState(report.sourceTableId);
-  if (state.isFresh) return { refreshJob: null, needsBlockingLoad: false };
+  if (state.isFresh || (state.hasRows && !state.isExpired)) return { refreshJob: null, needsBlockingLoad: false };
   if (!hasQuickbaseSource(report.sourceTableId)) return null;
   return {
     refreshJob: await startAutoRefreshForObject(report.id),
@@ -105,7 +118,9 @@ async function maybeStartAutoRefreshForDashboard(dashboard: DashboardDefinition)
   ));
   if (!tableIds.length) return null;
   const states = tableIds.map((tableId) => ({ tableId, ...getTableRefreshState(tableId) }));
-  if (states.every((state) => state.isFresh)) return { refreshJob: null, needsBlockingLoad: false };
+  if (states.every((state) => state.isFresh || (state.hasRows && !state.isExpired))) {
+    return { refreshJob: null, needsBlockingLoad: false };
+  }
   if (!tableIds.some((tableId) => hasQuickbaseSource(tableId))) return null;
   return {
     refreshJob: await startAutoRefreshForObject(dashboard.id),

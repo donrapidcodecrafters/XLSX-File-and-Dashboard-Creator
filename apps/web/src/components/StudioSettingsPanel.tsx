@@ -1,5 +1,6 @@
 import type { QuickbaseAppProfile, QuickbaseConnectionConfig, StudioDocument, TableDefinition } from "@studio/shared";
 import type { QuickbaseAppSchema, QuickbaseRealmApp, QuickbaseSyncResult } from "../lib/studioApi";
+import { buildQuickbaseSavedReportUrl } from "../lib/quickbaseLinks";
 
 export function StudioSettingsPanel({
   documentState,
@@ -209,9 +210,7 @@ export function StudioSettingsPanel({
           </button>
           {quickbaseSchema ? <button onClick={autoDetectQuickbaseMappings}>Auto-detect storage fields</button> : null}
         </div>
-        <div className="micro">
-          Tip: use <strong>Find apps</strong> to see the Quickbase apps you can access in this realm, then pick the one you want instead of typing the App ID manually.
-        </div>
+        <div className="micro">Use Find apps to choose an app from this realm.</div>
         {quickbaseSchema ? (
           <div className="card">
             <div className="card-head">
@@ -225,7 +224,7 @@ export function StudioSettingsPanel({
       <div className="card">
         <div className="card-head">
           <strong>Schedule refresh for this app</strong>
-          <span className="micro">This schedule applies to the active app profile and refreshes all selected refresh-source tables for that app. Individual report and dashboard pages still have object-scoped refresh.</span>
+          <span className="micro">This schedule refreshes the selected source tables for the active app profile.</span>
         </div>
         <label className="field">
           <span>Enable scheduled refresh</span>
@@ -275,7 +274,7 @@ export function StudioSettingsPanel({
         <div className="card">
           <div className="card-head">
             <strong>Refresh source reports</strong>
-            <span className="micro">Choose the Quickbase tables this app profile should refresh from cache, then enter the full-source report ID for each selected table.</span>
+            <span className="micro">Choose the tables and report IDs used for refresh.</span>
           </div>
           <div className="field">
             <span>Tables to refresh</span>
@@ -306,29 +305,46 @@ export function StudioSettingsPanel({
               {!activeProfileTables.length ? <div className="empty-hint">Load tables and fields for this app first.</div> : null}
             </div>
           </div>
-          <div className="micro">
-            Create one Quickbase source report per selected table that returns every record and every field needed by this platform. Then enter that report ID here, for example `125`.
-          </div>
+          <div className="micro">Enter the saved report ID for each selected table.</div>
           {activeQuickbaseProfile?.refreshSource.tableIds.length ? (
             <div className="stack-compact">
               {activeQuickbaseProfile.refreshSource.tableIds.map((tableId) => {
                 const table = activeProfileTables.find((candidate) => (candidate.quickbaseTableId || candidate.id) === tableId);
+                const reportId = activeQuickbaseProfile.refreshSource.reportIds?.[tableId] || "";
+                const reportHref = buildQuickbaseSavedReportUrl({
+                  realmHostname: activeQuickbaseConfig.realmHostname,
+                  tableId
+                }, reportId);
                 return (
                   <label className="field" key={tableId}>
                     <span>{table?.name || tableId} report ID</span>
-                    <input
-                      value={activeQuickbaseProfile.refreshSource.reportIds?.[tableId] || ""}
-                      onChange={(event) => updateRefreshSourceReportId(tableId, event.target.value)}
-                      placeholder="Quickbase report ID / qid"
-                    />
+                    <div className="inline-actions">
+                      <input
+                        value={reportId}
+                        onChange={(event) => updateRefreshSourceReportId(tableId, event.target.value)}
+                        placeholder="Quickbase report ID"
+                      />
+                      <a
+                        className="ghost-button"
+                        href={reportHref || undefined}
+                        target="_blank"
+                        rel="noreferrer"
+                        aria-disabled={!reportHref}
+                        onClick={(event) => {
+                          if (!reportHref) {
+                            event.preventDefault();
+                          }
+                        }}
+                      >
+                        Open in QB
+                      </a>
+                    </div>
                   </label>
                 );
               })}
             </div>
           ) : null}
-          <div className="micro">
-            Requirement: every selected table must have a report ID. Scheduled refresh for this app uses all of the selected table/report ID pairs.
-          </div>
+          <div className="micro">Every selected table needs a report ID.</div>
         </div>
         <div className="studio-actions">
           <button onClick={saveRemote} disabled={savingRemote || refreshingCache}>
@@ -338,9 +354,7 @@ export function StudioSettingsPanel({
             {refreshingCache ? "Refreshing all reports…" : "Refresh all now"}
           </button>
         </div>
-        <div className="micro">
-          This app schedule is saved with the rest of the system settings JSON in Quickbase.
-        </div>
+        <div className="micro">Schedule settings are saved in Quickbase.</div>
         <div className={`sync-status ${activeQuickbaseProfile?.refreshStatus.lastError ? "sync-status-warn" : "sync-status-ok"}`}>
           <strong>{refreshStatusTitle}</strong>
           <span>{refreshStatusDetail}</span>
@@ -362,9 +376,9 @@ export function StudioSettingsPanel({
       <div className="card">
         <div className="card-head">
           <strong>Saved reports and dashboards</strong>
-          <span className="micro">Type the DBID and field FIDs for the table that stores report and dashboard definitions.</span>
+          <span className="micro">Enter the DBID and field FIDs for the saved reports table.</span>
         </div>
-        <label className="field"><span>Table DBID</span><input value={activeQuickbaseConfig.objectTableId} onChange={(event) => updateQuickbaseField("objectTableId", event.target.value)} placeholder="Table DBID for saved reports and dashboards" /></label>
+        <label className="field"><span>Table DBID</span><input value={activeQuickbaseConfig.objectTableId} onChange={(event) => updateQuickbaseField("objectTableId", event.target.value)} placeholder="Table DBID" /></label>
         <div className="filter-grid compact-grid">
           <label className="field"><span>Item key field FID</span><input value={activeQuickbaseConfig.objectKeyFieldId} onChange={(event) => updateQuickbaseField("objectKeyFieldId", event.target.value)} placeholder="FID" /></label>
           <label className="field"><span>Type field FID</span><input value={activeQuickbaseConfig.objectTypeFieldId} onChange={(event) => updateQuickbaseField("objectTypeFieldId", event.target.value)} placeholder="FID" /></label>
@@ -374,20 +388,21 @@ export function StudioSettingsPanel({
           <label className="field"><span>JSON field FID</span><input value={activeQuickbaseConfig.objectConfigFieldId} onChange={(event) => updateQuickbaseField("objectConfigFieldId", event.target.value)} placeholder="FID" /></label>
         </div>
         <div className="filter-grid compact-grid">
-          <label className="field"><span>Report owner field FID</span><input value={activeQuickbaseConfig.objectOwnerFieldId} onChange={(event) => updateQuickbaseField("objectOwnerFieldId", event.target.value)} placeholder="Optional FID" /></label>
+          <label className="field"><span>Report creator field FID</span><input value={activeQuickbaseConfig.objectOwnerFieldId} onChange={(event) => updateQuickbaseField("objectOwnerFieldId", event.target.value)} placeholder="Optional FID" /></label>
+          <label className="field"><span>Personal report owner field FID</span><input value={activeQuickbaseConfig.objectPersonalOwnerFieldId} onChange={(event) => updateQuickbaseField("objectPersonalOwnerFieldId", event.target.value)} placeholder="Optional FID" /></label>
+        </div>
+        <div className="filter-grid compact-grid">
           <label className="field"><span>Updated at field FID</span><input value={activeQuickbaseConfig.objectUpdatedAtFieldId} onChange={(event) => updateQuickbaseField("objectUpdatedAtFieldId", event.target.value)} placeholder="Optional FID" /></label>
+          <label className="field"><span>Updated by field FID</span><input value={activeQuickbaseConfig.objectUpdatedByFieldId} onChange={(event) => updateQuickbaseField("objectUpdatedByFieldId", event.target.value)} placeholder="Optional FID" /></label>
         </div>
-        <div className="micro">
-          Use this field for the saved report/dashboard owner value that controls personal visibility. For your saved reports table `bvysukdeq`, this should be field `15` (`Personal Report Owner`).
-        </div>
-        <label className="field"><span>Updated by field FID</span><input value={activeQuickbaseConfig.objectUpdatedByFieldId} onChange={(event) => updateQuickbaseField("objectUpdatedByFieldId", event.target.value)} placeholder="Optional FID" /></label>
+        <div className="micro">Report creator stores who created the item. Personal report owner is only used for personal visibility.</div>
       </div>
       <div className="card">
         <div className="card-head">
           <strong>User settings</strong>
-          <span className="micro">Type the DBID and field FIDs for the table that stores per-user settings and storage configuration.</span>
+          <span className="micro">Enter the DBID and field FIDs for user settings.</span>
         </div>
-        <label className="field"><span>Table DBID</span><input value={activeQuickbaseConfig.settingsTableId} onChange={(event) => updateQuickbaseField("settingsTableId", event.target.value)} placeholder="Table DBID for user settings" /></label>
+        <label className="field"><span>Table DBID</span><input value={activeQuickbaseConfig.settingsTableId} onChange={(event) => updateQuickbaseField("settingsTableId", event.target.value)} placeholder="Table DBID" /></label>
         <div className="filter-grid compact-grid">
           <label className="field"><span>User field FID</span><input value={activeQuickbaseConfig.settingsUserFieldId} onChange={(event) => updateQuickbaseField("settingsUserFieldId", event.target.value)} placeholder="FID" /></label>
           <label className="field"><span>Object record field FID</span><input value={activeQuickbaseConfig.settingsObjectFieldId} onChange={(event) => updateQuickbaseField("settingsObjectFieldId", event.target.value)} placeholder="Optional FID" /></label>
@@ -400,10 +415,26 @@ export function StudioSettingsPanel({
       </div>
       <div className="card">
         <div className="card-head">
-          <strong>Version history</strong>
-          <span className="micro">Type the DBID and field FIDs for the table that stores version history and snapshots.</span>
+          <strong>Sharing roster</strong>
+          <span className="micro">Use a roster table for selected-user sharing.</span>
         </div>
-        <label className="field"><span>Table DBID</span><input value={activeQuickbaseConfig.versionTableId} onChange={(event) => updateQuickbaseField("versionTableId", event.target.value)} placeholder="Table DBID for version history" /></label>
+        <label className="field"><span>Roster table DBID</span><input value={activeQuickbaseConfig.rosterTableId} onChange={(event) => updateQuickbaseField("rosterTableId", event.target.value)} placeholder="Optional DBID" /></label>
+        <div className="filter-grid compact-grid">
+          <label className="field"><span>User ID field FID</span><input value={activeQuickbaseConfig.rosterUserIdFieldId} onChange={(event) => updateQuickbaseField("rosterUserIdFieldId", event.target.value)} placeholder="FID" /></label>
+          <label className="field"><span>Employee name field FID</span><input value={activeQuickbaseConfig.rosterEmployeeNameFieldId} onChange={(event) => updateQuickbaseField("rosterEmployeeNameFieldId", event.target.value)} placeholder="FID" /></label>
+        </div>
+        <div className="filter-grid compact-grid">
+          <label className="field"><span>Employee email field FID</span><input value={activeQuickbaseConfig.rosterEmployeeEmailFieldId} onChange={(event) => updateQuickbaseField("rosterEmployeeEmailFieldId", event.target.value)} placeholder="FID" /></label>
+          <label className="field"><span>Employee record ID field FID</span><input value={activeQuickbaseConfig.rosterEmployeeRecordIdFieldId} onChange={(event) => updateQuickbaseField("rosterEmployeeRecordIdFieldId", event.target.value)} placeholder="Optional FID" /></label>
+        </div>
+        <div className="micro">Selected-user sharing stores Quickbase user IDs from this roster.</div>
+      </div>
+      <div className="card">
+        <div className="card-head">
+          <strong>Version history</strong>
+          <span className="micro">Enter the DBID and field FIDs for version history.</span>
+        </div>
+        <label className="field"><span>Table DBID</span><input value={activeQuickbaseConfig.versionTableId} onChange={(event) => updateQuickbaseField("versionTableId", event.target.value)} placeholder="Table DBID" /></label>
         <div className="filter-grid compact-grid">
           <label className="field"><span>Object record field FID</span><input value={activeQuickbaseConfig.versionObjectFieldId} onChange={(event) => updateQuickbaseField("versionObjectFieldId", event.target.value)} placeholder="Optional FID" /></label>
           <label className="field"><span>Object key field FID</span><input value={activeQuickbaseConfig.versionObjectKeyFieldId} onChange={(event) => updateQuickbaseField("versionObjectKeyFieldId", event.target.value)} placeholder="FID" /></label>

@@ -23,6 +23,12 @@ export function buildQuickbaseRecordEditUrl(context: QuickbaseTableLinkContext |
   return `https://${hostname}/db/${encodeURIComponent(context!.tableId)}?a=er&rid=${encodeURIComponent(recordId)}`;
 }
 
+export function buildQuickbaseSavedReportUrl(context: QuickbaseTableLinkContext | null | undefined, reportId: string) {
+  if (!canBuildQuickbaseLinks(context) || !reportId) return "";
+  const hostname = normalizeHostname(context!.realmHostname);
+  return `https://${hostname}/db/${encodeURIComponent(context!.tableId)}?a=q&qid=${encodeURIComponent(reportId)}`;
+}
+
 export function buildQuickbaseFilteredQueryUrl(
   context: QuickbaseTableLinkContext | null | undefined,
   fieldId: string,

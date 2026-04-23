@@ -5,7 +5,7 @@ export type StudioLibraryTypeFilter = "all" | StudioObjectType;
 
 type StudioLibraryItem = Pick<
   CatalogSummaryItem,
-  "id" | "type" | "name" | "description" | "folder" | "category" | "tags" | "scope" | "ownerUserId"
+  "id" | "type" | "name" | "description" | "folder" | "category" | "tags" | "scope" | "ownerUserId" | "sharedUserIds"
 >;
 
 export interface FilterStudioLibraryItemsOptions<T extends StudioLibraryItem> {
@@ -26,12 +26,18 @@ function normalizeUserId(value?: string) {
 }
 
 export function isStudioItemVisibleToCurrentUser(
-  item: Pick<StudioLibraryItem, "scope" | "ownerUserId">,
+  item: Pick<StudioLibraryItem, "scope" | "ownerUserId" | "sharedUserIds">,
   currentUserId?: string
 ) {
-  if (item.scope !== "personal") return true;
   const normalizedCurrentUserId = normalizeUserId(currentUserId);
-  return Boolean(normalizedCurrentUserId) && normalizedCurrentUserId === normalizeUserId(item.ownerUserId);
+  if (item.scope === "personal") {
+    return Boolean(normalizedCurrentUserId) && normalizedCurrentUserId === normalizeUserId(item.ownerUserId);
+  }
+  if (item.scope === "selected") {
+    return Boolean(normalizedCurrentUserId)
+      && (item.sharedUserIds || []).map(normalizeUserId).includes(normalizedCurrentUserId);
+  }
+  return true;
 }
 
 export function filterStudioLibraryItems<T extends StudioLibraryItem>(
@@ -84,7 +90,9 @@ export function buildStudioCatalogItemLookup(
       category: object.category,
       tags: object.tags,
       scope: object.scope,
+      createdByUserId: object.createdByUserId,
       ownerUserId: object.ownerUserId,
+      sharedUserIds: object.sharedUserIds,
       updatedAt: object.updatedAt
     });
   });
@@ -92,5 +100,7 @@ export function buildStudioCatalogItemLookup(
 }
 
 export function getStudioObjectScopeLabel(item: Pick<StudioLibraryItem, "scope">) {
-  return item.scope === "personal" ? "Personal" : "Shared";
+  if (item.scope === "personal") return "Personal";
+  if (item.scope === "selected") return "Shared with selected users";
+  return "Shared";
 }

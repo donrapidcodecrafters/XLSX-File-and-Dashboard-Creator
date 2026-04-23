@@ -27,7 +27,7 @@ export function ViewerPage({
 }) {
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<"all" | "report" | "dashboard">("all");
-  const [scopeFilter, setScopeFilter] = useState<"all" | "global" | "personal">("global");
+  const [scopeFilter, setScopeFilter] = useState<"all" | "global" | "selected" | "personal">("all");
   const [profileFilter, setProfileFilter] = useState("all");
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [recentOnly, setRecentOnly] = useState(false);
@@ -52,6 +52,7 @@ export function ViewerPage({
             tags: object.tags,
             scope: object.scope,
             ownerUserId: object.ownerUserId,
+            sharedUserIds: object.sharedUserIds,
             updatedAt: object.updatedAt
           }))
       : objects,
@@ -152,10 +153,10 @@ export function ViewerPage({
         </div>
       </div>
 
-      {scopeFilter === "global" && visibleObjects.some((item) => item.scope === "personal") ? (
+      {scopeFilter === "global" && visibleObjects.some((item) => item.scope !== "global") ? (
         <div className="sync-status sync-status-ok">
           <strong>Shared library view</strong>
-          <span>Personal items are hidden here until you switch the scope filter to `Personal only` or `Shared and personal`.</span>
+          <span>Items shared with selected users and personal items are hidden here until you widen the scope filter.</span>
         </div>
       ) : null}
 
@@ -180,9 +181,10 @@ export function ViewerPage({
         </label>
         <label className="field compact-field">
           <span>Scope</span>
-          <select aria-label="Scope" value={scopeFilter} onChange={(event) => setScopeFilter(event.target.value as "all" | "global" | "personal")}>
-            <option value="all">Shared and personal</option>
-            <option value="global">Shared only</option>
+          <select aria-label="Scope" value={scopeFilter} onChange={(event) => setScopeFilter(event.target.value as "all" | "global" | "selected" | "personal")}>
+            <option value="all">All visible</option>
+            <option value="global">Shared with everyone</option>
+            <option value="selected">Shared with selected users</option>
             <option value="personal">Personal only</option>
           </select>
         </label>
@@ -201,6 +203,7 @@ export function ViewerPage({
 
       <div className="micro-row viewer-summary-row">
         <span>{filtered.length} matching item{filtered.length === 1 ? "" : "s"}</span>
+        <span>{visibleObjects.filter((item) => item.scope === "selected").length} selected-share item{visibleObjects.filter((item) => item.scope === "selected").length === 1 ? "" : "s"}</span>
         <span>{visibleObjects.filter((item) => item.scope === "personal").length} personal item{visibleObjects.filter((item) => item.scope === "personal").length === 1 ? "" : "s"}</span>
         <span>{favorites.length} favorite{favorites.length === 1 ? "" : "s"}</span>
         <span>{recentIds.length} recent item{recentIds.length === 1 ? "" : "s"}</span>

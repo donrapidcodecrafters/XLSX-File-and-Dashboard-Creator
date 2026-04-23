@@ -2,7 +2,7 @@ import { useRef, useState, type ChangeEvent } from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import { buildStudioDocument, normalizeStudioDocument, type StudioObject, type StudioTemplateRecord } from "@studio/shared";
+import { buildStudioDocument, isStudioItemVisibleToCurrentUser, normalizeStudioDocument, type StudioObject, type StudioTemplateRecord } from "@studio/shared";
 import { describe, expect, it, vi } from "vitest";
 import { StudioLibrarySidebar } from "./StudioLibrarySidebar";
 
@@ -18,14 +18,14 @@ function SidebarHarness() {
   const importXlsxInputRef = useRef<HTMLInputElement>(null);
   const [libraryQuery, setLibraryQuery] = useState("");
   const [libraryFilter, setLibraryFilter] = useState<"all" | "report" | "dashboard">("all");
-  const [libraryScopeFilter, setLibraryScopeFilter] = useState<"all" | "global" | "personal">("global");
+  const [libraryScopeFilter, setLibraryScopeFilter] = useState<"all" | "global" | "selected" | "personal">("global");
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [recentOnly, setRecentOnly] = useState(false);
   const currentUserId = String(document.session.currentUserId || "").trim();
   const objects = document.bundle.order
     .map((id) => document.bundle.objects[id])
     .filter((object): object is StudioObject => Boolean(object))
-    .filter((object) => object.scope !== "personal" || String(object.ownerUserId || "").trim() === currentUserId)
+    .filter((object) => isStudioItemVisibleToCurrentUser(object, currentUserId))
     .filter((object) => libraryFilter === "all" || object.type === libraryFilter)
     .filter((object) => libraryScopeFilter === "all" || object.scope === libraryScopeFilter)
     .filter((object) => {

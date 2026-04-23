@@ -53,7 +53,9 @@ export class ObjectStore {
         category: object.category,
         tags: object.tags,
         scope: object.scope,
+        createdByUserId: object.createdByUserId,
         ownerUserId: object.ownerUserId,
+        sharedUserIds: object.sharedUserIds,
         updatedAt: object.updatedAt
       }));
   }

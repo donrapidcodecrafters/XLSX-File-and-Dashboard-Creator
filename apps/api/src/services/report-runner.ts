@@ -424,6 +424,7 @@ function createFallbackWidgetReport(widget: DashboardDefinition["tabs"][number][
     tags: [],
     scope: "global",
     ownerUserId: "",
+    sharedUserIds: [],
     updatedAt: new Date().toISOString(),
     sourceTableId: "",
     sourceReportOverrides: {},

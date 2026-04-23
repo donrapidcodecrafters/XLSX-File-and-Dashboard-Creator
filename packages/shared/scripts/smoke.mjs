@@ -314,7 +314,7 @@ function testStudioBuilderHelpers() {
   assert.deepEqual(getStudioBuilderSteps("report"), ["basics", "data", "filters", "view", "review"]);
   assert.deepEqual(getStudioBuilderSteps("dashboard"), ["basics", "layout", "review"]);
   assert.equal(getStudioBuilderStepLabel("review"), "Review");
-  assert.deepEqual(normalizeStudioBuilderScopeOwner("personal", "user-123"), { scope: "personal", ownerUserId: "user-123" });
+  assert.deepEqual(normalizeStudioBuilderScopeOwner("personal", "user-123"), { scope: "personal", ownerUserId: "user-123", sharedUserIds: [] });
 
   const invalidReportDraft = {
     ...reportDraft,

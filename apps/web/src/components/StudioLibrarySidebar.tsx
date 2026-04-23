@@ -6,7 +6,7 @@ import { buildHostedRoute } from "../lib/embed";
 import { ClearableInputField } from "./ClearableInputField";
 
 type LibraryFilter = "all" | "report" | "dashboard";
-type LibraryScopeFilter = "all" | "global" | "personal";
+type LibraryScopeFilter = "all" | "global" | "selected" | "personal";
 
 export function StudioLibrarySidebar({
   homeLabel,
@@ -106,9 +106,10 @@ export function StudioLibrarySidebar({
               value={libraryScopeFilter}
               onChange={(event) => onLibraryScopeFilterChange(event.target.value as LibraryScopeFilter)}
             >
-              <option value="global">Shared</option>
+              <option value="global">Shared with everyone</option>
+              <option value="selected">Shared with selected users</option>
               <option value="personal">Personal</option>
-              <option value="all">Shared and personal</option>
+              <option value="all">All visible</option>
             </select>
           </label>
           <label className="toggle-row"><input type="checkbox" checked={favoritesOnly} onChange={(event) => onFavoritesOnlyChange(event.target.checked)} /> Favorites</label>
@@ -130,7 +131,7 @@ export function StudioLibrarySidebar({
               rel={openLinksInNewTab ? "noreferrer" : undefined}
             >
               <span className="badge">{typeLabel(object.type)}</span>
-              <span className="badge">{object.scope === "personal" ? "Personal" : "Shared"}</span>
+              <span className="badge">{object.scope === "personal" ? "Personal" : object.scope === "selected" ? "Selected users" : "Shared"}</span>
               <strong>{object.name}</strong>
               <span className="micro">{object.folder} · {object.category}</span>
             </Link>

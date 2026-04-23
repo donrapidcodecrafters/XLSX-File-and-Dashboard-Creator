@@ -241,12 +241,12 @@ input {
   display: grid;
   grid-template-columns: 320px minmax(0, 1fr);
   gap: 16px;
-  min-height: calc(100vh - 112px);
+  min-height: 0;
 }
 
 .embed-layout {
   grid-template-columns: minmax(0, 1fr);
-  min-height: 100vh;
+  min-height: 0;
 }
 
 .sidebar,
@@ -340,11 +340,11 @@ input {
 }
 
 .viewer-page {
-  min-height: calc(100vh - 32px);
+  min-height: 0;
 }
 
 .home-page {
-  min-height: calc(100vh - 32px);
+  min-height: 0;
   padding: 0;
   background: transparent;
   box-shadow: none;
@@ -352,7 +352,7 @@ input {
 }
 
 .content > .studio-page {
-  min-height: calc(100vh - 112px);
+  min-height: 0;
 }
 
 .surface {
@@ -2551,7 +2551,7 @@ th {
 }
 
 .studio-canvas > .surface {
-  min-height: calc(100vh - 32px);
+  min-height: 0;
 }
 
 .studio-report-preview-panel,

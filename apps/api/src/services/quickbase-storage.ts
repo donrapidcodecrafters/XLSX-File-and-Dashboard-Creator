@@ -58,6 +58,7 @@ const STORAGE_FIELD_SPECS = {
     { key: "objectNameFieldId", label: "Name", type: "text" },
     { key: "objectConfigFieldId", label: "JSON Config", type: "text-multi-line" },
     { key: "objectOwnerFieldId", label: "Owner", type: "text" },
+    { key: "objectPersonalOwnerFieldId", label: "Personal Report Owner", type: "text" },
     { key: "objectUpdatedAtFieldId", label: "Updated At", type: "text" },
     { key: "objectUpdatedByFieldId", label: "Updated By", type: "text" }
   ],
@@ -1040,6 +1041,7 @@ async function loadStoredObjects(config: StudioDocument["quickbase"]) {
         config.objectNameFieldId,
         config.objectConfigFieldId,
         config.objectOwnerFieldId,
+        config.objectPersonalOwnerFieldId,
         "6",
         "7",
         "8",
@@ -1069,9 +1071,13 @@ async function loadStoredObjects(config: StudioDocument["quickbase"]) {
         if (!object.updatedAt) {
           object.updatedAt = new Date().toISOString();
         }
-        const storedOwnerUserId = String(qbFieldValue(row, config.objectOwnerFieldId) || "").trim();
-        if (storedOwnerUserId) {
-          object.ownerUserId = storedOwnerUserId;
+        const storedCreatorUserId = String(qbFieldValue(row, config.objectOwnerFieldId) || "").trim();
+        const storedPersonalOwnerUserId = String(qbFieldValue(row, config.objectPersonalOwnerFieldId) || "").trim();
+        object.createdByUserId = storedCreatorUserId;
+        if (object.scope === "personal" && storedPersonalOwnerUserId) {
+          object.ownerUserId = storedPersonalOwnerUserId;
+        } else if (object.scope !== "personal") {
+          object.ownerUserId = "";
         }
         objects.push(object);
       });
@@ -1176,12 +1182,17 @@ function detectQuickbaseStorageConfig(schema: QuickbaseAppSchema) {
     detected.objectNameFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, ["Name", "Object Name", "Report Name"]);
     detected.objectConfigFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, ["JSON Config", "Config JSON", "Json", "Configuration"]);
     detected.objectOwnerFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, [
-      "Personal Report Owner",
-      "Personal Dashboard Owner",
+      "Owner",
+      "Object Owner",
       "Owner User ID",
       "Owner User",
-      "Object Owner",
-      "Owner"
+      "Created By"
+    ]);
+    detected.objectPersonalOwnerFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, [
+      "Personal Report Owner",
+      "Personal Dashboard Owner",
+      "Personal Owner",
+      "Private Owner"
     ]);
     detected.objectUpdatedAtFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, ["Updated", "Updated At", "Modified", "Modified At"]);
     detected.objectUpdatedByFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, ["Updated By", "Modified By"]);
@@ -1635,16 +1646,19 @@ async function syncObjectRecords(document: StudioDocument, user: QuickbaseUser, 
     const objects = Object.values(document.bundle.objects || {}).filter((object) => !SEEDED_OBJECT_IDS.has(object.id));
     objects.forEach((object) => {
       const launchUserId = String(document.session.currentUserId || "").trim();
-      const effectiveOwnerUserId = object.scope === "personal"
+      const effectiveCreatorUserId = String(object.createdByUserId || launchUserId || quickbaseUserValue(user)).trim();
+      const effectivePersonalOwnerUserId = object.scope === "personal"
         ? String(launchUserId || object.ownerUserId || quickbaseUserValue(user)).trim()
         : "";
       const objectPayload: StudioObject = object.scope === "personal"
         ? {
             ...object,
-            ownerUserId: effectiveOwnerUserId
+            createdByUserId: effectiveCreatorUserId,
+            ownerUserId: effectivePersonalOwnerUserId
           }
         : {
             ...object,
+            createdByUserId: effectiveCreatorUserId,
             ownerUserId: ""
           };
       const record: QuickbaseRecord = {};
@@ -1654,7 +1668,8 @@ async function syncObjectRecords(document: StudioDocument, user: QuickbaseUser, 
       qbSetField(record, config.objectTypeFieldId, objectPayload.type);
       qbSetField(record, config.objectNameFieldId, objectPayload.name);
       qbSetField(record, config.objectConfigFieldId, JSON.stringify(objectPayload));
-      qbSetField(record, config.objectOwnerFieldId, effectiveOwnerUserId);
+      qbSetField(record, config.objectOwnerFieldId, effectiveCreatorUserId);
+      qbSetField(record, config.objectPersonalOwnerFieldId, effectivePersonalOwnerUserId);
       qbSetField(record, config.objectUpdatedAtFieldId, objectPayload.updatedAt || new Date().toISOString());
       qbSetField(record, config.objectUpdatedByFieldId, quickbaseUserValue(user));
       rows.push(record);
@@ -1712,8 +1727,14 @@ async function syncSettingsRecords(document: StudioDocument, user: QuickbaseUser
         objectNameFieldId: config.objectNameFieldId,
         objectConfigFieldId: config.objectConfigFieldId,
         objectOwnerFieldId: config.objectOwnerFieldId,
+        objectPersonalOwnerFieldId: config.objectPersonalOwnerFieldId,
         objectUpdatedAtFieldId: config.objectUpdatedAtFieldId,
         objectUpdatedByFieldId: config.objectUpdatedByFieldId,
+        rosterTableId: config.rosterTableId,
+        rosterUserIdFieldId: config.rosterUserIdFieldId,
+        rosterEmployeeNameFieldId: config.rosterEmployeeNameFieldId,
+        rosterEmployeeEmailFieldId: config.rosterEmployeeEmailFieldId,
+        rosterEmployeeRecordIdFieldId: config.rosterEmployeeRecordIdFieldId,
         settingsTableId: config.settingsTableId,
         settingsUserFieldId: config.settingsUserFieldId,
         settingsObjectFieldId: config.settingsObjectFieldId,

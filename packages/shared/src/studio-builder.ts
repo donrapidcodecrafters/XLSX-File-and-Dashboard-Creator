@@ -16,6 +16,7 @@ export interface StudioBuilderDraft {
   description: string;
   scope: StudioObjectScope;
   ownerUserId: string;
+  sharedUserIds: string[];
   tableId: string;
   sourceReportOverrides: Record<string, string>;
   selectedFieldIds: string[];
@@ -30,16 +31,30 @@ export const STUDIO_DEFAULT_CHART_COLORS = ["#0d7c66", "#d88d3d", "#5b7cfa", "#9
 export const STUDIO_BUILDER_REPORT_STEPS: StudioBuilderStep[] = ["basics", "data", "filters", "view", "review"];
 export const STUDIO_BUILDER_DASHBOARD_STEPS: StudioBuilderStep[] = ["basics", "layout", "review"];
 
-export function normalizeStudioBuilderScopeOwner(scope: StudioObjectScope, currentUserId: string, ownerUserId = "") {
+export function normalizeStudioBuilderScopeOwner(
+  scope: StudioObjectScope,
+  currentUserId: string,
+  ownerUserId = "",
+  sharedUserIds: string[] = []
+) {
   if (scope === "personal") {
     return {
       scope,
-      ownerUserId: String(currentUserId || ownerUserId || "").trim()
+      ownerUserId: String(currentUserId || ownerUserId || "").trim(),
+      sharedUserIds: []
+    };
+  }
+  if (scope === "selected") {
+    return {
+      scope,
+      ownerUserId: "",
+      sharedUserIds: Array.from(new Set((sharedUserIds || []).map((value) => String(value || "").trim()).filter(Boolean)))
     };
   }
   return {
     scope: "global" as const,
-    ownerUserId: ""
+    ownerUserId: "",
+    sharedUserIds: []
   };
 }
 
@@ -148,6 +163,9 @@ export function getStudioBuilderDraftIssues(
   if (draft.scope === "personal" && !String(draft.ownerUserId || currentUserId || "").trim()) {
     issues.push("Personal objects need an active user.");
   }
+  if (draft.scope === "selected" && !(draft.sharedUserIds || []).length) {
+    issues.push("Choose at least one user for selected-user sharing.");
+  }
   if (draft.type !== "report") {
     return issues;
   }
@@ -190,6 +208,9 @@ export function getStudioBuilderStepIssues(
     if (!draft.name.trim()) issues.push("Enter a name before continuing.");
     if (draft.scope === "personal" && !String(draft.ownerUserId || currentUserId || "").trim()) {
       issues.push("Personal objects need an active user.");
+    }
+    if (draft.scope === "selected" && !(draft.sharedUserIds || []).length) {
+      issues.push("Choose at least one user for selected-user sharing.");
     }
     return issues;
   }
