@@ -7,6 +7,7 @@ import {
   reportShowsDetails,
   reportShowsSummary
 } from "./studioReportUtils";
+import { ResizableDataTable } from "./ResizableDataTable";
 
 function buildPager(page: number, totalPages: number, totalRows: number, pageSize: number, onPageChange: (page: number) => void) {
   if (totalRows <= pageSize) return null;
@@ -21,24 +22,17 @@ function buildPager(page: number, totalPages: number, totalRows: number, pageSiz
 
 function renderDetailTable(report: ReportDefinition, table: TableDefinition, rows: DataRow[], tableShellClassName = "preview-table-shell") {
   return (
-    <div className={`table-shell ${tableShellClassName}`}>
-      <table>
-        <thead>
-          <tr>
-            {report.selectedFieldIds.map((fieldId) => <th key={fieldId}>{getReportFieldLabel(report, table, fieldId)}</th>)}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, index) => (
-            <tr key={index}>
-              {report.selectedFieldIds.map((fieldId) => (
-                <td key={fieldId}>{formatStudioReportCell(row[fieldId], report, table, fieldId)}</td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <ResizableDataTable
+      className={tableShellClassName}
+      columns={report.selectedFieldIds.map((fieldId) => ({
+        key: fieldId,
+        label: getReportFieldLabel(report, table, fieldId)
+      }))}
+      rows={rows.map((row, index) => ({
+        key: String(row.__recordId || index),
+        cells: report.selectedFieldIds.map((fieldId) => formatStudioReportCell(row[fieldId], report, table, fieldId))
+      }))}
+    />
   );
 }
 

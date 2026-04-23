@@ -21,6 +21,7 @@ import {
   type TableDefinition
 } from "@studio/shared";
 import { ChartPreview } from "./ChartPreview";
+import { ResizableDataTable } from "./ResizableDataTable";
 import { getChartAxisLabels } from "./studioReportUtils";
 
 function getFieldLabel(report: ReportDefinition, table: TableDefinition | null, fieldId: string) {
@@ -518,22 +519,17 @@ export function StudioDashboardPreview({
                     ) : null}
                     {widget.status === "complete" && (resolveDashboardWidgetDisplayMode(widget.widget) === "table" || widget.widget.showDetails) ? (
                       <div className="compact-table-shell">
-                        <div className="table-shell preview-widget-table-shell">
-                          <table>
-                            <thead>
-                              <tr>
-                                {widget.report.selectedFieldIds.slice(0, 6).map((fieldId) => <th key={fieldId}>{getFieldLabel(widget.report, widgetTable, fieldId)}</th>)}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {widget.result.rows.slice(0, 8).map((row, index) => (
-                                <tr key={index}>
-                                  {widget.report.selectedFieldIds.slice(0, 6).map((fieldId) => <td key={fieldId}>{formatCell(row[fieldId], widget.report, widgetTable, fieldId)}</td>)}
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
+                        <ResizableDataTable
+                          className="preview-widget-table-shell"
+                          columns={widget.report.selectedFieldIds.slice(0, 6).map((fieldId) => ({
+                            key: fieldId,
+                            label: getFieldLabel(widget.report, widgetTable, fieldId)
+                          }))}
+                          rows={widget.result.rows.slice(0, 8).map((row, index) => ({
+                            key: String(row.__recordId || index),
+                            cells: widget.report.selectedFieldIds.slice(0, 6).map((fieldId) => formatCell(row[fieldId], widget.report, widgetTable, fieldId))
+                          }))}
+                        />
                       </div>
                     ) : null}
                     <button

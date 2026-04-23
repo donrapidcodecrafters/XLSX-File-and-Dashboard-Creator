@@ -4,6 +4,7 @@ import { formatReportCellValue, getReportFieldLabel, type ExportJobStatus, type 
 import { LinkToolbar } from "./LinkToolbar";
 import { ChartPreview } from "./ChartPreview";
 import { RefreshOverlay } from "./RefreshOverlay";
+import { ResizableDataTable } from "./ResizableDataTable";
 import { createExportSaveTarget, downloadExportJob, fetchExportJobStatus, startReportExportJob, type ExportSaveTarget } from "../lib/api";
 import { buildHostedRoute, buildObjectUrl, getHostedContext } from "../lib/embed";
 import { buildQuickbaseChartDatumUrl, buildQuickbaseRecordEditUrl, buildQuickbaseReportFilterTree, type QuickbaseTableLinkContext } from "../lib/quickbaseLinks";
@@ -175,8 +176,7 @@ export function ReportView({
   const totalPages = result?.totalPages || 1;
   const [exportJob, setExportJob] = useState<ExportJobStatus | null>(null);
   const [downloadedJobId, setDownloadedJobId] = useState("");
-  const [exportPopup, setExportPopup] = useState<Window | null>(null);
-  const [exportSaveTarget, setExportSaveTarget] = useState<ExportSaveTarget | null>(null);
+  const [pendingSaveOnReady, setPendingSaveOnReady] = useState(false);
   const [toolbarCollapsed, setToolbarCollapsed] = useState(true);
   const autoExportStartedRef = useRef(false);
   const summaryAvailable = reportShowsSummary(report) && Boolean(result?.summary?.length);
@@ -248,18 +248,34 @@ export function ReportView({
   }, [exportJob?.id, exportJob?.status]);
 
   useEffect(() => {
-    if (!exportJob || exportJob.status !== "complete" || downloadedJobId === exportJob.id) return;
-    if (hosted.embed || hosted.sandboxedFrame) return;
-    downloadExportJob(exportJob.id, {
-      directDownload: hosted.embed,
-      popupWindow: exportPopup,
-      saveTarget: exportSaveTarget,
-      fallbackFilename: buildExportFilename(report.name)
-    });
-    setDownloadedJobId(exportJob.id);
-    setExportPopup(null);
-    setExportSaveTarget(null);
-  }, [downloadedJobId, exportJob, exportPopup, exportSaveTarget, hosted.embed, hosted.sandboxedFrame, report.name]);
+    if (!exportJob || exportJob.status !== "failed") return;
+    setPendingSaveOnReady(false);
+  }, [exportJob]);
+
+  useEffect(() => {
+    if (!exportJob || exportJob.status !== "complete" || downloadedJobId === exportJob.id || !pendingSaveOnReady) return;
+    const completedJob = exportJob;
+    let cancelled = false;
+    async function saveWhenReady() {
+      try {
+        const saveTarget = await createExportSaveTarget(buildExportFilename(report.name));
+        if (!saveTarget || cancelled) return;
+        await downloadExportJob(completedJob.id, {
+          directDownload: hosted.embed,
+          saveTarget,
+          fallbackFilename: buildExportFilename(report.name)
+        });
+        if (cancelled) return;
+        setDownloadedJobId(completedJob.id);
+      } finally {
+        if (!cancelled) setPendingSaveOnReady(false);
+      }
+    }
+    void saveWhenReady();
+    return () => {
+      cancelled = true;
+    };
+  }, [downloadedJobId, exportJob, hosted.embed, pendingSaveOnReady, report.name]);
 
   useEffect(() => {
     if (hosted.autoDownload !== "xlsx") return;
@@ -270,7 +286,6 @@ export function ReportView({
   }, [hosted.autoDownload, report.id]);
 
   async function beginExportInPlace() {
-    setExportPopup(null);
     const response = await startReportExportJob({ reportId: report.id, report, table });
     setExportJob(response.job);
     setDownloadedJobId("");
@@ -280,18 +295,16 @@ export function ReportView({
     if (exportJob?.status === "complete" && downloadedJobId !== exportJob.id) {
       const saveTarget = await createExportSaveTarget(buildExportFilename(report.name));
       if (!saveTarget) return;
-      setExportSaveTarget(saveTarget);
-      downloadExportJob(exportJob.id, {
+      await downloadExportJob(exportJob.id, {
         directDownload: hosted.embed,
-        popupWindow: exportPopup,
         saveTarget,
         fallbackFilename: buildExportFilename(report.name)
       });
       setDownloadedJobId(exportJob.id);
-      setExportPopup(null);
-      setExportSaveTarget(null);
+      setPendingSaveOnReady(false);
       return;
     }
+    setPendingSaveOnReady(true);
     await beginExportInPlace();
   }
 
@@ -384,41 +397,36 @@ export function ReportView({
       );
     }
     return (
-      <div className={`table-shell ${tableShellClassName}`}>
-        <table>
-          <thead>
-            <tr>
-              {quickbaseLinkContext ? <th className="table-action-col">Quickbase</th> : null}
-              {report.selectedFieldIds.map((fieldId) => (
-                <th key={fieldId}>{getReadableFieldLabel(report, fieldId, table) || "Value"}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, index) => (
-              <tr key={index}>
-                {quickbaseLinkContext ? (
-                  <td className="table-action-cell">
-                    {String(row.__recordId || "").trim() ? (
-                      <a
-                        className="ghost-button table-edit-link"
-                        href={buildQuickbaseRecordEditUrl(quickbaseLinkContext, String(row.__recordId || ""))}
-                        target={openLinksInNewTab ? "_blank" : undefined}
-                        rel={openLinksInNewTab ? "noreferrer" : undefined}
-                      >
-                        Edit
-                      </a>
-                    ) : null}
-                  </td>
-                ) : null}
-                {report.selectedFieldIds.map((fieldId) => (
-                  <td key={fieldId}>{table ? formatReportCellValue(report, table, fieldId, row[fieldId]) : String(row[fieldId] ?? "")}</td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <ResizableDataTable
+        className={tableShellClassName}
+        columns={[
+          ...(quickbaseLinkContext ? [{ key: "__quickbase", label: "Quickbase", minWidth: 120, defaultWidth: 120, className: "table-action-col" }] : []),
+          ...report.selectedFieldIds.map((fieldId) => ({
+            key: fieldId,
+            label: getReadableFieldLabel(report, fieldId, table) || "Value"
+          }))
+        ]}
+        rows={rows.map((row, index) => ({
+          key: String(row.__recordId || index),
+          cells: [
+            ...(quickbaseLinkContext ? [
+              String(row.__recordId || "").trim() ? (
+                <a
+                  className="ghost-button table-edit-link"
+                  href={buildQuickbaseRecordEditUrl(quickbaseLinkContext, String(row.__recordId || ""))}
+                  target={openLinksInNewTab ? "_blank" : undefined}
+                  rel={openLinksInNewTab ? "noreferrer" : undefined}
+                >
+                  Edit
+                </a>
+              ) : null
+            ] : []),
+            ...report.selectedFieldIds.map((fieldId) =>
+              table ? formatReportCellValue(report, table, fieldId, row[fieldId]) : String(row[fieldId] ?? "")
+            )
+          ]
+        }))}
+      />
     );
   }
 
@@ -476,7 +484,9 @@ export function ReportView({
                     <button className="ghost-button" onClick={() => { void beginExport(); }} disabled={!result || exportJob?.status === "queued" || exportJob?.status === "running"}>
                       {exportJob?.status === "queued" || exportJob?.status === "running"
                         ? `Exporting ${exportJob.progress}%`
-                        : "Download xlsx"}
+                        : exportJob?.status === "complete" && downloadedJobId !== exportJob.id
+                          ? "Save xlsx"
+                          : "Download xlsx"}
                     </button>
                     <button className="ghost-button" onClick={onRefresh} disabled={loading}>
                       {loading ? "Refreshing…" : "Refresh now"}
@@ -551,6 +561,13 @@ export function ReportView({
           <div className="progress-meter" aria-hidden="true">
             <div className="progress-meter-fill" style={{ width: `${exportJob.progress}%` }} />
           </div>
+          {exportJob.status === "complete" ? (
+            <div className="card-actions">
+              <button className="ghost-button" onClick={() => { void beginExport(); }}>
+                {downloadedJobId === exportJob.id ? "Save again" : "Save xlsx"}
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
 

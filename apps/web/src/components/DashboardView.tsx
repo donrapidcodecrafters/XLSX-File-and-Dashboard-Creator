@@ -5,6 +5,7 @@ import { createExportSaveTarget, downloadExportJob, fetchExportJobStatus, render
 import { LinkToolbar } from "./LinkToolbar";
 import { ChartPreview } from "./ChartPreview";
 import { RefreshOverlay } from "./RefreshOverlay";
+import { ResizableDataTable } from "./ResizableDataTable";
 import { buildHostedRoute, buildObjectUrl, getHostedContext } from "../lib/embed";
 import { buildQuickbaseChartDatumUrl, buildQuickbaseRecordEditUrl, buildQuickbaseReportFilterTree, type QuickbaseTableLinkContext } from "../lib/quickbaseLinks";
 
@@ -211,8 +212,7 @@ export function DashboardView({
   const [activeTabId, setActiveTabId] = useState(initialActiveTabId || dashboard.tabs[0]?.id || "");
   const [exportJob, setExportJob] = useState<ExportJobStatus | null>(null);
   const [downloadedJobId, setDownloadedJobId] = useState("");
-  const [exportPopup, setExportPopup] = useState<Window | null>(null);
-  const [exportSaveTarget, setExportSaveTarget] = useState<ExportSaveTarget | null>(null);
+  const [pendingSaveOnReady, setPendingSaveOnReady] = useState(false);
   const autoExportStartedRef = useRef(false);
   const [toolbarCollapsed, setToolbarCollapsed] = useState(true);
   const [widgetPages, setWidgetPages] = useState<Record<string, number>>({});
@@ -366,18 +366,34 @@ export function DashboardView({
   }, [exportJob?.id, exportJob?.status]);
 
   useEffect(() => {
-    if (!exportJob || exportJob.status !== "complete" || downloadedJobId === exportJob.id) return;
-    if (hosted.embed || hosted.sandboxedFrame) return;
-    downloadExportJob(exportJob.id, {
-      directDownload: hosted.embed,
-      popupWindow: exportPopup,
-      saveTarget: exportSaveTarget,
-      fallbackFilename: buildExportFilename(dashboard.name)
-    });
-    setDownloadedJobId(exportJob.id);
-    setExportPopup(null);
-    setExportSaveTarget(null);
-  }, [dashboard.name, downloadedJobId, exportJob, exportPopup, exportSaveTarget, hosted.embed, hosted.sandboxedFrame]);
+    if (!exportJob || exportJob.status !== "failed") return;
+    setPendingSaveOnReady(false);
+  }, [exportJob]);
+
+  useEffect(() => {
+    if (!exportJob || exportJob.status !== "complete" || downloadedJobId === exportJob.id || !pendingSaveOnReady) return;
+    const completedJob = exportJob;
+    let cancelled = false;
+    async function saveWhenReady() {
+      try {
+        const saveTarget = await createExportSaveTarget(buildExportFilename(dashboard.name));
+        if (!saveTarget || cancelled) return;
+        await downloadExportJob(completedJob.id, {
+          directDownload: hosted.embed,
+          saveTarget,
+          fallbackFilename: buildExportFilename(dashboard.name)
+        });
+        if (cancelled) return;
+        setDownloadedJobId(completedJob.id);
+      } finally {
+        if (!cancelled) setPendingSaveOnReady(false);
+      }
+    }
+    void saveWhenReady();
+    return () => {
+      cancelled = true;
+    };
+  }, [dashboard.name, downloadedJobId, exportJob, hosted.embed, pendingSaveOnReady]);
 
   useEffect(() => {
     if (hosted.autoDownload !== "xlsx") return;
@@ -430,7 +446,6 @@ export function DashboardView({
   }
 
   async function beginExportInPlace() {
-    setExportPopup(null);
     const response = await startDashboardExportJob({ dashboardId: dashboard.id, dashboard, runtimeFilters });
     setExportJob(response.job);
     setDownloadedJobId("");
@@ -440,18 +455,16 @@ export function DashboardView({
     if (exportJob?.status === "complete" && downloadedJobId !== exportJob.id) {
       const saveTarget = await createExportSaveTarget(buildExportFilename(dashboard.name));
       if (!saveTarget) return;
-      setExportSaveTarget(saveTarget);
-      downloadExportJob(exportJob.id, {
+      await downloadExportJob(exportJob.id, {
         directDownload: hosted.embed,
-        popupWindow: exportPopup,
         saveTarget,
         fallbackFilename: buildExportFilename(dashboard.name)
       });
       setDownloadedJobId(exportJob.id);
-      setExportPopup(null);
-      setExportSaveTarget(null);
+      setPendingSaveOnReady(false);
       return;
     }
+    setPendingSaveOnReady(true);
     await beginExportInPlace();
   }
 
@@ -529,7 +542,9 @@ export function DashboardView({
                   <button className="ghost-button" onClick={() => { void beginExport(); }} disabled={!activeTabResult || exportJob?.status === "queued" || exportJob?.status === "running"}>
                     {exportJob?.status === "queued" || exportJob?.status === "running"
                       ? `Exporting ${exportJob.progress}%`
-                      : "Download xlsx"}
+                      : exportJob?.status === "complete" && downloadedJobId !== exportJob.id
+                        ? "Save xlsx"
+                        : "Download xlsx"}
                   </button>
                   {onRefresh ? (
                     <button className="ghost-button" onClick={onRefresh} disabled={loading}>
@@ -589,6 +604,13 @@ export function DashboardView({
           <div className="progress-meter" aria-hidden="true">
             <div className="progress-meter-fill" style={{ width: `${exportJob.progress}%` }} />
           </div>
+          {exportJob.status === "complete" ? (
+            <div className="card-actions">
+              <button className="ghost-button" onClick={() => { void beginExport(); }}>
+                {downloadedJobId === exportJob.id ? "Save again" : "Save xlsx"}
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -835,41 +857,36 @@ export function DashboardView({
                         );
                       }
                       return (
-                        <div className="table-shell widget-table-shell">
-                          <table>
-                            <thead>
-                              <tr>
-                                {quickbaseLinkContext ? <th className="table-action-col">Quickbase</th> : null}
-                                {widget.report.selectedFieldIds.slice(0, 6).map((fieldId) => (
-                                  <th key={fieldId}>{getFieldLabel(tables, widget.report, fieldId)}</th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {pagedResult.rows.map((row, index) => (
-                                <tr key={index}>
-                                  {quickbaseLinkContext ? (
-                                    <td className="table-action-cell">
-                                      {String(row.__recordId || "").trim() ? (
-                                        <a
-                                          className="ghost-button table-edit-link"
-                                          href={buildQuickbaseRecordEditUrl(quickbaseLinkContext, String(row.__recordId || ""))}
-                                          target={openLinksInNewTab ? "_blank" : undefined}
-                                          rel={openLinksInNewTab ? "noreferrer" : undefined}
-                                        >
-                                          Edit
-                                        </a>
-                                      ) : null}
-                                    </td>
-                                  ) : null}
-                                  {widget.report.selectedFieldIds.slice(0, 6).map((fieldId) => (
-                                    <td key={fieldId}>{widgetTable ? formatReportCellValue(widget.report, widgetTable, fieldId, row[fieldId]) : String(row[fieldId] ?? "")}</td>
-                                  ))}
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
+                        <ResizableDataTable
+                          className="widget-table-shell"
+                          columns={[
+                            ...(quickbaseLinkContext ? [{ key: "__quickbase", label: "Quickbase", minWidth: 120, defaultWidth: 120, className: "table-action-col" }] : []),
+                            ...widget.report.selectedFieldIds.slice(0, 6).map((fieldId) => ({
+                              key: fieldId,
+                              label: getFieldLabel(tables, widget.report, fieldId)
+                            }))
+                          ]}
+                          rows={pagedResult.rows.map((row, index) => ({
+                            key: String(row.__recordId || index),
+                            cells: [
+                              ...(quickbaseLinkContext ? [
+                                String(row.__recordId || "").trim() ? (
+                                  <a
+                                    className="ghost-button table-edit-link"
+                                    href={buildQuickbaseRecordEditUrl(quickbaseLinkContext, String(row.__recordId || ""))}
+                                    target={openLinksInNewTab ? "_blank" : undefined}
+                                    rel={openLinksInNewTab ? "noreferrer" : undefined}
+                                  >
+                                    Edit
+                                  </a>
+                                ) : null
+                              ] : []),
+                              ...widget.report.selectedFieldIds.slice(0, 6).map((fieldId) =>
+                                widgetTable ? formatReportCellValue(widget.report, widgetTable, fieldId, row[fieldId]) : String(row[fieldId] ?? "")
+                              )
+                            ]
+                          }))}
+                        />
                       );
                     })()}
                   </div>
@@ -945,27 +962,20 @@ export function DashboardView({
               </div>
             ) : null}
             {(widgetRenderMode(focusedWidget.widget, focusedWidget.report) === "table" || focusedWidget.widget.showDetails) ? (
-              <div className="table-shell focus-table-shell">
-                <table>
-                  <thead>
-                    <tr>
-                      {focusedWidget.report.selectedFieldIds.slice(0, 8).map((fieldId) => (
-                        <th key={fieldId}>{getFieldLabel(tables, focusedWidget.report, fieldId)}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {focusedWidget.result.rows.slice(0, 20).map((row, index) => (
-                      <tr key={index}>
-                        {focusedWidget.report.selectedFieldIds.slice(0, 8).map((fieldId) => {
-                          const focusedWidgetTable = tables?.find((item) => item.id === focusedWidget.report.sourceTableId || item.quickbaseTableId === focusedWidget.report.sourceTableId);
-                          return <td key={fieldId}>{focusedWidgetTable ? formatReportCellValue(focusedWidget.report, focusedWidgetTable, fieldId, row[fieldId]) : String(row[fieldId] ?? "")}</td>;
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <ResizableDataTable
+                className="focus-table-shell"
+                columns={focusedWidget.report.selectedFieldIds.slice(0, 8).map((fieldId) => ({
+                  key: fieldId,
+                  label: getFieldLabel(tables, focusedWidget.report, fieldId)
+                }))}
+                rows={focusedWidget.result.rows.slice(0, 20).map((row, index) => ({
+                  key: String(row.__recordId || index),
+                  cells: focusedWidget.report.selectedFieldIds.slice(0, 8).map((fieldId) => {
+                    const focusedWidgetTable = tables?.find((item) => item.id === focusedWidget.report.sourceTableId || item.quickbaseTableId === focusedWidget.report.sourceTableId);
+                    return focusedWidgetTable ? formatReportCellValue(focusedWidget.report, focusedWidgetTable, fieldId, row[fieldId]) : String(row[fieldId] ?? "");
+                  })
+                }))}
+              />
             ) : null}
           </div>
         </div>

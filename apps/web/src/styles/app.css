@@ -1270,6 +1270,57 @@ th {
   box-shadow: inset 0 -1px 0 rgba(23, 49, 38, 0.08);
 }
 
+.resizable-data-table {
+  table-layout: fixed;
+}
+
+.resizable-th-content {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  width: 100%;
+  padding-right: 14px;
+}
+
+.resizable-th-content > span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.column-resize-handle {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  bottom: -10px;
+  width: 20px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: col-resize;
+}
+
+.column-resize-handle::before {
+  content: "";
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 9px;
+  width: 2px;
+  border-radius: 999px;
+  background: rgba(13, 124, 102, 0.18);
+  transition: background 160ms ease, box-shadow 160ms ease;
+}
+
+.column-resize-handle:hover::before,
+.column-resize-handle:focus-visible::before {
+  background: rgba(13, 124, 102, 0.58);
+  box-shadow: 0 0 0 2px rgba(13, 124, 102, 0.14);
+}
+
 .table-shell tbody tr:nth-child(even) {
   background: rgba(247, 248, 243, 0.62);
 }
