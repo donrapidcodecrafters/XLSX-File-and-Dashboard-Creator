@@ -1633,15 +1633,28 @@ async function syncObjectRecords(document: StudioDocument, user: QuickbaseUser, 
     const rows: QuickbaseRecord[] = [];
     const objects = Object.values(document.bundle.objects || {});
     objects.forEach((object) => {
+      const launchUserId = String(document.session.currentUserId || "").trim();
+      const effectiveOwnerUserId = object.scope === "personal"
+        ? String(launchUserId || object.ownerUserId || quickbaseUserValue(user)).trim()
+        : "";
+      const objectPayload: StudioObject = object.scope === "personal"
+        ? {
+            ...object,
+            ownerUserId: effectiveOwnerUserId
+          }
+        : {
+            ...object,
+            ownerUserId: ""
+          };
       const record: QuickbaseRecord = {};
       const existingRecordId = existing.get(makeCompositeKey([object.id]));
       if (existingRecordId) qbSetField(record, "3", existingRecordId);
-      qbSetField(record, config.objectKeyFieldId, object.id);
-      qbSetField(record, config.objectTypeFieldId, object.type);
-      qbSetField(record, config.objectNameFieldId, object.name);
-      qbSetField(record, config.objectConfigFieldId, JSON.stringify(object));
-      qbSetField(record, config.objectOwnerFieldId, object.ownerUserId || quickbaseUserValue(user));
-      qbSetField(record, config.objectUpdatedAtFieldId, object.updatedAt || new Date().toISOString());
+      qbSetField(record, config.objectKeyFieldId, objectPayload.id);
+      qbSetField(record, config.objectTypeFieldId, objectPayload.type);
+      qbSetField(record, config.objectNameFieldId, objectPayload.name);
+      qbSetField(record, config.objectConfigFieldId, JSON.stringify(objectPayload));
+      qbSetField(record, config.objectOwnerFieldId, effectiveOwnerUserId);
+      qbSetField(record, config.objectUpdatedAtFieldId, objectPayload.updatedAt || new Date().toISOString());
       qbSetField(record, config.objectUpdatedByFieldId, quickbaseUserValue(user));
       rows.push(record);
     });
