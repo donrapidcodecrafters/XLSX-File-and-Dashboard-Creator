@@ -1138,12 +1138,22 @@ export function StudioPage({
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const importXlsxInputRef = useRef<HTMLInputElement | null>(null);
   const schemaAutoloadedRef = useRef(false);
-  const scopeDocument = (document: StudioDocument) => applyLaunchScopeToDocument(document, {
+  const applyLaunchSessionToDocument = (document: StudioDocument) => normalizeStudioDocument({
+    ...document,
+    session: {
+      ...document.session,
+      currentUserId: launchContext.userId || document.session.currentUserId,
+      launchSource: launchContext.launchSource || document.session.launchSource,
+      launchRealmHostname: launchContext.realmHostname || document.session.launchRealmHostname,
+      launchAppId: launchContext.appId || document.session.launchAppId
+    }
+  });
+  const scopeDocument = (document: StudioDocument) => applyLaunchScopeToDocument(applyLaunchSessionToDocument(document), {
     launchSource: launchContext.launchSource,
     currentUserId: launchContext.userId,
     launchRealmHostname: launchContext.realmHostname,
     launchAppId: launchContext.appId
-  }) || document;
+  }) || applyLaunchSessionToDocument(document);
   const [documentState, setDocumentState] = useState<StudioDocument>(() => scopeDocument(loadLocalDocument()));
   const [loadingRemote, setLoadingRemote] = useState(true);
   const [savingRemote, setSavingRemote] = useState(false);

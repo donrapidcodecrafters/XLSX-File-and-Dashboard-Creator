@@ -374,11 +374,11 @@ export function StudioSettingsPanel({
           <label className="field"><span>JSON field FID</span><input value={activeQuickbaseConfig.objectConfigFieldId} onChange={(event) => updateQuickbaseField("objectConfigFieldId", event.target.value)} placeholder="FID" /></label>
         </div>
         <div className="filter-grid compact-grid">
-          <label className="field"><span>Personal owner field FID</span><input value={activeQuickbaseConfig.objectOwnerFieldId} onChange={(event) => updateQuickbaseField("objectOwnerFieldId", event.target.value)} placeholder="Optional FID" /></label>
+          <label className="field"><span>Report owner field FID</span><input value={activeQuickbaseConfig.objectOwnerFieldId} onChange={(event) => updateQuickbaseField("objectOwnerFieldId", event.target.value)} placeholder="Optional FID" /></label>
           <label className="field"><span>Updated at field FID</span><input value={activeQuickbaseConfig.objectUpdatedAtFieldId} onChange={(event) => updateQuickbaseField("objectUpdatedAtFieldId", event.target.value)} placeholder="Optional FID" /></label>
         </div>
         <div className="micro">
-          Use this field for the report/dashboard owner value that controls personal visibility. For your saved reports table `bvysukdeq`, this is field `15` (`Personal Report Owner`).
+          Use this field for the saved report/dashboard owner value that controls personal visibility. For your saved reports table `bvysukdeq`, this should be field `15` (`Personal Report Owner`).
         </div>
         <label className="field"><span>Updated by field FID</span><input value={activeQuickbaseConfig.objectUpdatedByFieldId} onChange={(event) => updateQuickbaseField("objectUpdatedByFieldId", event.target.value)} placeholder="Optional FID" /></label>
       </div>
