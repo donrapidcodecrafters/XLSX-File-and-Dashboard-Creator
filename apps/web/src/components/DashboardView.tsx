@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { buildDashboardFilters, formatReportCellValue, getDashboardWidgetLayoutStyle, getDashboardWidgetPlacements, getReportFieldLabel, resolveActiveDashboardTabId, type DashboardDefinition, type DashboardRunResult, type ExportJobStatus, type RefreshJobStatus, type ReportRunResult, type TableDefinition } from "@studio/shared";
-import { downloadExportJob, fetchExportJobStatus, renderDashboard, runReportPage, startDashboardExportJob } from "../lib/api";
+import { createExportSaveTarget, downloadExportJob, fetchExportJobStatus, renderDashboard, runReportPage, startDashboardExportJob, type ExportSaveTarget } from "../lib/api";
 import { LinkToolbar } from "./LinkToolbar";
 import { ChartPreview } from "./ChartPreview";
 import { RefreshOverlay } from "./RefreshOverlay";
@@ -174,6 +174,14 @@ function navigateTopLevel(url: string) {
   anchor.remove();
 }
 
+function buildExportFilename(name: string) {
+  const safe = String(name || "dashboard")
+    .replace(/[\\/:*?"<>|]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return `${safe || "dashboard"}.xlsx`;
+}
+
 export function DashboardView({
   dashboard,
   tables,
@@ -214,6 +222,7 @@ export function DashboardView({
   const [exportJob, setExportJob] = useState<ExportJobStatus | null>(null);
   const [downloadedJobId, setDownloadedJobId] = useState("");
   const [exportPopup, setExportPopup] = useState<Window | null>(null);
+  const [exportSaveTarget, setExportSaveTarget] = useState<ExportSaveTarget | null>(null);
   const autoExportStartedRef = useRef(false);
   const [toolbarCollapsed, setToolbarCollapsed] = useState(true);
   const [widgetPages, setWidgetPages] = useState<Record<string, number>>({});
@@ -368,10 +377,16 @@ export function DashboardView({
 
   useEffect(() => {
     if (!exportJob || exportJob.status !== "complete" || downloadedJobId === exportJob.id) return;
-    downloadExportJob(exportJob.id, { directDownload: hosted.embed, popupWindow: exportPopup });
+    downloadExportJob(exportJob.id, {
+      directDownload: hosted.embed,
+      popupWindow: exportPopup,
+      saveTarget: exportSaveTarget,
+      fallbackFilename: buildExportFilename(dashboard.name)
+    });
     setDownloadedJobId(exportJob.id);
     setExportPopup(null);
-  }, [downloadedJobId, exportJob, exportPopup, hosted.embed]);
+    setExportSaveTarget(null);
+  }, [dashboard.name, downloadedJobId, exportJob, exportPopup, exportSaveTarget, hosted.embed]);
 
   useEffect(() => {
     if (hosted.autoDownload !== "xlsx") return;
@@ -431,12 +446,14 @@ export function DashboardView({
   }
 
   async function beginExport() {
-    const url = buildObjectUrl("dashboard", dashboard.id, { viewer: true, download: "xlsx" });
-    if (hosted.sandboxedFrame) {
+    const saveTarget = await createExportSaveTarget(buildExportFilename(dashboard.name));
+    if (saveTarget === null && hosted.sandboxedFrame) {
+      const url = buildObjectUrl("dashboard", dashboard.id, { viewer: true, download: "xlsx" });
       navigateTopLevel(url);
       return;
     }
-    window.open(url, "_blank", "noopener,noreferrer");
+    setExportSaveTarget(saveTarget);
+    await beginExportInPlace();
   }
 
   const tabs = dashboard.tabs.map((tab) => tabResults[tab.id] || ({ id: tab.id, name: tab.name, widgets: [] }));

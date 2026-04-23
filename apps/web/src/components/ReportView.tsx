@@ -4,7 +4,7 @@ import { formatReportCellValue, getReportFieldLabel, type ExportJobStatus, type 
 import { LinkToolbar } from "./LinkToolbar";
 import { ChartPreview } from "./ChartPreview";
 import { RefreshOverlay } from "./RefreshOverlay";
-import { downloadExportJob, fetchExportJobStatus, startReportExportJob } from "../lib/api";
+import { createExportSaveTarget, downloadExportJob, fetchExportJobStatus, startReportExportJob, type ExportSaveTarget } from "../lib/api";
 import { buildHostedRoute, buildObjectUrl, getHostedContext } from "../lib/embed";
 import { buildQuickbaseChartDatumUrl, buildQuickbaseRecordEditUrl, buildQuickbaseReportFilterTree, type QuickbaseTableLinkContext } from "../lib/quickbaseLinks";
 
@@ -153,6 +153,14 @@ function navigateTopLevel(url: string) {
   anchor.remove();
 }
 
+function buildExportFilename(name: string) {
+  const safe = String(name || "report")
+    .replace(/[\\/:*?"<>|]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return `${safe || "report"}.xlsx`;
+}
+
 export function ReportView({
   report,
   table,
@@ -178,6 +186,7 @@ export function ReportView({
   const [exportJob, setExportJob] = useState<ExportJobStatus | null>(null);
   const [downloadedJobId, setDownloadedJobId] = useState("");
   const [exportPopup, setExportPopup] = useState<Window | null>(null);
+  const [exportSaveTarget, setExportSaveTarget] = useState<ExportSaveTarget | null>(null);
   const [toolbarCollapsed, setToolbarCollapsed] = useState(true);
   const autoExportStartedRef = useRef(false);
   const summaryAvailable = reportShowsSummary(report) && Boolean(result?.summary?.length);
@@ -250,10 +259,16 @@ export function ReportView({
 
   useEffect(() => {
     if (!exportJob || exportJob.status !== "complete" || downloadedJobId === exportJob.id) return;
-    downloadExportJob(exportJob.id, { directDownload: hosted.embed, popupWindow: exportPopup });
+    downloadExportJob(exportJob.id, {
+      directDownload: hosted.embed,
+      popupWindow: exportPopup,
+      saveTarget: exportSaveTarget,
+      fallbackFilename: buildExportFilename(report.name)
+    });
     setDownloadedJobId(exportJob.id);
     setExportPopup(null);
-  }, [downloadedJobId, exportJob, exportPopup, hosted.embed]);
+    setExportSaveTarget(null);
+  }, [downloadedJobId, exportJob, exportPopup, exportSaveTarget, hosted.embed, report.name]);
 
   useEffect(() => {
     if (hosted.autoDownload !== "xlsx") return;
@@ -271,12 +286,14 @@ export function ReportView({
   }
 
   async function beginExport() {
-    const url = buildObjectUrl("report", report.id, { viewer: true, download: "xlsx" });
-    if (hosted.sandboxedFrame) {
+    const saveTarget = await createExportSaveTarget(buildExportFilename(report.name));
+    if (saveTarget === null && hosted.sandboxedFrame) {
+      const url = buildObjectUrl("report", report.id, { viewer: true, download: "xlsx" });
       navigateTopLevel(url);
       return;
     }
-    window.open(url, "_blank", "noopener,noreferrer");
+    setExportSaveTarget(saveTarget);
+    await beginExportInPlace();
   }
 
   function freshnessLabel() {

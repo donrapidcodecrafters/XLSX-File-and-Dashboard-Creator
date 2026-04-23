@@ -11,6 +11,13 @@ const API_BASE = (import.meta.env.VITE_API_BASE_URL || "http://localhost:3001").
 const REQUEST_TIMEOUT_MS = 20_000;
 const DASHBOARD_RENDER_TIMEOUT_MS = 120_000;
 
+export interface ExportSaveTarget {
+  createWritable: () => Promise<{
+    write: (data: Blob) => Promise<void>;
+    close: () => Promise<void>;
+  }>;
+}
+
 function parseDownloadFilename(contentDisposition: string | null, fallback: string) {
   if (!contentDisposition) return fallback;
   const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
@@ -59,6 +66,17 @@ async function downloadExportBlob(url: string, fallbackFilename: string, popupWi
     }
   }
   window.setTimeout(() => URL.revokeObjectURL(objectUrl), 5 * 60_000);
+}
+
+async function writeExportBlobToTarget(url: string, target: ExportSaveTarget) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error("Download failed with status " + response.status);
+  }
+  const blob = await response.blob();
+  const writable = await target.createWritable();
+  await writable.write(blob);
+  await writable.close();
 }
 
 function ensureDownloadFrame() {
@@ -274,8 +292,52 @@ export function fetchExportJobs() {
   return request<{ jobs: ExportJobStatus[] }>("/api/exports/jobs");
 }
 
-export function downloadExportJob(id: string, options: { directDownload?: boolean; popupWindow?: Window | null } = {}) {
+export async function createExportSaveTarget(suggestedFilename: string): Promise<ExportSaveTarget | null> {
+  const picker = (window as typeof window & {
+    showSaveFilePicker?: (options?: {
+      suggestedName?: string;
+      types?: Array<{
+        description?: string;
+        accept: Record<string, string[]>;
+      }>;
+      excludeAcceptAllOption?: boolean;
+    }) => Promise<ExportSaveTarget>;
+  }).showSaveFilePicker;
+  if (typeof picker !== "function") return null;
+  try {
+    return await picker({
+      suggestedName: suggestedFilename,
+      excludeAcceptAllOption: false,
+      types: [
+        {
+          description: "Excel workbook",
+          accept: {
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"]
+          }
+        }
+      ]
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") return null;
+    throw error;
+  }
+}
+
+export function downloadExportJob(
+  id: string,
+  options: {
+    directDownload?: boolean;
+    popupWindow?: Window | null;
+    saveTarget?: ExportSaveTarget | null;
+    fallbackFilename?: string;
+  } = {}
+) {
   const downloadUrl = API_BASE + "/api/exports/jobs/" + encodeURIComponent(id) + "/download";
+  if (options.saveTarget) {
+    return void writeExportBlobToTarget(downloadUrl, options.saveTarget).catch(() => {
+      return downloadExportBlob(downloadUrl, options.fallbackFilename || `export-${id}.xlsx`, options.popupWindow);
+    });
+  }
   void downloadExportBlob(downloadUrl, `export-${id}.xlsx`, options.popupWindow).catch(() => {
     if (options.popupWindow && !options.popupWindow.closed) {
       try {
