@@ -1038,6 +1038,7 @@ async function loadStoredObjects(config: StudioDocument["quickbase"]) {
         config.objectTypeFieldId,
         config.objectNameFieldId,
         config.objectConfigFieldId,
+        config.objectOwnerFieldId,
         "6",
         "7",
         "8",
@@ -1066,6 +1067,10 @@ async function loadStoredObjects(config: StudioDocument["quickbase"]) {
         }
         if (!object.updatedAt) {
           object.updatedAt = new Date().toISOString();
+        }
+        const storedOwnerUserId = String(qbFieldValue(row, config.objectOwnerFieldId) || "").trim();
+        if (storedOwnerUserId) {
+          object.ownerUserId = storedOwnerUserId;
         }
         objects.push(object);
       });
@@ -1169,7 +1174,14 @@ function detectQuickbaseStorageConfig(schema: QuickbaseAppSchema) {
     detected.objectTypeFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, ["Type", "Object Type"]);
     detected.objectNameFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, ["Name", "Object Name", "Report Name"]);
     detected.objectConfigFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, ["JSON Config", "Config JSON", "Json", "Configuration"]);
-    detected.objectOwnerFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, ["Owner", "Object Owner"]);
+    detected.objectOwnerFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, [
+      "Personal Report Owner",
+      "Personal Dashboard Owner",
+      "Owner User ID",
+      "Owner User",
+      "Object Owner",
+      "Owner"
+    ]);
     detected.objectUpdatedAtFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, ["Updated", "Updated At", "Modified", "Modified At"]);
     detected.objectUpdatedByFieldId = findQuickbaseFieldIdByLabels(objectTable.fields, ["Updated By", "Modified By"]);
   }
@@ -1628,7 +1640,7 @@ async function syncObjectRecords(document: StudioDocument, user: QuickbaseUser, 
       qbSetField(record, config.objectTypeFieldId, object.type);
       qbSetField(record, config.objectNameFieldId, object.name);
       qbSetField(record, config.objectConfigFieldId, JSON.stringify(object));
-      qbSetField(record, config.objectOwnerFieldId, quickbaseUserValue(user));
+      qbSetField(record, config.objectOwnerFieldId, object.ownerUserId || quickbaseUserValue(user));
       qbSetField(record, config.objectUpdatedAtFieldId, object.updatedAt || new Date().toISOString());
       qbSetField(record, config.objectUpdatedByFieldId, quickbaseUserValue(user));
       rows.push(record);
