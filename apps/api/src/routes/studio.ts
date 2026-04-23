@@ -30,7 +30,14 @@ export async function registerStudioRoutes(app: FastifyInstance) {
     updateRefreshScheduleMetadata(hydrated);
     const provisioned = await ensureQuickbaseStorageForProfiles(hydrated);
     const document = studioStore.saveDocument(provisioned, { markSavedAt: false });
-    return { document };
+    return {
+      document: {
+        ...document,
+        // Keep the main studio document lightweight; versions are fetched on demand.
+        versions: {},
+        exportJobs: []
+      }
+    };
   });
 
   app.get("/api/studio/cache/summary", async () => {
@@ -56,6 +63,9 @@ export async function registerStudioRoutes(app: FastifyInstance) {
     const current = studioStore.getLiveDocument();
     const mergedDocument: StudioDocument = normalizeStudioDocument({
       ...body.document,
+      // Version history and export jobs stay on the server; the browser does not upload them on save.
+      versions: current.versions,
+      exportJobs: current.exportJobs,
       bundle: {
         ...body.document.bundle,
         // Keep server-side cached rows instead of requiring the browser to upload them on every save.

@@ -102,6 +102,9 @@ export interface StudioWorkbookImportResult {
 function buildSavePayload(document: StudioDocument): StudioDocument {
   return {
     ...document,
+    // Version history is loaded on demand from the dedicated versions endpoint.
+    versions: {},
+    exportJobs: [],
     bundle: {
       ...document.bundle,
       // Cached table rows stay on the server; saves should only send workspace metadata.
