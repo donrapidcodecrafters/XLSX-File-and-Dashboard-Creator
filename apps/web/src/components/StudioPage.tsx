@@ -92,7 +92,7 @@ import {
   startStudioRefresh,
   saveStudioDocument
 } from "../lib/studioApi";
-import { downloadExportJob, fetchExportJobStatus, fetchExportJobs, startDashboardExportJob, startReportExportJob } from "../lib/api";
+import { createExportSaveTarget, downloadExportJob, fetchExportJobStatus, fetchExportJobs, startDashboardExportJob, startReportExportJob } from "../lib/api";
 import { applyLaunchScopeToDocument } from "../lib/catalog";
 import { buildHostedHashUrl, buildHostedRoute } from "../lib/embed";
 import { ChartPreview } from "./ChartPreview";
@@ -1886,6 +1886,30 @@ export function StudioPage({
     pushToast("Export restarted.");
   }
 
+  function buildExportFilename(name: string, format: "xlsx" | "json") {
+    const safe = String(name || "export")
+      .replace(/[\\/:*?"<>|]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    return `${safe || "export"}.${format}`;
+  }
+
+  async function saveExportJobToMachine(job: StudioExportJob) {
+    if (job.format !== "xlsx" || !job.sourceJobId) {
+      pushToast("Only completed Excel exports can be saved here.", "warn");
+      return;
+    }
+    const object = bundle.objects[job.objectId];
+    const filename = buildExportFilename(object?.name || job.objectId, "xlsx");
+    const saveTarget = await createExportSaveTarget(filename);
+    if (!saveTarget) return;
+    downloadExportJob(job.sourceJobId, {
+      saveTarget,
+      fallbackFilename: filename
+    });
+    pushToast("Saving export to your machine.");
+  }
+
   function applyDocumentUpdate(updater: (draft: StudioDocument) => StudioDocument | void, options?: { skipHistory?: boolean }) {
     setDocumentState((current) => {
       const currentSnapshot = clone(current);
@@ -2076,9 +2100,8 @@ export function StudioPage({
 
   useEffect(() => {
     if (!exportJob || exportJob.status !== "complete" || downloadedJobId === exportJob.id) return;
-    downloadExportJob(exportJob.id);
     setDownloadedJobId(exportJob.id);
-    pushToast("Download is ready.");
+    pushToast("Export is ready. Use Save to machine in Export.");
   }, [downloadedJobId, exportJob]);
 
   useEffect(() => {
@@ -4022,7 +4045,7 @@ export function StudioPage({
                           ) : null}
                           <div className="studio-actions">
                             {job.format === "xlsx" && matchingLiveJob?.status === "complete" && job.sourceJobId ? (
-                              <button onClick={() => downloadExportJob(job.sourceJobId || "")}>Download again</button>
+                              <button onClick={() => { void saveExportJobToMachine(job); }}>Save to machine</button>
                             ) : null}
                             {job.format === "xlsx" ? (
                               <button onClick={() => { void retryExportJob(job); }}>
@@ -5021,7 +5044,7 @@ export function StudioPage({
                       ) : null}
                       <div className="studio-actions">
                         {job.format === "xlsx" && matchingLiveJob?.status === "complete" && job.sourceJobId ? (
-                          <button onClick={() => downloadExportJob(job.sourceJobId || "")}>Download again</button>
+                          <button onClick={() => { void saveExportJobToMachine(job); }}>Save to machine</button>
                         ) : null}
                         {job.format === "xlsx" ? (
                           <button onClick={() => { void retryExportJob(job); }}>

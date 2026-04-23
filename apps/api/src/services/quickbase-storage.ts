@@ -1402,6 +1402,7 @@ function normalizeStoredObjectOwnerUserId(
 
 export async function hydrateStudioDocumentFromQuickbase(document: StudioDocument): Promise<StudioDocument> {
   const base = normalizeStudioDocument(document);
+  const baseProfilesById = new Map(base.quickbaseProfiles.map((profile) => [profile.id, profile]));
   const bootstrapConfig =
     (base.quickbaseProfiles.find((profile) => profile.id === base.activeQuickbaseProfileId && hasQuickbaseConnection(profile.quickbase))?.quickbase)
     || (base.quickbaseProfiles.find((profile) => hasQuickbaseConnection(profile.quickbase))?.quickbase)
@@ -1424,6 +1425,7 @@ export async function hydrateStudioDocumentFromQuickbase(document: StudioDocumen
   }).quickbaseProfiles.map((profile) => ({
     ...profile,
     quickbase: mergeQuickbaseConfig({
+      ...(baseProfilesById.get(profile.id)?.quickbase || {}),
       ...profile.quickbase,
       realmHostname: profile.quickbase.realmHostname || resolvedConfig.realmHostname,
       userToken: profile.quickbase.userToken || resolvedConfig.userToken,
@@ -1439,7 +1441,10 @@ export async function hydrateStudioDocumentFromQuickbase(document: StudioDocumen
         const { config } = await resolveStoredQuickbaseConfig(profile.quickbase);
         return {
           ...profile,
-          quickbase: config
+          quickbase: mergeQuickbaseConfig(
+            mergeQuickbaseConfig(baseProfilesById.get(profile.id)?.quickbase || profile.quickbase, profile.quickbase),
+            config
+          )
         };
       } catch {
         return profile;
@@ -1509,7 +1514,7 @@ export async function hydrateStudioDocumentFromQuickbase(document: StudioDocumen
 
   const next = normalizeStudioDocument({
     ...base,
-    quickbase: resolvedConfig,
+    quickbase: mergeQuickbaseConfig(base.quickbase, resolvedConfig),
     quickbaseProfiles: normalizedProfiles,
     activeQuickbaseProfileId,
     bundle: {
