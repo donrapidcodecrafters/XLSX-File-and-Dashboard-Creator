@@ -35,7 +35,7 @@ import {
 } from "./lib/catalog";
 import { buildHostedRoute, getHostedContext } from "./lib/embed";
 import type { QuickbaseTableLinkContext } from "./lib/quickbaseLinks";
-import { fetchStudioDocument, fetchStudioRefreshJob, saveStudioUserSettings, startStudioObjectRefresh, startStudioRefresh, updateStudioSession } from "./lib/studioApi";
+import { fetchStudioDocument, fetchStudioRefreshJob, saveStudioUserSettings, startStudioRefresh, updateStudioSession } from "./lib/studioApi";
 
 const SESSION_RECENT_KEY = "studio-session-recent";
 const USER_SETTINGS_PERSIST_DELAY_MS = 500;
@@ -557,10 +557,9 @@ function ObjectPage({
   }, [refreshJob]);
 
   async function startObjectRefresh() {
-    if (!object) return;
     setStartingRefresh(true);
     try {
-      const response = await startStudioObjectRefresh(object.id);
+      const response = await startStudioRefresh();
       setRefreshJob(response.job);
     } finally {
       window.setTimeout(() => setStartingRefresh(false), 700);
@@ -643,14 +642,24 @@ function ObjectPage({
           }}
           onStateChange={(state) => {
             if (object.scope === "personal" || !studioDocument) return;
+            const currentPage = Math.max(1, state.currentPage || 1);
+            const currentFocusMode = state.focusMode;
+            const currentFocusedSection = state.focusedSection;
+            if (
+              Math.max(1, personalOverride?.currentPage || 1) === currentPage
+              && (personalOverride?.focusMode || "default") === currentFocusMode
+              && (personalOverride?.focusedSection || "") === currentFocusedSection
+            ) {
+              return;
+            }
             const nextPersonalOverrides: StudioDocument["personalOverrides"] = {
               ...studioDocument.personalOverrides,
               reports: {
                 ...studioDocument.personalOverrides.reports,
                 [object.id]: {
-                  currentPage: Math.max(1, state.currentPage || 1),
-                  focusMode: state.focusMode,
-                  focusedSection: state.focusedSection,
+                  currentPage,
+                  focusMode: currentFocusMode,
+                  focusedSection: currentFocusedSection,
                   savedViews: personalOverride?.savedViews || [],
                   updatedAt: new Date().toISOString()
                 }
@@ -730,14 +739,24 @@ function ObjectPage({
         onToggleFavorite={() => { void onToggleFavorite(object.id); }}
         onStateChange={(state) => {
           if (object.scope === "personal" || !studioDocument) return;
+          const currentRuntimeFilters = state.runtimeFilters || {};
+          const currentActiveTabId = state.activeTabId || "";
+          const currentFocusedWidgetId = state.focusedWidgetId || "";
+          if (
+            JSON.stringify(personalOverride?.runtimeFilters || {}) === JSON.stringify(currentRuntimeFilters)
+            && (personalOverride?.activeTabId || "") === currentActiveTabId
+            && (personalOverride?.focusedWidgetId || "") === currentFocusedWidgetId
+          ) {
+            return;
+          }
           const nextPersonalOverrides: StudioDocument["personalOverrides"] = {
             ...studioDocument.personalOverrides,
             dashboards: {
               ...studioDocument.personalOverrides.dashboards,
               [object.id]: {
-                runtimeFilters: state.runtimeFilters,
-                activeTabId: state.activeTabId,
-                focusedWidgetId: state.focusedWidgetId,
+                runtimeFilters: currentRuntimeFilters,
+                activeTabId: currentActiveTabId,
+                focusedWidgetId: currentFocusedWidgetId,
                 savedViews: personalOverride?.savedViews || [],
                 updatedAt: new Date().toISOString()
               }

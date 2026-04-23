@@ -232,7 +232,7 @@ export function DashboardView({
     return new Map((tab ? getDashboardWidgetPlacements(tab) : []).map((placement) => [placement.widgetId, placement]));
   }, [dashboard.tabs, resolvedActiveTabId]);
   const loading = Boolean(tabLoading[resolvedActiveTabId]);
-  const shouldPreloadRemainingTabs = dashboard.tabs.length <= 4;
+  const shouldPreloadRemainingTabs = false;
   const runtimeFiltersKey = useMemo(() => JSON.stringify(runtimeFilters), [runtimeFilters]);
 
   useEffect(() => {
