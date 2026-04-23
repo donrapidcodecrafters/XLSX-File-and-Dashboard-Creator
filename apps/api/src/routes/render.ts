@@ -110,9 +110,12 @@ async function maybeStartAutoRefreshForReport(report: ReportDefinition) {
   };
 }
 
-async function maybeStartAutoRefreshForDashboard(dashboard: DashboardDefinition) {
+async function maybeStartAutoRefreshForDashboard(dashboard: DashboardDefinition, activeTabId = "") {
+  const tabsToCheck = activeTabId
+    ? dashboard.tabs.filter((tab) => tab.id === activeTabId)
+    : dashboard.tabs;
   const tableIds = Array.from(new Set(
-    dashboard.tabs.flatMap((tab) => tab.widgets.map((widget) => widget.reportId))
+    tabsToCheck.flatMap((tab) => tab.widgets.map((widget) => widget.reportId))
       .map((reportId) => objectStore.getReport(reportId)?.sourceTableId || "")
       .filter(Boolean)
   ));
@@ -124,7 +127,9 @@ async function maybeStartAutoRefreshForDashboard(dashboard: DashboardDefinition)
   if (!tableIds.some((tableId) => hasQuickbaseSource(tableId))) return null;
   return {
     refreshJob: await startAutoRefreshForObject(dashboard.id),
-    needsBlockingLoad: states.some((state) => !state.hasRows)
+    // Dashboards should render the active tab immediately when possible and
+    // let refresh continue in the background instead of returning an empty shell.
+    needsBlockingLoad: false
   };
 }
 
@@ -401,10 +406,7 @@ export async function registerRenderRoutes(app: FastifyInstance) {
         reply.code(404);
         return { message: "Dashboard not found." };
       }
-      const pendingRefresh = await maybeStartAutoRefreshForDashboard(dashboard);
-      if (pendingRefresh?.refreshJob && pendingRefresh.needsBlockingLoad) {
-        return buildPendingDashboardResult(dashboard, pendingRefresh.refreshJob);
-      }
+      const pendingRefresh = await maybeStartAutoRefreshForDashboard(dashboard, body.activeTabId || "");
       const result = await executeDashboard(id, body.runtimeFilters || {}, {
         activeTabId: body.activeTabId || "",
         forceLive: body.forceLive === true
