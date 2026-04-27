@@ -497,10 +497,11 @@ export function StudioDashboardPreview({
                       <div className="mini-chart">
                         {(() => {
                           const axisLabels = getChartAxisLabels(widget.report, widgetTable);
-                          const chartBounds = getChartViewportBounds(widget.report.view.chartType, widget.result.chartData.length, true);
+                          const requestedChartHeight = Math.max(220, (widget.widget.layout.h || 4) * 96 - 168);
+                          const chartBounds = getChartViewportBounds(widget.report.view.chartType, widget.result.chartData.length, true, requestedChartHeight);
                           return (
                             <div className="chart-scroll-shell">
-                              <div style={{ minWidth: `${chartBounds.minWidth}px`, minHeight: `${chartBounds.minHeight}px` }}>
+                              <div style={{ minWidth: `${chartBounds.minWidth}px`, minHeight: `${chartBounds.minHeight}px`, width: "100%", height: "100%" }}>
                                 <ChartPreview
                                   chartType={widget.report.view.chartType}
                                   data={widget.result.chartData}
@@ -508,6 +509,7 @@ export function StudioDashboardPreview({
                                   decimalPlaces={widget.report.view.decimalPlaces}
                                   chartColors={widget.report.view.chartColors}
                                   chartValueColors={widget.report.view.chartValueColors}
+                                  chartSort={widget.report.view.chartSort}
                                   chartOrientation={widget.report.view.chartOrientation}
                                   xAxisLabel={axisLabels.xAxisLabel}
                                   yAxisLabel={axisLabels.yAxisLabel}
@@ -516,6 +518,7 @@ export function StudioDashboardPreview({
                                   compact
                                   showLegend={widget.report.view.chartShowLegend}
                                   showValues={widget.report.view.chartShowValues}
+                                  viewportHeight={chartBounds.minHeight}
                                 />
                               </div>
                             </div>

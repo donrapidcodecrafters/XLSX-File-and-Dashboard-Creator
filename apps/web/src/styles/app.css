@@ -588,8 +588,11 @@ input {
 
 .axis-chart-shell {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 10px;
   min-width: 0;
+  min-height: 100%;
+  height: 100%;
   overflow: hidden;
 }
 
@@ -629,13 +632,16 @@ input {
 
 .axis-svg-shell {
   min-width: 0;
-  overflow: hidden;
+  min-height: 0;
+  height: 100%;
+  overflow: visible;
 }
 
 .bar-chart-svg {
   display: block;
   width: 100%;
   min-height: 240px;
+  height: 100%;
 }
 
 .chart-svg-tick,
@@ -3139,15 +3145,16 @@ th {
 
 .widget-card .mini-chart {
   flex: 1 1 auto;
-  align-content: start;
+  align-content: stretch;
   min-height: 0;
   overflow: auto;
-  justify-items: center;
+  justify-items: stretch;
 }
 
 .mini-chart > * {
   width: 100%;
   max-width: 100%;
+  min-height: 100%;
 }
 
 .mini-chart .chart-shell,
@@ -3161,15 +3168,21 @@ th {
 }
 
 .chart-scroll-shell {
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
   width: 100%;
   max-width: 100%;
   min-height: 0;
+  height: 100%;
   overflow: auto;
 }
 
 .chart-scroll-shell > * {
+  flex: 1 0 auto;
   width: fit-content;
   max-width: none;
+  min-height: 100%;
 }
 
 .mini-chart .chart-title {
@@ -3182,21 +3195,22 @@ th {
 
 .mini-chart .bar-chart-svg {
   min-height: 0;
-  max-height: 190px;
+  max-height: none;
+  height: 100%;
 }
 
 .mini-chart .axis-chart svg,
 .mini-chart .line-chart svg,
 .mini-chart .area-chart svg,
 .mini-chart .radar-chart svg {
-  max-height: 190px;
+  max-height: none;
 }
 
 .mini-chart .line-chart svg,
 .mini-chart .area-chart svg,
 .mini-chart .radar-chart svg {
-  width: 100%;
-  height: auto;
+  width: auto;
+  height: 100%;
 }
 
 .mini-chart .chart-axis-title,

@@ -720,7 +720,8 @@ export function DashboardView({
                 widget.report,
                 buildDashboardFilters(dashboard, widget.report.id, runtimeFilters, widget.report.sourceTableId)
               );
-              const chartBounds = getChartViewportBounds(widget.report.view.chartType, chartData.length, true);
+              const requestedChartHeight = Math.max(220, (widget.widget.layout.h || 4) * 96 - 168);
+              const chartBounds = getChartViewportBounds(widget.report.view.chartType, chartData.length, true, requestedChartHeight);
               const crossFilterOptions = getDashboardCrossFilterOptions(dashboard, widget.report, widget.result.chartData);
               const clearableFilterIds = Array.from(new Set(
                 crossFilterOptions
@@ -790,7 +791,7 @@ export function DashboardView({
                 {widget.status === "complete" && widgetShowsChart(widget.widget, widget.report) ? (
                   <div className="mini-chart">
                     <div className="chart-scroll-shell">
-                      <div style={{ minWidth: `${chartBounds.minWidth}px`, minHeight: `${chartBounds.minHeight}px` }}>
+                      <div style={{ minWidth: `${chartBounds.minWidth}px`, minHeight: `${chartBounds.minHeight}px`, width: "100%", height: "100%" }}>
                         <ChartPreview
                           chartType={widget.report.view.chartType}
                           data={chartData}
@@ -798,6 +799,7 @@ export function DashboardView({
                           decimalPlaces={widget.report.view.decimalPlaces}
                           chartColors={widget.report.view.chartColors}
                           chartValueColors={widget.report.view.chartValueColors}
+                          chartSort={widget.report.view.chartSort}
                           chartOrientation={widget.report.view.chartOrientation}
                           xAxisLabel={axisLabels.xAxisLabel}
                           yAxisLabel={axisLabels.yAxisLabel}
@@ -806,6 +808,7 @@ export function DashboardView({
                           compact
                           showLegend={widget.report.view.chartShowLegend}
                           showValues={widget.report.view.chartShowValues}
+                          viewportHeight={chartBounds.minHeight}
                           openLinksInNewTab={openLinksInNewTab}
                           getDatumHref={(datum) => buildQuickbaseChartDatumUrl(quickbaseLinkContext, widgetTable, chartFieldId, datum, widgetQuickbaseFilterTree)}
                         />
@@ -962,7 +965,9 @@ export function DashboardView({
                   <div
                     style={{
                       minWidth: `${getChartViewportBounds(focusedWidget.report.view.chartType, focusedWidget.result.chartData.length).minWidth}px`,
-                      minHeight: `${getChartViewportBounds(focusedWidget.report.view.chartType, focusedWidget.result.chartData.length).minHeight}px`
+                      minHeight: `${getChartViewportBounds(focusedWidget.report.view.chartType, focusedWidget.result.chartData.length).minHeight}px`,
+                      width: "100%",
+                      height: "100%"
                     }}
                   >
                     <ChartPreview
@@ -972,6 +977,7 @@ export function DashboardView({
                       decimalPlaces={focusedWidget.report.view.decimalPlaces}
                       chartColors={focusedWidget.report.view.chartColors}
                       chartValueColors={focusedWidget.report.view.chartValueColors}
+                      chartSort={focusedWidget.report.view.chartSort}
                       chartOrientation={focusedWidget.report.view.chartOrientation}
                       xAxisLabel={getChartAxisLabels(tables, focusedWidget.report).xAxisLabel}
                       yAxisLabel={getChartAxisLabels(tables, focusedWidget.report).yAxisLabel}
@@ -979,6 +985,7 @@ export function DashboardView({
                       secondarySeriesType={focusedWidget.report.view.chartSecondarySeriesType}
                       showLegend={focusedWidget.report.view.chartShowLegend}
                       showValues={focusedWidget.report.view.chartShowValues}
+                      viewportHeight={getChartViewportBounds(focusedWidget.report.view.chartType, focusedWidget.result.chartData.length).minHeight}
                       openLinksInNewTab={openLinksInNewTab}
                     />
                   </div>

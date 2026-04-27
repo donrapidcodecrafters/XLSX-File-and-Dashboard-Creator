@@ -87,7 +87,7 @@ export function StudioReportPreview({
     return (
       <div className="studio-preview-stack">
         <div className="chart-scroll-shell">
-          <div style={{ minWidth: `${chartBounds.minWidth}px`, minHeight: `${chartBounds.minHeight}px` }}>
+          <div style={{ minWidth: `${chartBounds.minWidth}px`, minHeight: `${chartBounds.minHeight}px`, width: "100%", height: "100%" }}>
             <ChartPreview
               chartType={report.view.chartType}
               data={result.chartData}
@@ -95,12 +95,14 @@ export function StudioReportPreview({
               decimalPlaces={report.view.decimalPlaces}
               chartColors={report.view.chartColors}
               chartValueColors={report.view.chartValueColors}
+              chartSort={report.view.chartSort}
               chartOrientation={report.view.chartOrientation}
               xAxisLabel={axisLabels.xAxisLabel}
               yAxisLabel={axisLabels.yAxisLabel}
               secondaryYAxisLabel={axisLabels.secondaryYAxisLabel}
               showLegend={report.view.chartShowLegend}
               showValues={report.view.chartShowValues}
+              viewportHeight={chartBounds.minHeight}
             />
           </div>
         </div>

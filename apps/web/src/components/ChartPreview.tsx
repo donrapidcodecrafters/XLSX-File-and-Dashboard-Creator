@@ -1,4 +1,4 @@
-import type { ChartDatum, ChartOrientation, ChartSeriesType, ChartType } from "@studio/shared";
+import type { ChartDatum, ChartOrientation, ChartSeriesType, ChartSortMode, ChartType } from "@studio/shared";
 
 const CHART_COLORS = [
   "#0d7c66",
@@ -16,6 +16,7 @@ interface ChartPreviewProps {
   data: ChartDatum[];
   chartColors?: string[];
   chartValueColors?: Record<string, string>;
+  chartSort?: ChartSortMode;
   chartOrientation?: ChartOrientation;
   title?: string;
   decimalPlaces?: number;
@@ -26,6 +27,7 @@ interface ChartPreviewProps {
   compact?: boolean;
   showLegend?: boolean;
   showValues?: boolean;
+  viewportHeight?: number;
   getDatumHref?: (datum: ChartDatum) => string;
   openLinksInNewTab?: boolean;
 }
@@ -155,9 +157,8 @@ function buildAxisTicks(max: number, desired = 4) {
   return ticks.length ? ticks : [0, axisMax];
 }
 
-function xTickLabel(label: string, _index: number, length: number, compact: boolean) {
-  const maxLength = compact ? 8 : length >= 10 ? 10 : length >= 7 ? 12 : 16;
-  return cap(label, maxLength);
+function xTickLabel(label: string, _index: number, _length: number, _compact: boolean) {
+  return formatCategoryTickLabel(label);
 }
 
 function formatCategoryTickLabel(label: string) {
@@ -264,9 +265,81 @@ function axisTickTextWidth(ticks: number[], decimalPlaces: number, compact: bool
   return Math.min(160, Math.max(72, Math.round(longest * perChar + 24)));
 }
 
-function columnBottomPad(itemCount: number, compact: boolean, hasAxisLabel: boolean) {
-  const densityPad = itemCount >= 12 ? 118 : itemCount >= 9 ? 102 : itemCount >= 6 ? 88 : 74;
-  return densityPad + (hasAxisLabel ? 18 : 0);
+function columnBottomPad(itemCount: number, compact: boolean, hasAxisLabel: boolean, longestLabel = 0) {
+  const densityPad = itemCount >= 12 ? 132 : itemCount >= 9 ? 116 : itemCount >= 6 ? 100 : 84;
+  const labelPad = longestLabel >= 20 ? 26 : longestLabel >= 14 ? 18 : longestLabel >= 10 ? 10 : 0;
+  return densityPad + labelPad + (hasAxisLabel ? 18 : 0);
+}
+
+function isContinuousPreviewChartType(chartType: ChartType) {
+  return [
+    "line",
+    "area",
+    "line-bar",
+    "spline",
+    "area-spline",
+    "streamgraph",
+    "scatter",
+    "bubble",
+    "3d-scatter"
+  ].includes(chartType);
+}
+
+function comparePreviewCategory(left: string, right: string) {
+  const leftLabel = formatCategoryTickLabel(left);
+  const rightLabel = formatCategoryTickLabel(right);
+  const leftTime = Date.parse(left) || Date.parse(leftLabel);
+  const rightTime = Date.parse(right) || Date.parse(rightLabel);
+  if (Number.isFinite(leftTime) && Number.isFinite(rightTime)) {
+    return leftTime - rightTime;
+  }
+  const leftNumeric = Number(left);
+  const rightNumeric = Number(right);
+  if (Number.isFinite(leftNumeric) && Number.isFinite(rightNumeric)) {
+    return leftNumeric - rightNumeric;
+  }
+  return leftLabel.localeCompare(rightLabel, undefined, { numeric: true, sensitivity: "base" });
+}
+
+function sortPreviewItems(data: ChartDatum[], chartType: ChartType, sort: ChartSortMode) {
+  if (!data.length) return data;
+  const grouped = new Map<string, ChartDatum[]>();
+  data.forEach((datum) => {
+    const key = String(datum.rawLabel ?? datum.label ?? "");
+    grouped.set(key, [...(grouped.get(key) || []), datum]);
+  });
+  const entries = Array.from(grouped.entries());
+  if (isContinuousPreviewChartType(chartType)) {
+    const descending = sort === "label-desc";
+    entries.sort((left, right) => comparePreviewCategory(left[0], right[0]) * (descending ? -1 : 1));
+    return entries.flatMap(([, items]) => items);
+  }
+  if (sort === "label-asc") {
+    entries.sort((left, right) => comparePreviewCategory(left[0], right[0]));
+  } else if (sort === "label-desc") {
+    entries.sort((left, right) => comparePreviewCategory(right[0], left[0]));
+  } else {
+    entries.sort((left, right) => {
+      const leftValue = left[1]
+        .filter((item) => (item.axis || "primary") === "primary")
+        .reduce((sum, item) => sum + item.value, 0);
+      const rightValue = right[1]
+        .filter((item) => (item.axis || "primary") === "primary")
+        .reduce((sum, item) => sum + item.value, 0);
+      return sort === "value-asc" ? leftValue - rightValue : rightValue - leftValue;
+    });
+  }
+  return entries.flatMap(([, items]) => items);
+}
+
+function estimateCategorySlotWidth(longestLabel: number, compact: boolean) {
+  const base = compact ? 54 : 68;
+  const perCharacter = compact ? 7 : 8;
+  return Math.min(compact ? 160 : 196, Math.max(base, longestLabel * perCharacter));
+}
+
+function barValueLabelY(y: number) {
+  return Math.max(20, y - 12);
 }
 
 function renderAxisLegend(
@@ -349,6 +422,7 @@ export function ChartPreview({
   data,
   chartColors = CHART_COLORS,
   chartValueColors,
+  chartSort = "value-desc",
   chartOrientation = "vertical",
   title = "",
   decimalPlaces = 2,
@@ -359,6 +433,7 @@ export function ChartPreview({
   compact = false,
   showLegend = true,
   showValues = true,
+  viewportHeight = 0,
   getDatumHref,
   openLinksInNewTab = false
 }: ChartPreviewProps) {
@@ -371,7 +446,8 @@ export function ChartPreview({
     .filter((color) => /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(color));
   const palette = colors.length ? colors : CHART_COLORS;
 
-  const items = data;
+  const normalizedChartType = normalizeChartType(chartType, chartOrientation);
+  const items = sortPreviewItems(data, normalizedChartType, chartSort);
   const primaryItems = collapseChartData(items, "primary");
   const secondaryItems = collapseChartData(items, "secondary");
   const categories = deriveCategories(items.length ? items : primaryItems);
@@ -379,7 +455,6 @@ export function ChartPreview({
   const secondarySeries = deriveSeries(items, "secondary");
   const max = Math.max(...items.map((item) => item.value), 1);
   const total = primaryItems.reduce((sum, item) => sum + item.value, 0) || 1;
-  const normalizedChartType = normalizeChartType(chartType, chartOrientation);
   const smoothLine = chartType === "spline" || chartType === "area-spline";
   const streamgraph = chartType === "streamgraph";
   const threeDimensional = chartType.startsWith("3d-");
@@ -450,12 +525,16 @@ export function ChartPreview({
 
   if (normalizedChartType === "variwide-bar") {
     const { ticks, axisMax } = axisMaxFor(primaryItems.map((item) => item.value), compact);
-    const chartWidth = Math.max(compact ? 520 : 760, primaryItems.length * (compact ? 42 : 54));
-    const chartHeight = compact ? 236 : 348;
+    const longestCategoryLabel = primaryItems.reduce((maxLength, item, index) => {
+      const label = xTickLabel(item.label, index, primaryItems.length, compact);
+      return Math.max(maxLength, label.length);
+    }, 0);
+    const chartWidth = Math.max(compact ? 520 : 760, primaryItems.length * estimateCategorySlotWidth(longestCategoryLabel, compact));
+    const chartHeight = Math.max(compact ? 236 : 348, viewportHeight || 0);
     const leftPad = axisTickTextWidth(ticks, decimalPlaces, compact);
     const rightPad = 24;
-    const topPad = 24;
-    const bottomPad = columnBottomPad(primaryItems.length, compact, Boolean(xAxisLabel));
+    const topPad = showValues ? 54 : 24;
+    const bottomPad = columnBottomPad(primaryItems.length, compact, Boolean(xAxisLabel), longestCategoryLabel);
     const plotWidth = chartWidth - leftPad - rightPad;
     const plotHeight = chartHeight - topPad - bottomPad;
     const totalWidthWeight = primaryItems.reduce((sum, item) => sum + Math.max(item.value, 1), 0) || 1;
@@ -464,7 +543,12 @@ export function ChartPreview({
       <div className="axis-chart-shell">
         {renderTitle(title)}
         <div className="axis-svg-shell">
-          <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} preserveAspectRatio="none" className="bar-chart-svg">
+          <svg
+            viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+            preserveAspectRatio="xMinYMin meet"
+            className="bar-chart-svg"
+            style={{ width: `${chartWidth}px`, height: `${chartHeight}px` }}
+          >
             {ticks.map((tick) => {
               const y = topPad + plotHeight - (tick / axisMax) * plotHeight;
               return (
@@ -511,7 +595,7 @@ export function ChartPreview({
                     {xTickLabel(item.label, index, primaryItems.length, compact)}
                   </text>
                   {showValues ? (
-                    <text x={x + width / 2} y={Math.max(topPad + 12, y - 8)} textAnchor="middle" className="chart-svg-value">
+                    <text x={x + width / 2} y={barValueLabelY(y)} textAnchor="middle" className="chart-svg-value">
                       {formatAxisValue(item.value, decimalPlaces)}
                     </text>
                   ) : null}
@@ -541,12 +625,16 @@ export function ChartPreview({
     );
     const primaryMax = Math.max(...categorySums, ...primaryItems.map((item) => item.value), 1);
     const { ticks, axisMax } = axisMaxFor([primaryMax], compact);
-    const chartWidth = Math.max(compact ? 520 : 760, categories.length * (compact ? 48 : 62));
-    const chartHeight = compact ? 236 : 348;
+    const longestCategoryLabel = categories.reduce((maxLength, category, index) => {
+      const label = xTickLabel(category.label, index, categories.length, compact);
+      return Math.max(maxLength, label.length);
+    }, 0);
+    const chartWidth = Math.max(compact ? 520 : 760, categories.length * estimateCategorySlotWidth(longestCategoryLabel, compact));
+    const chartHeight = Math.max(compact ? 236 : 348, viewportHeight || 0);
     const leftPad = axisTickTextWidth(ticks, decimalPlaces, compact);
     const rightPad = 24;
-    const topPad = 24;
-    const bottomPad = columnBottomPad(categories.length, compact, Boolean(xAxisLabel));
+    const topPad = showValues ? 56 : 24;
+    const bottomPad = columnBottomPad(categories.length, compact, Boolean(xAxisLabel), longestCategoryLabel);
     const plotWidth = chartWidth - leftPad - rightPad;
     const plotHeight = chartHeight - topPad - bottomPad;
     const step = plotWidth / Math.max(categories.length, 1);
@@ -559,7 +647,12 @@ export function ChartPreview({
       <div className="axis-chart-shell">
         {renderTitle(title)}
         <div className="axis-svg-shell">
-          <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} preserveAspectRatio="none" className="bar-chart-svg">
+          <svg
+            viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+            preserveAspectRatio="xMinYMin meet"
+            className="bar-chart-svg"
+            style={{ width: `${chartWidth}px`, height: `${chartHeight}px` }}
+          >
             {ticks.map((tick) => {
               const y = topPad + plotHeight - (tick / axisMax) * plotHeight;
               return (
@@ -639,7 +732,7 @@ export function ChartPreview({
                           fillOpacity="0.9"
                         />
                         {showValues && value > 0 ? (
-                          <text x={x + barWidth / 2} y={Math.max(topPad + 12, y - 8)} textAnchor="middle" className="chart-svg-value">
+                          <text x={x + barWidth / 2} y={barValueLabelY(y)} textAnchor="middle" className="chart-svg-value">
                             {formatAxisValue(value, decimalPlaces)}
                           </text>
                         ) : null}
@@ -689,8 +782,12 @@ export function ChartPreview({
     const primaryMax = Math.max(...categorySums, ...primaryItems.map((item) => item.value), 1);
     const { ticks, axisMax } = axisMaxFor([primaryMax], compact);
     const chartWidth = Math.max(compact ? 540 : 760, categories.length * (compact ? 44 : 58));
-    const chartHeight = Math.max(compact ? 172 : 220, (compact ? 72 : 84) + categories.length * (compact ? 32 : 44));
-    const labelPad = Math.min(220, Math.max(132, categories.reduce((max, item) => Math.max(max, cap(item.label, compact ? 12 : 18).length), 1) * 8 + 36));
+    const longestCategoryLabel = categories.reduce((maxLength, item, index) => {
+      const label = xTickLabel(item.label, index, categories.length, compact);
+      return Math.max(maxLength, label.length);
+    }, 0);
+    const chartHeight = Math.max(compact ? 172 : 220, viewportHeight || 0, (compact ? 72 : 84) + categories.length * (compact ? 32 : 44));
+    const labelPad = Math.min(340, Math.max(160, longestCategoryLabel * (compact ? 7 : 8) + 36));
     const leftPad = labelPad + (yAxisLabel ? 26 : 0);
     const rightPad = showValues ? axisTickTextWidth([axisMax], decimalPlaces, compact) : 28;
     const topPad = 20;
@@ -707,7 +804,12 @@ export function ChartPreview({
       <div className="axis-chart-shell">
         {renderTitle(title)}
         <div className="axis-svg-shell">
-          <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} preserveAspectRatio="none" className="bar-chart-svg">
+          <svg
+            viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+            preserveAspectRatio="xMinYMin meet"
+            className="bar-chart-svg"
+            style={{ width: `${chartWidth}px`, height: `${chartHeight}px` }}
+          >
             {ticks.map((tick) => {
               const x = leftPad + (tick / axisMax) * plotWidth;
               return (
@@ -735,7 +837,7 @@ export function ChartPreview({
               let stackedWidth = 0;
               return (
                 <g key={category.rawLabel}>
-                  <text x={leftPad - 12} y={groupY + groupHeight / 2 + 4} textAnchor="end" className="chart-svg-label">{cap(category.label, compact ? 12 : 18)}</text>
+                  <text x={leftPad - 12} y={groupY + groupHeight / 2 + 4} textAnchor="end" className="chart-svg-label">{xTickLabel(category.label, categoryIndex, categories.length, compact)}</text>
                   {primarySeries.map((series, seriesIndex) => {
                     const datum = items.find((item) =>
                       String(item.rawLabel ?? item.label ?? "") === category.rawLabel &&
@@ -824,18 +926,22 @@ export function ChartPreview({
     const secondaryMax = Math.max(...secondaryItems.map((item) => item.value), 1);
     const { ticks, axisMax } = axisMaxFor([primaryMax], compact);
     const secondaryAxis = secondaryItems.length ? axisMaxFor([secondaryMax], compact) : null;
+    const longestCategoryLabel = categories.reduce((maxLength, category, index) => {
+      const label = xTickLabel(category.label, index, categories.length, compact);
+      return Math.max(maxLength, label.length);
+    }, 0);
     const yAxisWidth = axisTickTextWidth(ticks, decimalPlaces, compact);
     const secondaryAxisWidth = secondaryAxis ? axisTickTextWidth(secondaryAxis.ticks, decimalPlaces, compact) : 0;
-    const chartWidth = Math.max(compact ? 400 : 460, categories.length * (compact ? 42 : 56));
-    const chartHeight = compact ? 232 : 292;
+    const chartWidth = Math.max(compact ? 440 : 640, categories.length * estimateCategorySlotWidth(longestCategoryLabel, compact));
+    const chartHeight = Math.max(compact ? 260 : 332, viewportHeight || 0);
     const plotLeft = yAxisWidth + 18;
-    const plotRight = chartWidth - (secondaryAxis ? secondaryAxisWidth + 18 : 12);
-    const plotTop = compact ? 16 : 20;
-    const plotBottom = compact ? 150 : 186;
+    const plotRight = chartWidth - (secondaryAxis ? secondaryAxisWidth + 18 : 18);
+    const plotTop = showValues ? (compact ? 28 : 34) : (compact ? 18 : 22);
+    const plotBottom = chartHeight - columnBottomPad(categories.length, compact, Boolean(xAxisLabel), longestCategoryLabel);
     const plotWidth = plotRight - plotLeft;
     const plotHeight = plotBottom - plotTop;
-    const tickLabelY = compact ? 186 : 226;
-    const axisLabelY = compact ? 220 : 274;
+    const tickLabelY = plotBottom + 18;
+    const axisLabelY = chartHeight - 12;
     const axisLayoutColumns = `${yAxisLabel ? "auto " : ""}minmax(0, 1fr)${secondaryYAxisLabel ? " auto" : ""}`;
     const buildSeriesPoints = (seriesRaw: string, axis: "primary" | "secondary") => {
       const maxValue = axis === "secondary" && secondaryAxis ? secondaryAxis.axisMax : axisMax;
@@ -868,7 +974,7 @@ export function ChartPreview({
               <svg
                 viewBox={`0 0 ${chartWidth} ${chartHeight}`}
                 preserveAspectRatio="xMidYMid meet"
-                style={{ width: "100%", height: "auto", aspectRatio: `${chartWidth} / ${chartHeight}` }}
+                style={{ width: `${chartWidth}px`, height: `${chartHeight}px` }}
               >
                 {ticks.map((tick) => {
                   const y = plotBottom - (tick / axisMax) * plotHeight;

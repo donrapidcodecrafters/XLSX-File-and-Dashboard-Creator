@@ -607,7 +607,7 @@ export function ReportView({
                 <button className="ghost-button" onClick={() => setFocusedSection("chart")}>Focus chart</button>
               </div>
               <div className="chart-scroll-shell">
-                <div style={{ minWidth: `${chartBounds.minWidth}px`, minHeight: `${chartBounds.minHeight}px` }}>
+                <div style={{ minWidth: `${chartBounds.minWidth}px`, minHeight: `${chartBounds.minHeight}px`, width: "100%", height: "100%" }}>
                   <ChartPreview
                     chartType={report.view.chartType}
                     data={result?.chartData || []}
@@ -615,6 +615,7 @@ export function ReportView({
                     decimalPlaces={report.view.decimalPlaces}
                     chartColors={report.view.chartColors}
                     chartValueColors={report.view.chartValueColors}
+                    chartSort={report.view.chartSort}
                     chartOrientation={report.view.chartOrientation}
                     xAxisLabel={axisLabels.xAxisLabel}
                     yAxisLabel={axisLabels.yAxisLabel}
@@ -622,6 +623,7 @@ export function ReportView({
                     secondarySeriesType={report.view.chartSecondarySeriesType}
                     showLegend={report.view.chartShowLegend}
                     showValues={report.view.chartShowValues}
+                    viewportHeight={chartBounds.minHeight}
                     openLinksInNewTab={openLinksInNewTab}
                     getDatumHref={(datum) => buildQuickbaseChartDatumUrl(quickbaseLinkContext, table, chartFieldId, datum, quickbaseFilterTree)}
                   />
@@ -660,7 +662,7 @@ export function ReportView({
               <button className="ghost-button" onClick={() => setFocusedSection("")}>Close</button>
             </div>
             <div className="chart-scroll-shell">
-              <div style={{ minWidth: `${chartBounds.minWidth}px`, minHeight: `${chartBounds.minHeight}px` }}>
+              <div style={{ minWidth: `${chartBounds.minWidth}px`, minHeight: `${chartBounds.minHeight}px`, width: "100%", height: "100%" }}>
                 <ChartPreview
                   chartType={report.view.chartType}
                   data={result?.chartData || []}
@@ -668,6 +670,7 @@ export function ReportView({
                   decimalPlaces={report.view.decimalPlaces}
                   chartColors={report.view.chartColors}
                   chartValueColors={report.view.chartValueColors}
+                  chartSort={report.view.chartSort}
                   chartOrientation={report.view.chartOrientation}
                   xAxisLabel={axisLabels.xAxisLabel}
                   yAxisLabel={axisLabels.yAxisLabel}
@@ -675,6 +678,7 @@ export function ReportView({
                   secondarySeriesType={report.view.chartSecondarySeriesType}
                   showLegend={report.view.chartShowLegend}
                   showValues={report.view.chartShowValues}
+                  viewportHeight={chartBounds.minHeight}
                   openLinksInNewTab={openLinksInNewTab}
                   getDatumHref={(datum) => buildQuickbaseChartDatumUrl(quickbaseLinkContext, table, chartFieldId, datum, quickbaseFilterTree)}
                 />

@@ -308,29 +308,29 @@ export function chartColorKeyLabel(chartType: ChartType) {
   return chartSupportsSeries(chartType) ? "Series or category value" : "Category value";
 }
 
-export function getChartViewportBounds(chartType: ChartType, datumCount: number, compact = false) {
+export function getChartViewportBounds(chartType: ChartType, datumCount: number, compact = false, requestedHeight = 0) {
   const safeCount = Math.max(1, datumCount || 1);
   if (["pie", "donut", "3d-pie", "3d-donut", "gauge", "radial-bar", "progress-bar"].includes(chartType)) {
     return {
       minWidth: compact ? 340 : 420,
-      minHeight: compact ? 220 : 300
+      minHeight: Math.max(compact ? 220 : 300, requestedHeight || 0)
     };
   }
   if (["horizontal-bar", "horizontal-stacked-bar"].includes(chartType)) {
     return {
       minWidth: compact ? 540 : 760,
-      minHeight: Math.max(compact ? 220 : 280, safeCount * (compact ? 28 : 34))
+      minHeight: Math.max(compact ? 220 : 280, safeCount * (compact ? 28 : 34), requestedHeight || 0)
     };
   }
   if (["line", "line-bar", "area", "spline", "area-spline", "streamgraph", "scatter", "bubble", "radar", "3d-area", "3d-scatter"].includes(chartType)) {
     return {
       minWidth: Math.max(compact ? 420 : 640, safeCount * (compact ? 40 : 54)),
-      minHeight: compact ? 240 : 320
+      minHeight: Math.max(compact ? 280 : 360, requestedHeight || 0)
     };
   }
   return {
     minWidth: Math.max(compact ? 520 : 760, safeCount * (compact ? 42 : 58)),
-    minHeight: compact ? 240 : 320
+    minHeight: Math.max(compact ? 280 : 360, requestedHeight || 0)
   };
 }
 
