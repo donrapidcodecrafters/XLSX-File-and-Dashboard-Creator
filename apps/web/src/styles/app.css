@@ -3267,7 +3267,7 @@ th {
   padding: 18px;
   background: rgba(19, 30, 25, 0.34);
   backdrop-filter: blur(5px);
-  z-index: 40;
+  z-index: 120;
 }
 
 .studio-modal {
@@ -3330,7 +3330,7 @@ th {
   justify-items: end;
   background: rgba(19, 30, 25, 0.28);
   backdrop-filter: blur(4px);
-  z-index: 20;
+  z-index: 110;
 }
 
 .studio-drawer {
@@ -3351,7 +3351,7 @@ th {
   bottom: 16px;
   display: grid;
   gap: 10px;
-  z-index: 80;
+  z-index: 130;
 }
 
 .toast {
