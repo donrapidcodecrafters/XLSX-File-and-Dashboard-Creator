@@ -617,6 +617,19 @@ function ObjectPage({
     return <div className="empty-page">That report or dashboard is not available for this session.</div>;
   }
 
+  const dashboardPersonalOverride = object.type === "dashboard" && object.scope !== "personal"
+    ? getDashboardPersonalOverride(object.id, studioDocument)
+    : null;
+  const reportDefinitions = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.values(studioDocument?.bundle.objects || {})
+          .filter((item): item is ReportDefinition => item?.type === "report")
+          .map((report) => [report.id, report])
+      ),
+    [studioDocument]
+  );
+
   if (object.type === "report") {
     const table = resolveTableDefinition(tables, object.sourceTableId);
     const quickbaseLinkContext = getQuickbaseLinkContextForTable(table, studioDocument);
@@ -717,17 +730,6 @@ function ObjectPage({
     );
   }
 
-  const personalOverride = object.scope !== "personal" ? getDashboardPersonalOverride(object.id, studioDocument) : null;
-  const reportDefinitions = useMemo(
-    () =>
-      Object.fromEntries(
-        Object.values(studioDocument?.bundle.objects || {})
-          .filter((item): item is ReportDefinition => item?.type === "report")
-          .map((report) => [report.id, report])
-      ),
-    [studioDocument]
-  );
-
   return (
     <>
       {startingRefresh && !refreshJob ? (
@@ -749,10 +751,10 @@ function ObjectPage({
         getQuickbaseLinkContext={(tableId) => getQuickbaseLinkContextForTable(resolveTableDefinition(tables, tableId), studioDocument)}
         refreshNonce={refreshNonce}
         onRefresh={() => { void startObjectRefresh(); }}
-        initialRuntimeFilters={personalOverride?.runtimeFilters}
-        initialActiveTabId={personalOverride?.activeTabId}
-        initialFocusedWidgetId={personalOverride?.focusedWidgetId}
-        savedViews={personalOverride?.savedViews || []}
+        initialRuntimeFilters={dashboardPersonalOverride?.runtimeFilters}
+        initialActiveTabId={dashboardPersonalOverride?.activeTabId}
+        initialFocusedWidgetId={dashboardPersonalOverride?.focusedWidgetId}
+        savedViews={dashboardPersonalOverride?.savedViews || []}
         onSaveView={(view) => {
           if (object.scope === "personal" || !studioDocument) return;
           const nextPersonalOverrides: StudioDocument["personalOverrides"] = {
@@ -760,10 +762,10 @@ function ObjectPage({
             dashboards: {
               ...studioDocument.personalOverrides.dashboards,
               [object.id]: {
-                runtimeFilters: personalOverride?.runtimeFilters || {},
-                activeTabId: personalOverride?.activeTabId || "",
-                focusedWidgetId: personalOverride?.focusedWidgetId || "",
-                savedViews: [...(personalOverride?.savedViews || []), { ...view, updatedAt: new Date().toISOString() }],
+                runtimeFilters: dashboardPersonalOverride?.runtimeFilters || {},
+                activeTabId: dashboardPersonalOverride?.activeTabId || "",
+                focusedWidgetId: dashboardPersonalOverride?.focusedWidgetId || "",
+                savedViews: [...(dashboardPersonalOverride?.savedViews || []), { ...view, updatedAt: new Date().toISOString() }],
                 updatedAt: new Date().toISOString()
               }
             }
@@ -777,10 +779,10 @@ function ObjectPage({
             dashboards: {
               ...studioDocument.personalOverrides.dashboards,
               [object.id]: {
-                runtimeFilters: personalOverride?.runtimeFilters || {},
-                activeTabId: personalOverride?.activeTabId || "",
-                focusedWidgetId: personalOverride?.focusedWidgetId || "",
-                savedViews: (personalOverride?.savedViews || []).filter((view) => view.id !== viewId),
+                runtimeFilters: dashboardPersonalOverride?.runtimeFilters || {},
+                activeTabId: dashboardPersonalOverride?.activeTabId || "",
+                focusedWidgetId: dashboardPersonalOverride?.focusedWidgetId || "",
+                savedViews: (dashboardPersonalOverride?.savedViews || []).filter((view) => view.id !== viewId),
                 updatedAt: new Date().toISOString()
               }
             }
@@ -795,9 +797,9 @@ function ObjectPage({
           const currentActiveTabId = state.activeTabId || "";
           const currentFocusedWidgetId = state.focusedWidgetId || "";
           if (
-            JSON.stringify(personalOverride?.runtimeFilters || {}) === JSON.stringify(currentRuntimeFilters)
-            && (personalOverride?.activeTabId || "") === currentActiveTabId
-            && (personalOverride?.focusedWidgetId || "") === currentFocusedWidgetId
+            JSON.stringify(dashboardPersonalOverride?.runtimeFilters || {}) === JSON.stringify(currentRuntimeFilters)
+            && (dashboardPersonalOverride?.activeTabId || "") === currentActiveTabId
+            && (dashboardPersonalOverride?.focusedWidgetId || "") === currentFocusedWidgetId
           ) {
             return;
           }
@@ -809,7 +811,7 @@ function ObjectPage({
                 runtimeFilters: currentRuntimeFilters,
                 activeTabId: currentActiveTabId,
                 focusedWidgetId: currentFocusedWidgetId,
-                savedViews: personalOverride?.savedViews || [],
+                savedViews: dashboardPersonalOverride?.savedViews || [],
                 updatedAt: new Date().toISOString()
               }
             }
