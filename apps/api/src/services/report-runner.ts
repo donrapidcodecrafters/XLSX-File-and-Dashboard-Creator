@@ -15,6 +15,7 @@ import {
   type DashboardDefinition,
   type DashboardRunResult,
   type DataRow,
+  type FieldType,
   type FilterDefinition,
   type FilterGroupDefinition,
   type DataFreshnessInfo,
@@ -130,6 +131,69 @@ function normalizeChartGroupValue(value: unknown): string {
     return normalized.join(", ");
   }
   return String(value ?? "").trim();
+}
+
+function inferFieldType(value: unknown): FieldType {
+  if (Array.isArray(value)) return "multiselect";
+  if (value === null || value === undefined || value === "") return "text";
+  if (typeof value === "number") return "number";
+  const text = String(value).trim();
+  if (!text) return "text";
+  if (Number.isFinite(Number(text))) {
+    return text.includes(".") || text.includes(",") || text.startsWith("$") ? "currency" : "number";
+  }
+  const date = new Date(text);
+  if (!Number.isNaN(date.getTime())) {
+    return /t/i.test(text) || /\d:\d/.test(text) ? "datetime" : "date";
+  }
+  return "text";
+}
+
+function inferFieldTypeFromRows(fieldId: string, rows: DataRow[]): FieldType {
+  for (const row of rows) {
+    const value = row[fieldId];
+    if (value === null || value === undefined || value === "") continue;
+    return inferFieldType(value);
+  }
+  return "text";
+}
+
+function buildSyntheticTableForReport(report: ReportDefinition, requiredFieldIds: string[] = []): TableDefinition | null {
+  const rows = objectStore.getRows(report.sourceTableId);
+  const cacheMeta = studioStore.getCacheMeta(report.sourceTableId);
+  if (!rows.length && !cacheMeta) return null;
+  const fieldIds = Array.from(new Set([
+    ...collectReportFieldIds(report, requiredFieldIds.map((fieldId) => ({
+      id: `synthetic-${fieldId}`,
+      fieldId,
+      operator: "equals",
+      value: ""
+    }))),
+    ...requiredFieldIds
+  ].filter(Boolean).map(String)));
+  return {
+    id: report.sourceTableId,
+    quickbaseTableId: report.sourceTableId,
+    name: report.sourceTableId,
+    description: "Synthesized source table definition",
+    fields: fieldIds.map((fieldId) => ({
+      id: fieldId,
+      label: report.displayLabels?.fields?.[fieldId]?.trim() || fieldId,
+      type: inferFieldTypeFromRows(fieldId, rows)
+    }))
+  };
+}
+
+function resolveExecutionTableSync(report: ReportDefinition, requiredFieldIds: string[] = []): TableDefinition | null {
+  return objectStore.getTable(report.sourceTableId) || buildSyntheticTableForReport(report, requiredFieldIds);
+}
+
+async function resolveExecutionTable(report: ReportDefinition, extraFilters: FilterDefinition[] = []): Promise<TableDefinition | null> {
+  const requiredFieldIds = collectReportFieldIds(report, extraFilters);
+  const existing = resolveExecutionTableSync(report, requiredFieldIds);
+  if (existing) return existing;
+  await studioStore.hydrateFromQuickbase();
+  return resolveExecutionTableSync(report, requiredFieldIds);
 }
 
 function collectReportFieldIds(report: ReportDefinition, extraFilters: FilterDefinition[] = []) {
@@ -939,7 +1003,7 @@ async function executeQuickbaseReportPage(
 }
 
 export async function executeReportPage(report: ReportDefinition, extraFilters: FilterDefinition[] = [], options: ExecuteReportOptions = {}): Promise<ReportRunResult> {
-  const table = objectStore.getTable(report.sourceTableId);
+  const table = await resolveExecutionTable(report, extraFilters);
   if (!table) {
     throw new Error("Table not found for report " + report.id + ".");
   }
@@ -970,7 +1034,7 @@ export async function executeReportPage(report: ReportDefinition, extraFilters: 
 }
 
 export async function fetchReportPage(report: ReportDefinition, extraFilters: FilterDefinition[] = [], options: ExecuteReportOptions = {}): Promise<ReportRunResult> {
-  const table = objectStore.getTable(report.sourceTableId);
+  const table = await resolveExecutionTable(report, extraFilters);
   if (!table) {
     throw new Error("Table not found for report " + report.id + ".");
   }
@@ -1005,7 +1069,7 @@ export async function fetchReportExportBundle(
   onProgress?: ExportProgressCallback,
   options: ExecuteReportOptions = {}
 ): Promise<ReportRunResult> {
-  const table = objectStore.getTable(report.sourceTableId);
+  const table = await resolveExecutionTable(report, extraFilters);
   if (!table) {
     throw new Error("Table not found for report " + report.id + ".");
   }
@@ -1082,7 +1146,7 @@ export async function fetchAllReportRowsForExport(report: ReportDefinition, extr
 }
 
 export async function executeReport(report: ReportDefinition, extraFilters: FilterDefinition[] = [], options: ExecuteReportOptions = {}): Promise<ReportRunResult> {
-  const table = objectStore.getTable(report.sourceTableId);
+  const table = await resolveExecutionTable(report, extraFilters);
   if (!table) {
     throw new Error("Table not found for report " + report.id + ".");
   }
@@ -1158,7 +1222,7 @@ function buildDashboardCacheKey(
             missingReport: true
           };
         }
-        const table = objectStore.getTable(report.sourceTableId);
+        const table = resolveExecutionTableSync(report);
         return {
           tabId: tab.id,
           widgetId: widget.id,
