@@ -392,13 +392,13 @@ export function StudioSettingsPanel({
           <div className="micro">Every selected table needs a report ID.</div>
         </div>
         <div className="studio-actions">
-          <button onClick={reloadRemote} disabled={savingRemote || refreshingCache}>
+          <button type="button" onClick={() => { void reloadRemote(); }} disabled={savingRemote || refreshingCache}>
             Load all settings
           </button>
-          <button onClick={saveRemote} disabled={savingRemote || refreshingCache}>
+          <button type="button" onClick={() => { void saveRemote(); }} disabled={savingRemote || refreshingCache}>
             {savingRemote ? "Saving all settings…" : "Save all settings"}
           </button>
-          <button onClick={() => { void refreshAllNow(); }} disabled={refreshingCache}>
+          <button type="button" onClick={() => { void refreshAllNow(); }} disabled={refreshingCache}>
             {refreshingCache ? "Refreshing all reports…" : "Refresh all now"}
           </button>
         </div>
@@ -520,8 +520,8 @@ export function StudioSettingsPanel({
         <button type="button" onClick={() => setActiveStep(settingsSteps[Math.min(settingsSteps.length - 1, activeStepIndex + 1)].id)} disabled={activeStepIndex >= settingsSteps.length - 1}>Next</button>
       </div>
       <div className="studio-actions">
-        <button onClick={reloadRemote}>Load all settings from server</button>
-        <button onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save all settings to Quickbase and server"}</button>
+        <button type="button" onClick={() => { void reloadRemote(); }}>Load all settings from server</button>
+        <button type="button" onClick={() => { void saveRemote(); }} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save all settings to Quickbase and server"}</button>
       </div>
     </div>
   );
