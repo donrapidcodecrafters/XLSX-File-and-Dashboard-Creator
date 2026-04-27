@@ -949,6 +949,12 @@ export function DashboardView({
               );
             })}
             {loading && !activeTab.widgets.length ? <div className="empty">Rendering dashboard…</div> : null}
+            {!loading && !tabErrors[activeTab.id] && !activeTab.widgets.length ? (
+              <div className="sync-status sync-status-warn">
+                <strong>No cards are visible on this tab</strong>
+                <span>This tab finished loading but did not return any widget content. Open the dashboard in the building area and confirm the tab still has linked cards.</span>
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}

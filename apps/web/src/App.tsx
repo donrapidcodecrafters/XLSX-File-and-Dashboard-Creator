@@ -415,6 +415,7 @@ function ObjectPage({
   const params = useParams();
   const [object, setObject] = useState<StudioObject | null>(null);
   const [result, setResult] = useState<any>(null);
+  const [resultError, setResultError] = useState("");
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [refreshNonce, setRefreshNonce] = useState(0);
@@ -440,9 +441,12 @@ function ObjectPage({
   async function reloadObject(targetObjectId = params.objectId) {
     if (!targetObjectId) return;
     setLoading(true);
+    setResultError("");
     try {
       const response = await fetchObject(targetObjectId);
       setObject(response.object);
+    } catch (error) {
+      setResultError(error instanceof Error ? error.message : "That report or dashboard could not be loaded.");
     } finally {
       setLoading(false);
     }
@@ -459,6 +463,7 @@ function ObjectPage({
       setObject(scopedObjectFromDocument);
       if (!isSameObject) {
         setResult(null);
+        setResultError("");
         setRefreshNonce(0);
         setRefreshJob(null);
         onObjectViewed(scopedObjectFromDocument.id);
@@ -470,6 +475,7 @@ function ObjectPage({
     setLoading(true);
     setRefreshNonce(0);
     setRefreshJob(null);
+    setResultError("");
     fetchObject(params.objectId)
       .then((response) => {
         if (!active) return;
@@ -481,8 +487,13 @@ function ObjectPage({
         setObject(response.object);
         if (!isSameObject) {
           setResult(null);
+          setResultError("");
           onObjectViewed(response.object.id);
         }
+      })
+      .catch((error) => {
+        if (!active) return;
+        setResultError(error instanceof Error ? error.message : "That report or dashboard could not be loaded.");
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -511,12 +522,14 @@ function ObjectPage({
     if (!object || object.type !== "report") return;
     let active = true;
     setLoading(true);
+    setResultError("");
     const fetcher = page === 1
       ? runReport(object.id, [], { forceLive: liveModeEnabled, report: object })
       : runReportPage(object.id, page, pageSize, [], { forceLive: liveModeEnabled, report: object });
     fetcher
       .then((reportResult) => {
         if (!active) return;
+        setResultError("");
         setRefreshJob(reportResult.refreshJob || null);
         setResult((current: any) => page === 1 || !current
           ? reportResult
@@ -529,6 +542,10 @@ function ObjectPage({
               totalPages: reportResult.totalPages,
               hasNextPage: reportResult.hasNextPage
             });
+      })
+      .catch((error) => {
+        if (!active) return;
+        setResultError(error instanceof Error ? error.message : "Report results could not be loaded.");
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -602,6 +619,7 @@ function ObjectPage({
           table={table}
           quickbaseLinkContext={quickbaseLinkContext}
           result={result}
+          loadError={resultError}
           loading={loading}
           currentPage={page}
           onPageChange={setPage}

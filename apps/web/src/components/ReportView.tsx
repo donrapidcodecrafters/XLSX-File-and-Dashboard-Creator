@@ -15,6 +15,7 @@ interface ReportViewProps {
   table?: TableDefinition;
   quickbaseLinkContext?: QuickbaseTableLinkContext | null;
   result?: ReportRunResult;
+  loadError?: string;
   loading: boolean;
   currentPage: number;
   onPageChange: (page: number) => void;
@@ -160,6 +161,7 @@ export function ReportView({
   table,
   quickbaseLinkContext = null,
   result,
+  loadError = "",
   loading,
   currentPage,
   onPageChange,
@@ -319,9 +321,15 @@ export function ReportView({
   }
 
   const resolvedFocusMode = normalizeReportFocusMode(report, focusMode, { summaryAvailable, chartAvailable, detailsAvailable });
-  const showSummary = summaryAvailable && (resolvedFocusMode === "default" || resolvedFocusMode === "summary");
-  const showChart = chartAvailable && (resolvedFocusMode === "default" || resolvedFocusMode === "chart");
-  const showDetails = detailsAvailable && (resolvedFocusMode === "default" || resolvedFocusMode === "details");
+  const configuredShowSummary = summaryAvailable && (resolvedFocusMode === "default" || resolvedFocusMode === "summary");
+  const configuredShowChart = chartAvailable && (resolvedFocusMode === "default" || resolvedFocusMode === "chart");
+  const configuredShowDetails = detailsAvailable && (resolvedFocusMode === "default" || resolvedFocusMode === "details");
+  const hasConfiguredVisibleSection = configuredShowSummary || configuredShowChart || configuredShowDetails;
+  const showSummary = configuredShowSummary || (!hasConfiguredVisibleSection && Boolean(result?.summary?.length));
+  const showChart = configuredShowChart || (!hasConfiguredVisibleSection && !showSummary && Boolean(result?.chartData?.length));
+  const showDetails = configuredShowDetails || (!hasConfiguredVisibleSection && !showSummary && !showChart && (
+    Boolean(result?.rows?.length) || Number(result?.totalRows || 0) > 0
+  ));
 
   function resetView() {
     onPageChange(1);
@@ -584,6 +592,13 @@ export function ReportView({
         </div>
       ) : null}
 
+      {!loading && !result ? (
+        <div className="sync-status sync-status-warn">
+          <strong>Report results unavailable</strong>
+          <span>{loadError || "This report did not return results. Try `Refresh now`, then reopen the report."}</span>
+        </div>
+      ) : null}
+
       {showSummary ? (
         <div className="summary-grid">
           {(result?.summary || []).map((item) => (
@@ -653,6 +668,13 @@ export function ReportView({
           ) : (
             renderDetailContent()
           )}
+        </div>
+      ) : null}
+
+      {!loading && result && !showSummary && !showChart && !showDetails ? (
+        <div className="sync-status sync-status-warn">
+          <strong>No visible report sections</strong>
+          <span>This report has data, but summary, chart, and detail sections are all hidden in the current configuration.</span>
         </div>
       ) : null}
 
