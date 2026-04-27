@@ -94,6 +94,7 @@ import {
 } from "../lib/studioApi";
 import { createExportSaveTarget, downloadExportJob, fetchExportJobStatus, fetchExportJobs, startDashboardExportJob, startReportExportJob } from "../lib/api";
 import { applyLaunchScopeToDocument } from "../lib/catalog";
+import { buildDashboardExportDefinition } from "../lib/dashboardExport";
 import { buildHostedHashUrl, buildHostedRoute } from "../lib/embed";
 import { ChartPreview } from "./ChartPreview";
 import { RefreshOverlay } from "./RefreshOverlay";
@@ -1921,7 +1922,14 @@ export function StudioPage({
     const runtimeFilters = options?.runtimeFilters || {};
     const response = await startDashboardExportJob({
       dashboardId: object.id,
-      dashboard: object,
+      dashboard: buildDashboardExportDefinition(
+        object,
+        Object.fromEntries(
+          Object.values(bundle.objects)
+            .filter((item): item is ReportDefinition => item.type === "report")
+            .map((report) => [report.id, report])
+        )
+      ),
       runtimeFilters
     });
     const jobEntry: StudioExportJob = {

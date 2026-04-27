@@ -1,17 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { buildDashboardFilters, formatReportCellValue, getDashboardWidgetLayoutStyle, getDashboardWidgetPlacements, getReportFieldLabel, resolveActiveDashboardTabId, type DashboardDefinition, type DashboardRunResult, type ExportJobStatus, type RefreshJobStatus, type ReportRunResult, type TableDefinition } from "@studio/shared";
+import { buildDashboardFilters, formatReportCellValue, getDashboardWidgetLayoutStyle, getDashboardWidgetPlacements, getReportFieldLabel, resolveActiveDashboardTabId, type DashboardDefinition, type DashboardRunResult, type ExportJobStatus, type RefreshJobStatus, type ReportDefinition, type ReportRunResult, type TableDefinition } from "@studio/shared";
 import { createExportSaveTarget, downloadExportJob, fetchExportJobStatus, renderDashboard, runReportPage, startDashboardExportJob, type ExportSaveTarget } from "../lib/api";
 import { LinkToolbar } from "./LinkToolbar";
 import { ChartPreview } from "./ChartPreview";
 import { RefreshOverlay } from "./RefreshOverlay";
 import { ResizableDataTable } from "./ResizableDataTable";
 import { buildHostedRoute, buildObjectUrl, getHostedContext } from "../lib/embed";
+import { buildDashboardExportDefinition } from "../lib/dashboardExport";
 import { buildQuickbaseChartDatumUrl, buildQuickbaseRecordEditUrl, buildQuickbaseReportFilterTree, type QuickbaseTableLinkContext } from "../lib/quickbaseLinks";
 import { getChartViewportBounds } from "./studioReportUtils";
 
 interface DashboardViewProps {
   dashboard: DashboardDefinition;
+  reportDefinitions?: Record<string, ReportDefinition>;
   tables?: TableDefinition[];
   getQuickbaseLinkContext?: (tableId: string) => QuickbaseTableLinkContext | null;
   refreshNonce?: number;
@@ -178,6 +180,7 @@ function buildExportFilename(name: string) {
 
 export function DashboardView({
   dashboard,
+  reportDefinitions,
   tables,
   getQuickbaseLinkContext,
   refreshNonce = 0,
@@ -237,6 +240,10 @@ export function DashboardView({
   const loading = Boolean(tabLoading[resolvedActiveTabId]);
   const shouldPreloadRemainingTabs = false;
   const runtimeFiltersKey = useMemo(() => JSON.stringify(runtimeFilters), [runtimeFilters]);
+  const exportDashboard = useMemo(
+    () => buildDashboardExportDefinition(dashboard, reportDefinitions),
+    [dashboard, reportDefinitions]
+  );
 
   useEffect(() => {
     skipStateBroadcastRef.current = true;
@@ -452,7 +459,7 @@ export function DashboardView({
   }
 
   async function beginExportInPlace() {
-    const response = await startDashboardExportJob({ dashboardId: dashboard.id, dashboard, runtimeFilters });
+    const response = await startDashboardExportJob({ dashboardId: dashboard.id, dashboard: exportDashboard, runtimeFilters });
     setExportJob(response.job);
     setDownloadedJobId("");
   }

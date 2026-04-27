@@ -676,6 +676,15 @@ function ObjectPage({
   }
 
   const personalOverride = object.scope !== "personal" ? getDashboardPersonalOverride(object.id, studioDocument) : null;
+  const reportDefinitions = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.values(studioDocument?.bundle.objects || {})
+          .filter((item): item is ReportDefinition => item?.type === "report")
+          .map((report) => [report.id, report])
+      ),
+    [studioDocument]
+  );
 
   return (
     <>
@@ -693,6 +702,7 @@ function ObjectPage({
       ) : null}
       <DashboardView
         dashboard={object}
+        reportDefinitions={reportDefinitions}
         tables={tables}
         getQuickbaseLinkContext={(tableId) => getQuickbaseLinkContextForTable(resolveTableDefinition(tables, tableId), studioDocument)}
         refreshNonce={refreshNonce}
