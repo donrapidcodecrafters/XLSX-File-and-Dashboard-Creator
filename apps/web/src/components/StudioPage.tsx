@@ -4420,7 +4420,9 @@ export function StudioPage({
     </div>
   ) : null;
 
-  const objectActionDock = hasActiveObject ? (
+  const overlayOpen = importReviewModalOpen || runtimeFilterModalOpen || createModalOpen || Boolean(drawer);
+
+  const objectActionDock = hasActiveObject && !overlayOpen ? (
     <div className="studio-builder-dock" role="region" aria-label="Building actions">
       <div className="studio-builder-dock-inner">
         <Link className="ghost-button" to={buildHostedRoute("/studio")}>Back to Building home</Link>

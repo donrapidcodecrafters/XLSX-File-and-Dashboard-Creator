@@ -9,6 +9,7 @@ import type {
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "http://localhost:3001").replace(/\/$/, "");
 const REQUEST_TIMEOUT_MS = 20_000;
+const REPORT_RUN_TIMEOUT_MS = 120_000;
 const DASHBOARD_RENDER_TIMEOUT_MS = 120_000;
 
 export interface ExportSaveTarget {
@@ -158,7 +159,8 @@ export function runReport(
       pageSize: 100,
       forceLive: options.forceLive === true,
       report: options.report
-    })
+    }),
+    timeoutMs: REPORT_RUN_TIMEOUT_MS
   });
 }
 
@@ -177,7 +179,8 @@ export function runReportPage(
       pageSize,
       forceLive: options.forceLive === true,
       report: options.report
-    })
+    }),
+    timeoutMs: REPORT_RUN_TIMEOUT_MS
   });
 }
 
@@ -187,7 +190,8 @@ export function fetchReportExportBundle(
 ) {
   return request<{ result: ReportRunResult }>("/api/reports/" + encodeURIComponent(id) + "/export-bundle", {
     method: "POST",
-    body: JSON.stringify({ filters })
+    body: JSON.stringify({ filters }),
+    timeoutMs: REPORT_RUN_TIMEOUT_MS
   });
 }
 
