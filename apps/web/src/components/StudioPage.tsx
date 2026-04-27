@@ -1967,7 +1967,9 @@ export function StudioPage({
       .replace(/[\\/:*?"<>|]+/g, " ")
       .replace(/\s+/g, " ")
       .trim();
-    return `${safe || "export"}.${format}`;
+    const now = new Date();
+    const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}_${String(now.getHours()).padStart(2, "0")}-${String(now.getMinutes()).padStart(2, "0")}-${String(now.getSeconds()).padStart(2, "0")}`;
+    return `${safe || "export"} ${timestamp}.${format}`;
   }
 
   async function saveExportJobToMachine(job: StudioExportJob) {

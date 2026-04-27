@@ -57,6 +57,16 @@ function safeFileName(name: string, fallback: string) {
   return next || fallback;
 }
 
+function buildFileTimestamp(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const seconds = String(date.getSeconds()).padStart(2, "0");
+  return `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`;
+}
+
 function sheetHyperlink(sheetName: string) {
   return `#'${sheetName.replace(/'/g, "''")}'!A1`;
 }
@@ -599,23 +609,56 @@ function getChartImageSizing(report: ReportDefinition, chartData: ChartDatum[]) 
   const horizontal = report.view.chartType === "horizontal-bar"
     || report.view.chartType === "horizontal-stacked-bar"
     || (report.view.chartType === "bar" && report.view.chartOrientation === "horizontal");
-  if (horizontal) {
-    const renderWidth = clamp(1700 + Math.max(0, maxLabelLength - 14) * 14, 1700, 3200);
-    const renderHeight = clamp(760 + count * 34, 760, 3600);
+  const circular = ["pie", "donut", "3d-pie", "3d-donut", "gauge", "radial-bar", "progress-bar"].includes(report.view.chartType);
+  if (circular) {
+    const renderWidth = clamp(1800 + Math.max(0, count - 8) * 44 + Math.max(0, maxLabelLength - 10) * 18, 1800, 3200);
+    const renderHeight = clamp(1300 + Math.max(0, count - 8) * 28, 1300, 2600);
     return {
       renderWidth,
       renderHeight,
-      embedWidth: clamp(Math.round(renderWidth * 0.82), 1100, 2200),
-      embedHeight: clamp(Math.round(renderHeight * 0.74), 580, 2600)
+      embedWidth: clamp(Math.round(renderWidth * 0.8), 1300, 2400),
+      embedHeight: clamp(Math.round(renderHeight * 0.8), 960, 1900)
     };
   }
-  const renderWidth = clamp(1500 + count * 80 + Math.max(0, maxLabelLength - 10) * 24, 1500, 4200);
-  const renderHeight = clamp(920 + Math.max(0, maxLabelLength - 16) * 16, 920, 2200);
+  if (horizontal) {
+    const renderWidth = clamp(2200 + Math.max(0, maxLabelLength - 14) * 18, 2200, 4000);
+    const renderHeight = clamp(980 + count * 40, 980, 4200);
+    return {
+      renderWidth,
+      renderHeight,
+      embedWidth: clamp(Math.round(renderWidth * 0.84), 1500, 3000),
+      embedHeight: clamp(Math.round(renderHeight * 0.78), 760, 3200)
+    };
+  }
+  const renderWidth = clamp(2200 + count * 96 + Math.max(0, maxLabelLength - 10) * 34, 2200, 5000);
+  const renderHeight = clamp(1400 + Math.max(0, maxLabelLength - 16) * 22, 1400, 3000);
   return {
     renderWidth,
     renderHeight,
-    embedWidth: clamp(Math.round(renderWidth * 0.8), 1100, 2600),
-    embedHeight: clamp(Math.round(renderHeight * 0.78), 640, 1600)
+    embedWidth: clamp(Math.round(renderWidth * 0.84), 1500, 3400),
+    embedHeight: clamp(Math.round(renderHeight * 0.82), 980, 2400)
+  };
+}
+
+async function fetchChartImage(config: unknown, sizing: ReturnType<typeof getChartImageSizing>) {
+  const response = await fetch("https://quickchart.io/chart", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      width: sizing.renderWidth,
+      height: sizing.renderHeight,
+      backgroundColor: "white",
+      devicePixelRatio: 3,
+      format: "png",
+      version: "4",
+      chart: config
+    })
+  });
+  if (!response.ok) return null;
+  return {
+    base64: Buffer.from(await response.arrayBuffer()).toString("base64"),
+    width: sizing.embedWidth,
+    height: sizing.embedHeight
   };
 }
 
@@ -635,15 +678,23 @@ async function renderChartImage(report: ReportDefinition, subtitle: string, char
       ? {
         x: {
           type: "linear" as const,
+          ticks: {
+            font: { size: 16, weight: "600" as const }
+          },
           title: {
             display: Boolean(report.view.chartXAxisLabel),
-            text: report.view.chartXAxisLabel
+            text: report.view.chartXAxisLabel,
+            font: { size: 18, weight: "700" as const }
           }
         },
         y: {
+          ticks: {
+            font: { size: 16, weight: "600" as const }
+          },
           title: {
             display: Boolean(report.view.chartYAxisLabel),
-            text: report.view.chartYAxisLabel
+            text: report.view.chartYAxisLabel,
+            font: { size: 18, weight: "700" as const }
           }
         }
       }
@@ -652,28 +703,38 @@ async function renderChartImage(report: ReportDefinition, subtitle: string, char
           ticks: {
             autoSkip: false,
             maxRotation: horizontal ? 0 : 60,
-            minRotation: horizontal ? 0 : 45
+            minRotation: horizontal ? 0 : 45,
+            font: { size: horizontal ? 16 : 15, weight: "600" as const }
           },
           stacked: builtChart.stacked,
           title: {
             display: Boolean(horizontal ? report.view.chartYAxisLabel : report.view.chartXAxisLabel),
-            text: horizontal ? report.view.chartYAxisLabel : report.view.chartXAxisLabel
+            text: horizontal ? report.view.chartYAxisLabel : report.view.chartXAxisLabel,
+            font: { size: 18, weight: "700" as const }
           }
         },
         [valueAxisKey]: {
+          ticks: {
+            font: { size: 16, weight: "600" as const }
+          },
           stacked: builtChart.stacked,
           title: {
             display: Boolean(horizontal ? report.view.chartXAxisLabel : report.view.chartYAxisLabel),
-            text: horizontal ? report.view.chartXAxisLabel : report.view.chartYAxisLabel
+            text: horizontal ? report.view.chartXAxisLabel : report.view.chartYAxisLabel,
+            font: { size: 18, weight: "700" as const }
           }
         },
         ...(builtChart.hasSecondaryAxis ? {
           [secondaryValueAxisKey]: {
             position: horizontal ? "top" as const : "right" as const,
             grid: { drawOnChartArea: false },
+            ticks: {
+              font: { size: 16, weight: "600" as const }
+            },
             title: {
               display: Boolean(report.view.chartSecondaryYAxisLabel),
-              text: report.view.chartSecondaryYAxisLabel
+              text: report.view.chartSecondaryYAxisLabel,
+              font: { size: 18, weight: "700" as const }
             }
           }
         } : {})
@@ -683,14 +744,15 @@ async function renderChartImage(report: ReportDefinition, subtitle: string, char
     data: builtChart.data,
     options: {
       responsive: false,
+      maintainAspectRatio: false,
       animation: false,
       indexAxis: horizontal ? ("y" as const) : ("x" as const),
       layout: {
         padding: {
-          bottom: horizontal ? 18 : Math.min(220, 42 + Math.max(0, Math.max(...chartData.map((item) => String(item.label || "").length), 0) - 10) * 8),
-          left: horizontal ? Math.min(260, 70 + Math.max(...chartData.map((item) => String(item.label || "").length), 0) * 5) : 28,
-          right: 24,
-          top: 24
+          bottom: horizontal ? 36 : Math.min(320, 82 + Math.max(0, Math.max(...chartData.map((item) => String(item.label || "").length), 0) - 10) * 12),
+          left: horizontal ? Math.min(360, 120 + Math.max(...chartData.map((item) => String(item.label || "").length), 0) * 7) : 42,
+          right: 42,
+          top: 36
         }
       },
       plugins: {
@@ -698,44 +760,66 @@ async function renderChartImage(report: ReportDefinition, subtitle: string, char
           display: report.view.chartShowLegend !== false,
           position: "bottom" as const,
           labels: {
-            boxWidth: 18,
-            padding: 16,
-            font: { size: 13 }
+            boxWidth: 22,
+            boxHeight: 22,
+            padding: 22,
+            font: { size: 18, weight: "600" as const }
           }
         },
         title: {
           display: true,
           text: report.view.chartTitle || report.name,
-          font: { size: 22, weight: "600" as const }
+          font: { size: 30, weight: "700" as const },
+          padding: { bottom: 12 }
         },
         subtitle: {
           display: true,
           text: subtitle,
-          font: { size: 14 }
+          font: { size: 18 },
+          padding: { bottom: 18 }
         }
       },
       scales
     }
   };
-  const response = await fetch("https://quickchart.io/chart", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      width: sizing.renderWidth,
-      height: sizing.renderHeight,
-      backgroundColor: "white",
-      devicePixelRatio: 2,
-      format: "png",
-      version: "4",
-      chart: config
-    })
-  });
-  if (!response.ok) return null;
-  return {
-    base64: Buffer.from(await response.arrayBuffer()).toString("base64"),
-    width: sizing.embedWidth,
-    height: sizing.embedHeight
+  const primary = await fetchChartImage(config, sizing);
+  if (primary) return primary;
+  const fallbackConfig = {
+    type: chartType,
+    data: builtChart.data,
+    options: {
+      responsive: false,
+      maintainAspectRatio: false,
+      animation: false,
+      indexAxis: horizontal ? ("y" as const) : ("x" as const),
+      layout: {
+        padding: {
+          top: 28,
+          right: 28,
+          bottom: horizontal ? 30 : 96,
+          left: horizontal ? 140 : 30
+        }
+      },
+      plugins: {
+        legend: {
+          display: true,
+          position: "bottom" as const,
+          labels: {
+            boxWidth: 20,
+            padding: 18,
+            font: { size: 16, weight: "600" as const }
+          }
+        },
+        title: {
+          display: true,
+          text: report.view.chartTitle || report.name,
+          font: { size: 24, weight: "700" as const }
+        }
+      },
+      scales
+    }
   };
+  return fetchChartImage(fallbackConfig, sizing);
 }
 
 async function addChartImage(
@@ -973,11 +1057,11 @@ async function writeDashboardTabSheet(
         sheet.addImage(imageId, {
           tl: { col: startCol - 1 + 0.1, row: contentRow - 1 + 0.1 },
           ext: {
-            width: Math.max(Math.max(260, (endCol - startCol + 1) * 90), Math.min(image.width, (endCol - startCol + 1) * 150)),
-            height: Math.max(220, Math.min(image.height, 520))
+            width: Math.max(Math.max(420, (endCol - startCol + 1) * 124), Math.min(image.width, (endCol - startCol + 1) * 220)),
+            height: Math.max(340, Math.min(image.height, 860))
           }
         });
-        contentRow += 12;
+        contentRow += 18;
       }
     }
     if (widgetShowsDetails(widget.widget, widget.report)) {
@@ -1203,9 +1287,9 @@ export async function streamDashboardWorkbook(
 }
 
 export function buildReportFileName(report: ReportDefinition) {
-  return `${safeFileName(report.name, report.id)}.xlsx`;
+  return `${safeFileName(report.name, report.id)} ${buildFileTimestamp(new Date())}.xlsx`;
 }
 
 export function buildDashboardFileName(dashboard: DashboardDefinition) {
-  return `${safeFileName(dashboard.name, dashboard.id)}.xlsx`;
+  return `${safeFileName(dashboard.name, dashboard.id)} ${buildFileTimestamp(new Date())}.xlsx`;
 }

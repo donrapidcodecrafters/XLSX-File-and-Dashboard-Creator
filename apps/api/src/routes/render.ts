@@ -323,7 +323,11 @@ export async function registerRenderRoutes(app: FastifyInstance) {
     const filename = buildDashboardFileName(dashboard);
     const job = exportJobStore.createJob(dashboard.id, "dashboard", filename, async ({ jobId, update }) => {
       update(5, "Rendering dashboard");
-      const rendered = await executeDashboard(dashboard.id, runtimeFilters);
+      const rendered = await executeDashboard(dashboard.id, runtimeFilters, { dashboard });
+      const renderedReportsById = Object.fromEntries(
+        rendered.tabs
+          .flatMap((tab) => tab.widgets.map((widget) => [widget.report.id, widget.report] as const))
+      );
       const widgetReportIds = Array.from(new Set(rendered.tabs.flatMap((tab) => tab.widgets.map((widget) => widget.report.id))));
       const exportResultsByReportId: Record<string, ReportRunResult> = {};
       const reportProgress = new Map<string, number>();
@@ -342,7 +346,7 @@ export async function registerRenderRoutes(app: FastifyInstance) {
         update(10 + Math.round(average * 55), message);
       };
       await runWithConcurrency(widgetReportIds, 2, async (reportId, index) => {
-        const report = objectStore.getReport(reportId) as ReportDefinition | undefined;
+        const report = renderedReportsById[reportId] || objectStore.getReport(reportId) as ReportDefinition | undefined;
         if (!report) return;
         const filters = buildDashboardFilters(dashboard, report.id, runtimeFilters, report.sourceTableId);
         reportProgress.set(report.id, 0);

@@ -75,7 +75,17 @@ async function main() {
       chartValueFieldId: "budget"
     }
   };
+  const donutReport = {
+    ...chartReport,
+    id: "report-donut-export-smoke",
+    name: "Donut Export Smoke",
+    view: {
+      ...chartReport.view,
+      chartType: "donut"
+    }
+  };
   const chartReportResult = runReport(chartReport, chartTable, document.bundle.data[chartTable.id], exportFilters);
+  const donutReportResult = runReport(donutReport, chartTable, document.bundle.data[chartTable.id], exportFilters);
   const chartReportBuffer = await writeWorkbookBuffer((stream) =>
     streamReportWorkbook(stream, chartReport, chartTable, chartReportResult, undefined, exportFilters)
   );
@@ -117,6 +127,21 @@ async function main() {
           layout: { w: 6, h: 4, x: 7, y: 1 }
         }
       ]
+    }, {
+      id: "tab-export-2",
+      name: "Tab 2",
+      widgets: [
+        {
+          id: "widget-export-donut",
+          title: "Portfolio Donut",
+          mode: "linked",
+          displayMode: "chart",
+          showSummary: false,
+          showDetails: false,
+          reportId: donutReport.id,
+          layout: { w: 6, h: 4, x: 1, y: 1 }
+        }
+      ]
     }],
     runtimeFilters: [{
       id: "runtime-region",
@@ -132,6 +157,8 @@ async function main() {
   const dashboardReportResult = runReport(report, table, document.bundle.data[table.id], widgetFilters);
   const chartWidgetFilters = buildDashboardFilters(dashboard, chartReport.id, runtimeValues, chartReport.sourceTableId);
   const dashboardChartResult = runReport(chartReport, chartTable, document.bundle.data[chartTable.id], chartWidgetFilters);
+  const donutWidgetFilters = buildDashboardFilters(dashboard, donutReport.id, runtimeValues, donutReport.sourceTableId);
+  const dashboardDonutResult = runReport(donutReport, chartTable, document.bundle.data[chartTable.id], donutWidgetFilters);
   const rendered = {
     dashboard,
     tabs: [{
@@ -152,6 +179,17 @@ async function main() {
         status: "complete",
         message: `${dashboardReportResult.totalRows} rows`
       }]
+    }, {
+      id: "tab-export-2",
+      name: "Tab 2",
+      widgets: [{
+        widgetId: "widget-export-donut",
+        widget: dashboard.tabs[1].widgets[0],
+        report: donutReport,
+        result: dashboardDonutResult,
+        status: "complete",
+        message: `${dashboardDonutResult.totalRows} rows`
+      }]
     }]
   };
   const dashboardBuffer = await writeWorkbookBuffer((stream) =>
@@ -159,7 +197,7 @@ async function main() {
       stream,
       dashboard,
       rendered,
-      { [report.id]: dashboardReportResult, [chartReport.id]: dashboardChartResult },
+      { [report.id]: dashboardReportResult, [chartReport.id]: dashboardChartResult, [donutReport.id]: dashboardDonutResult },
       Object.fromEntries(document.bundle.tables.map((item) => [item.id, item])),
       undefined,
       runtimeValues
@@ -189,9 +227,15 @@ async function main() {
   assert.ok(dashboardTabSheet, "expected exported dashboard tab sheet");
   assert.equal(dashboardTabSheet.getCell("A1").value, "Portfolio Chart", "expected first widget title to render at its explicit grid origin");
   assert.equal(dashboardTabSheet.getCell("G1").value, "Open Invoices", "expected second widget title to render at its reconstructed X position");
+  const dashboardSecondTabSheet = dashboardWorkbook.getWorksheet("Tab 2");
+  assert.ok(dashboardSecondTabSheet, "expected second dashboard tab sheet");
   assert.ok(
     dashboardWorkbook.worksheets.some((sheet) => typeof sheet.getImages === "function" && sheet.getImages().length > 0),
     "expected dashboard export workbook to embed at least one chart image"
+  );
+  assert.ok(
+    typeof dashboardSecondTabSheet.getImages === "function" && dashboardSecondTabSheet.getImages().length > 0,
+    "expected second dashboard tab sheet to embed its chart image"
   );
 
   console.log("api export smoke tests passed");
