@@ -22,7 +22,7 @@ export function ViewerPage({
   recentIds: string[];
   refreshAllSignal?: number;
   openLinksInNewTab?: boolean;
-  onRefreshComplete: () => Promise<void>;
+  onRefreshComplete: (options?: { skipWhenLocalDirty?: boolean }) => Promise<void>;
   onToggleFavorite: (objectId: string) => Promise<void>;
 }) {
   const [query, setQuery] = useState("");
@@ -88,7 +88,7 @@ export function ViewerPage({
           setRefreshJob(response.job);
           if (response.job.status === "complete") {
             setRefreshFeedback(null);
-            void onRefreshComplete();
+            void onRefreshComplete({ skipWhenLocalDirty: true });
           } else if (response.job.status === "failed") {
             setRefreshFeedback({
               tone: "danger",

@@ -46,6 +46,7 @@ const CACHED_STUDIO_DOCUMENT_KEY = "hosted-reporting-studio-v2";
 const WORKSPACE_REFRESH_SIGNAL_KEY = "hosted-reporting-workspace-refresh-v1";
 const WORKSPACE_REFRESH_EVENT = "studio:workspace-updated";
 const SHARED_WORKSPACE_SNAPSHOT_KEY = "studio-shared-workspace-snapshot-v1";
+const SHARED_WORKSPACE_DIRTY_KEY = "studio-shared-workspace-dirty-v1";
 
 function loadCachedStudioDocument() {
   try {
@@ -69,6 +70,14 @@ function loadSharedWorkspaceSnapshot() {
     return raw ? normalizeStudioDocument(JSON.parse(raw) as StudioDocument) : null;
   } catch {
     return null;
+  }
+}
+
+function loadSharedWorkspaceDirtyState() {
+  try {
+    return window.localStorage.getItem(SHARED_WORKSPACE_DIRTY_KEY) === "1";
+  } catch {
+    return false;
   }
 }
 
@@ -171,9 +180,20 @@ function useCatalog() {
     }
   });
 
-  const reloadCatalog = useCallback(async () => {
+  const reloadCatalog = useCallback(async (options: { skipWhenLocalDirty?: boolean } = {}) => {
     setCatalogLoading(true);
     setCatalogError("");
+    if (options.skipWhenLocalDirty && loadSharedWorkspaceDirtyState()) {
+      const snapshot = loadSharedWorkspaceSnapshot();
+      if (snapshot) {
+        setStudioDocument(snapshot);
+        setObjects(buildCatalogItemsFromDocument(snapshot));
+        setTables(snapshot.bundle.tables || []);
+        saveCachedStudioDocument(snapshot);
+        setCatalogLoading(false);
+        return;
+      }
+    }
     const studioResponse = await fetchStudioDocument().catch(() => null);
     if (studioResponse?.document) {
       const normalized = normalizeStudioDocument(studioResponse.document);
@@ -404,7 +424,7 @@ function ObjectPage({
   launchContext: ReturnType<typeof getHostedContext>;
   openLinksInNewTab?: boolean;
   onObjectViewed: (objectId: string) => void;
-  onRefreshComplete: () => Promise<void>;
+  onRefreshComplete: (options?: { skipWhenLocalDirty?: boolean }) => Promise<void>;
   onUserSettingsChange: (payload: {
     favorites?: string[];
     recent?: string[];
@@ -562,7 +582,7 @@ function ObjectPage({
         .then(async (response) => {
           setRefreshJob(response.job);
           if (response.job.status === "complete") {
-            await onRefreshComplete().catch(() => undefined);
+            await onRefreshComplete({ skipWhenLocalDirty: true }).catch(() => undefined);
             setRefreshJob(null);
             setRefreshNonce((current) => current + 1);
             setLoading(true);
@@ -946,7 +966,7 @@ export function App() {
           setTopbarRefreshJob(response.job);
           if (response.job.status === "complete") {
             setTopbarRefreshFeedback(null);
-            void reloadCatalog();
+            void reloadCatalog({ skipWhenLocalDirty: true });
           } else if (response.job.status === "failed") {
             setTopbarRefreshFeedback({
               tone: "danger",

@@ -34,7 +34,7 @@ export function HomePage({
   recentIds: string[];
   refreshAllSignal?: number;
   openLinksInNewTab?: boolean;
-  onRefreshComplete: () => Promise<void>;
+  onRefreshComplete: (options?: { skipWhenLocalDirty?: boolean }) => Promise<void>;
   onToggleFavorite: (objectId: string) => Promise<void>;
 }) {
   const [refreshJob, setRefreshJob] = useState<any>(null);
@@ -114,7 +114,7 @@ export function HomePage({
           setRefreshJob(response.job);
           if (response.job.status === "complete") {
             setRefreshFeedback(null);
-            void onRefreshComplete();
+            void onRefreshComplete({ skipWhenLocalDirty: true });
           } else if (response.job.status === "failed") {
             setRefreshFeedback({
               tone: "danger",

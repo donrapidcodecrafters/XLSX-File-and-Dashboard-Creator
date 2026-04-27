@@ -392,14 +392,17 @@ export function StudioSettingsPanel({
           <div className="micro">Every selected table needs a report ID.</div>
         </div>
         <div className="studio-actions">
+          <button onClick={reloadRemote} disabled={savingRemote || refreshingCache}>
+            Load all settings
+          </button>
           <button onClick={saveRemote} disabled={savingRemote || refreshingCache}>
-            {savingRemote ? "Saving settings…" : "Save schedule settings"}
+            {savingRemote ? "Saving all settings…" : "Save all settings"}
           </button>
           <button onClick={() => { void refreshAllNow(); }} disabled={refreshingCache}>
             {refreshingCache ? "Refreshing all reports…" : "Refresh all now"}
           </button>
         </div>
-        <div className="micro">Schedule settings are saved in Quickbase.</div>
+        <div className="micro">Save and load always apply to every settings step for this workspace.</div>
         <div className={`sync-status ${activeQuickbaseProfile?.refreshStatus.lastError ? "sync-status-warn" : "sync-status-ok"}`}>
           <strong>{refreshStatusTitle}</strong>
           <span>{refreshStatusDetail}</span>
@@ -517,8 +520,8 @@ export function StudioSettingsPanel({
         <button type="button" onClick={() => setActiveStep(settingsSteps[Math.min(settingsSteps.length - 1, activeStepIndex + 1)].id)} disabled={activeStepIndex >= settingsSteps.length - 1}>Next</button>
       </div>
       <div className="studio-actions">
-        <button onClick={reloadRemote}>Load from server</button>
-        <button onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save to Quickbase and server"}</button>
+        <button onClick={reloadRemote}>Load all settings from server</button>
+        <button onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save all settings to Quickbase and server"}</button>
       </div>
     </div>
   );

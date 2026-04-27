@@ -126,6 +126,7 @@ const ACTIVITY_OVERLAY_MIN_MS = 700;
 const WORKSPACE_REFRESH_SIGNAL_KEY = "hosted-reporting-workspace-refresh-v1";
 const WORKSPACE_REFRESH_EVENT = "studio:workspace-updated";
 const SHARED_WORKSPACE_SNAPSHOT_KEY = "studio-shared-workspace-snapshot-v1";
+const SHARED_WORKSPACE_DIRTY_KEY = "studio-shared-workspace-dirty-v1";
 const WIDGET_LAYOUT_PRESETS = [
   { id: "quarter", label: "Quarter", w: 3, h: 3 },
   { id: "third", label: "Third", w: 4, h: 3 },
@@ -493,6 +494,16 @@ function notifyWorkspaceUpdated(document?: StudioDocument) {
     window.localStorage.setItem(WORKSPACE_REFRESH_SIGNAL_KEY, signal);
   } catch {}
   window.dispatchEvent(new CustomEvent(WORKSPACE_REFRESH_EVENT, { detail: { signal } }));
+}
+
+function buildWorkspaceSnapshotSignature(document: StudioDocument) {
+  return JSON.stringify(stripLocalDocumentData(document));
+}
+
+function setSharedWorkspaceDirtyState(dirty: boolean) {
+  try {
+    window.localStorage.setItem(SHARED_WORKSPACE_DIRTY_KEY, dirty ? "1" : "0");
+  } catch {}
 }
 
 function isFilterGroupNode(node: FilterNodeDefinition): node is FilterGroupDefinition {
@@ -1389,6 +1400,7 @@ export function StudioPage({
     launchAppId: launchContext.appId
   }) || applyLaunchSessionToDocument(document);
   const [documentState, setDocumentState] = useState<StudioDocument>(() => scopeDocument(loadLocalDocument()));
+  const lastRemoteSnapshotKeyRef = useRef(buildWorkspaceSnapshotSignature(scopeDocument(loadLocalDocument())));
   const [loadingRemote, setLoadingRemote] = useState(true);
   const [savingRemote, setSavingRemote] = useState(false);
   const [history, setHistory] = useState<StudioDocument[]>([]);
@@ -2013,6 +2025,7 @@ export function StudioPage({
   useEffect(() => {
     saveLocalDocument(documentState);
     notifyWorkspaceUpdated(documentState);
+    setSharedWorkspaceDirtyState(buildWorkspaceSnapshotSignature(documentState) !== lastRemoteSnapshotKeyRef.current);
   }, [documentState]);
 
   useEffect(() => {
@@ -2027,6 +2040,8 @@ export function StudioPage({
         if (!active) return;
         const next = scopeDocument(normalizeStudioDocument(response.document));
         next.sync.lastLoadedAt = new Date().toISOString();
+        lastRemoteSnapshotKeyRef.current = buildWorkspaceSnapshotSignature(next);
+        setSharedWorkspaceDirtyState(false);
         setDocumentState(next);
       })
       .catch(() => {
@@ -2893,7 +2908,10 @@ export function StudioPage({
       if (options?.removedObjectIds?.length) {
         stripRemovedObjectIds(persistedDocument, options.removedObjectIds);
       }
-      setDocumentState(scopeDocument(persistedDocument));
+      const scopedPersistedDocument = scopeDocument(persistedDocument);
+      lastRemoteSnapshotKeyRef.current = buildWorkspaceSnapshotSignature(scopedPersistedDocument);
+      setSharedWorkspaceDirtyState(false);
+      setDocumentState(scopedPersistedDocument);
       notifyWorkspaceUpdated();
       setLastQuickbaseSync(response.sync || null);
       if (response.sync?.enabled) {
@@ -2921,25 +2939,45 @@ export function StudioPage({
     }
   }
 
-  async function saveRemote() {
-    const refreshValidation = getActiveProfileRefreshValidation(documentState, false);
-    if (refreshValidation) {
-      pushToast(refreshValidation, "warn");
-      return;
+  async function loadHostedDocumentIntoState(options?: {
+    resetHistory?: boolean;
+    successMessage?: string;
+    failureMessage?: string;
+  }) {
+    const response = await fetchStudioDocument();
+    const next = scopeDocument(normalizeStudioDocument(response.document));
+    next.sync.lastLoadedAt = new Date().toISOString();
+    lastRemoteSnapshotKeyRef.current = buildWorkspaceSnapshotSignature(next);
+    setSharedWorkspaceDirtyState(false);
+    setDocumentState(next);
+    if (options?.resetHistory) {
+      setHistory([]);
+      setFuture([]);
     }
-    await runWithActivityOverlay("Saving to Quickbase and server", "Saving platform settings and workspace changes…", async () => {
+    if (options?.successMessage) {
+      pushToast(options.successMessage);
+    }
+    return next;
+  }
+
+  async function saveRemote() {
+    await runWithActivityOverlay("Saving to Quickbase and server", "Saving all platform settings and workspace changes…", async () => {
       await persistRemote(documentState);
+      try {
+        await loadHostedDocumentIntoState();
+      } catch (error) {
+        pushToast(error instanceof Error ? `Saved changes, but the hosted studio could not be reloaded: ${error.message}` : "Saved changes, but the hosted studio could not be reloaded.", "warn");
+      }
     });
   }
 
   async function reloadRemote() {
-    await runWithActivityOverlay("Loading from server", "Loading the latest hosted platform document…", async () => {
+    await runWithActivityOverlay("Loading from server", "Loading all hosted platform settings and workspace changes…", async () => {
       try {
-        const response = await fetchStudioDocument();
-        setDocumentState(scopeDocument(normalizeStudioDocument(response.document)));
-        setHistory([]);
-        setFuture([]);
-        pushToast("Reloaded hosted studio.");
+        await loadHostedDocumentIntoState({
+          resetHistory: true,
+          successMessage: "Reloaded hosted studio."
+        });
       } catch (error) {
         pushToast(error instanceof Error ? error.message : "Reload failed.", "danger");
       }
@@ -3064,23 +3102,6 @@ export function StudioPage({
     });
   }
 
-  function getActiveProfileRefreshValidation(document: StudioDocument, requireAtLeastOne = false) {
-    const profile = getActiveQuickbaseProfile(document);
-    if (!profile) return "Add a Quickbase app profile first.";
-    const selectedTableIds = profile.refreshSource.tableIds || [];
-    if (!selectedTableIds.length) {
-      if (!requireAtLeastOne) return null;
-      return "Select at least one Quickbase table and enter its report ID.";
-    }
-    const missing = selectedTableIds.filter((tableId) => !String(profile.refreshSource.reportIds?.[tableId] || "").trim());
-    if (!missing.length) return null;
-    const labels = getTablesForQuickbaseProfile(document, profile.id)
-      .filter((table) => missing.includes(table.quickbaseTableId || table.id))
-      .map((table) => table.name)
-      .join(", ");
-    return `Enter a Quickbase report ID for each selected table${labels ? `: ${labels}` : "."}`;
-  }
-
   function getFullRefreshValidation(document: StudioDocument) {
     if (!document.quickbaseProfiles.length) return "Add a Quickbase app profile first.";
     let selectedCount = 0;
@@ -3099,6 +3120,23 @@ export function StudioPage({
       return "Select at least one Quickbase table and enter its report ID in any app profile.";
     }
     return null;
+  }
+
+  function getActiveProfileRefreshValidation(document: StudioDocument, requireAtLeastOne = false) {
+    const profile = getActiveQuickbaseProfile(document);
+    if (!profile) return "Add a Quickbase app profile first.";
+    const selectedTableIds = profile.refreshSource.tableIds || [];
+    if (!selectedTableIds.length) {
+      if (!requireAtLeastOne) return null;
+      return "Select at least one Quickbase table and enter its report ID.";
+    }
+    const missing = selectedTableIds.filter((tableId) => !String(profile.refreshSource.reportIds?.[tableId] || "").trim());
+    if (!missing.length) return null;
+    const labels = getTablesForQuickbaseProfile(document, profile.id)
+      .filter((table) => missing.includes(table.quickbaseTableId || table.id))
+      .map((table) => table.name)
+      .join(", ");
+    return `Enter a Quickbase report ID for each selected table${labels ? `: ${labels}` : "."}`;
   }
 
   function setActiveQuickbaseProfile(profileId: string) {
@@ -3308,7 +3346,10 @@ export function StudioPage({
     try {
       await runWithActivityOverlay("Preparing refresh", "Saving current settings and starting a full cache refresh…", async () => {
         const saved = await saveStudioDocument(documentState);
-        setDocumentState(scopeDocument(normalizeStudioDocument(saved.document)));
+        const next = scopeDocument(normalizeStudioDocument(saved.document));
+        lastRemoteSnapshotKeyRef.current = buildWorkspaceSnapshotSignature(next);
+        setSharedWorkspaceDirtyState(false);
+        setDocumentState(next);
         setLastQuickbaseSync(saved.sync || null);
         const response = await startStudioRefresh();
         setRefreshJob(response.job);
