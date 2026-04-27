@@ -394,6 +394,7 @@ function ObjectPage({
   launchContext,
   openLinksInNewTab = false,
   onObjectViewed,
+  onRefreshComplete,
   onUserSettingsChange,
   onToggleFavorite
 }: {
@@ -403,6 +404,7 @@ function ObjectPage({
   launchContext: ReturnType<typeof getHostedContext>;
   openLinksInNewTab?: boolean;
   onObjectViewed: (objectId: string) => void;
+  onRefreshComplete: () => Promise<void>;
   onUserSettingsChange: (payload: {
     favorites?: string[];
     recent?: string[];
@@ -540,9 +542,10 @@ function ObjectPage({
     if (!refreshJob || refreshJob.status === "complete" || refreshJob.status === "failed" || refreshJob.status === "cancelled") return;
     const handle = window.setInterval(() => {
       fetchStudioRefreshJob(refreshJob.id)
-        .then((response) => {
+        .then(async (response) => {
           setRefreshJob(response.job);
           if (response.job.status === "complete") {
+            await onRefreshComplete().catch(() => undefined);
             setRefreshJob(null);
             setRefreshNonce((current) => current + 1);
             setLoading(true);
@@ -554,7 +557,7 @@ function ObjectPage({
         .catch(() => undefined);
     }, 1000);
     return () => window.clearInterval(handle);
-  }, [refreshJob]);
+  }, [onRefreshComplete, refreshJob]);
 
   async function startObjectRefresh() {
     setStartingRefresh(true);
@@ -1216,7 +1219,7 @@ export function App() {
               <Route path="/help" element={<HelpPage />} />
               <Route path="/studio" element={<StudioPage openSettingsSignal={studioSettingsSignal} launchContext={hosted} />} />
               <Route path="/studio/:objectId" element={<StudioPage openSettingsSignal={studioSettingsSignal} launchContext={hosted} />} />
-              <Route path="/:type/:objectId" element={<ObjectPage tables={scopedTables} platformName={platformName} studioDocument={displayDocument} launchContext={hosted} openLinksInNewTab={openLinksInNewTab} onObjectViewed={markObjectAsRecent} onUserSettingsChange={updateUserSettings} onToggleFavorite={toggleFavorite} />} />
+              <Route path="/:type/:objectId" element={<ObjectPage tables={scopedTables} platformName={platformName} studioDocument={displayDocument} launchContext={hosted} openLinksInNewTab={openLinksInNewTab} onObjectViewed={markObjectAsRecent} onRefreshComplete={reloadCatalog} onUserSettingsChange={updateUserSettings} onToggleFavorite={toggleFavorite} />} />
               <Route path="*" element={<Navigate to={buildHostedRoute("/")} replace />} />
             </Routes>
           )}
