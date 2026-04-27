@@ -4364,7 +4364,7 @@ export function StudioPage({
   const viewerUrl = buildHostedHashUrl(`/${activeObject.type}/${activeObject.id}`, { viewer: true });
   const embedUrl = buildHostedHashUrl(`/${activeObject.type}/${activeObject.id}`, { embed: true, viewer: true });
   const shortcutsSection = hasActiveObject ? (
-    <div className="surface stack">
+    <div className="surface stack studio-shortcuts-panel">
       <div className="card-head">
         <strong>Shortcuts</strong>
         <span className="micro">Open, share, save, and export this workspace.</span>
@@ -4376,10 +4376,25 @@ export function StudioPage({
           <span className="micro">{defaultUrl}</span>
         </Link>
       </div>
-      <div className="studio-actions">
+    </div>
+  ) : null;
+
+  const objectActionDock = hasActiveObject ? (
+    <div className="studio-builder-dock" role="region" aria-label="Building actions">
+      <div className="studio-builder-dock-inner">
+        <Link className="ghost-button" to={buildHostedRoute("/studio")}>Back to Building home</Link>
         <button onClick={() => addTemplate(activeObject.type === "dashboard" ? "layout" : "yaml")}>Save as template</button>
         <button onClick={snapshotCurrentObject}>Save version</button>
         <button onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save to server"}</button>
+        {activeReport ? <button onClick={() => openEditReportModal(activeReport)}>Edit report</button> : null}
+        {activeReport ? <button onClick={() => deleteObject(activeReport.id)}>Delete report</button> : null}
+        <button onClick={() => toggleFavorite(activeObject.id)}>{documentState.favorites.includes(activeObject.id) ? "Unfavorite" : "Favorite"}</button>
+        <button onClick={() => cloneObject(activeObject)}>Clone</button>
+        <button onClick={undo} disabled={!history.length}>Undo</button>
+        <button onClick={redo} disabled={!future.length}>Redo</button>
+        <button onClick={() => setDrawer("share")}>Share</button>
+        <button onClick={() => setDrawer("export")}>Export</button>
+        <button onClick={openVersions}>History</button>
       </div>
     </div>
   ) : null;
@@ -4390,8 +4405,8 @@ export function StudioPage({
         <RefreshOverlay title="Refreshing all reports and dashboards" job={refreshJob} />
       ) : null}
       <section className={`studio-page ${activeDashboard ? "studio-page-dashboard" : "studio-page-report"}`}>
-      <div className="studio-canvas">
-        {shortcutsSection}
+      <div className={`studio-canvas ${hasActiveObject ? "studio-canvas-active" : ""}`}>
+        {hasActiveObject ? <div className="studio-workspace-top">{shortcutsSection}</div> : null}
         <div className="hero studio-hero">
           <div>
             <span className="badge brand">{hasActiveObject ? typeLabel(activeObject.type) : "Workspace"}</span>
@@ -4402,6 +4417,7 @@ export function StudioPage({
               <span>{documentState.sync.lastSavedAt ? `Last saved ${new Date(documentState.sync.lastSavedAt).toLocaleString()}` : "Not saved yet"}</span>
             </div>
           </div>
+          {!hasActiveObject ? (
           <div className="link-toolbar">
             <Link className="ghost-button" to={buildHostedRoute("/studio")}>Back to Building home</Link>
             <button onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save"}</button>
@@ -4418,6 +4434,7 @@ export function StudioPage({
             {hasActiveObject ? <button onClick={() => setDrawer("export")}>Export</button> : null}
             {hasActiveObject ? <button onClick={openVersions}>History</button> : null}
           </div>
+          ) : null}
         </div>
 
         {exportJob ? (
@@ -4620,6 +4637,7 @@ export function StudioPage({
             />
           </section>
         ) : null}
+        {objectActionDock}
       </div>
 
       {activeDashboard ? (
