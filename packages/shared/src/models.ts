@@ -59,6 +59,7 @@ export type ChartAxisAssignment = "primary" | "secondary";
 export type ChartSeriesType = "line" | "area" | "bar" | "column";
 export type RuntimeFilterMode = "global" | "selected";
 export type RefreshCadence = "daily" | "weekly" | "monthly";
+export type FilterValueSource = "literal" | "field";
 
 export type DataValue = string | number | boolean | null | string[];
 export type DataRow = Record<string, DataValue>;
@@ -85,6 +86,8 @@ export interface FilterDefinition {
   fieldId: string;
   operator: FilterOperator;
   value: string;
+  valueSource?: FilterValueSource;
+  compareFieldId?: string;
 }
 
 export interface FilterGroupDefinition {
@@ -134,6 +137,7 @@ export interface ReportViewDefinition {
   chartTopN: number;
   chartSort: ChartSortMode;
   chartColors: string[];
+  chartValueColors: Record<string, string>;
   chartShowLegend: boolean;
   chartShowValues: boolean;
   chartXAxisLabel: string;
@@ -211,7 +215,10 @@ export interface RuntimeFilterDefinition {
   sourceTableId?: string;
   mode: RuntimeFilterMode;
   targetReportIds: string[];
+  operator: FilterOperator;
   defaultValue: string;
+  valueSource?: FilterValueSource;
+  compareFieldId?: string;
 }
 
 export interface DashboardDefinition extends BaseStudioObject {

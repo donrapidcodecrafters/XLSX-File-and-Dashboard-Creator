@@ -42,6 +42,7 @@ function buildReportView(overrides: Partial<ReportViewDefinition> = {}): ReportV
     chartTopN: 12,
     chartSort: "value-desc",
     chartColors: ["#0d7c66", "#d88d3d", "#5b7cfa", "#9b59b6", "#e66f5c", "#3a9782", "#b7a26a", "#4f8fba"],
+    chartValueColors: {},
     chartShowLegend: true,
     chartShowValues: true,
     chartXAxisLabel: "",
@@ -399,8 +400,8 @@ export function buildSeedBundle(): SeedBundle {
       }
     ],
     runtimeFilters: [
-      { id: "runtime-status", label: "Status", fieldId: "status", mode: "global", targetReportIds: [], defaultValue: "" },
-      { id: "runtime-start-date", label: "Date range", fieldId: "startDate", mode: "selected", targetReportIds: [projects.id], defaultValue: "CURRENT_MONTH" }
+      { id: "runtime-status", label: "Status", fieldId: "status", operator: "equals", valueSource: "literal", compareFieldId: "", mode: "global", targetReportIds: [], defaultValue: "" },
+      { id: "runtime-start-date", label: "Date range", fieldId: "startDate", operator: "on-or-after", valueSource: "literal", compareFieldId: "", mode: "selected", targetReportIds: [projects.id], defaultValue: "CURRENT_MONTH" }
     ]
   });
 
@@ -717,7 +718,10 @@ export function normalizeStudioDocument(input: Partial<StudioDocument> | null | 
           sourceTableId: String(filter?.sourceTableId || ""),
           mode: filter?.mode === "selected" ? "selected" : "global",
           targetReportIds: Array.isArray(filter?.targetReportIds) ? filter.targetReportIds.map(String).filter(Boolean) : [],
-          defaultValue: String(filter?.defaultValue || "")
+          operator: (filter?.operator || "equals"),
+          defaultValue: String(filter?.defaultValue || ""),
+          valueSource: filter?.valueSource === "field" ? "field" : "literal",
+          compareFieldId: String(filter?.compareFieldId || "")
         }))
       }];
     })

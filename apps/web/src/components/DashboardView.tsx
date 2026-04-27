@@ -8,6 +8,7 @@ import { RefreshOverlay } from "./RefreshOverlay";
 import { ResizableDataTable } from "./ResizableDataTable";
 import { buildHostedRoute, buildObjectUrl, getHostedContext } from "../lib/embed";
 import { buildQuickbaseChartDatumUrl, buildQuickbaseRecordEditUrl, buildQuickbaseReportFilterTree, type QuickbaseTableLinkContext } from "../lib/quickbaseLinks";
+import { getChartViewportBounds } from "./studioReportUtils";
 
 interface DashboardViewProps {
   dashboard: DashboardDefinition;
@@ -639,15 +640,19 @@ export function DashboardView({
             {dashboard.runtimeFilters.map((filter) => (
               <label className="field" key={filter.id}>
                 <span>{filter.label}</span>
-                <input
-                  value={runtimeFilters[filter.id] ?? ""}
-                  onChange={(event) =>
-                    setRuntimeFilters((current) => ({
-                      ...current,
-                      [filter.id]: event.target.value
-                    }))
-                  }
-                />
+                {filter.valueSource === "field" ? (
+                  <input value={`Uses ${filter.compareFieldId || "another field"}`} disabled />
+                ) : (
+                  <input
+                    value={runtimeFilters[filter.id] ?? ""}
+                    onChange={(event) =>
+                      setRuntimeFilters((current) => ({
+                        ...current,
+                        [filter.id]: event.target.value
+                      }))
+                    }
+                  />
+                )}
               </label>
             ))}
           </div>
@@ -715,6 +720,7 @@ export function DashboardView({
                 widget.report,
                 buildDashboardFilters(dashboard, widget.report.id, runtimeFilters, widget.report.sourceTableId)
               );
+              const chartBounds = getChartViewportBounds(widget.report.view.chartType, chartData.length, true);
               const crossFilterOptions = getDashboardCrossFilterOptions(dashboard, widget.report, widget.result.chartData);
               const clearableFilterIds = Array.from(new Set(
                 crossFilterOptions
@@ -783,23 +789,28 @@ export function DashboardView({
                 ) : null}
                 {widget.status === "complete" && widgetShowsChart(widget.widget, widget.report) ? (
                   <div className="mini-chart">
-                    <ChartPreview
-                      chartType={widget.report.view.chartType}
-                      data={chartData}
-                      title={widget.report.view.chartTitle || widget.widget.title}
-                      decimalPlaces={widget.report.view.decimalPlaces}
-                      chartColors={widget.report.view.chartColors}
-                      chartOrientation={widget.report.view.chartOrientation}
-                      xAxisLabel={axisLabels.xAxisLabel}
-                      yAxisLabel={axisLabels.yAxisLabel}
-                      secondaryYAxisLabel={axisLabels.secondaryYAxisLabel}
-                      secondarySeriesType={widget.report.view.chartSecondarySeriesType}
-                      compact
-                      showLegend={widget.report.view.chartShowLegend}
-                      showValues={widget.report.view.chartShowValues}
-                      openLinksInNewTab={openLinksInNewTab}
-                      getDatumHref={(datum) => buildQuickbaseChartDatumUrl(quickbaseLinkContext, widgetTable, chartFieldId, datum, widgetQuickbaseFilterTree)}
-                    />
+                    <div className="chart-scroll-shell">
+                      <div style={{ minWidth: `${chartBounds.minWidth}px`, minHeight: `${chartBounds.minHeight}px` }}>
+                        <ChartPreview
+                          chartType={widget.report.view.chartType}
+                          data={chartData}
+                          title={widget.report.view.chartTitle || widget.widget.title}
+                          decimalPlaces={widget.report.view.decimalPlaces}
+                          chartColors={widget.report.view.chartColors}
+                          chartValueColors={widget.report.view.chartValueColors}
+                          chartOrientation={widget.report.view.chartOrientation}
+                          xAxisLabel={axisLabels.xAxisLabel}
+                          yAxisLabel={axisLabels.yAxisLabel}
+                          secondaryYAxisLabel={axisLabels.secondaryYAxisLabel}
+                          secondarySeriesType={widget.report.view.chartSecondarySeriesType}
+                          compact
+                          showLegend={widget.report.view.chartShowLegend}
+                          showValues={widget.report.view.chartShowValues}
+                          openLinksInNewTab={openLinksInNewTab}
+                          getDatumHref={(datum) => buildQuickbaseChartDatumUrl(quickbaseLinkContext, widgetTable, chartFieldId, datum, widgetQuickbaseFilterTree)}
+                        />
+                      </div>
+                    </div>
                   </div>
                 ) : null}
                 {widget.status === "complete" && (widgetRenderMode(widget.widget, widget.report) === "table" || widgetRenderMode(widget.widget, widget.report) === "timeline" || widgetRenderMode(widget.widget, widget.report) === "calendar" || widgetRenderMode(widget.widget, widget.report) === "kanban" || widget.widget.showDetails) ? (
@@ -947,21 +958,31 @@ export function DashboardView({
             ) : null}
             {widgetShowsChart(focusedWidget.widget, focusedWidget.report) ? (
               <div className="card">
-                <ChartPreview
-                  chartType={focusedWidget.report.view.chartType}
-                  data={focusedWidget.result.chartData}
-                  title={focusedWidget.report.view.chartTitle || focusedWidget.widget.title}
-                  decimalPlaces={focusedWidget.report.view.decimalPlaces}
-                  chartColors={focusedWidget.report.view.chartColors}
-                  chartOrientation={focusedWidget.report.view.chartOrientation}
-                  xAxisLabel={getChartAxisLabels(tables, focusedWidget.report).xAxisLabel}
-                  yAxisLabel={getChartAxisLabels(tables, focusedWidget.report).yAxisLabel}
-                  secondaryYAxisLabel={getChartAxisLabels(tables, focusedWidget.report).secondaryYAxisLabel}
-                  secondarySeriesType={focusedWidget.report.view.chartSecondarySeriesType}
-                  showLegend={focusedWidget.report.view.chartShowLegend}
-                  showValues={focusedWidget.report.view.chartShowValues}
-                  openLinksInNewTab={openLinksInNewTab}
-                />
+                <div className="chart-scroll-shell">
+                  <div
+                    style={{
+                      minWidth: `${getChartViewportBounds(focusedWidget.report.view.chartType, focusedWidget.result.chartData.length).minWidth}px`,
+                      minHeight: `${getChartViewportBounds(focusedWidget.report.view.chartType, focusedWidget.result.chartData.length).minHeight}px`
+                    }}
+                  >
+                    <ChartPreview
+                      chartType={focusedWidget.report.view.chartType}
+                      data={focusedWidget.result.chartData}
+                      title={focusedWidget.report.view.chartTitle || focusedWidget.widget.title}
+                      decimalPlaces={focusedWidget.report.view.decimalPlaces}
+                      chartColors={focusedWidget.report.view.chartColors}
+                      chartValueColors={focusedWidget.report.view.chartValueColors}
+                      chartOrientation={focusedWidget.report.view.chartOrientation}
+                      xAxisLabel={getChartAxisLabels(tables, focusedWidget.report).xAxisLabel}
+                      yAxisLabel={getChartAxisLabels(tables, focusedWidget.report).yAxisLabel}
+                      secondaryYAxisLabel={getChartAxisLabels(tables, focusedWidget.report).secondaryYAxisLabel}
+                      secondarySeriesType={focusedWidget.report.view.chartSecondarySeriesType}
+                      showLegend={focusedWidget.report.view.chartShowLegend}
+                      showValues={focusedWidget.report.view.chartShowValues}
+                      openLinksInNewTab={openLinksInNewTab}
+                    />
+                  </div>
+                </div>
               </div>
             ) : null}
             {(widgetRenderMode(focusedWidget.widget, focusedWidget.report) === "table" || focusedWidget.widget.showDetails) ? (

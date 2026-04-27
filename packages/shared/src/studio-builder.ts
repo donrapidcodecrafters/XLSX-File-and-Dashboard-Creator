@@ -100,6 +100,7 @@ export function buildStudioBuilderDraft(
       chartTopN: 12,
       chartSort: "value-desc",
       chartColors: [...STUDIO_DEFAULT_CHART_COLORS],
+      chartValueColors: {},
       chartShowLegend: true,
       chartShowValues: true,
       chartXAxisLabel: "",

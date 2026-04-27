@@ -3141,7 +3141,7 @@ th {
   flex: 1 1 auto;
   align-content: start;
   min-height: 0;
-  overflow: hidden;
+  overflow: auto;
   justify-items: center;
 }
 
@@ -3158,8 +3158,18 @@ th {
 .mini-chart .waterfall-chart,
 .mini-chart .funnel-chart {
   width: 100%;
+}
+
+.chart-scroll-shell {
+  width: 100%;
   max-width: 100%;
-  overflow: hidden;
+  min-height: 0;
+  overflow: auto;
+}
+
+.chart-scroll-shell > * {
+  width: fit-content;
+  max-width: none;
 }
 
 .mini-chart .chart-title {

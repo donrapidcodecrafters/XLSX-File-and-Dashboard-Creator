@@ -79,7 +79,9 @@ export function filterNeedsValue(operator: FilterOperator): boolean {
 }
 
 export function filterHasValue(filter: FilterDefinition): boolean {
-  return filterNeedsValue(filter.operator) ? Boolean(String(filter.value ?? "").trim()) : true;
+  if (!filterNeedsValue(filter.operator)) return true;
+  if (filter.valueSource === "field") return Boolean(String(filter.compareFieldId ?? "").trim());
+  return Boolean(String(filter.value ?? "").trim());
 }
 
 export function createFilterGroup(join: FilterJoinOperator = "and", conditions: FilterNodeDefinition[] = []): FilterGroupDefinition {
@@ -96,7 +98,9 @@ export function createFilterRule(fieldId = "", operator: FilterOperator = "equal
     id: `filter-${Math.random().toString(36).slice(2, 10)}`,
     fieldId,
     operator,
-    value
+    value,
+    valueSource: "literal",
+    compareFieldId: ""
   };
 }
 
@@ -112,7 +116,7 @@ export function collectFilterFieldIds(node: FilterNodeDefinition | null | undefi
   if (isFilterGroup(node)) {
     return Array.from(new Set(node.conditions.flatMap((condition) => collectFilterFieldIds(condition))));
   }
-  return node.fieldId ? [node.fieldId] : [];
+  return Array.from(new Set([node.fieldId, node.valueSource === "field" ? node.compareFieldId || "" : ""].filter(Boolean)));
 }
 
 export function buildCombinedFilterTree(report: Pick<ReportDefinition, "filters" | "filterTree">, extraFilters: FilterDefinition[] = []): FilterGroupDefinition | null {
@@ -203,22 +207,33 @@ function matchesDateToken(value: unknown, token: string): boolean {
 
 export function matchesFilter(row: DataRow, filter: FilterDefinition): boolean {
   const raw = row[filter.fieldId];
-  const expected = String(filter.value ?? "");
+  const compareFieldId = String(filter.compareFieldId || "").trim();
+  const usesFieldValue = filter.valueSource === "field" && Boolean(compareFieldId);
+  const expectedRaw = usesFieldValue ? row[compareFieldId] : filter.value;
+  const expected = String(expectedRaw ?? "");
   const candidates = asArray(raw).map((value) => String(value ?? ""));
+  const expectedCandidates = asArray(expectedRaw).map((value) => String(value ?? ""));
   const normalizedCandidates = asArray(raw).map((value) => normalizedFilterText(value));
+  const normalizedExpectedCandidates = expectedCandidates.map((value) => normalizedFilterText(value)).filter(Boolean);
   const normalizedExpected = normalizedFilterText(expected);
   const isBlank = candidates.length === 0 || candidates.every((value) => !String(value).trim());
   if (filter.operator === "blank") return isBlank;
   if (filter.operator === "not-blank") return !isBlank;
-  if (!expected) return true;
-  if (DATE_TOKENS.has(expected)) {
+  if (!usesFieldValue && !expected) return true;
+  if (!usesFieldValue && DATE_TOKENS.has(expected)) {
     return matchesDateToken(raw, expected);
   }
   if (filter.operator === "contains") {
-    return normalizedCandidates.some((value) => value.includes(normalizedExpected));
+    return normalizedCandidates.some((value) =>
+      (normalizedExpectedCandidates.length ? normalizedExpectedCandidates : [normalizedExpected])
+        .some((expectedValue) => value.includes(expectedValue))
+    );
   }
   if (filter.operator === "not-contains") {
-    return normalizedCandidates.every((value) => !value.includes(normalizedExpected));
+    return normalizedCandidates.every((value) =>
+      (normalizedExpectedCandidates.length ? normalizedExpectedCandidates : [normalizedExpected])
+        .every((expectedValue) => !value.includes(expectedValue))
+    );
   }
   const temporalComparison = compareTemporalValues(raw, expected);
   if (filter.operator === "on") {
@@ -243,8 +258,14 @@ export function matchesFilter(row: DataRow, filter: FilterDefinition): boolean {
     if (filter.operator === "not-equals") return asArray(raw).every((value) => compareTemporalValues(value, expected)?.exact !== 0);
     return asArray(raw).some((value) => compareTemporalValues(value, expected)?.exact === 0);
   }
-  if (filter.operator === "not-equals") return normalizedCandidates.every((value) => value !== normalizedExpected);
-  return normalizedCandidates.some((value) => value === normalizedExpected);
+  if (filter.operator === "not-equals") {
+    return normalizedCandidates.every((value) =>
+      (normalizedExpectedCandidates.length ? normalizedExpectedCandidates : [normalizedExpected]).every((expectedValue) => value !== expectedValue)
+    );
+  }
+  return normalizedCandidates.some((value) =>
+    (normalizedExpectedCandidates.length ? normalizedExpectedCandidates : [normalizedExpected]).some((expectedValue) => value === expectedValue)
+  );
 }
 
 export function matchesFilterNode(row: DataRow, node: FilterNodeDefinition): boolean {
@@ -465,10 +486,12 @@ export function buildDashboardFilters(
     .map((filter) => ({
       id: "runtime-" + filter.id,
       fieldId: filter.fieldId,
-      operator: "equals" as const,
-      value: runtimeValues[filter.id] ?? filter.defaultValue ?? ""
+      operator: filter.operator || "equals",
+      value: runtimeValues[filter.id] ?? filter.defaultValue ?? "",
+      valueSource: filter.valueSource || "literal",
+      compareFieldId: filter.compareFieldId || ""
     }))
-    .filter((filter) => Boolean(filter.value));
+    .filter((filter) => filterHasValue(filter));
 }
 
 export function buildDashboardResult(

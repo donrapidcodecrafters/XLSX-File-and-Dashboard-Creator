@@ -1,15 +1,19 @@
-import { type Dispatch, type SetStateAction } from "react";
-import { type ChartAggregation, type ChartSortMode, type ChartType, type ChartSeriesType, type ReportViewMode, type StudioBuilderDraft, type SummaryMetric, type TableDefinition } from "@studio/shared";
+import { type Dispatch, type SetStateAction, useMemo } from "react";
+import { type ChartAggregation, type ChartDatum, type ChartSortMode, type ChartType, type ChartSeriesType, type ReportViewMode, type StudioBuilderDraft, type SummaryMetric, type TableDefinition } from "@studio/shared";
 import {
   CHART_AGGREGATION_OPTIONS,
   CHART_SERIES_TYPE_OPTIONS,
   CHART_SORT_OPTIONS,
   DEFAULT_CHART_COLORS,
   REPORT_VIEW_OPTIONS,
+  chartColorKeyLabel,
+  chartPrimaryFieldLabel,
+  chartSeriesFieldLabel,
   chartSupportsSecondaryAxis,
   chartSupportsSeries,
   chartTypeSelectOptions,
   chartUsesAxes,
+  getChartColorKey,
   chartValueFieldLabel,
   getSortedFieldOptions,
   reportShowsChart,
@@ -25,13 +29,22 @@ function createMetricId() {
 export function StudioReportDraftViewStep({
   createDraft,
   createDraftTable,
+  createDraftPreviewChartData = [],
   setCreateDraft
 }: {
   createDraft: StudioBuilderDraft;
   createDraftTable: TableDefinition;
+  createDraftPreviewChartData?: ChartDatum[];
   setCreateDraft: Dispatch<SetStateAction<StudioBuilderDraft>>;
 }) {
   const fieldOptions = getSortedFieldOptions(createDraftTable);
+  const chartColorKeyOptions = useMemo(() => {
+    const keys = Array.from(new Set([
+      ...createDraftPreviewChartData.map((datum) => getChartColorKey(datum)).filter(Boolean),
+      ...Object.keys(createDraft.view.chartValueColors || {})
+    ]));
+    return keys.map((key) => ({ value: key, label: key }));
+  }, [createDraftPreviewChartData, createDraft.view.chartValueColors]);
   return (
     <div className="card">
       <div className="card-head">
@@ -203,10 +216,10 @@ export function StudioReportDraftViewStep({
               {(createDraft.view.chartType === "bar" || createDraft.view.chartType === "stacked-bar") ? (
                 <label className="field"><span>Bar direction</span><select value={createDraft.view.chartOrientation} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartOrientation: event.target.value as "vertical" | "horizontal" } }))}><option value="vertical">Vertical</option><option value="horizontal">Horizontal</option></select></label>
               ) : null}
-              <label className="field"><span>X axis field</span><SearchableSelect value={createDraft.view.chartFieldId} options={fieldOptions} onChange={(value) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartFieldId: value } }))} /></label>
+              <label className="field"><span>{chartPrimaryFieldLabel(createDraft.view.chartType)}</span><SearchableSelect value={createDraft.view.chartFieldId} options={fieldOptions} onChange={(value) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartFieldId: value } }))} /></label>
               {chartSupportsSeries(createDraft.view.chartType) ? (
                 <label className="field">
-                  <span>Series field</span>
+                  <span>{chartSeriesFieldLabel(createDraft.view.chartType)}</span>
                   <SearchableSelect value={createDraft.view.chartSeriesFieldId} options={fieldOptions} allowEmpty emptyOptionLabel="Single series" onChange={(value) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartSeriesFieldId: value } }))} />
                 </label>
               ) : null}
@@ -251,7 +264,7 @@ export function StudioReportDraftViewStep({
                   ) : null}
                   <div className="field" style={{ gridColumn: "1 / -1" }}>
                     <span>Chart colors</span>
-                    <div className="micro">These colors are used in preview, dashboards, and full-screen charts in the order shown.</div>
+                    <div className="micro">Base palette used when a specific category or series color is not assigned.</div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", marginTop: "8px" }}>
                       {(createDraft.view.chartColors?.length ? createDraft.view.chartColors : DEFAULT_CHART_COLORS).map((color, index) => (
                         <label key={`chart-color-${index}`} className="field" style={{ width: "84px" }}>
@@ -278,6 +291,47 @@ export function StudioReportDraftViewStep({
                       <button type="button" className="ghost-button" onClick={() => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartColors: [...(current.view.chartColors?.length ? current.view.chartColors : DEFAULT_CHART_COLORS), "#0d7c66"].slice(0, 12) } }))} disabled={(createDraft.view.chartColors?.length || DEFAULT_CHART_COLORS.length) >= 12}>Add color</button>
                       <button type="button" className="ghost-button" onClick={() => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartColors: current.view.chartColors?.length && current.view.chartColors.length > 1 ? current.view.chartColors.slice(0, -1) : [...DEFAULT_CHART_COLORS] } }))}>Remove last color</button>
                       <button type="button" className="ghost-button" onClick={() => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartColors: [...DEFAULT_CHART_COLORS] } }))}>Reset colors</button>
+                    </div>
+                  </div>
+                  <div className="field" style={{ gridColumn: "1 / -1" }}>
+                    <span>Specific chart colors</span>
+                    <div className="micro">Assign colors to exact {chartColorKeyLabel(createDraft.view.chartType).toLowerCase()}s shown in the chart preview.</div>
+                    <div className="stack-compact" style={{ marginTop: "10px" }}>
+                      {chartColorKeyOptions.length ? chartColorKeyOptions.map((option) => (
+                        <div className="inline-edit-row" key={option.value}>
+                          <input value={option.label} disabled />
+                          <input
+                            type="color"
+                            value={createDraft.view.chartValueColors?.[option.value] || "#0d7c66"}
+                            onChange={(event) => setCreateDraft((current) => ({
+                              ...current,
+                              view: {
+                                ...current.view,
+                                chartValueColors: {
+                                  ...(current.view.chartValueColors || {}),
+                                  [option.value]: event.target.value
+                                }
+                              }
+                            }))}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setCreateDraft((current) => {
+                              const nextColors = { ...(current.view.chartValueColors || {}) };
+                              delete nextColors[option.value];
+                              return {
+                                ...current,
+                                view: {
+                                  ...current.view,
+                                  chartValueColors: nextColors
+                                }
+                              };
+                            })}
+                          >
+                            Clear
+                          </button>
+                        </div>
+                      )) : <div className="empty-hint">Preview the chart with data first to assign individual colors.</div>}
                     </div>
                   </div>
                   <label className="toggle-row builder-subsection-toggle"><input type="checkbox" checked={createDraft.view.chartShowLegend} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartShowLegend: event.target.checked } }))} /> Show legend</label>

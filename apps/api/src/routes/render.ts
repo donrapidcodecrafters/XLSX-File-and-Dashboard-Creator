@@ -9,12 +9,14 @@ import { buildDashboardFileName, buildReportFileName, streamDashboardWorkbook, s
 import { refreshJobStore } from "../services/refresh-jobs.js";
 import { getActiveRefreshJob, primeRefreshJob, refreshObjectCachedDataWithProgress } from "../services/refresh-cache.js";
 
-function normalizeClientFilters(filters: Array<{ fieldId: string; operator?: string; value: string }> = []): FilterDefinition[] {
+function normalizeClientFilters(filters: Array<{ fieldId: string; operator?: string; value: string; valueSource?: "literal" | "field"; compareFieldId?: string }> = []): FilterDefinition[] {
   return filters.map((filter, index) => ({
     id: "client-" + index,
     fieldId: filter.fieldId,
     operator: (filter.operator || "equals") as FilterOperator,
-    value: filter.value
+    value: filter.value,
+    valueSource: filter.valueSource || "literal",
+    compareFieldId: filter.compareFieldId || ""
   }));
 }
 

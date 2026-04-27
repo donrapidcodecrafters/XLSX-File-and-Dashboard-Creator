@@ -805,6 +805,7 @@ function buildDefaultReportView(overrides: Partial<ReportViewDefinition> = {}): 
     chartTopN: 12,
     chartSort: "value-desc",
     chartColors: ["#0d7c66", "#d88d3d", "#5b7cfa", "#9b59b6", "#e66f5c", "#3a9782", "#b7a26a", "#4f8fba"],
+    chartValueColors: {},
     chartShowLegend: true,
     chartShowValues: true,
     chartXAxisLabel: "",
@@ -1645,6 +1646,9 @@ function inferImportedRuntimeFilters(
       id: uniqueId("runtime", candidate.label, existingIds),
       label: candidate.label,
       fieldId: candidate.fieldId,
+      operator: candidate.type === "date" || candidate.type === "datetime" ? "on" : "equals",
+      valueSource: "literal",
+      compareFieldId: "",
       mode: candidate.reportIds.size === reports.length ? "global" : "selected",
       targetReportIds: candidate.reportIds.size === reports.length ? [] : Array.from(candidate.reportIds),
       defaultValue: ""

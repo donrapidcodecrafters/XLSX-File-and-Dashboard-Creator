@@ -1,3 +1,4 @@
+import { useMemo, useState, type ReactNode } from "react";
 import type { QuickbaseAppProfile, QuickbaseConnectionConfig, StudioDocument, TableDefinition } from "@studio/shared";
 import type { QuickbaseAppSchema, QuickbaseRealmApp, QuickbaseSyncResult } from "../lib/studioApi";
 import { buildQuickbaseSavedReportUrl } from "../lib/quickbaseLinks";
@@ -71,66 +72,106 @@ export function StudioSettingsPanel({
   refreshAllNow: () => Promise<void>;
   reloadRemote: () => void;
 }) {
+  const settingsSteps = useMemo(() => ([
+    { id: "overview", label: "Overview", description: "Branding, session, and current connection status." },
+    { id: "profiles", label: "Profiles", description: "Quickbase app profiles and active app connection details." },
+    { id: "refresh", label: "Refresh", description: "Scheduled refresh settings and source report mappings." },
+    { id: "storage", label: "Storage", description: "Saved objects, settings, sharing roster, and version table mappings." },
+    { id: "review", label: "Review", description: "Save, reload, and confirm the current app sync state." }
+  ]), []);
+  const [activeStep, setActiveStep] = useState<(typeof settingsSteps)[number]["id"]>("overview");
+  const activeStepIndex = settingsSteps.findIndex((step) => step.id === activeStep);
+  const activeStepMeta = settingsSteps[activeStepIndex] || settingsSteps[0];
+  function renderStep(id: (typeof settingsSteps)[number]["id"], content: ReactNode) {
+    if (activeStep !== id) return null;
+    return content;
+  }
   return (
     <div className="stack">
-      <div className="summary-grid">
-        <div className="summary-card"><strong>{documentState.sync.providerMode === "api" ? "Connected" : "Local draft"}</strong><span>Connection</span></div>
-        <div className="summary-card"><strong>{documentState.sync.lastLoadedAt ? new Date(documentState.sync.lastLoadedAt).toLocaleTimeString() : "n/a"}</strong><span>Last load</span></div>
-        <div className="summary-card"><strong>{documentState.sync.lastSavedAt ? new Date(documentState.sync.lastSavedAt).toLocaleTimeString() : "n/a"}</strong><span>Last save</span></div>
-        <div className="summary-card"><strong>{activeQuickbaseProfile?.refreshStatus.lastSuccessAt ? new Date(activeQuickbaseProfile.refreshStatus.lastSuccessAt).toLocaleString() : "Not refreshed"}</strong><span>Last app refresh</span></div>
-        <div className="summary-card"><strong>{activeQuickbaseProfile?.refreshStatus.nextRunAt ? new Date(activeQuickbaseProfile.refreshStatus.nextRunAt).toLocaleString() : "Not scheduled"}</strong><span>Next app refresh</span></div>
-        <div className="summary-card"><strong>{savedRowsForApp.toLocaleString()}</strong><span>Rows saved for faster loading</span></div>
+      <div className="builder-stepper">
+        {settingsSteps.map((step, index) => (
+          <button
+            key={step.id}
+            type="button"
+            className={`builder-step-button${step.id === activeStep ? " active-tab" : ""}${activeStepIndex > index ? " builder-step-complete" : ""}`}
+            onClick={() => setActiveStep(step.id)}
+          >
+            <span className="badge">{index + 1}</span>
+            <strong>{step.label}</strong>
+          </button>
+        ))}
       </div>
-      <label className="field">
-        <span>Platform name</span>
-        <input value={documentState.branding.platformName} onChange={(event) => applyDocumentUpdate((draft) => { draft.branding.platformName = event.target.value; })} />
-      </label>
-      <label className="field">
-        <span>Navigation label</span>
-        <input value={documentState.branding.navigationLabel} onChange={(event) => applyDocumentUpdate((draft) => { draft.branding.navigationLabel = event.target.value; })} />
-      </label>
-      <label className="field">
-        <span>Home label</span>
-        <input value={documentState.branding.homeLabel} onChange={(event) => applyDocumentUpdate((draft) => { draft.branding.homeLabel = event.target.value; })} />
-      </label>
-      <label className="toggle-row">
-        <input
-          type="checkbox"
-          checked={documentState.branding.openLinksInNewTab === true}
-          onChange={(event) => applyDocumentUpdate((draft) => { draft.branding.openLinksInNewTab = event.target.checked; })}
-        />
-        Open reports and dashboards in a new tab
-      </label>
-      <label className="field">
-        <span>Session timeout after idle (hours)</span>
-        <input
-          type="number"
-          min="1"
-          step="1"
-          value={documentState.session.inactivityTimeoutHours}
-          onChange={(event) => applyDocumentUpdate((draft) => {
-            const nextValue = Math.max(1, Number(event.target.value) || 24);
-            draft.session.inactivityTimeoutHours = nextValue;
-          })}
-        />
-      </label>
-      <label className="field">
-        <span>Idle grace before timeout starts (minutes)</span>
-        <input
-          type="number"
-          min="0"
-          step="1"
-          value={documentState.session.inactivityGraceMinutes}
-          onChange={(event) => applyDocumentUpdate((draft) => {
-            const nextValue = Math.max(0, Number(event.target.value) || 5);
-            draft.session.inactivityGraceMinutes = nextValue;
-          })}
-        />
-      </label>
-      <div className="micro">
-        Users stay signed in while they are active. The timeout countdown only starts after this many idle minutes, and activity in another tab from the same browser keeps the same session alive.
+
+      <div className="sync-status">
+        <strong>{activeStepMeta.label}</strong>
+        <span>{activeStepMeta.description}</span>
       </div>
-      <div className="card">
+
+      {renderStep("overview", (
+        <>
+          <div className="summary-grid">
+            <div className="summary-card"><strong>{documentState.sync.providerMode === "api" ? "Connected" : "Local draft"}</strong><span>Connection</span></div>
+            <div className="summary-card"><strong>{documentState.sync.lastLoadedAt ? new Date(documentState.sync.lastLoadedAt).toLocaleTimeString() : "n/a"}</strong><span>Last load</span></div>
+            <div className="summary-card"><strong>{documentState.sync.lastSavedAt ? new Date(documentState.sync.lastSavedAt).toLocaleTimeString() : "n/a"}</strong><span>Last save</span></div>
+            <div className="summary-card"><strong>{activeQuickbaseProfile?.refreshStatus.lastSuccessAt ? new Date(activeQuickbaseProfile.refreshStatus.lastSuccessAt).toLocaleString() : "Not refreshed"}</strong><span>Last app refresh</span></div>
+            <div className="summary-card"><strong>{activeQuickbaseProfile?.refreshStatus.nextRunAt ? new Date(activeQuickbaseProfile.refreshStatus.nextRunAt).toLocaleString() : "Not scheduled"}</strong><span>Next app refresh</span></div>
+            <div className="summary-card"><strong>{savedRowsForApp.toLocaleString()}</strong><span>Rows saved for faster loading</span></div>
+          </div>
+          <label className="field">
+            <span>Platform name</span>
+            <input value={documentState.branding.platformName} onChange={(event) => applyDocumentUpdate((draft) => { draft.branding.platformName = event.target.value; })} />
+          </label>
+          <label className="field">
+            <span>Navigation label</span>
+            <input value={documentState.branding.navigationLabel} onChange={(event) => applyDocumentUpdate((draft) => { draft.branding.navigationLabel = event.target.value; })} />
+          </label>
+          <label className="field">
+            <span>Home label</span>
+            <input value={documentState.branding.homeLabel} onChange={(event) => applyDocumentUpdate((draft) => { draft.branding.homeLabel = event.target.value; })} />
+          </label>
+          <label className="toggle-row">
+            <input
+              type="checkbox"
+              checked={documentState.branding.openLinksInNewTab === true}
+              onChange={(event) => applyDocumentUpdate((draft) => { draft.branding.openLinksInNewTab = event.target.checked; })}
+            />
+            Open reports and dashboards in a new tab
+          </label>
+          <label className="field">
+            <span>Session timeout after idle (hours)</span>
+            <input
+              type="number"
+              min="1"
+              step="1"
+              value={documentState.session.inactivityTimeoutHours}
+              onChange={(event) => applyDocumentUpdate((draft) => {
+                const nextValue = Math.max(1, Number(event.target.value) || 24);
+                draft.session.inactivityTimeoutHours = nextValue;
+              })}
+            />
+          </label>
+          <label className="field">
+            <span>Idle grace before timeout starts (minutes)</span>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={documentState.session.inactivityGraceMinutes}
+              onChange={(event) => applyDocumentUpdate((draft) => {
+                const nextValue = Math.max(0, Number(event.target.value) || 5);
+                draft.session.inactivityGraceMinutes = nextValue;
+              })}
+            />
+          </label>
+          <div className="micro">
+            Users stay signed in while they are active. The timeout countdown only starts after this many idle minutes, and activity in another tab from the same browser keeps the same session alive.
+          </div>
+        </>
+      ))}
+
+      {renderStep("profiles", (
+        <>
+          <div className="card">
         <div className="card-head">
           <strong>Quickbase app profiles</strong>
           <span className="micro">Connect several Quickbase apps in the same realm and keep their DBIDs, FIDs, schedules, and refresh source reports separate.</span>
@@ -221,7 +262,11 @@ export function StudioSettingsPanel({
           </div>
         ) : null}
       </div>
-      <div className="card">
+        </>
+      ))}
+
+      {renderStep("refresh", (
+        <div className="card">
         <div className="card-head">
           <strong>Schedule refresh for this app</strong>
           <span className="micro">This schedule refreshes the selected source tables for the active app profile.</span>
@@ -359,21 +404,12 @@ export function StudioSettingsPanel({
           <strong>{refreshStatusTitle}</strong>
           <span>{refreshStatusDetail}</span>
         </div>
-      </div>
-      <div className="studio-actions">
-        <button onClick={reloadRemote}>Load from server</button>
-        <button onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save to Quickbase and server"}</button>
-      </div>
-      {lastQuickbaseSync ? (
-        <div className={`sync-status ${lastQuickbaseSync.ok ? "sync-status-ok" : "sync-status-warn"}`}>
-          <strong>{lastQuickbaseSync.ok ? "Quickbase save succeeded" : "Quickbase save needs attention"}</strong>
-          <span>{lastQuickbaseSync.message}</span>
-          <span>
-            {lastQuickbaseSync.savedObjects} saved reports or dashboards · {lastQuickbaseSync.savedSettings} user settings rows · {lastQuickbaseSync.savedVersions} version rows
-          </span>
         </div>
-      ) : null}
-      <div className="card">
+      ))}
+
+      {renderStep("storage", (
+        <>
+          <div className="card">
         <div className="card-head">
           <strong>Saved reports and dashboards</strong>
           <span className="micro">Enter the DBID and field FIDs for the saved reports table.</span>
@@ -447,6 +483,42 @@ export function StudioSettingsPanel({
           <label className="field"><span>Changed by field FID</span><input value={activeQuickbaseConfig.versionChangedByFieldId} onChange={(event) => updateQuickbaseField("versionChangedByFieldId", event.target.value)} placeholder="Optional FID" /></label>
           <label className="field"><span>Updated by field FID</span><input value={activeQuickbaseConfig.versionUpdatedByFieldId} onChange={(event) => updateQuickbaseField("versionUpdatedByFieldId", event.target.value)} placeholder="Optional FID" /></label>
         </div>
+      </div>
+        </>
+      ))}
+
+      {renderStep("review", (
+        <>
+          <div className="summary-grid">
+            <div className="summary-card"><strong>{documentState.sync.providerMode === "api" ? "Connected" : "Local draft"}</strong><span>Connection</span></div>
+            <div className="summary-card"><strong>{activeQuickbaseConfig.appId || "Not set"}</strong><span>Active app ID</span></div>
+            <div className="summary-card"><strong>{activeQuickbaseProfile?.refreshSource.tableIds.length || 0}</strong><span>Tables selected for refresh</span></div>
+            <div className="summary-card"><strong>{savedRowsForApp.toLocaleString()}</strong><span>Rows cached for this app</span></div>
+          </div>
+          {lastQuickbaseSync ? (
+            <div className={`sync-status ${lastQuickbaseSync.ok ? "sync-status-ok" : "sync-status-warn"}`}>
+              <strong>{lastQuickbaseSync.ok ? "Quickbase save succeeded" : "Quickbase save needs attention"}</strong>
+              <span>{lastQuickbaseSync.message}</span>
+              <span>
+                {lastQuickbaseSync.savedObjects} saved reports or dashboards · {lastQuickbaseSync.savedSettings} user settings rows · {lastQuickbaseSync.savedVersions} version rows
+              </span>
+            </div>
+          ) : (
+            <div className="sync-status">
+              <strong>Ready to save</strong>
+              <span>Use the actions below to load from the server or save the current settings into Quickbase and the server document.</span>
+            </div>
+          )}
+        </>
+      ))}
+
+      <div className="studio-actions">
+        <button type="button" className="ghost-button" onClick={() => setActiveStep(settingsSteps[Math.max(0, activeStepIndex - 1)].id)} disabled={activeStepIndex <= 0}>Back</button>
+        <button type="button" onClick={() => setActiveStep(settingsSteps[Math.min(settingsSteps.length - 1, activeStepIndex + 1)].id)} disabled={activeStepIndex >= settingsSteps.length - 1}>Next</button>
+      </div>
+      <div className="studio-actions">
+        <button onClick={reloadRemote}>Load from server</button>
+        <button onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save to Quickbase and server"}</button>
       </div>
     </div>
   );

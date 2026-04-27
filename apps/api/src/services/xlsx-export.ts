@@ -83,8 +83,11 @@ function formatFilterValue(value: string) {
 function describeReportFilter(report: ReportDefinition, table: TableDefinition, filter: FilterDefinition) {
   const fieldLabel = getReportFieldLabel(report, table, filter.fieldId);
   const operatorLabel = FILTER_OPERATOR_LABELS[filter.operator] || filter.operator;
+  const compareFieldLabel = filter.valueSource === "field" && filter.compareFieldId
+    ? getReportFieldLabel(report, table, filter.compareFieldId)
+    : "";
   return filterNeedsValue(filter.operator)
-    ? `${fieldLabel} ${operatorLabel} ${formatFilterValue(filter.value)}`
+    ? `${fieldLabel} ${operatorLabel} ${compareFieldLabel ? `value from ${compareFieldLabel}` : formatFilterValue(filter.value)}`
     : `${fieldLabel} ${operatorLabel}`;
 }
 
@@ -103,7 +106,13 @@ function describeRuntimeFilter(
     : filter.targetReportIds.length
       ? `${filter.targetReportIds.length} selected report${filter.targetReportIds.length === 1 ? "" : "s"}`
       : "selected reports";
-  return `${filter.label || filter.id}: ${fieldLabel} = ${formatFilterValue(currentValue)} (${scope})`;
+  const compareFieldLabel = filter.valueSource === "field" && filter.compareFieldId
+    ? Object.values(tablesById)
+        .map((table) => getTableFieldLabel(table, filter.compareFieldId || ""))
+        .find((label) => label !== filter.compareFieldId) || filter.compareFieldId
+    : "";
+  const operatorLabel = FILTER_OPERATOR_LABELS[filter.operator] || filter.operator;
+  return `${filter.label || filter.id}: ${fieldLabel} ${operatorLabel} ${compareFieldLabel ? `value from ${compareFieldLabel}` : formatFilterValue(currentValue)} (${scope})`;
 }
 
 function writeOverviewHeader(sheet: ExcelJS.Worksheet, title: string, description: string) {

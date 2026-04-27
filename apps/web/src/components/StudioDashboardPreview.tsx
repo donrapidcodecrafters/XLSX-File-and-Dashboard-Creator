@@ -22,7 +22,7 @@ import {
 } from "@studio/shared";
 import { ChartPreview } from "./ChartPreview";
 import { ResizableDataTable } from "./ResizableDataTable";
-import { getChartAxisLabels } from "./studioReportUtils";
+import { getChartAxisLabels, getChartViewportBounds } from "./studioReportUtils";
 
 function getFieldLabel(report: ReportDefinition, table: TableDefinition | null, fieldId: string) {
   return table ? getReportFieldLabel(report, table, fieldId) : fieldId;
@@ -497,22 +497,28 @@ export function StudioDashboardPreview({
                       <div className="mini-chart">
                         {(() => {
                           const axisLabels = getChartAxisLabels(widget.report, widgetTable);
+                          const chartBounds = getChartViewportBounds(widget.report.view.chartType, widget.result.chartData.length, true);
                           return (
-                        <ChartPreview
-                          chartType={widget.report.view.chartType}
-                          data={widget.result.chartData}
-                          title={widget.report.view.chartTitle || widget.widget.title}
-                          decimalPlaces={widget.report.view.decimalPlaces}
-                          chartColors={widget.report.view.chartColors}
-                          chartOrientation={widget.report.view.chartOrientation}
-                          xAxisLabel={axisLabels.xAxisLabel}
-                          yAxisLabel={axisLabels.yAxisLabel}
-                          secondaryYAxisLabel={axisLabels.secondaryYAxisLabel}
-                          secondarySeriesType={widget.report.view.chartSecondarySeriesType}
-                          compact
-                          showLegend={widget.report.view.chartShowLegend}
-                          showValues={widget.report.view.chartShowValues}
-                        />
+                            <div className="chart-scroll-shell">
+                              <div style={{ minWidth: `${chartBounds.minWidth}px`, minHeight: `${chartBounds.minHeight}px` }}>
+                                <ChartPreview
+                                  chartType={widget.report.view.chartType}
+                                  data={widget.result.chartData}
+                                  title={widget.report.view.chartTitle || widget.widget.title}
+                                  decimalPlaces={widget.report.view.decimalPlaces}
+                                  chartColors={widget.report.view.chartColors}
+                                  chartValueColors={widget.report.view.chartValueColors}
+                                  chartOrientation={widget.report.view.chartOrientation}
+                                  xAxisLabel={axisLabels.xAxisLabel}
+                                  yAxisLabel={axisLabels.yAxisLabel}
+                                  secondaryYAxisLabel={axisLabels.secondaryYAxisLabel}
+                                  secondarySeriesType={widget.report.view.chartSecondarySeriesType}
+                                  compact
+                                  showLegend={widget.report.view.chartShowLegend}
+                                  showValues={widget.report.view.chartShowValues}
+                                />
+                              </div>
+                            </div>
                           );
                         })()}
                       </div>

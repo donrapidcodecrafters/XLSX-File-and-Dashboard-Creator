@@ -8,6 +8,7 @@ import { ResizableDataTable } from "./ResizableDataTable";
 import { createExportSaveTarget, downloadExportJob, fetchExportJobStatus, startReportExportJob, type ExportSaveTarget } from "../lib/api";
 import { buildHostedRoute, buildObjectUrl, getHostedContext } from "../lib/embed";
 import { buildQuickbaseChartDatumUrl, buildQuickbaseRecordEditUrl, buildQuickbaseReportFilterTree, type QuickbaseTableLinkContext } from "../lib/quickbaseLinks";
+import { getChartViewportBounds } from "./studioReportUtils";
 
 interface ReportViewProps {
   report: ReportDefinition;
@@ -192,6 +193,7 @@ export function ReportView({
   const [focusedSection, setFocusedSection] = useState<"" | "chart" | "details">(initialFocusedSection);
   const chartFieldId = getChartFieldId(report);
   const axisLabels = getChartAxisLabels(report, table);
+  const chartBounds = getChartViewportBounds(report.view.chartType, result?.chartData.length || 0, false);
   const quickbaseFilterTree = buildQuickbaseReportFilterTree(report);
   const focusModes = useMemo(
     () => availableReportFocusModes(report, { summaryAvailable, chartAvailable, detailsAvailable }),
@@ -604,22 +606,27 @@ export function ReportView({
               <div className="link-toolbar">
                 <button className="ghost-button" onClick={() => setFocusedSection("chart")}>Focus chart</button>
               </div>
-              <ChartPreview
-                chartType={report.view.chartType}
-                data={result?.chartData || []}
-                title={report.view.chartTitle}
-                decimalPlaces={report.view.decimalPlaces}
-                chartColors={report.view.chartColors}
-                chartOrientation={report.view.chartOrientation}
-                xAxisLabel={axisLabels.xAxisLabel}
-                yAxisLabel={axisLabels.yAxisLabel}
-                secondaryYAxisLabel={axisLabels.secondaryYAxisLabel}
-                secondarySeriesType={report.view.chartSecondarySeriesType}
-                showLegend={report.view.chartShowLegend}
-                showValues={report.view.chartShowValues}
-                openLinksInNewTab={openLinksInNewTab}
-                getDatumHref={(datum) => buildQuickbaseChartDatumUrl(quickbaseLinkContext, table, chartFieldId, datum, quickbaseFilterTree)}
-              />
+              <div className="chart-scroll-shell">
+                <div style={{ minWidth: `${chartBounds.minWidth}px`, minHeight: `${chartBounds.minHeight}px` }}>
+                  <ChartPreview
+                    chartType={report.view.chartType}
+                    data={result?.chartData || []}
+                    title={report.view.chartTitle}
+                    decimalPlaces={report.view.decimalPlaces}
+                    chartColors={report.view.chartColors}
+                    chartValueColors={report.view.chartValueColors}
+                    chartOrientation={report.view.chartOrientation}
+                    xAxisLabel={axisLabels.xAxisLabel}
+                    yAxisLabel={axisLabels.yAxisLabel}
+                    secondaryYAxisLabel={axisLabels.secondaryYAxisLabel}
+                    secondarySeriesType={report.view.chartSecondarySeriesType}
+                    showLegend={report.view.chartShowLegend}
+                    showValues={report.view.chartShowValues}
+                    openLinksInNewTab={openLinksInNewTab}
+                    getDatumHref={(datum) => buildQuickbaseChartDatumUrl(quickbaseLinkContext, table, chartFieldId, datum, quickbaseFilterTree)}
+                  />
+                </div>
+              </div>
             </>
           )}
         </div>
@@ -652,22 +659,27 @@ export function ReportView({
               <strong>{report.name} · Chart focus</strong>
               <button className="ghost-button" onClick={() => setFocusedSection("")}>Close</button>
             </div>
-            <ChartPreview
-              chartType={report.view.chartType}
-              data={result?.chartData || []}
-              title={report.view.chartTitle}
-              decimalPlaces={report.view.decimalPlaces}
-              chartColors={report.view.chartColors}
-              chartOrientation={report.view.chartOrientation}
-              xAxisLabel={axisLabels.xAxisLabel}
-              yAxisLabel={axisLabels.yAxisLabel}
-              secondaryYAxisLabel={axisLabels.secondaryYAxisLabel}
-              secondarySeriesType={report.view.chartSecondarySeriesType}
-              showLegend={report.view.chartShowLegend}
-              showValues={report.view.chartShowValues}
-              openLinksInNewTab={openLinksInNewTab}
-              getDatumHref={(datum) => buildQuickbaseChartDatumUrl(quickbaseLinkContext, table, chartFieldId, datum, quickbaseFilterTree)}
-            />
+            <div className="chart-scroll-shell">
+              <div style={{ minWidth: `${chartBounds.minWidth}px`, minHeight: `${chartBounds.minHeight}px` }}>
+                <ChartPreview
+                  chartType={report.view.chartType}
+                  data={result?.chartData || []}
+                  title={report.view.chartTitle}
+                  decimalPlaces={report.view.decimalPlaces}
+                  chartColors={report.view.chartColors}
+                  chartValueColors={report.view.chartValueColors}
+                  chartOrientation={report.view.chartOrientation}
+                  xAxisLabel={axisLabels.xAxisLabel}
+                  yAxisLabel={axisLabels.yAxisLabel}
+                  secondaryYAxisLabel={axisLabels.secondaryYAxisLabel}
+                  secondarySeriesType={report.view.chartSecondarySeriesType}
+                  showLegend={report.view.chartShowLegend}
+                  showValues={report.view.chartShowValues}
+                  openLinksInNewTab={openLinksInNewTab}
+                  getDatumHref={(datum) => buildQuickbaseChartDatumUrl(quickbaseLinkContext, table, chartFieldId, datum, quickbaseFilterTree)}
+                />
+              </div>
+            </div>
           </div>
         </div>
       ) : null}

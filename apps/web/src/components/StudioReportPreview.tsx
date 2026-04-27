@@ -3,6 +3,7 @@ import { ChartPreview } from "./ChartPreview";
 import {
   formatStudioReportCell,
   getChartAxisLabels,
+  getChartViewportBounds,
   reportShowsChart,
   reportShowsDetails,
   reportShowsSummary
@@ -82,21 +83,27 @@ export function StudioReportPreview({
 
   if (reportShowsChart(report)) {
     const axisLabels = getChartAxisLabels(report, table);
+    const chartBounds = getChartViewportBounds(report.view.chartType, result.chartData.length, false);
     return (
       <div className="studio-preview-stack">
-        <ChartPreview
-          chartType={report.view.chartType}
-          data={result.chartData}
-          title={report.view.chartTitle}
-          decimalPlaces={report.view.decimalPlaces}
-          chartColors={report.view.chartColors}
-          chartOrientation={report.view.chartOrientation}
-          xAxisLabel={axisLabels.xAxisLabel}
-          yAxisLabel={axisLabels.yAxisLabel}
-          secondaryYAxisLabel={axisLabels.secondaryYAxisLabel}
-          showLegend={report.view.chartShowLegend}
-          showValues={report.view.chartShowValues}
-        />
+        <div className="chart-scroll-shell">
+          <div style={{ minWidth: `${chartBounds.minWidth}px`, minHeight: `${chartBounds.minHeight}px` }}>
+            <ChartPreview
+              chartType={report.view.chartType}
+              data={result.chartData}
+              title={report.view.chartTitle}
+              decimalPlaces={report.view.decimalPlaces}
+              chartColors={report.view.chartColors}
+              chartValueColors={report.view.chartValueColors}
+              chartOrientation={report.view.chartOrientation}
+              xAxisLabel={axisLabels.xAxisLabel}
+              yAxisLabel={axisLabels.yAxisLabel}
+              secondaryYAxisLabel={axisLabels.secondaryYAxisLabel}
+              showLegend={report.view.chartShowLegend}
+              showValues={report.view.chartShowValues}
+            />
+          </div>
+        </div>
         {reportShowsDetails(report) ? (
           <>
             {pager}

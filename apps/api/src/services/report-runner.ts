@@ -425,6 +425,10 @@ function buildQuickbaseWhere(filters: FilterDefinition[]) {
   const pushdown: Array<{ fid: string; value: unknown; operator?: string }> = [];
   const unsupported: FilterDefinition[] = [];
   filters.forEach((filter) => {
+    if (filter.valueSource === "field" && filter.compareFieldId) {
+      unsupported.push(filter);
+      return;
+    }
     if (DATE_TOKENS.has(String(filter.value || ""))) {
       unsupported.push(filter);
       return;
@@ -533,6 +537,7 @@ function createFallbackWidgetReport(widget: DashboardDefinition["tabs"][number][
       chartTopN: 12,
       chartSort: "value-desc",
       chartColors: ["#0d7c66"],
+      chartValueColors: {},
       chartShowLegend: false,
       chartShowValues: false,
       chartXAxisLabel: "",

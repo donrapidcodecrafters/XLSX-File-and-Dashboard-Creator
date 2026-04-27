@@ -109,6 +109,10 @@ import { StudioWorkspaceHome } from "./StudioWorkspaceHome";
 import { ClearableInputField } from "./ClearableInputField";
 import {
   DEFAULT_CHART_COLORS,
+  chartPrimaryFieldLabel,
+  chartSeriesFieldLabel,
+  chartValueFieldLabel,
+  getFieldComparisonOptions,
   getChartAxisLabels,
   getSortedFieldOptions,
   reportShowsChart,
@@ -1029,6 +1033,7 @@ function createUnavailableDashboardReport(widget: DashboardDefinition["tabs"][nu
       chartTopN: 12,
       chartSort: "value-desc",
       chartColors: DEFAULT_CHART_COLORS,
+      chartValueColors: {},
       chartShowLegend: false,
       chartShowValues: false,
       chartXAxisLabel: "",
@@ -1088,8 +1093,8 @@ function validationMessages(object: StudioObject, table?: TableDefinition | null
   const messages: string[] = [];
   if (object.type === "report") {
     if (!object.selectedFieldIds.length && object.view.showDetails) messages.push("Select at least one detail field or turn off detail rows.");
-    if (reportShowsChart(object) && !object.view.chartFieldId) messages.push("Choose an X axis field for the chart.");
-    if (reportShowsChart(object) && object.view.chartAggregation !== "count" && !object.view.chartValueFieldId) messages.push("Choose a Y axis value field for the chart.");
+    if (reportShowsChart(object) && !object.view.chartFieldId) messages.push(`Choose a ${chartPrimaryFieldLabel(object.view.chartType).toLowerCase()} for the chart.`);
+    if (reportShowsChart(object) && object.view.chartAggregation !== "count" && !object.view.chartValueFieldId) messages.push(`Choose a ${chartValueFieldLabel(object.view.chartType).toLowerCase()} for the chart.`);
     if (reportShowsChart(object) && object.view.chartUseSecondaryAxis && object.view.chartSecondaryAggregation !== "count" && !object.view.chartSecondaryValueFieldId) messages.push("Choose a secondary Y axis field or turn off the secondary axis.");
     if (object.view.mode === "timeline" && !object.view.timelineDateField) messages.push("Choose a timeline start field.");
     if (object.view.mode === "calendar" && !object.view.calendarDateField) messages.push("Choose a calendar date field.");
@@ -1118,6 +1123,51 @@ function FilterGroupEditor({
   onRemove?: () => void;
 }) {
   const fieldOptions = getSortedFieldOptions(table);
+  function renderFilterValueEditor(rule: FilterDefinition, field: TableDefinition["fields"][number] | null, valueOptions: Array<{ value: string; label: string }>) {
+    const needsValue = filterNeedsValue(rule.operator);
+    const comparisonFieldOptions = rule.fieldId ? getFieldComparisonOptions(table, rule.fieldId) : fieldOptions;
+    if (!needsValue) return null;
+    return (
+      <>
+        <select
+          value={rule.valueSource || "literal"}
+          onChange={(event) => onChange(updateFilterRuleInGroup(group, rule.id, (currentRule) => ({
+            ...currentRule,
+            valueSource: event.target.value as "literal" | "field",
+            value: event.target.value === "field" ? "" : currentRule.value,
+            compareFieldId: event.target.value === "field" ? currentRule.compareFieldId || "" : ""
+          })))}
+        >
+          <option value="literal">{field?.type === "date" || field?.type === "datetime" ? "specific date" : "specific value"}</option>
+          <option value="field">{field?.type === "date" || field?.type === "datetime" ? "the date in the field" : "the value in the field"}</option>
+        </select>
+        {(rule.valueSource || "literal") === "field" ? (
+          <SearchableSelect
+            value={rule.compareFieldId || ""}
+            options={comparisonFieldOptions}
+            allowEmpty
+            emptyOptionLabel="Choose a comparison field"
+            onChange={(value) => onChange(updateFilterRuleInGroup(group, rule.id, (currentRule) => ({ ...currentRule, compareFieldId: value })))}
+          />
+        ) : valueOptions.length && field?.type !== "date" && field?.type !== "datetime" && field?.type !== "number" && field?.type !== "currency" ? (
+          <SearchableSelect
+            value={rule.value}
+            options={valueOptions}
+            allowEmpty
+            emptyOptionLabel="Choose a value"
+            onChange={(value) => onChange(updateFilterRuleInGroup(group, rule.id, (currentRule) => ({ ...currentRule, value })))}
+          />
+        ) : (
+          <input
+            type={field?.type === "date" ? "date" : field?.type === "datetime" ? "datetime-local" : field?.type === "number" || field?.type === "currency" ? "number" : "text"}
+            value={rule.value}
+            onChange={(event) => onChange(updateFilterRuleInGroup(group, rule.id, (currentRule) => ({ ...currentRule, value: event.target.value })))}
+            placeholder={field?.type === "date" || field?.type === "datetime" ? "Filter date" : "Filter value"}
+          />
+        )}
+      </>
+    );
+  }
   return (
     <div className="filter-group-editor">
       <div className="card-head">
@@ -1199,33 +1249,25 @@ function FilterGroupEditor({
                     ...currentRule,
                     fieldId: value,
                     operator: nextOperator,
-                    value: filterNeedsValue(nextOperator) ? currentRule.value : ""
+                    value: filterNeedsValue(nextOperator) ? currentRule.value : "",
+                    valueSource: "literal",
+                    compareFieldId: ""
                   };
                 }))}
               />
               <select
                 value={rule.operator}
-                onChange={(event) => onChange(updateFilterRuleInGroup(group, rule.id, (currentRule) => ({ ...currentRule, operator: event.target.value as FilterOperator, value: filterNeedsValue(event.target.value as FilterOperator) ? currentRule.value : "" })))}
+                onChange={(event) => onChange(updateFilterRuleInGroup(group, rule.id, (currentRule) => ({
+                  ...currentRule,
+                  operator: event.target.value as FilterOperator,
+                  value: filterNeedsValue(event.target.value as FilterOperator) ? currentRule.value : "",
+                  valueSource: filterNeedsValue(event.target.value as FilterOperator) ? (currentRule.valueSource || "literal") : "literal",
+                  compareFieldId: filterNeedsValue(event.target.value as FilterOperator) ? currentRule.compareFieldId || "" : ""
+                })))}
               >
                 {operatorOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
-              {valueOptions.length && field?.type !== "date" && field?.type !== "datetime" && field?.type !== "number" && field?.type !== "currency" ? (
-                <SearchableSelect
-                  value={rule.value}
-                  options={valueOptions}
-                  allowEmpty
-                  emptyOptionLabel={filterNeedsValue(rule.operator) ? "Choose a value" : "No value needed"}
-                  onChange={(value) => onChange(updateFilterRuleInGroup(group, rule.id, (currentRule) => ({ ...currentRule, value })))}
-                />
-              ) : (
-                <input
-                  type={field?.type === "date" ? "date" : field?.type === "datetime" ? "datetime-local" : field?.type === "number" || field?.type === "currency" ? "number" : "text"}
-                  value={rule.value}
-                  disabled={!filterNeedsValue(rule.operator)}
-                  onChange={(event) => onChange(updateFilterRuleInGroup(group, rule.id, (currentRule) => ({ ...currentRule, value: event.target.value })))}
-                  placeholder={filterNeedsValue(rule.operator) ? "Filter value" : "No value needed"}
-                />
-              )}
+              {renderFilterValueEditor(rule, field, valueOptions)}
               <button type="button" onClick={() => onChange(removeFilterNodeFromGroup(group, rule.id))}>Remove</button>
             </div>
           );
@@ -3643,6 +3685,9 @@ export function StudioPage({
                   const resolvedTableId = filter.sourceTableId || (activeDashboardRefreshTables.length === 1 ? activeDashboardRefreshTables[0]?.id || "" : "");
                   const selectedTable = activeDashboardRefreshTables.find((table) => table.id === resolvedTableId) || null;
                   const fieldOptions = resolvedTableId ? (activeDashboardFieldOptionsByTableId[resolvedTableId] || []) : [];
+                  const selectedField = selectedTable?.fields.find((field) => field.id === filter.fieldId) || null;
+                  const operatorOptions = filterOperatorOptionsForField(selectedField);
+                  const comparisonFieldOptions = selectedTable && filter.fieldId ? getFieldComparisonOptions(selectedTable, filter.fieldId) : [];
                   const valueOptions = resolvedTableId && filter.fieldId ? collectFieldValueOptions(resolvedTableId, filter.fieldId) : [];
                   return (
                     <div className="card" key={filter.id}>
@@ -3679,8 +3724,37 @@ export function StudioPage({
                             options={fieldOptions}
                             allowEmpty
                             emptyOptionLabel={resolvedTableId ? "Choose table field" : "Choose a table first"}
-                            onChange={(value) => updateRuntimeFilter(filter.id, (current) => ({ ...current, fieldId: value, defaultValue: "" }))}
+                            onChange={(value) => updateRuntimeFilter(filter.id, (current) => {
+                              const nextField = selectedTable?.fields.find((field) => field.id === value) || null;
+                              const nextOptions = filterOperatorOptionsForField(nextField);
+                              const nextOperator = nextOptions.some((option) => option.value === current.operator)
+                                ? current.operator
+                                : nextOptions[0]?.value || "equals";
+                              return {
+                                ...current,
+                                fieldId: value,
+                                operator: nextOperator,
+                                valueSource: "literal",
+                                compareFieldId: "",
+                                defaultValue: ""
+                              };
+                            })}
                           />
+                        </label>
+                        <label className="field">
+                          <span>Operator</span>
+                          <select
+                            value={filter.operator}
+                            onChange={(event) => updateRuntimeFilter(filter.id, (current) => ({
+                              ...current,
+                              operator: event.target.value as FilterOperator,
+                              valueSource: filterNeedsValue(event.target.value as FilterOperator) ? (current.valueSource || "literal") : "literal",
+                              compareFieldId: filterNeedsValue(event.target.value as FilterOperator) ? current.compareFieldId || "" : "",
+                              defaultValue: filterNeedsValue(event.target.value as FilterOperator) ? current.defaultValue : ""
+                            }))}
+                          >
+                            {operatorOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                          </select>
                         </label>
                         <label className="field">
                           <span>Mode</span>
@@ -3689,7 +3763,36 @@ export function StudioPage({
                             <option value="selected">Selected reports</option>
                           </select>
                         </label>
-                        {valueOptions.length ? (
+                        {filterNeedsValue(filter.operator) ? (
+                          <label className="field">
+                            <span>Compare using</span>
+                            <select
+                              value={filter.valueSource || "literal"}
+                              onChange={(event) => updateRuntimeFilter(filter.id, (current) => ({
+                                ...current,
+                                valueSource: event.target.value as "literal" | "field",
+                                compareFieldId: event.target.value === "field" ? current.compareFieldId || "" : "",
+                                defaultValue: event.target.value === "field" ? "" : current.defaultValue
+                              }))}
+                            >
+                              <option value="literal">{selectedField?.type === "date" || selectedField?.type === "datetime" ? "specific date" : "specific value"}</option>
+                              <option value="field">{selectedField?.type === "date" || selectedField?.type === "datetime" ? "the date in the field" : "the value in the field"}</option>
+                            </select>
+                          </label>
+                        ) : null}
+                        {filterNeedsValue(filter.operator) && (filter.valueSource || "literal") === "field" ? (
+                          <label className="field">
+                            <span>Comparison field</span>
+                            <SearchableSelect
+                              value={filter.compareFieldId || ""}
+                              options={comparisonFieldOptions}
+                              allowEmpty
+                              emptyOptionLabel="Choose a comparison field"
+                              onChange={(value) => updateRuntimeFilter(filter.id, (current) => ({ ...current, compareFieldId: value }))}
+                            />
+                          </label>
+                        ) : null}
+                        {filterNeedsValue(filter.operator) && (filter.valueSource || "literal") !== "field" ? valueOptions.length ? (
                           <label className="field">
                             <span>Default value</span>
                             <SearchableSelect
@@ -3705,7 +3808,7 @@ export function StudioPage({
                             <span>Default value</span>
                             <input value={filter.defaultValue} onChange={(event) => updateRuntimeFilter(filter.id, (current) => ({ ...current, defaultValue: event.target.value }))} />
                           </label>
-                        )}
+                        ) : null}
                       </div>
                       {filter.mode === "selected" ? (
                         <div className="stack-compact">
@@ -3743,6 +3846,9 @@ export function StudioPage({
                           id: uid("runtime"),
                           label: "New filter",
                           fieldId: "",
+                          operator: "equals",
+                          valueSource: "literal",
+                          compareFieldId: "",
                           sourceTableId: activeDashboardRefreshTables.length === 1 ? activeDashboardRefreshTables[0].id : "",
                           mode: "global",
                           targetReportIds: [],
@@ -3874,6 +3980,7 @@ export function StudioPage({
                   <StudioReportDraftViewStep
                     createDraft={createDraft}
                     createDraftTable={createDraftTable}
+                    createDraftPreviewChartData={createDraftPreview?.chartData || []}
                     setCreateDraft={setCreateDraft}
                   />
                 ) : null}
@@ -4873,6 +4980,7 @@ export function StudioPage({
                 <StudioReportDraftViewStep
                   createDraft={createDraft}
                   createDraftTable={createDraftTable}
+                  createDraftPreviewChartData={createDraftPreview?.chartData || []}
                   setCreateDraft={setCreateDraft}
                 />
               ) : null}

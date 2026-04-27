@@ -6,6 +6,7 @@ import {
   type ChartSeriesType,
   type ChartSortMode,
   type ChartType,
+  type ChartDatum,
   type ReportDefinition,
   type ReportViewMode,
   type TableDefinition
@@ -261,6 +262,34 @@ export function chartSupportsSecondaryAxis(chartType: ChartType) {
   ].includes(chartType);
 }
 
+function chartUsesCategoryAsSeries(chartType: ChartType) {
+  return [
+    "pie",
+    "donut",
+    "3d-pie",
+    "3d-donut",
+    "funnel",
+    "3d-funnel",
+    "gauge",
+    "radial-bar",
+    "progress-bar"
+  ].includes(chartType);
+}
+
+export function chartPrimaryFieldLabel(chartType: ChartType) {
+  if (chartType === "scatter" || chartType === "bubble") return "X axis or category field";
+  if (chartType === "heatmap") return "Column/category field";
+  if (chartType === "waterfall") return "Step/category field";
+  if (chartUsesCategoryAsSeries(chartType)) return "Series/category field";
+  return "X axis field";
+}
+
+export function chartSeriesFieldLabel(chartType: ChartType) {
+  if (chartType === "heatmap") return "Row series field";
+  if (chartType === "radar") return "Legend series field";
+  return "Series field";
+}
+
 export function chartValueFieldLabel(chartType: ChartType) {
   if (chartType === "scatter") return "Y axis field";
   if (chartType === "bubble") return "Y axis field";
@@ -272,6 +301,57 @@ export function chartValueFieldLabel(chartType: ChartType) {
   if (chartType === "bullet") return "Actual value field";
   if (chartType === "funnel") return "Stage value field";
   return "Primary Y axis field";
+}
+
+export function chartColorKeyLabel(chartType: ChartType) {
+  if (chartUsesCategoryAsSeries(chartType)) return "Series value";
+  return chartSupportsSeries(chartType) ? "Series or category value" : "Category value";
+}
+
+export function getChartViewportBounds(chartType: ChartType, datumCount: number, compact = false) {
+  const safeCount = Math.max(1, datumCount || 1);
+  if (["pie", "donut", "3d-pie", "3d-donut", "gauge", "radial-bar", "progress-bar"].includes(chartType)) {
+    return {
+      minWidth: compact ? 340 : 420,
+      minHeight: compact ? 220 : 300
+    };
+  }
+  if (["horizontal-bar", "horizontal-stacked-bar"].includes(chartType)) {
+    return {
+      minWidth: compact ? 540 : 760,
+      minHeight: Math.max(compact ? 220 : 280, safeCount * (compact ? 28 : 34))
+    };
+  }
+  if (["line", "line-bar", "area", "spline", "area-spline", "streamgraph", "scatter", "bubble", "radar", "3d-area", "3d-scatter"].includes(chartType)) {
+    return {
+      minWidth: Math.max(compact ? 420 : 640, safeCount * (compact ? 40 : 54)),
+      minHeight: compact ? 240 : 320
+    };
+  }
+  return {
+    minWidth: Math.max(compact ? 520 : 760, safeCount * (compact ? 42 : 58)),
+    minHeight: compact ? 240 : 320
+  };
+}
+
+export function getChartColorKey(datum: ChartDatum) {
+  const seriesKey = String(datum.rawSeries || datum.series || "").trim();
+  if (seriesKey) return seriesKey;
+  return String(datum.rawLabel ?? datum.label ?? "").trim();
+}
+
+export function getFieldComparisonOptions(table: TableDefinition, fieldId: string) {
+  const selectedField = table.fields.find((field) => field.id === fieldId) || null;
+  if (!selectedField) return getSortedFieldOptions(table);
+  const compatibleTypes = selectedField.type === "date" || selectedField.type === "datetime"
+    ? new Set(["date", "datetime"])
+    : selectedField.type === "number" || selectedField.type === "currency"
+      ? new Set(["number", "currency"])
+      : new Set(["text", "user", "multiselect"]);
+  return getSortedFieldOptions({
+    ...table,
+    fields: table.fields.filter((field) => compatibleTypes.has(field.type))
+  });
 }
 
 export function getChartAxisLabels(report: ReportDefinition, table: TableDefinition | null | undefined) {

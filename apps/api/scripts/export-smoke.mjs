@@ -172,7 +172,10 @@ async function main() {
   assert.ok(dashboardOverview, "expected dashboard overview sheet");
   const dashboardOverviewText = sheetText(dashboardOverview);
   assert.ok(dashboardOverviewText.includes("Runtime filters"), "expected runtime filter section in dashboard overview");
-  assert.ok(dashboardOverviewText.some((value) => value.includes("Region = North")), "expected dashboard runtime filter summary");
+  assert.ok(
+    dashboardOverviewText.some((value) => value.includes("Region equals North") || value.includes("Region: Region equals North")),
+    "expected dashboard runtime filter summary"
+  );
   assert.ok(
     dashboardOverviewText.some((value) => value.includes("Overview Invoice Health Data")),
     "expected dashboard overview to link to a widget detail data sheet"
