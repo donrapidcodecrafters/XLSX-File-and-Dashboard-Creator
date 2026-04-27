@@ -1,4 +1,4 @@
-import { useMemo, useState, type Dispatch, type DragEvent as ReactDragEvent, type PointerEvent as ReactPointerEvent, type SetStateAction } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type DragEvent as ReactDragEvent, type PointerEvent as ReactPointerEvent, type SetStateAction } from "react";
 import {
   clampDashboardWidgetWidth,
   clampDashboardWidgetHeight,
@@ -195,6 +195,8 @@ export function StudioDashboardPreview({
 }) {
   const normalizedQuery = widgetSearch.trim().toLowerCase();
   const [dropTarget, setDropTarget] = useState<DashboardPreviewDropTarget | null>(null);
+  const [widgetChartHeights, setWidgetChartHeights] = useState<Record<string, number>>({});
+  const chartMeasureObserversRef = useRef<Record<string, ResizeObserver>>({});
   const basePlacementLookup = useMemo(() => {
     const next = new Map<string, Map<string, DashboardWidgetPlacement>>();
     result.tabs.forEach((tab) => {
@@ -240,6 +242,28 @@ export function StudioDashboardPreview({
     });
     return next;
   }, [dashboard.tabs, draggingWidget, dropTarget, result.tabs]);
+
+  const bindChartMeasureRef = useCallback((widgetId: string) => (node: HTMLDivElement | null) => {
+    const existingObserver = chartMeasureObserversRef.current[widgetId];
+    if (existingObserver) {
+      existingObserver.disconnect();
+      delete chartMeasureObserversRef.current[widgetId];
+    }
+    if (!node) return;
+    const updateHeight = () => {
+      const nextHeight = Math.max(0, Math.floor(node.clientHeight));
+      setWidgetChartHeights((current) => current[widgetId] === nextHeight ? current : { ...current, [widgetId]: nextHeight });
+    };
+    updateHeight();
+    const observer = new ResizeObserver(() => updateHeight());
+    observer.observe(node);
+    chartMeasureObserversRef.current[widgetId] = observer;
+  }, []);
+
+  useEffect(() => () => {
+    Object.values(chartMeasureObserversRef.current).forEach((observer) => observer.disconnect());
+    chartMeasureObserversRef.current = {};
+  }, []);
 
   return (
     <div className="studio-preview-stack">
@@ -494,10 +518,14 @@ export function StudioDashboardPreview({
                       </div>
                     ) : null}
                     {widget.status === "complete" && shouldShowWidgetChart(widget.widget, widget.report) ? (
-                      <div className="mini-chart">
+                      <div className="mini-chart" ref={bindChartMeasureRef(widget.widgetId)}>
                         {(() => {
                           const axisLabels = getChartAxisLabels(widget.report, widgetTable);
-                          const requestedChartHeight = Math.max(220, (widget.widget.layout.h || 4) * 96 - 168);
+                          const measuredChartHeight = widgetChartHeights[widget.widgetId] || 0;
+                          const requestedChartHeight = Math.max(
+                            220,
+                            measuredChartHeight || ((widget.widget.layout.h || 4) * 96 - 96)
+                          );
                           const chartBounds = getChartViewportBounds(widget.report.view.chartType, widget.result.chartData.length, true, requestedChartHeight);
                           return (
                             <div className="chart-scroll-shell">

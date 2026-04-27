@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { buildDashboardFilters, formatReportCellValue, getDashboardWidgetLayoutStyle, getDashboardWidgetPlacements, getReportFieldLabel, resolveActiveDashboardTabId, type DashboardDefinition, type DashboardRunResult, type ExportJobStatus, type RefreshJobStatus, type ReportDefinition, type ReportRunResult, type TableDefinition } from "@studio/shared";
 import { createExportSaveTarget, downloadExportJob, fetchExportJobStatus, renderDashboard, runReportPage, startDashboardExportJob, type ExportSaveTarget } from "../lib/api";
@@ -224,6 +224,7 @@ export function DashboardView({
   const [widgetPages, setWidgetPages] = useState<Record<string, number>>({});
   const [widgetPageResults, setWidgetPageResults] = useState<Record<string, ReportRunResult>>({});
   const [widgetPageLoading, setWidgetPageLoading] = useState<Record<string, boolean>>({});
+  const [widgetChartHeights, setWidgetChartHeights] = useState<Record<string, number>>({});
   const [focusedWidgetId, setFocusedWidgetId] = useState(initialFocusedWidgetId);
   const [tabReloadNonce, setTabReloadNonce] = useState(0);
   const skipStateBroadcastRef = useRef(true);
@@ -231,6 +232,7 @@ export function DashboardView({
   const tabLoadingRef = useRef(tabLoading);
   const onRefreshJobDetectedRef = useRef(onRefreshJobDetected);
   const tabRequestSequenceRef = useRef<Record<string, number>>({});
+  const chartMeasureObserversRef = useRef<Record<string, ResizeObserver>>({});
   const resolvedActiveTabId = resolveActiveDashboardTabId(dashboard, activeTabId);
   const activeTabResult = tabResults[resolvedActiveTabId] || null;
   const activeTabLayout = useMemo(() => {
@@ -244,6 +246,28 @@ export function DashboardView({
     () => buildDashboardExportDefinition(dashboard, reportDefinitions),
     [dashboard, reportDefinitions]
   );
+
+  const bindChartMeasureRef = useCallback((widgetId: string) => (node: HTMLDivElement | null) => {
+    const existingObserver = chartMeasureObserversRef.current[widgetId];
+    if (existingObserver) {
+      existingObserver.disconnect();
+      delete chartMeasureObserversRef.current[widgetId];
+    }
+    if (!node) return;
+    const updateHeight = () => {
+      const nextHeight = Math.max(0, Math.floor(node.clientHeight));
+      setWidgetChartHeights((current) => current[widgetId] === nextHeight ? current : { ...current, [widgetId]: nextHeight });
+    };
+    updateHeight();
+    const observer = new ResizeObserver(() => updateHeight());
+    observer.observe(node);
+    chartMeasureObserversRef.current[widgetId] = observer;
+  }, []);
+
+  useEffect(() => () => {
+    Object.values(chartMeasureObserversRef.current).forEach((observer) => observer.disconnect());
+    chartMeasureObserversRef.current = {};
+  }, []);
 
   useEffect(() => {
     skipStateBroadcastRef.current = true;
@@ -729,7 +753,11 @@ export function DashboardView({
                 widget.report,
                 buildDashboardFilters(dashboard, widget.report.id, runtimeFilters, widget.report.sourceTableId)
               );
-              const requestedChartHeight = Math.max(220, (widget.widget.layout.h || 4) * 96 - 168);
+              const measuredChartHeight = widgetChartHeights[widget.widgetId] || 0;
+              const requestedChartHeight = Math.max(
+                220,
+                measuredChartHeight || ((widget.widget.layout.h || 4) * 96 - 96)
+              );
               const chartBounds = getChartViewportBounds(widget.report.view.chartType, chartData.length, true, requestedChartHeight);
               const crossFilterOptions = getDashboardCrossFilterOptions(dashboard, widget.report, widget.result.chartData);
               const clearableFilterIds = Array.from(new Set(
@@ -798,7 +826,7 @@ export function DashboardView({
                   </div>
                 ) : null}
                 {widget.status === "complete" && widgetShowsChart(widget.widget, widget.report) ? (
-                  <div className="mini-chart">
+                  <div className="mini-chart" ref={bindChartMeasureRef(widget.widgetId)}>
                     <div className="chart-scroll-shell">
                       <div style={{ minWidth: `${chartBounds.minWidth}px`, minHeight: `${chartBounds.minHeight}px`, width: "100%", height: "100%" }}>
                         <ChartPreview
