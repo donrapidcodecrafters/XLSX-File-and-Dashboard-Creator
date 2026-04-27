@@ -657,6 +657,7 @@ async function renderChartImage(report: ReportDefinition, subtitle: string, char
       backgroundColor: "white",
       devicePixelRatio: 2,
       format: "png",
+      version: "4",
       chart: config
     })
   });

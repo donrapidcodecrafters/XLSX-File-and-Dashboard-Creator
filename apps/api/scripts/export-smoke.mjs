@@ -55,6 +55,37 @@ async function main() {
   assert.ok(reportOverviewText.some((value) => value.includes("Region equals North")), "expected export filter summary in report overview");
   assert.ok(reportWorkbook.getWorksheet("Invoice Health Summary"), "expected summary sheet for report export");
 
+  const chartBaseReport = document.bundle.objects["report-project-portfolio"];
+  const chartTable = document.bundle.tables.find((item) => item.id === chartBaseReport.sourceTableId);
+  assert.ok(chartBaseReport?.type === "report", "expected seed chart-capable report");
+  assert.ok(chartTable, "expected source table for chart-capable report");
+  const chartReport = {
+    ...chartBaseReport,
+    id: "report-chart-export-smoke",
+    name: "Chart Export Smoke",
+    view: {
+      ...chartBaseReport.view,
+      mode: "chart",
+      showSummary: true,
+      showDetails: false,
+      showChartInTable: false,
+      chartType: "bar",
+      chartFieldId: "region",
+      chartAggregation: "sum",
+      chartValueFieldId: "budget"
+    }
+  };
+  const chartReportResult = runReport(chartReport, chartTable, document.bundle.data[chartTable.id], exportFilters);
+  const chartReportBuffer = await writeWorkbookBuffer((stream) =>
+    streamReportWorkbook(stream, chartReport, chartTable, chartReportResult, undefined, exportFilters)
+  );
+  const chartReportWorkbook = new ExcelJS.Workbook();
+  await chartReportWorkbook.xlsx.load(chartReportBuffer);
+  assert.ok(
+    chartReportWorkbook.worksheets.some((sheet) => typeof sheet.getImages === "function" && sheet.getImages().length > 0),
+    "expected chart report export workbook to embed at least one chart image"
+  );
+
   const dashboardTemplate = document.bundle.objects["dashboard-executive-pulse"];
   assert.ok(dashboardTemplate?.type === "dashboard", "expected seed dashboard");
   const dashboard = {
@@ -66,14 +97,14 @@ async function main() {
       name: "Overview",
       widgets: [
         {
-          id: "widget-export-summary",
-          title: "Invoice Snapshot",
+          id: "widget-export-chart",
+          title: "Portfolio Chart",
           mode: "linked",
-          displayMode: "summary",
+          displayMode: "chart",
           showSummary: true,
           showDetails: false,
-          reportId: report.id,
-          layout: { w: 5, h: 3, x: 1, y: 1 }
+          reportId: chartReport.id,
+          layout: { w: 6, h: 4, x: 1, y: 1 }
         },
         {
           id: "widget-export-invoice",
@@ -99,18 +130,20 @@ async function main() {
   const runtimeValues = { "runtime-region": "North" };
   const widgetFilters = buildDashboardFilters(dashboard, report.id, runtimeValues, report.sourceTableId);
   const dashboardReportResult = runReport(report, table, document.bundle.data[table.id], widgetFilters);
+  const chartWidgetFilters = buildDashboardFilters(dashboard, chartReport.id, runtimeValues, chartReport.sourceTableId);
+  const dashboardChartResult = runReport(chartReport, chartTable, document.bundle.data[chartTable.id], chartWidgetFilters);
   const rendered = {
     dashboard,
     tabs: [{
       id: "tab-export",
       name: "Overview",
       widgets: [{
-        widgetId: "widget-export-summary",
+        widgetId: "widget-export-chart",
         widget: dashboard.tabs[0].widgets[0],
-        report,
-        result: dashboardReportResult,
+        report: chartReport,
+        result: dashboardChartResult,
         status: "complete",
-        message: `${dashboardReportResult.totalRows} rows`
+        message: `${dashboardChartResult.totalRows} rows`
       }, {
         widgetId: "widget-export-invoice",
         widget: dashboard.tabs[0].widgets[1],
@@ -126,7 +159,7 @@ async function main() {
       stream,
       dashboard,
       rendered,
-      { [report.id]: dashboardReportResult },
+      { [report.id]: dashboardReportResult, [chartReport.id]: dashboardChartResult },
       Object.fromEntries(document.bundle.tables.map((item) => [item.id, item])),
       undefined,
       runtimeValues
@@ -151,8 +184,12 @@ async function main() {
   assert.ok(detailText.some((value) => value.includes("Region equals North")), "expected detail sheet filter summary");
   const dashboardTabSheet = dashboardWorkbook.getWorksheet("Overview");
   assert.ok(dashboardTabSheet, "expected exported dashboard tab sheet");
-  assert.equal(dashboardTabSheet.getCell("A1").value, "Invoice Snapshot", "expected first widget title to render at its explicit grid origin");
+  assert.equal(dashboardTabSheet.getCell("A1").value, "Portfolio Chart", "expected first widget title to render at its explicit grid origin");
   assert.equal(dashboardTabSheet.getCell("G1").value, "Open Invoices", "expected second widget title to render at its reconstructed X position");
+  assert.ok(
+    dashboardWorkbook.worksheets.some((sheet) => typeof sheet.getImages === "function" && sheet.getImages().length > 0),
+    "expected dashboard export workbook to embed at least one chart image"
+  );
 
   console.log("api export smoke tests passed");
 }
