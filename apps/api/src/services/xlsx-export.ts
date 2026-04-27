@@ -116,8 +116,22 @@ function describeRuntimeFilter(
 }
 
 function writeOverviewHeader(sheet: ExcelJS.Worksheet, title: string, description: string) {
+  sheet.columns = [
+    { width: 24 },
+    { width: 24 },
+    { width: 24 },
+    { width: 24 },
+    { width: 18 },
+    { width: 18 },
+    { width: 20 },
+    { width: 20 }
+  ];
+  sheet.views = [{ state: "frozen", ySplit: 3 }];
+  sheet.mergeCells("A1:H1");
+  sheet.mergeCells("A2:H2");
   sheet.getCell("A1").value = title;
   sheet.getCell("A1").font = { size: 18, bold: true };
+  sheet.getCell("A1").alignment = { vertical: "middle" };
   sheet.getCell("A2").value = description;
   sheet.getCell("A2").alignment = { wrapText: true };
 }
@@ -131,7 +145,10 @@ function writeMetadataRows(
   items.forEach((item) => {
     sheet.getCell(`A${row}`).value = item.label;
     sheet.getCell(`A${row}`).font = { bold: true };
+    sheet.getCell(`A${row}`).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEAF5F1" } };
+    sheet.mergeCells(`B${row}:D${row}`);
     sheet.getCell(`B${row}`).value = item.value;
+    sheet.getCell(`B${row}`).alignment = { wrapText: true };
     row += 1;
   });
   return row;
@@ -146,6 +163,7 @@ function writeLinkRows(
   let row = startRow;
   sheet.getCell(`A${row}`).value = title;
   sheet.getCell(`A${row}`).font = { bold: true };
+  sheet.getCell(`A${row}`).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEAF5F1" } };
   row += 1;
   if (!links.length) {
     sheet.getCell(`A${row}`).value = "None";
@@ -166,6 +184,7 @@ function writeTextListSection(sheet: ExcelJS.Worksheet, startRow: number, title:
   let row = startRow;
   sheet.getCell(`A${row}`).value = title;
   sheet.getCell(`A${row}`).font = { bold: true };
+  sheet.getCell(`A${row}`).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEAF5F1" } };
   row += 1;
   if (!items.length) {
     sheet.getCell(`A${row}`).value = emptyText;
@@ -260,26 +279,51 @@ function writeDataSheet(
     key: report.selectedFieldIds[index],
     width: Math.min(32, Math.max(16, header.length + 4))
   }));
+  sheet.views = [{ state: "frozen", ySplit: 1 }];
+  sheet.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: 1, column: Math.max(1, report.selectedFieldIds.length) }
+  };
   const total = Math.max(result.rows.length, 1);
+  const widths = headers.map((header) => Math.min(42, Math.max(16, header.length + 4)));
   result.rows.forEach((row, index) => {
-    sheet.addRow(Object.fromEntries(
+    const formattedValues = Object.fromEntries(
       report.selectedFieldIds.map((fieldId) => [fieldId, formatReportCellValue(report, table, fieldId, row[fieldId])])
-    ));
+    );
+    sheet.addRow(formattedValues);
+    report.selectedFieldIds.forEach((fieldId, fieldIndex) => {
+      widths[fieldIndex] = Math.min(60, Math.max(widths[fieldIndex], String(formattedValues[fieldId] ?? "").length + 3));
+    });
     if (onProgress && progressRange && (index === 0 || (index + 1) % 500 === 0 || index + 1 === total)) {
       const ratio = (index + 1) / total;
       const progress = progressRange.start + Math.round((progressRange.end - progressRange.start) * ratio);
       onProgress(progress, `${progressRange.label} (${(index + 1).toLocaleString()} / ${total.toLocaleString()})`);
     }
   });
+  widths.forEach((width, index) => {
+    sheet.getColumn(index + 1).width = width;
+  });
 }
 
 const DEFAULT_CHART_COLORS = ["#0d7c66", "#d88d3d", "#5b7cfa", "#9b59b6", "#e66f5c", "#3a9782", "#b7a26a"];
 
+function isHexColor(value: string) {
+  return /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(String(value || "").trim());
+}
+
 function getChartPalette(report: ReportDefinition) {
   const configured = (report.view.chartColors || [])
     .map((color) => String(color || "").trim())
-    .filter((color) => /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(color));
+    .filter((color) => isHexColor(color));
   return configured.length ? configured : DEFAULT_CHART_COLORS;
+}
+
+function getChartColorOverride(report: ReportDefinition, palette: string[], index: number, datumOrKey: ChartDatum | string) {
+  const key = typeof datumOrKey === "string"
+    ? String(datumOrKey || "").trim()
+    : String(datumOrKey.rawSeries || datumOrKey.series || datumOrKey.rawLabel || datumOrKey.label || "").trim();
+  const override = key ? String(report.view.chartValueColors?.[key] || "").trim() : "";
+  return isHexColor(override) ? override : palette[index % palette.length];
 }
 
 function withAlpha(color: string, alpha: string) {
@@ -405,7 +449,7 @@ function buildChartData(report: ReportDefinition, data: ChartDatum[]) {
         datasets: [{
           label: report.view.chartTitle || report.name,
           data: collapsed.map((item) => item.value),
-          backgroundColor: collapsed.map((_, index) => palette[index % palette.length]),
+          backgroundColor: collapsed.map((item, index) => getChartColorOverride(report, palette, index, item)),
           borderColor: "#ffffff",
           borderWidth: 2
         }]
@@ -424,7 +468,7 @@ function buildChartData(report: ReportDefinition, data: ChartDatum[]) {
       data: {
         labels: categories.map((category) => category.label),
         datasets: primarySeries.map((series, seriesIndex) => {
-          const color = palette[seriesIndex % palette.length];
+          const color = getChartColorOverride(report, palette, seriesIndex, series.rawSeries || series.label);
           return {
             label: primarySeries.length === 1 && !series.rawSeries ? (report.view.chartTitle || report.name) : series.label,
             data: categories.map((category) => valueForCategory(data, category.rawLabel, series.rawSeries, "primary")),
@@ -450,7 +494,7 @@ function buildChartData(report: ReportDefinition, data: ChartDatum[]) {
       hasSecondaryAxis: false,
       data: {
         datasets: primarySeries.map((series, seriesIndex) => {
-          const color = palette[seriesIndex % palette.length];
+          const color = getChartColorOverride(report, palette, seriesIndex, series.rawSeries || series.label);
           const points = categories.flatMap((category, categoryIndex) => {
             const primaryMatch = primaryItems.find((item) =>
               String(item.rawLabel ?? item.label ?? "") === category.rawLabel
@@ -490,14 +534,20 @@ function buildChartData(report: ReportDefinition, data: ChartDatum[]) {
   const secondaryAxisKey = horizontal ? "xAxisID" : "yAxisID";
   const datasets = [
     ...primarySeries.map((series, seriesIndex) => {
-      const color = palette[seriesIndex % palette.length];
+      const color = getChartColorOverride(report, palette, seriesIndex, series.rawSeries || series.label);
       const isLineLike = type === "line";
+      const singleSeriesCategoryColors = primarySeries.length === 1 && !series.rawSeries
+        ? categories.map((category, categoryIndex) => {
+            const matchingDatum = primaryItems.find((datum) => String(datum.rawLabel ?? datum.label ?? "") === category.rawLabel) || category.label;
+            return getChartColorOverride(report, palette, categoryIndex, matchingDatum);
+          })
+        : null;
       return {
         label: primarySeries.length === 1 && !series.rawSeries ? (report.view.chartTitle || report.name) : series.label,
         data: categories.map((category) => valueForCategory(data, category.rawLabel, series.rawSeries, "primary")),
-        backgroundColor: isLineLike ? withAlpha(color, "33") : color,
-        borderColor: color,
-        pointBackgroundColor: color,
+        backgroundColor: isLineLike ? withAlpha(color, "33") : (singleSeriesCategoryColors || color),
+        borderColor: singleSeriesCategoryColors || color,
+        pointBackgroundColor: singleSeriesCategoryColors || color,
         borderWidth: isLineLike ? 3 : 1,
         fill: isLineLike ? isAreaChart(report.view.chartType) : false,
         tension: report.view.chartType === "spline" || report.view.chartType === "area-spline" ? 0.35 : 0,
@@ -506,7 +556,7 @@ function buildChartData(report: ReportDefinition, data: ChartDatum[]) {
       };
     }),
     ...secondarySeries.map((series, seriesIndex) => {
-      const color = palette[(primarySeries.length + seriesIndex) % palette.length];
+      const color = getChartColorOverride(report, palette, primarySeries.length + seriesIndex, series.rawSeries || series.label);
       const secondaryType = report.view.chartSecondarySeriesType === "bar" || report.view.chartSecondarySeriesType === "column"
         ? "bar"
         : "line";
@@ -550,22 +600,22 @@ function getChartImageSizing(report: ReportDefinition, chartData: ChartDatum[]) 
     || report.view.chartType === "horizontal-stacked-bar"
     || (report.view.chartType === "bar" && report.view.chartOrientation === "horizontal");
   if (horizontal) {
-    const renderWidth = clamp(1500 + Math.max(0, maxLabelLength - 16) * 10, 1500, 2600);
-    const renderHeight = clamp(720 + count * 28, 720, 3200);
+    const renderWidth = clamp(1700 + Math.max(0, maxLabelLength - 14) * 14, 1700, 3200);
+    const renderHeight = clamp(760 + count * 34, 760, 3600);
     return {
       renderWidth,
       renderHeight,
-      embedWidth: clamp(Math.round(renderWidth * 0.78), 980, 1700),
-      embedHeight: clamp(Math.round(renderHeight * 0.72), 520, 2200)
+      embedWidth: clamp(Math.round(renderWidth * 0.82), 1100, 2200),
+      embedHeight: clamp(Math.round(renderHeight * 0.74), 580, 2600)
     };
   }
-  const renderWidth = clamp(1200 + count * 65 + Math.max(0, maxLabelLength - 12) * 18, 1200, 3200);
-  const renderHeight = clamp(820 + Math.max(0, maxLabelLength - 18) * 12, 820, 1700);
+  const renderWidth = clamp(1500 + count * 80 + Math.max(0, maxLabelLength - 10) * 24, 1500, 4200);
+  const renderHeight = clamp(920 + Math.max(0, maxLabelLength - 16) * 16, 920, 2200);
   return {
     renderWidth,
     renderHeight,
-    embedWidth: clamp(Math.round(renderWidth * 0.76), 900, 2000),
-    embedHeight: clamp(Math.round(renderHeight * 0.74), 560, 1200)
+    embedWidth: clamp(Math.round(renderWidth * 0.8), 1100, 2600),
+    embedHeight: clamp(Math.round(renderHeight * 0.78), 640, 1600)
   };
 }
 
@@ -644,14 +694,24 @@ async function renderChartImage(report: ReportDefinition, subtitle: string, char
         }
       },
       plugins: {
-        legend: { display: report.view.chartShowLegend !== false },
+        legend: {
+          display: report.view.chartShowLegend !== false,
+          position: "bottom" as const,
+          labels: {
+            boxWidth: 18,
+            padding: 16,
+            font: { size: 13 }
+          }
+        },
         title: {
           display: true,
-          text: report.view.chartTitle || report.name
+          text: report.view.chartTitle || report.name,
+          font: { size: 22, weight: "600" as const }
         },
         subtitle: {
           display: true,
-          text: subtitle
+          text: subtitle,
+          font: { size: 14 }
         }
       },
       scales
@@ -857,19 +917,23 @@ function writeDetailSheet(
   row = writeTextListSection(sheet, row + 1, "Applied filters", filterDescriptions, "No filters applied");
   row = writeWarningSection(sheet, row, result.warnings || []);
   const headersRow = row + 1;
+  sheet.views = [{ state: "frozen", ySplit: headersRow }];
   const headers = report.selectedFieldIds.map((fieldId) => getReportFieldLabel(report, table, fieldId));
+  const widths = headers.map((header) => Math.min(42, Math.max(16, header.length + 4)));
   headers.forEach((header, index) => {
     const cell = sheet.getCell(headersRow, index + 1);
     cell.value = header;
     cell.font = { bold: true };
   });
   result.rows.forEach((dataRow, rowIndex) => {
-  report.selectedFieldIds.forEach((fieldId, fieldIndex) => {
-      sheet.getCell(headersRow + 1 + rowIndex, fieldIndex + 1).value = formatReportCellValue(report, table, fieldId, dataRow[fieldId]);
+    report.selectedFieldIds.forEach((fieldId, fieldIndex) => {
+      const formatted = formatReportCellValue(report, table, fieldId, dataRow[fieldId]);
+      sheet.getCell(headersRow + 1 + rowIndex, fieldIndex + 1).value = formatted;
+      widths[fieldIndex] = Math.min(60, Math.max(widths[fieldIndex], String(formatted ?? "").length + 3));
     });
   });
   headers.forEach((header, index) => {
-    sheet.getColumn(index + 1).width = Math.min(32, Math.max(16, header.length + 4));
+    sheet.getColumn(index + 1).width = widths[index];
   });
 }
 

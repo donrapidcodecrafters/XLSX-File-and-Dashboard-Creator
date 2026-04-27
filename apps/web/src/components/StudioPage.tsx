@@ -656,6 +656,7 @@ interface PendingWorkbookImport {
   primaryObjectId: string;
   importedObjectIds: string[];
   sourceTableId: string;
+  skippedReportIds: string[];
   baseObjects: Record<string, StudioObject>;
   currentObjects: Record<string, StudioObject>;
   importedTablesById: Record<string, TableDefinition>;
@@ -818,11 +819,14 @@ function stripRemovedObjectIds(document: StudioDocument, objectIds: string[]) {
 function rebuildPendingWorkbookImportObjects(
   baseObjects: Record<string, StudioObject>,
   importedTablesById: Record<string, TableDefinition>,
-  targetTable: TableDefinition | null
+  targetTable: TableDefinition | null,
+  skippedReportIds: string[] = []
 ) {
+  const skippedSet = new Set(skippedReportIds);
   const nextObjects: Record<string, StudioObject> = {};
   Object.entries(baseObjects).forEach(([objectId, object]) => {
     if (object.type === "report") {
+      if (skippedSet.has(objectId)) return;
       nextObjects[objectId] = targetTable
         ? remapImportedReportToSourceTable(object, importedTablesById[object.sourceTableId] || null, targetTable)
         : remapImportedReportToSourceTable(object, importedTablesById[object.sourceTableId] || null, {
@@ -833,7 +837,20 @@ function rebuildPendingWorkbookImportObjects(
         });
       return;
     }
-    nextObjects[objectId] = clone(object);
+    const dashboardCopy = clone(object);
+    dashboardCopy.tabs = dashboardCopy.tabs
+      .map((tab) => ({
+        ...tab,
+        widgets: tab.widgets.filter((widget) => !skippedSet.has(widget.reportId))
+      }))
+      .filter((tab) => tab.widgets.length > 0);
+    dashboardCopy.runtimeFilters = dashboardCopy.runtimeFilters.map((filter) => ({
+      ...filter,
+      targetReportIds: filter.targetReportIds.filter((reportId) => !skippedSet.has(reportId))
+    }));
+    if (dashboardCopy.tabs.length) {
+      nextObjects[objectId] = dashboardCopy;
+    }
   });
   return nextObjects;
 }
@@ -1573,6 +1590,23 @@ export function StudioPage({
       .map((id) => importReviewObjects[id])
       .filter((object) => object?.type === "dashboard").length,
     [importReviewObjectIds, importReviewObjects]
+  );
+  const importReviewSheetOptions = useMemo(
+    () => pendingWorkbookImport
+      ? pendingWorkbookImport.review.sheets
+          .filter((sheet) => sheet.importedReportId)
+          .map((sheet) => {
+            const reportId = String(sheet.importedReportId || "");
+            const report = pendingWorkbookImport.baseObjects[reportId];
+            return {
+              reportId,
+              sheetName: sheet.sheetName,
+              reportName: report?.type === "report" ? report.name : (sheet.sheetName || reportId),
+              skipped: pendingWorkbookImport.skippedReportIds.includes(reportId)
+            };
+          })
+      : [],
+    [pendingWorkbookImport]
   );
   const reportObjectOptions = useMemo(
     () => objects
@@ -3373,8 +3407,9 @@ export function StudioPage({
         primaryObjectId: response.primaryObjectId,
         importedObjectIds: response.importedObjectIds,
         sourceTableId,
+        skippedReportIds: [],
         baseObjects,
-        currentObjects: rebuildPendingWorkbookImportObjects(baseObjects, importedTablesById, targetTable),
+        currentObjects: rebuildPendingWorkbookImportObjects(baseObjects, importedTablesById, targetTable, []),
         importedTablesById
       });
       setImportReviewModalOpen(true);
@@ -3458,7 +3493,15 @@ export function StudioPage({
       pushToast("Choose the real source table before creating imported reports.", "warn");
       return;
     }
-    const issues = importState.importedObjectIds.flatMap((objectId) => {
+    const finalImportedObjectIds = importState.importedObjectIds.filter((objectId) => Boolean(importState.currentObjects[objectId]));
+    const finalImportedReports = finalImportedObjectIds
+      .map((objectId) => importState.currentObjects[objectId])
+      .filter((object): object is ReportDefinition => Boolean(object) && object.type === "report");
+    if (!finalImportedReports.length) {
+      pushToast("Keep at least one imported tab before creating the dashboard.", "warn");
+      return;
+    }
+    const issues = finalImportedObjectIds.flatMap((objectId) => {
       const object = importState.currentObjects[objectId];
       if (!object || object.type !== "report") return [];
       return collectReportImportIssues(object, sourceTable);
@@ -3468,13 +3511,13 @@ export function StudioPage({
       return;
     }
     const nextDocument = clone(documentState);
-    importState.importedObjectIds.forEach((objectId) => {
+    finalImportedObjectIds.forEach((objectId) => {
       const object = importState.currentObjects[objectId];
       if (!object) return;
       nextDocument.bundle.objects[objectId] = clone(object);
     });
     nextDocument.bundle.order = [
-      ...importState.importedObjectIds.filter((objectId) => Boolean(importState.currentObjects[objectId])),
+      ...finalImportedObjectIds,
       ...nextDocument.bundle.order.filter((objectId) => !importState.importedObjectIds.includes(objectId))
     ];
 
@@ -3482,11 +3525,14 @@ export function StudioPage({
     setFuture([]);
     setDocumentState(nextDocument);
     setLastWorkbookImportReview(importState.review);
-    setLastWorkbookImportObjectIds(importState.importedObjectIds);
+    setLastWorkbookImportObjectIds(finalImportedObjectIds);
     setPendingWorkbookImport(null);
     setImportReviewModalOpen(false);
-    if (importState.primaryObjectId) {
-      navigate(buildHostedRoute(`/studio/${importState.primaryObjectId}`));
+    const nextPrimaryObjectId = importState.currentObjects[importState.primaryObjectId]
+      ? importState.primaryObjectId
+      : finalImportedObjectIds[0] || "";
+    if (nextPrimaryObjectId) {
+      navigate(buildHostedRoute(`/studio/${nextPrimaryObjectId}`));
     }
     pushToast(`Created imported ${importState.review.dashboardCreated ? "dashboard and reports" : "reports"} using ${sourceTable.name}.`);
     await persistRemote(nextDocument);
@@ -3499,7 +3545,20 @@ export function StudioPage({
       return {
         ...current,
         sourceTableId: tableId,
-        currentObjects: rebuildPendingWorkbookImportObjects(current.baseObjects, current.importedTablesById, targetTable)
+        currentObjects: rebuildPendingWorkbookImportObjects(current.baseObjects, current.importedTablesById, targetTable, current.skippedReportIds)
+      };
+    });
+  }
+
+  function updatePendingImportSkippedReports(reportIds: string[]) {
+    setPendingWorkbookImport((current) => {
+      if (!current) return current;
+      const nextSkippedReportIds = Array.from(new Set(reportIds.map((value) => String(value || "").trim()).filter(Boolean)));
+      const sourceTable = current.sourceTableId ? bundle.tables.find((table) => table.id === current.sourceTableId) || null : null;
+      return {
+        ...current,
+        skippedReportIds: nextSkippedReportIds,
+        currentObjects: rebuildPendingWorkbookImportObjects(current.baseObjects, current.importedTablesById, sourceTable, nextSkippedReportIds)
       };
     });
   }
@@ -3570,6 +3629,34 @@ export function StudioPage({
                   <div className="micro">
                     Imported workbooks no longer create placeholder tables. Every imported report and dashboard card will be tied to this existing platform table.
                   </div>
+                </div>
+              ) : null}
+
+              {pendingWorkbookImport && pendingWorkbookImport.review.dashboardCreated && importReviewSheetOptions.length ? (
+                <div className="card">
+                  <div className="card-head">
+                    <strong>Imported dashboard tabs</strong>
+                    <span className="micro">Skip any worksheet tabs you do not want to create.</span>
+                  </div>
+                  <div className="picker-list modal-picker-list">
+                    {importReviewSheetOptions.map((item) => (
+                      <label className="picker-row" key={item.reportId}>
+                        <input
+                          type="checkbox"
+                          checked={!item.skipped}
+                          onChange={(event) => {
+                            const nextSkipped = event.target.checked
+                              ? pendingWorkbookImport.skippedReportIds.filter((reportId) => reportId !== item.reportId)
+                              : Array.from(new Set([...pendingWorkbookImport.skippedReportIds, item.reportId]));
+                            updatePendingImportSkippedReports(nextSkipped);
+                          }}
+                        />
+                        <span>{item.sheetName}</span>
+                        <em>{item.reportName}</em>
+                      </label>
+                    ))}
+                  </div>
+                  <div className="micro">Unchecked tabs will not create their report, chart, or dashboard card content.</div>
                 </div>
               ) : null}
 
