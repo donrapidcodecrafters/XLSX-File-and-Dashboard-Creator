@@ -32,7 +32,7 @@ function buildViewerProps() {
 }
 
 describe("ViewerPage", () => {
-  it("defaults to the shared library and can switch to personal content", async () => {
+  it("can narrow from all visible content to shared-only and personal content", async () => {
     const user = userEvent.setup();
     const props = buildViewerProps();
     const personalReportName = props.studioDocument.bundle.objects["report-my-active-projects"].name;
@@ -43,13 +43,18 @@ describe("ViewerPage", () => {
       </MemoryRouter>
     );
 
+    expect(screen.getByText("Open Reports and Dashboards")).toBeInTheDocument();
+    expect(screen.getByText(personalReportName)).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText("Scope"), "global");
+
     expect(screen.getByText("Shared library view")).toBeInTheDocument();
     expect(screen.queryByText(personalReportName)).not.toBeInTheDocument();
 
     await user.selectOptions(screen.getByLabelText("Scope"), "personal");
 
     expect(screen.getByText(personalReportName)).toBeInTheDocument();
-    expect(screen.queryByText("Shared library view")).not.toBeInTheDocument();
+    expect(screen.queryByText("No reports or dashboards match this search.")).not.toBeInTheDocument();
   });
 
   it("filters by search and favorites and forwards favorite clicks", async () => {

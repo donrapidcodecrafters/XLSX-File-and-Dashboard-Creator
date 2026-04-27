@@ -259,6 +259,9 @@ export function DashboardView({
       setWidgetChartHeights((current) => current[widgetId] === nextHeight ? current : { ...current, [widgetId]: nextHeight });
     };
     updateHeight();
+    if (typeof ResizeObserver === "undefined") {
+      return;
+    }
     const observer = new ResizeObserver(() => updateHeight());
     observer.observe(node);
     chartMeasureObserversRef.current[widgetId] = observer;

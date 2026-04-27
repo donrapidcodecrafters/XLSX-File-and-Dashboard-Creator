@@ -35,7 +35,7 @@ import {
 } from "./lib/catalog";
 import { buildHostedRoute, getHostedContext } from "./lib/embed";
 import type { QuickbaseTableLinkContext } from "./lib/quickbaseLinks";
-import { fetchStudioDocument, fetchStudioRefreshJob, saveStudioUserSettings, startStudioRefresh, updateStudioSession } from "./lib/studioApi";
+import { fetchStudioDocument, fetchStudioRefreshJob, saveStudioUserSettings, startStudioObjectRefresh, startStudioRefresh, updateStudioSession } from "./lib/studioApi";
 
 const SESSION_RECENT_KEY = "studio-session-recent";
 const USER_SETTINGS_PERSIST_DELAY_MS = 500;
@@ -577,9 +577,10 @@ function ObjectPage({
   }, [onRefreshComplete, refreshJob]);
 
   async function startObjectRefresh() {
+    if (!object) return;
     setStartingRefresh(true);
     try {
-      const response = await startStudioRefresh();
+      const response = await startStudioObjectRefresh(object.id);
       setRefreshJob(response.job);
     } finally {
       window.setTimeout(() => setStartingRefresh(false), 700);
