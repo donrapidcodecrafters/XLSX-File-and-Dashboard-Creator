@@ -215,14 +215,14 @@ async function main() {
     "expected dashboard runtime filter summary"
   );
   assert.ok(
-    dashboardOverviewText.some((value) => value.includes("Overview Invoice Health Data")),
-    "expected dashboard overview to link to a widget detail data sheet"
+    dashboardOverviewText.some((value) => value.includes("Overview")),
+    "expected dashboard overview to link to the dashboard tab sheet"
   );
-  const detailSheet = dashboardWorkbook.getWorksheet("Overview Invoice Health Data");
-  assert.ok(detailSheet, "expected widget detail data sheet");
-  const detailText = sheetText(detailSheet);
-  assert.ok(detailText.includes("Applied filters"), "expected detail sheet to summarize widget filters");
-  assert.ok(detailText.some((value) => value.includes("Region equals North")), "expected detail sheet filter summary");
+  assert.equal(
+    dashboardWorkbook.getWorksheet("Overview Invoice Health Data"),
+    undefined,
+    "expected table widgets to stay on the dashboard tab instead of creating a duplicate data sheet"
+  );
   const dashboardTabSheet = dashboardWorkbook.getWorksheet("Overview");
   assert.ok(dashboardTabSheet, "expected exported dashboard tab sheet");
   assert.equal(dashboardTabSheet.getCell("A1").value, "Portfolio Chart", "expected first widget title to render at its explicit grid origin");

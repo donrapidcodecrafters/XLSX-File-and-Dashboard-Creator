@@ -253,6 +253,29 @@ function widgetShowsDetails(widget: DashboardRunResult["tabs"][number]["widgets"
   return widgetDisplayMode(widget, report) === "table" || widget.showDetails;
 }
 
+function widgetNeedsSeparateDetailSheet(
+  widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"],
+  report: ReportDefinition
+) {
+  return widgetDisplayMode(widget, report) !== "table" && widget.showDetails;
+}
+
+function resolveWidgetExportResult(
+  widget: DashboardRunResult["tabs"][number]["widgets"][number],
+  exportResultsByReportId: Record<string, ReportRunResult>
+) {
+  const exported = exportResultsByReportId[widget.report.id];
+  if (!exported) return widget.result;
+  return {
+    ...exported,
+    rows: exported.rows.length ? exported.rows : widget.result.rows,
+    summary: exported.summary.length ? exported.summary : widget.result.summary,
+    chartData: exported.chartData.length ? exported.chartData : widget.result.chartData,
+    warnings: exported.warnings.length ? exported.warnings : widget.result.warnings,
+    totalRows: exported.totalRows || widget.result.totalRows
+  };
+}
+
 function writeSummaryRows(sheet: ExcelJS.Worksheet, report: ReportDefinition, result: ReportRunResult, startRow = 1, includeSummary = true) {
   let row = startRow;
   if (includeSummary) {
@@ -951,38 +974,38 @@ function writeWidgetSummaryBlock(
   return row;
 }
 
-function writeWidgetDataPreviewBlock(
+function writeWidgetFullTableBlock(
   sheet: ExcelJS.Worksheet,
   report: ReportDefinition,
   table: TableDefinition,
   result: ReportRunResult,
   startRow: number,
-  startCol: number,
-  endCol: number,
-  dataSheetName: string | null
+  startCol: number
 ) {
-  let row = startRow;
-  mergeRowRange(sheet, row, startCol, endCol);
-  sheet.getCell(row, startCol).value = dataSheetName
-    ? `Table data exported on "${dataSheetName}"`
-    : "Table data";
-  sheet.getCell(row, startCol).font = { italic: true, color: { argb: "FF56685E" } };
-  row += 1;
-
-  const previewFieldIds = report.selectedFieldIds.slice(0, Math.max(1, Math.min(3, endCol - startCol + 1)));
-  previewFieldIds.forEach((fieldId, index) => {
-    const col = startCol + index;
-    sheet.getCell(row, col).value = getReportFieldLabel(report, table, fieldId);
-    sheet.getCell(row, col).font = { bold: true };
+  const headersRow = startRow;
+  const headers = report.selectedFieldIds.map((fieldId) => getReportFieldLabel(report, table, fieldId));
+  const widths = headers.map((header) => Math.min(42, Math.max(16, header.length + 4)));
+  headers.forEach((header, index) => {
+    const cell = sheet.getCell(headersRow, startCol + index);
+    cell.value = header;
+    cell.font = { bold: true };
   });
-  row += 1;
-  result.rows.slice(0, 8).forEach((dataRow) => {
-    previewFieldIds.forEach((fieldId, index) => {
-      sheet.getCell(row, startCol + index).value = formatReportCellValue(report, table, fieldId, dataRow[fieldId]);
+  result.rows.forEach((dataRow, rowIndex) => {
+    report.selectedFieldIds.forEach((fieldId, fieldIndex) => {
+      const formatted = formatReportCellValue(report, table, fieldId, dataRow[fieldId]);
+      sheet.getCell(headersRow + 1 + rowIndex, startCol + fieldIndex).value = formatted;
+      widths[fieldIndex] = Math.min(60, Math.max(widths[fieldIndex], String(formatted ?? "").length + 3));
     });
-    row += 1;
   });
-  return row;
+  widths.forEach((width, index) => {
+    sheet.getColumn(startCol + index).width = width;
+  });
+  sheet.views = [{ state: "frozen", ySplit: headersRow }];
+  sheet.autoFilter = {
+    from: { row: headersRow, column: startCol },
+    to: { row: headersRow, column: startCol + Math.max(0, report.selectedFieldIds.length - 1) }
+  };
+  return headersRow + 1 + result.rows.length;
 }
 
 function writeDetailSheet(
@@ -1031,11 +1054,37 @@ async function writeDashboardTabSheet(
   detailSheetNames: Record<string, string>,
   onProgress?: ExportProgressCallback
 ) {
+  const singleWidgetPlacement = tab.widgets.length === 1
+    ? layoutDashboardWidgets(dashboard, tab.id, tab.widgets)[0]
+    : null;
+  if (singleWidgetPlacement) {
+    const widget = singleWidgetPlacement.widget;
+    const exportResult = resolveWidgetExportResult(widget, exportResultsByReportId);
+    const table = tablesById[widget.report.sourceTableId];
+    if (widget.status === "failed") {
+      writeOverviewHeader(sheet, widget.widget.title || widget.report.name, widget.error || widget.message || "Widget failed to load.");
+      writeWidgetMessageBlock(sheet, 4, 1, 10, widget.error || widget.message || "Widget failed to load.");
+      onProgress?.(74, `Writing ${tab.name}`);
+      return;
+    }
+    if (table && widgetDisplayMode(widget.widget, widget.report) === "table") {
+      writeOverviewHeader(sheet, widget.widget.title || widget.report.name, widget.report.name !== widget.widget.title ? widget.report.name : table.name);
+      let row = writeMetadataRows(sheet, 4, [
+        { label: "Rows exported", value: exportResult.totalRows },
+        { label: "View mode", value: "table" }
+      ]);
+      row = writeWarningSection(sheet, row + 1, exportResult.warnings || []);
+      writeWidgetFullTableBlock(sheet, widget.report, table, exportResult, row + 1, 1);
+      onProgress?.(74, `Writing ${tab.name}`);
+      return;
+    }
+  }
+
   setDashboardLayoutColumns(sheet);
   const placements = layoutDashboardWidgets(dashboard, tab.id, tab.widgets);
   for (const placement of placements) {
     const { widget, startCol, endCol, startRow, endRow } = placement;
-    const exportResult = exportResultsByReportId[widget.report.id] || widget.result;
+    const exportResult = resolveWidgetExportResult(widget, exportResultsByReportId);
     const table = tablesById[widget.report.sourceTableId];
     writeWidgetTitle(sheet, startRow, startCol, endCol, widget.widget.title || widget.report.name, widget.report.name !== widget.widget.title ? widget.report.name : "");
     if (widget.status === "failed") {
@@ -1062,18 +1111,26 @@ async function writeDashboardTabSheet(
           }
         });
         contentRow += 18;
+      } else {
+        contentRow = writeWidgetMessageBlock(sheet, contentRow, startCol, endCol, "Chart image unavailable for this widget.");
       }
     }
-    if (widgetShowsDetails(widget.widget, widget.report)) {
-      writeWidgetDataPreviewBlock(
+    if (widgetShowsDetails(widget.widget, widget.report) && widgetDisplayMode(widget.widget, widget.report) === "table") {
+      writeWidgetFullTableBlock(
         sheet,
         widget.report,
         table,
         exportResult,
         Math.min(contentRow, endRow - 10),
+        startCol
+      );
+    } else if (widgetNeedsSeparateDetailSheet(widget.widget, widget.report) && detailSheetNames[widget.widgetId]) {
+      writeWidgetMessageBlock(
+        sheet,
+        Math.min(contentRow, endRow - 4),
         startCol,
         endCol,
-        detailSheetNames[widget.widgetId] || null
+        `Row details exported on "${detailSheetNames[widget.widgetId]}".`
       );
     }
   }
@@ -1217,7 +1274,8 @@ export async function streamDashboardWorkbook(
     tab.widgets.forEach((widget) => {
       if (widget.status === "failed") return;
       const table = tablesById[widget.report.sourceTableId];
-      const exportResult = exportResultsByReportId[widget.report.id] || widget.result;
+      const exportResult = resolveWidgetExportResult(widget, exportResultsByReportId);
+      if (!widgetNeedsSeparateDetailSheet(widget.widget, widget.report)) return;
       if (!table || !exportResult.rows.length) return;
       const detailSheet = workbook.addWorksheet(safeSheetName(`${tab.name} ${widget.report.name} Data`, usedNames));
       detailSheetNames[widget.widgetId] = detailSheet.name;
@@ -1233,6 +1291,7 @@ export async function streamDashboardWorkbook(
   rendered.tabs.forEach((tab) => {
     tab.widgets.forEach((widget) => {
       const table = tablesById[widget.report.sourceTableId];
+      const exportResult = resolveWidgetExportResult(widget, exportResultsByReportId);
       const runtimeWidgetFilters = table
         ? buildDashboardFilters(dashboard, widget.report.id, runtimeFilters, widget.report.sourceTableId).map((filter) => describeReportFilter(widget.report, table, filter))
         : [];
@@ -1245,13 +1304,14 @@ export async function streamDashboardWorkbook(
         : [
             widget.widget.showSummary ? "summary" : "",
             widgetShowsChart(widget.widget, widget.report) ? "chart" : "",
-            detailSheetNames[widget.widgetId] ? "detail sheet" : widgetShowsDetails(widget.widget, widget.report) ? "preview rows" : ""
+            widgetDisplayMode(widget.widget, widget.report) === "table" ? "table rows" : "",
+            detailSheetNames[widget.widgetId] ? "detail sheet" : ""
           ].filter(Boolean);
       overview.getCell(`A${overviewRow}`).value = tab.name;
       overview.getCell(`B${overviewRow}`).value = widget.widget.title || widget.report.name;
       overview.getCell(`C${overviewRow}`).value = widget.report.name;
       overview.getCell(`D${overviewRow}`).value = widget.status === "failed" ? (widget.error || widget.message || "Failed") : "Ready";
-      overview.getCell(`E${overviewRow}`).value = widget.result.totalRows;
+      overview.getCell(`E${overviewRow}`).value = exportResult.totalRows;
       if (detailSheetNames[widget.widgetId]) {
         overview.getCell(`F${overviewRow}`).value = {
           text: detailSheetNames[widget.widgetId],
@@ -1259,7 +1319,14 @@ export async function streamDashboardWorkbook(
         };
         overview.getCell(`F${overviewRow}`).font = { color: { argb: "FF1F5AA6" }, underline: true };
       } else {
-        overview.getCell(`F${overviewRow}`).value = tabSheetNamesById[tab.id] || "";
+        const sheetName = tabSheetNamesById[tab.id] || "";
+        overview.getCell(`F${overviewRow}`).value = sheetName ? {
+          text: sheetName,
+          hyperlink: sheetHyperlink(sheetName)
+        } : "";
+        if (sheetName) {
+          overview.getCell(`F${overviewRow}`).font = { color: { argb: "FF1F5AA6" }, underline: true };
+        }
       }
       overview.getCell(`G${overviewRow}`).value = filterSummary;
       overview.getCell(`H${overviewRow}`).value = parts.join(", ") || "skipped";
