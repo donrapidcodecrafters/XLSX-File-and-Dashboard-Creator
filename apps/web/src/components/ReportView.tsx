@@ -171,6 +171,21 @@ function buildExportTableFallback(report: ReportDefinition, table?: TableDefinit
   };
 }
 
+async function savePreparedWorkbook(blob: Blob, filename: string, target?: Awaited<ReturnType<typeof createExportSaveTarget>> | null) {
+  if (target) {
+    const writable = await target.createWritable();
+    await writable.write(blob);
+    await writable.close();
+    return;
+  }
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
 export function ReportView({
   report,
   table,
@@ -196,6 +211,8 @@ export function ReportView({
   const totalPages = result?.totalPages || 1;
   const [localExporting, setLocalExporting] = useState(false);
   const [exportError, setExportError] = useState("");
+  const [preparedExport, setPreparedExport] = useState<{ filename: string; blob: Blob } | null>(null);
+  const [exportSaved, setExportSaved] = useState(false);
   const [toolbarCollapsed, setToolbarCollapsed] = useState(true);
   const autoExportStartedRef = useRef(false);
   const summaryAvailable = reportShowsSummary(report) && Boolean(result?.summary?.length);
@@ -223,6 +240,8 @@ export function ReportView({
   useEffect(() => {
     skipStateBroadcastRef.current = true;
     lastBroadcastStateRef.current = "";
+    setPreparedExport(null);
+    setExportSaved(false);
   }, [report.id]);
 
   useEffect(() => {
@@ -267,18 +286,33 @@ export function ReportView({
 
   async function beginExport(options: { skipPicker?: boolean } = {}) {
     if (localExporting) return;
+    if (preparedExport && !options.skipPicker) {
+      const saveTarget = await createExportSaveTarget(preparedExport.filename);
+      if (!saveTarget && typeof (window as typeof window & { showSaveFilePicker?: unknown }).showSaveFilePicker === "function") return;
+      await savePreparedWorkbook(preparedExport.blob, preparedExport.filename, saveTarget);
+      setExportSaved(true);
+      return;
+    }
     const filename = buildExportFilename(report.name);
-    const supportsPicker = typeof (window as typeof window & { showSaveFilePicker?: unknown }).showSaveFilePicker === "function";
-    const saveTarget = options.skipPicker ? null : await createExportSaveTarget(filename);
-    if (!options.skipPicker && supportsPicker && !saveTarget) return;
     setLocalExporting(true);
     setExportError("");
+    setPreparedExport(null);
+    setExportSaved(false);
     try {
       const exportBundle = await fetchReportExportBundle(report.id);
-      await exportReportWorkbook(report, buildExportTableFallback(report, table), exportBundle.result, {
+      const blob = await exportReportWorkbook(report, buildExportTableFallback(report, table), exportBundle.result, {
         filename,
-        saveTarget
+        returnBlob: true
       });
+      if (!(blob instanceof Blob)) {
+        throw new Error("Export did not produce a workbook file.");
+      }
+      if (options.skipPicker) {
+        await savePreparedWorkbook(blob, filename, null);
+        setExportSaved(true);
+      } else {
+        setPreparedExport({ filename, blob });
+      }
     } catch (error) {
       setExportError(error instanceof Error ? error.message : "Export failed.");
     } finally {
@@ -468,7 +502,7 @@ export function ReportView({
                       </button>
                     ) : null}
                     <button className="ghost-button" onClick={() => { void beginExport(); }} disabled={!result || localExporting}>
-                      {localExporting ? "Preparing xlsx…" : "Download xlsx"}
+                      {localExporting ? "Generating xlsx…" : preparedExport ? (exportSaved ? "Save again" : "Save xlsx") : "Download xlsx"}
                     </button>
                     <button className="ghost-button" onClick={onRefresh} disabled={loading}>
                       {loading ? "Refreshing…" : "Refresh now"}
@@ -532,8 +566,23 @@ export function ReportView({
 
       {localExporting ? (
         <div className="sync-status">
-          <strong>Preparing export</strong>
+          <strong>Generating export</strong>
           <span>Building the workbook and chart image from the current report.</span>
+          <div className="progress-meter" aria-hidden="true">
+            <div className="progress-meter-fill" style={{ width: "72%" }} />
+          </div>
+        </div>
+      ) : null}
+
+      {preparedExport ? (
+        <div className="sync-status sync-status-ok">
+          <strong>Export ready</strong>
+          <span>The workbook is ready. Save it to your machine.</span>
+          <div className="card-actions">
+            <button className="ghost-button" onClick={() => { void beginExport(); }}>
+              {exportSaved ? "Save again" : "Save xlsx"}
+            </button>
+          </div>
         </div>
       ) : null}
 

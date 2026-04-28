@@ -22,11 +22,21 @@ interface WorkbookExportOptions {
   filename?: string;
   saveTarget?: WorkbookSaveTarget | null;
   tablesById?: Record<string, TableDefinition>;
+  returnBlob?: boolean;
 }
 
 function formatCell(value: unknown) {
   if (Array.isArray(value)) return value.join(", ");
   return String(value ?? "");
+}
+
+function formatChartValue(value: number) {
+  if (!Number.isFinite(value)) return "0";
+  const whole = Math.abs(value % 1) < 0.000001;
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: whole ? 0 : 2,
+    maximumFractionDigits: 2
+  }).format(value);
 }
 
 function downloadBlob(filename: string, blob: Blob) {
@@ -138,10 +148,12 @@ function drawAxes(ctx: CanvasRenderingContext2D, left: number, top: number, widt
 }
 
 function drawColumnChart(ctx: CanvasRenderingContext2D, data: ChartDatum[], options: { horizontal?: boolean; area?: boolean; line?: boolean }) {
-  const left = 70;
+  const longestLabel = data.reduce((max, item) => Math.max(max, String(item.label || "").length), 0);
+  const left = options.horizontal ? 200 : 90;
   const top = 280;
-  const width = 1040;
-  const height = 360;
+  const width = ctx.canvas.width - left - 90;
+  const bottomPad = options.horizontal ? 40 : Math.min(220, Math.max(128, 92 + longestLabel * 4));
+  const height = ctx.canvas.height - top - bottomPad;
   const maxValue = Math.max(...data.map((item) => item.value), 1);
   drawAxes(ctx, left, top, width, height, maxValue);
   const gap = 18;
@@ -157,8 +169,8 @@ function drawColumnChart(ctx: CanvasRenderingContext2D, data: ChartDatum[], opti
       ctx.fill();
       ctx.fillStyle = "#173126";
       ctx.font = "600 15px Manrope, sans-serif";
-      ctx.fillText(item.label.slice(0, 16), left, y + rowHeight / 2 + 5);
-      ctx.fillText(String(item.value), left + 140 + barWidth, y + rowHeight / 2 + 5);
+      ctx.fillText(item.label.slice(0, 24), 30, y + rowHeight / 2 + 5);
+      ctx.fillText(formatChartValue(item.value), left + 140 + barWidth, y + rowHeight / 2 + 5);
     });
     return;
   }
@@ -176,12 +188,19 @@ function drawColumnChart(ctx: CanvasRenderingContext2D, data: ChartDatum[], opti
       ctx.fill();
     }
     ctx.fillStyle = "#173126";
-    ctx.font = "600 13px Manrope, sans-serif";
+    ctx.font = "600 16px Manrope, sans-serif";
     ctx.save();
-    ctx.translate(x + 8, top + height + 18);
+    ctx.translate(x + 10, top + height + 28);
     ctx.rotate(-0.35);
-    ctx.fillText(item.label.slice(0, 18), 0, 0);
+    ctx.fillText(item.label.slice(0, 28), 0, 0);
     ctx.restore();
+    if (!options.line && !options.area) {
+      ctx.fillStyle = "#173126";
+      ctx.font = "700 15px Manrope, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(formatChartValue(item.value), x + barWidth / 2, Math.max(26, y - 10));
+      ctx.textAlign = "left";
+    }
   });
 
   if (options.line || options.area) {
@@ -207,15 +226,20 @@ function drawColumnChart(ctx: CanvasRenderingContext2D, data: ChartDatum[], opti
       ctx.beginPath();
       ctx.arc(point.x, point.y, 6, 0, Math.PI * 2);
       ctx.fill();
+      ctx.fillStyle = "#173126";
+      ctx.font = "700 13px Manrope, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(formatChartValue(data[index]?.value || 0), point.x, point.y - 12);
+      ctx.textAlign = "left";
     });
   }
 }
 
 function drawPieChart(ctx: CanvasRenderingContext2D, data: ChartDatum[], innerRadius = 0) {
   const total = Math.max(data.reduce((sum, item) => sum + item.value, 0), 1);
-  const cx = 400;
+  const cx = Math.min(520, Math.round(ctx.canvas.width * 0.35));
   const cy = 420;
-  const radius = 170;
+  const radius = Math.min(220, Math.round(ctx.canvas.height * 0.24));
   let start = -Math.PI / 2;
 
   data.forEach((item, index) => {
@@ -227,6 +251,26 @@ function drawPieChart(ctx: CanvasRenderingContext2D, data: ChartDatum[], innerRa
     ctx.arc(cx, cy, radius, start, end);
     ctx.closePath();
     ctx.fill();
+
+    const mid = start + slice / 2;
+    const leaderStartX = cx + Math.cos(mid) * (radius + 4);
+    const leaderStartY = cy + Math.sin(mid) * (radius + 4);
+    const leaderMidX = cx + Math.cos(mid) * (radius + 28);
+    const leaderMidY = cy + Math.sin(mid) * (radius + 28);
+    const leaderEndX = leaderMidX + (Math.cos(mid) >= 0 ? 36 : -36);
+    const leaderEndY = leaderMidY;
+    ctx.strokeStyle = "rgba(23,49,38,0.45)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(leaderStartX, leaderStartY);
+    ctx.lineTo(leaderMidX, leaderMidY);
+    ctx.lineTo(leaderEndX, leaderEndY);
+    ctx.stroke();
+    ctx.fillStyle = "#173126";
+    ctx.font = "700 15px Manrope, sans-serif";
+    ctx.textAlign = Math.cos(mid) >= 0 ? "left" : "right";
+    ctx.fillText(formatChartValue(item.value), leaderEndX + (Math.cos(mid) >= 0 ? 8 : -8), leaderEndY + 5);
+    ctx.textAlign = "left";
     start = end;
   });
 
@@ -238,14 +282,14 @@ function drawPieChart(ctx: CanvasRenderingContext2D, data: ChartDatum[], innerRa
   }
 
   data.slice(0, 6).forEach((item, index) => {
-    const x = 690;
+    const x = Math.round(ctx.canvas.width * 0.56);
     const y = 290 + index * 48;
     ctx.fillStyle = CHART_COLORS[index % CHART_COLORS.length];
     roundedRect(ctx, x, y, 20, 20, 6);
     ctx.fill();
     ctx.fillStyle = "#173126";
     ctx.font = "600 16px Manrope, sans-serif";
-    ctx.fillText(`${item.label} (${item.value})`, x + 30, y + 15);
+    ctx.fillText(`${item.label} (${formatChartValue(item.value)})`, x + 30, y + 15);
   });
 }
 
@@ -291,6 +335,8 @@ function drawRadarChart(ctx: CanvasRenderingContext2D, data: ChartDatum[]) {
     ctx.fillStyle = "#173126";
     ctx.font = "600 14px Manrope, sans-serif";
     ctx.fillText(point.item.label.slice(0, 12), point.lx - 22, point.ly);
+    ctx.font = "700 13px Manrope, sans-serif";
+    ctx.fillText(formatChartValue(point.item.value), point.x + 8, point.y - 8);
   });
 }
 
@@ -312,7 +358,7 @@ function drawGaugeChart(ctx: CanvasRenderingContext2D, data: ChartDatum[]) {
   ctx.stroke();
   ctx.fillStyle = "#173126";
   ctx.font = "700 42px Manrope, sans-serif";
-  ctx.fillText(String(current), cx - 20, cy - 10);
+  ctx.fillText(formatChartValue(current), cx - 34, cy - 10);
   ctx.fillStyle = "#5c6d63";
   ctx.font = "600 18px Manrope, sans-serif";
   ctx.fillText((data[0]?.label || "Current").slice(0, 18), cx - 50, cy + 28);
@@ -344,6 +390,10 @@ function drawWaterfallChart(ctx: CanvasRenderingContext2D, data: ChartDatum[]) {
     ctx.fillStyle = "#173126";
     ctx.font = "600 13px Manrope, sans-serif";
     ctx.fillText(item.label.slice(0, 14), x, top + height + 18);
+    ctx.font = "700 13px Manrope, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(formatChartValue(item.value), x + barWidth / 2, Math.max(24, y - 8));
+    ctx.textAlign = "left";
   });
 }
 
@@ -355,7 +405,12 @@ function renderChartImage(
   data: ChartDatum[],
   summary: SummaryDatum[]
 ) {
-  const canvas = createCanvas();
+  const longestLabel = data.reduce((max, item) => Math.max(max, String(item.label || "").length), 0);
+  const canvasWidth = Math.min(2800, Math.max(1400, 560 + data.length * 130 + longestLabel * 14));
+  const canvasHeight = chartType === "pie" || chartType === "donut"
+    ? 940
+    : Math.min(1400, Math.max(900, 720 + Math.min(220, longestLabel * 6)));
+  const canvas = createCanvas(canvasWidth, canvasHeight);
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
   drawFrame(ctx, title, subtitle);
@@ -462,14 +517,23 @@ async function writeWorkbookFile(workbook: any, filename: string) {
   downloadBlob(filename, new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
 }
 
-async function writeWorkbookFileWithOptions(workbook: any, filename: string, saveTarget?: WorkbookSaveTarget | null) {
+async function writeWorkbookFileWithOptions(
+  workbook: any,
+  filename: string,
+  saveTarget?: WorkbookSaveTarget | null,
+  returnBlob = false
+) {
   const buffer = await workbook.xlsx.writeBuffer();
   const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  if (returnBlob) {
+    return blob;
+  }
   if (saveTarget) {
     await saveBlob(saveTarget, blob);
-    return;
+    return blob;
   }
   downloadBlob(filename, blob);
+  return blob;
 }
 
 function resolveWidgetDisplayMode(widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], report: ReportDefinition) {
@@ -594,7 +658,12 @@ export async function exportReportWorkbook(
   dataSheet.columns = columns.map((header) => ({ header, key: header, width: 22 }));
   dataSheet.addRows(rows);
 
-  await writeWorkbookFileWithOptions(workbook, options.filename || `${report.id}.xlsx`, options.saveTarget);
+  return writeWorkbookFileWithOptions(
+    workbook,
+    options.filename || `${report.id}.xlsx`,
+    options.saveTarget,
+    options.returnBlob === true
+  );
 }
 
 export async function exportDashboardWorkbook(
@@ -708,5 +777,10 @@ export async function exportDashboardWorkbook(
     });
   });
 
-  await writeWorkbookFileWithOptions(workbook, options.filename || `${dashboard.id}.xlsx`, options.saveTarget);
+  return writeWorkbookFileWithOptions(
+    workbook,
+    options.filename || `${dashboard.id}.xlsx`,
+    options.saveTarget,
+    options.returnBlob === true
+  );
 }
