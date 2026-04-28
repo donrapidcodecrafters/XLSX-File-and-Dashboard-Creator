@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { formatReportCellValue, getReportFieldLabel, type ExportJobStatus, type ReportDefinition, type ReportFocusMode, type ReportRunResult, type TableDefinition } from "@studio/shared";
+import { formatReportCellValue, getReportFieldLabel, type ReportDefinition, type ReportFocusMode, type ReportRunResult, type TableDefinition } from "@studio/shared";
 import { LinkToolbar } from "./LinkToolbar";
 import { ChartPreview } from "./ChartPreview";
 import { RefreshOverlay } from "./RefreshOverlay";
 import { ResizableDataTable } from "./ResizableDataTable";
-import { createExportSaveTarget, downloadExportJob, fetchExportJobStatus, startReportExportJob, type ExportSaveTarget } from "../lib/api";
+import { createExportSaveTarget, fetchReportExportBundle } from "../lib/api";
 import { buildHostedRoute, buildObjectUrl, getHostedContext } from "../lib/embed";
 import { buildQuickbaseChartDatumUrl, buildQuickbaseRecordEditUrl, buildQuickbaseReportFilterTree, type QuickbaseTableLinkContext } from "../lib/quickbaseLinks";
 import { getChartViewportBounds } from "./studioReportUtils";
+import { exportReportWorkbook } from "../lib/workbookExport";
 
 interface ReportViewProps {
   report: ReportDefinition;
@@ -156,6 +157,20 @@ function buildExportFilename(name: string) {
   return `${safe || "report"} ${timestamp}.xlsx`;
 }
 
+function buildExportTableFallback(report: ReportDefinition, table?: TableDefinition) {
+  if (table) return table;
+  return {
+    id: report.sourceTableId,
+    name: report.sourceTableId || "Report data",
+    description: "",
+    fields: report.selectedFieldIds.map((fieldId) => ({
+      id: fieldId,
+      label: getReadableFieldLabel(report, fieldId),
+      type: "text" as const
+    }))
+  };
+}
+
 export function ReportView({
   report,
   table,
@@ -179,10 +194,8 @@ export function ReportView({
   const hosted = getHostedContext();
   const fullScreenUrl = buildObjectUrl("report", report.id, { viewer: true });
   const totalPages = result?.totalPages || 1;
-  const [exportJob, setExportJob] = useState<ExportJobStatus | null>(null);
-  const [downloadedJobId, setDownloadedJobId] = useState("");
-  const [pendingSaveOnReady, setPendingSaveOnReady] = useState(false);
-  const [pendingSaveTarget, setPendingSaveTarget] = useState<ExportSaveTarget | null>(null);
+  const [localExporting, setLocalExporting] = useState(false);
+  const [exportError, setExportError] = useState("");
   const [toolbarCollapsed, setToolbarCollapsed] = useState(true);
   const autoExportStartedRef = useRef(false);
   const summaryAvailable = reportShowsSummary(report) && Boolean(result?.summary?.length);
@@ -245,80 +258,32 @@ export function ReportView({
   }, [chartAvailable, currentPage, detailsAvailable, focusMode, focusedSection, onStateChange, report, summaryAvailable]);
 
   useEffect(() => {
-    if (!exportJob || exportJob.status === "complete" || exportJob.status === "failed") return;
-    const handle = window.setInterval(() => {
-      fetchExportJobStatus(exportJob.id)
-        .then((response) => setExportJob(response.job))
-        .catch(() => undefined);
-    }, 1000);
-    return () => window.clearInterval(handle);
-  }, [exportJob?.id, exportJob?.status]);
-
-  useEffect(() => {
-    if (!exportJob || exportJob.status !== "failed") return;
-    setPendingSaveOnReady(false);
-    setPendingSaveTarget(null);
-  }, [exportJob]);
-
-  useEffect(() => {
-    if (!exportJob || exportJob.status !== "complete" || downloadedJobId === exportJob.id || !pendingSaveOnReady || !pendingSaveTarget) return;
-    const completedJob = exportJob;
-    const saveTarget = pendingSaveTarget;
-    let cancelled = false;
-    async function saveWhenReady() {
-      try {
-        await downloadExportJob(completedJob.id, {
-          directDownload: hosted.embed,
-          saveTarget,
-          fallbackFilename: buildExportFilename(report.name)
-        });
-        if (cancelled) return;
-        setDownloadedJobId(completedJob.id);
-      } finally {
-        if (!cancelled) setPendingSaveOnReady(false);
-        if (!cancelled) setPendingSaveTarget(null);
-      }
-    }
-    void saveWhenReady();
-    return () => {
-      cancelled = true;
-    };
-  }, [downloadedJobId, exportJob, hosted.embed, pendingSaveOnReady, pendingSaveTarget]);
-
-  useEffect(() => {
     if (hosted.autoDownload !== "xlsx") return;
     if (autoExportStartedRef.current) return;
     autoExportStartedRef.current = true;
     window.history.replaceState({}, document.title, buildObjectUrl("report", report.id, { viewer: true }));
-    void beginExportInPlace();
+    void beginExport({ skipPicker: true });
   }, [hosted.autoDownload, report.id]);
 
-  async function beginExportInPlace() {
-    const response = await startReportExportJob({ reportId: report.id, report, table });
-    setExportJob(response.job);
-    setDownloadedJobId("");
-  }
-
-  async function beginExport() {
-    if (exportJob?.status === "complete" && downloadedJobId !== exportJob.id) {
-      const saveTarget = await createExportSaveTarget(buildExportFilename(report.name));
-      if (!saveTarget) return;
-      await downloadExportJob(exportJob.id, {
-        directDownload: hosted.embed,
-        saveTarget,
-        fallbackFilename: buildExportFilename(report.name)
-      });
-      setDownloadedJobId(exportJob.id);
-      setPendingSaveOnReady(false);
-      setPendingSaveTarget(null);
-      return;
-    }
+  async function beginExport(options: { skipPicker?: boolean } = {}) {
+    if (localExporting) return;
+    const filename = buildExportFilename(report.name);
     const supportsPicker = typeof (window as typeof window & { showSaveFilePicker?: unknown }).showSaveFilePicker === "function";
-    const saveTarget = await createExportSaveTarget(buildExportFilename(report.name));
-    if (supportsPicker && !saveTarget) return;
-    setPendingSaveTarget(saveTarget);
-    setPendingSaveOnReady(true);
-    await beginExportInPlace();
+    const saveTarget = options.skipPicker ? null : await createExportSaveTarget(filename);
+    if (!options.skipPicker && supportsPicker && !saveTarget) return;
+    setLocalExporting(true);
+    setExportError("");
+    try {
+      const exportBundle = await fetchReportExportBundle(report.id);
+      await exportReportWorkbook(report, buildExportTableFallback(report, table), exportBundle.result, {
+        filename,
+        saveTarget
+      });
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : "Export failed.");
+    } finally {
+      setLocalExporting(false);
+    }
   }
 
   function freshnessLabel() {
@@ -502,12 +467,8 @@ export function ReportView({
                         {isFavorite ? "Unfavorite" : "Favorite"}
                       </button>
                     ) : null}
-                    <button className="ghost-button" onClick={() => { void beginExport(); }} disabled={!result || exportJob?.status === "queued" || exportJob?.status === "running"}>
-                      {exportJob?.status === "queued" || exportJob?.status === "running"
-                        ? `Exporting ${exportJob.progress}%`
-                        : exportJob?.status === "complete" && downloadedJobId !== exportJob.id
-                          ? "Save xlsx"
-                          : "Download xlsx"}
+                    <button className="ghost-button" onClick={() => { void beginExport(); }} disabled={!result || localExporting}>
+                      {localExporting ? "Preparing xlsx…" : "Download xlsx"}
                     </button>
                     <button className="ghost-button" onClick={onRefresh} disabled={loading}>
                       {loading ? "Refreshing…" : "Refresh now"}
@@ -569,26 +530,17 @@ export function ReportView({
         </div>
       ) : null}
 
-      {exportJob ? (
-        <div className={`sync-status ${exportJob.status === "failed" ? "sync-status-warn" : exportJob.status === "complete" ? "sync-status-ok" : ""}`}>
-          <strong>
-            {exportJob.status === "complete"
-              ? "Export ready"
-              : exportJob.status === "failed"
-                ? "Export failed"
-                : `Exporting ${exportJob.progress}%`}
-          </strong>
-          <span>{exportJob.error || exportJob.message}</span>
-          <div className="progress-meter" aria-hidden="true">
-            <div className="progress-meter-fill" style={{ width: `${exportJob.progress}%` }} />
-          </div>
-          {exportJob.status === "complete" ? (
-            <div className="card-actions">
-              <button className="ghost-button" onClick={() => { void beginExport(); }}>
-                {downloadedJobId === exportJob.id ? "Save again" : "Save xlsx"}
-              </button>
-            </div>
-          ) : null}
+      {localExporting ? (
+        <div className="sync-status">
+          <strong>Preparing export</strong>
+          <span>Building the workbook and chart image from the current report.</span>
+        </div>
+      ) : null}
+
+      {exportError ? (
+        <div className="sync-status sync-status-warn">
+          <strong>Export failed</strong>
+          <span>{exportError}</span>
         </div>
       ) : null}
 

@@ -11,6 +11,19 @@ import {
 
 const CHART_COLORS = ["#0d7c66", "#d88d3d", "#5b7cfa", "#9b59b6", "#e66f5c", "#3a9782", "#b7a26a"];
 
+interface WorkbookSaveTarget {
+  createWritable: () => Promise<{
+    write: (data: Blob) => Promise<void>;
+    close: () => Promise<void>;
+  }>;
+}
+
+interface WorkbookExportOptions {
+  filename?: string;
+  saveTarget?: WorkbookSaveTarget | null;
+  tablesById?: Record<string, TableDefinition>;
+}
+
 function formatCell(value: unknown) {
   if (Array.isArray(value)) return value.join(", ");
   return String(value ?? "");
@@ -23,6 +36,12 @@ function downloadBlob(filename: string, blob: Blob) {
   anchor.download = filename;
   anchor.click();
   URL.revokeObjectURL(url);
+}
+
+async function saveBlob(target: WorkbookSaveTarget, blob: Blob) {
+  const writable = await target.createWritable();
+  await writable.write(blob);
+  await writable.close();
 }
 
 function safeSheetName(name: string, usedNames: Set<string>) {
@@ -424,7 +443,114 @@ async function writeWorkbookFile(workbook: any, filename: string) {
   downloadBlob(filename, new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
 }
 
-export async function exportReportWorkbook(report: ReportDefinition, table: TableDefinition, result: ReportRunResult) {
+async function writeWorkbookFileWithOptions(workbook: any, filename: string, saveTarget?: WorkbookSaveTarget | null) {
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  if (saveTarget) {
+    await saveBlob(saveTarget, blob);
+    return;
+  }
+  downloadBlob(filename, blob);
+}
+
+function resolveWidgetDisplayMode(widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], report: ReportDefinition) {
+  if (widget.displayMode !== "inherit") return widget.displayMode;
+  if (report.view.mode === "summary") return "summary";
+  if (report.view.mode === "chart") return "chart";
+  return "table";
+}
+
+function widgetShowsChart(widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], report: ReportDefinition) {
+  const displayMode = resolveWidgetDisplayMode(widget, report);
+  return displayMode === "chart" || (displayMode === "table" && report.view.showChartInTable);
+}
+
+function widgetNeedsSeparateDetailSheet(widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], report: ReportDefinition) {
+  return resolveWidgetDisplayMode(widget, report) !== "table" && widget.showDetails;
+}
+
+function widgetShowsSummary(widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], report: ReportDefinition, exportResult: ReportRunResult) {
+  return Boolean(widget.showSummary || (report.view.mode === "summary" && exportResult.summary.length));
+}
+
+function stripDataUrlPrefix(image: string) {
+  const match = image.match(/^data:image\/png;base64,(.+)$/);
+  return match?.[1] || image;
+}
+
+function addChartImage(workbook: any, sheet: any, image: string, row: number, width = 980, height = 560) {
+  const imageId = workbook.addImage({ base64: stripDataUrlPrefix(image), extension: "png" });
+  sheet.addImage(imageId, {
+    tl: { col: 0, row: Math.max(0, row - 1) },
+    ext: { width, height }
+  });
+}
+
+function writeSummaryRows(sheet: any, summary: SummaryDatum[], startRow: number) {
+  let row = startRow;
+  if (!summary.length) return row;
+  sheet.getCell(`A${row}`).value = "Summary metrics";
+  sheet.getCell(`A${row}`).font = { bold: true };
+  row += 1;
+  sheet.columns = [
+    { width: 28 },
+    { width: 18 },
+    { width: 18 },
+    { width: 18 },
+    { width: 18 },
+    { width: 18 },
+    { width: 18 },
+    { width: 18 }
+  ];
+  summary.forEach((item) => {
+    sheet.getCell(`A${row}`).value = item.label;
+    sheet.getCell(`B${row}`).value = item.value;
+    row += 1;
+  });
+  return row + 1;
+}
+
+function writeWarningRows(sheet: any, warnings: string[], startRow: number) {
+  let row = startRow;
+  if (!warnings.length) return row;
+  sheet.getCell(`A${row}`).value = "Warnings";
+  sheet.getCell(`A${row}`).font = { bold: true };
+  row += 1;
+  warnings.forEach((warning) => {
+    sheet.getCell(`A${row}`).value = warning;
+    row += 1;
+  });
+  return row + 1;
+}
+
+function writeDetailRows(
+  sheet: any,
+  report: ReportDefinition,
+  table: TableDefinition | undefined,
+  result: ReportRunResult,
+  startRow = 1
+) {
+  const headers = report.selectedFieldIds.map((fieldId) => resolveExportFieldLabel(report, table, fieldId));
+  sheet.columns = headers.map((header) => ({ header, key: header, width: 22 }));
+  const headerRow = sheet.getRow(startRow);
+  headers.forEach((header, index) => {
+    headerRow.getCell(index + 1).value = header;
+  });
+  headerRow.font = { bold: true };
+  result.rows.forEach((row, rowIndex) => {
+    const excelRow = sheet.getRow(startRow + rowIndex + 1);
+    report.selectedFieldIds.forEach((fieldId, columnIndex) => {
+      excelRow.getCell(columnIndex + 1).value = formatCell(row[fieldId]);
+    });
+  });
+}
+
+export async function exportReportWorkbook(
+  report: ReportDefinition,
+  table: TableDefinition,
+  result: ReportRunResult,
+  options: WorkbookExportOptions = {}
+) {
   const ExcelJS = await import("exceljs");
   const workbook = new ExcelJS.Workbook();
   const usedNames = new Set<string>();
@@ -449,13 +575,14 @@ export async function exportReportWorkbook(report: ReportDefinition, table: Tabl
   dataSheet.columns = columns.map((header) => ({ header, key: header, width: 22 }));
   dataSheet.addRows(rows);
 
-  await writeWorkbookFile(workbook, `${report.id}.xlsx`);
+  await writeWorkbookFileWithOptions(workbook, options.filename || `${report.id}.xlsx`, options.saveTarget);
 }
 
 export async function exportDashboardWorkbook(
   dashboard: DashboardRunResult["dashboard"],
   result: DashboardRunResult,
-  exportResultsByReportId?: Record<string, ReportRunResult>
+  exportResultsByReportId?: Record<string, ReportRunResult>,
+  options: WorkbookExportOptions = {}
 ) {
   const ExcelJS = await import("exceljs");
   const workbook = new ExcelJS.Workbook();
@@ -475,9 +602,61 @@ export async function exportDashboardWorkbook(
 
   result.tabs.forEach((tab) => {
     const tabSheet = workbook.addWorksheet(safeSheetName(tab.name, usedNames));
+    tabSheet.columns = [
+      { width: 24 },
+      { width: 22 },
+      { width: 22 },
+      { width: 22 },
+      { width: 22 },
+      { width: 22 },
+      { width: 22 },
+      { width: 22 },
+      { width: 22 },
+      { width: 22 }
+    ];
+
+    if (tab.widgets.length === 1) {
+      const widget = tab.widgets[0];
+      const exportResult = exportResultsByReportId?.[widget.report.id] || widget.result;
+      const table = options.tablesById?.[widget.report.sourceTableId];
+      tabSheet.getCell("A1").value = widget.widget.title || widget.report.name;
+      tabSheet.getCell("A1").font = { size: 18, bold: true };
+      tabSheet.getCell("A2").value = widget.report.name !== (widget.widget.title || widget.report.name)
+        ? widget.report.name
+        : table?.name || tab.name;
+      if (widget.status === "failed") {
+        tabSheet.getCell("A4").value = widget.error || widget.message || "Widget failed to load.";
+        return;
+      }
+      let rowCursor = 4;
+      if (widgetShowsSummary(widget.widget, widget.report, exportResult)) {
+        rowCursor = writeSummaryRows(tabSheet, exportResult.summary, rowCursor);
+      }
+      if (resolveWidgetDisplayMode(widget.widget, widget.report) === "table") {
+        writeDetailRows(tabSheet, widget.report, table, exportResult, rowCursor);
+      } else if (widgetShowsChart(widget.widget, widget.report)) {
+        const image = renderChartImage(widget.report.name, tab.name, widget.report.view.chartType, exportResult.chartData, exportResult.summary);
+        if (image) {
+          addChartImage(workbook, tabSheet, image, rowCursor, 1080, 620);
+          rowCursor += 30;
+        } else {
+          tabSheet.getCell(`A${rowCursor}`).value = "Chart image unavailable for this widget.";
+          rowCursor += 2;
+        }
+        rowCursor = writeWarningRows(tabSheet, exportResult.warnings || [], rowCursor);
+        if (widgetNeedsSeparateDetailSheet(widget.widget, widget.report)) {
+          const tableSheet = workbook.addWorksheet(safeSheetName(`${tab.name} ${widget.report.name} Data`, usedNames));
+          writeDetailRows(tableSheet, widget.report, table, exportResult, 1);
+        }
+      }
+      return;
+    }
+
     let rowCursor = 1;
     tab.widgets.forEach((widget) => {
-      tabSheet.getCell(`A${rowCursor}`).value = widget.report.name;
+      const exportResult = exportResultsByReportId?.[widget.report.id] || widget.result;
+      const table = options.tablesById?.[widget.report.sourceTableId];
+      tabSheet.getCell(`A${rowCursor}`).value = widget.widget.title || widget.report.name;
       tabSheet.getCell(`A${rowCursor}`).font = { size: 16, bold: true };
       rowCursor += 1;
       if (widget.status === "failed") {
@@ -485,39 +664,30 @@ export async function exportDashboardWorkbook(
         rowCursor += 3;
         return;
       }
-      const exportResult = exportResultsByReportId?.[widget.report.id] || widget.result;
-      const image = renderChartImage(widget.report.name, tab.name, widget.report.view.chartType, exportResult.chartData, exportResult.summary);
-      if (image) {
-        const imageId = workbook.addImage({ base64: image, extension: "png" });
-        tabSheet.addImage(imageId, {
-          tl: { col: 0, row: rowCursor },
-          ext: { width: 720, height: 420 }
-        });
-        rowCursor += 22;
+      if (widgetShowsSummary(widget.widget, widget.report, exportResult)) {
+        rowCursor = writeSummaryRows(tabSheet, exportResult.summary, rowCursor);
       }
-      rowCursor += 1;
-    });
-
-    tab.widgets.forEach((widget) => {
-      const tableSheet = workbook.addWorksheet(safeSheetName(`${tab.name} ${widget.report.name}`, usedNames));
-      if (widget.status === "failed") {
-        tableSheet.getCell("A1").value = widget.report.name;
-        tableSheet.getCell("A1").font = { size: 16, bold: true };
-        tableSheet.getCell("A3").value = widget.error || widget.message || "Widget failed to load.";
-        return;
+      if (widgetShowsChart(widget.widget, widget.report)) {
+        const image = renderChartImage(widget.report.name, tab.name, widget.report.view.chartType, exportResult.chartData, exportResult.summary);
+        if (image) {
+          addChartImage(workbook, tabSheet, image, rowCursor, 920, 520);
+          rowCursor += 26;
+        } else {
+          tabSheet.getCell(`A${rowCursor}`).value = "Chart image unavailable for this widget.";
+          rowCursor += 2;
+        }
+      } else if (resolveWidgetDisplayMode(widget.widget, widget.report) === "table") {
+        writeDetailRows(tabSheet, widget.report, table, exportResult, rowCursor);
+        rowCursor += Math.max(8, exportResult.rows.length + 4);
       }
-      const exportResult = exportResultsByReportId?.[widget.report.id] || widget.result;
-      const rows = rowsAsObjects(
-        widget.report.selectedFieldIds,
-        exportResult.rows,
-        undefined,
-        undefined
-      );
-      const columns = Object.keys(rows[0] || Object.fromEntries(widget.report.selectedFieldIds.map((fieldId) => [fieldId, ""])));
-      tableSheet.columns = columns.map((header) => ({ header, key: header, width: 22 }));
-      tableSheet.addRows(rows);
+      rowCursor = writeWarningRows(tabSheet, exportResult.warnings || [], rowCursor);
+      rowCursor += 2;
+      if (widgetNeedsSeparateDetailSheet(widget.widget, widget.report)) {
+        const tableSheet = workbook.addWorksheet(safeSheetName(`${tab.name} ${widget.report.name} Data`, usedNames));
+        writeDetailRows(tableSheet, widget.report, table, exportResult, 1);
+      }
     });
   });
 
-  await writeWorkbookFile(workbook, `${dashboard.id}.xlsx`);
+  await writeWorkbookFileWithOptions(workbook, options.filename || `${dashboard.id}.xlsx`, options.saveTarget);
 }
