@@ -663,10 +663,26 @@ function getChartImageSizing(report: ReportDefinition, chartData: ChartDatum[]) 
   };
 }
 
-async function fetchChartImage(config: unknown, sizing: ReturnType<typeof getChartImageSizing>) {
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function responseToChartImage(response: Response, sizing: ReturnType<typeof getChartImageSizing>) {
+  if (!response.ok) return null;
+  return {
+    base64: Buffer.from(await response.arrayBuffer()).toString("base64"),
+    width: sizing.embedWidth,
+    height: sizing.embedHeight
+  };
+}
+
+async function fetchChartImageByPost(config: unknown, sizing: ReturnType<typeof getChartImageSizing>) {
   const response = await fetch("https://quickchart.io/chart", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "Accept": "image/png"
+    },
     body: JSON.stringify({
       width: sizing.renderWidth,
       height: sizing.renderHeight,
@@ -676,13 +692,37 @@ async function fetchChartImage(config: unknown, sizing: ReturnType<typeof getCha
       version: "4",
       chart: config
     })
+  }).catch(() => null);
+  if (!response) return null;
+  return responseToChartImage(response, sizing);
+}
+
+async function fetchChartImageByGet(config: unknown, sizing: ReturnType<typeof getChartImageSizing>) {
+  const params = new URLSearchParams({
+    width: String(sizing.renderWidth),
+    height: String(sizing.renderHeight),
+    backgroundColor: "white",
+    devicePixelRatio: "3",
+    format: "png",
+    version: "4",
+    c: JSON.stringify(config)
   });
-  if (!response.ok) return null;
-  return {
-    base64: Buffer.from(await response.arrayBuffer()).toString("base64"),
-    width: sizing.embedWidth,
-    height: sizing.embedHeight
-  };
+  const response = await fetch(`https://quickchart.io/chart?${params.toString()}`, {
+    headers: {
+      "Accept": "image/png"
+    }
+  }).catch(() => null);
+  if (!response) return null;
+  return responseToChartImage(response, sizing);
+}
+
+async function fetchChartImage(config: unknown, sizing: ReturnType<typeof getChartImageSizing>) {
+  for (const waitMs of [0, 250, 750]) {
+    if (waitMs) await delay(waitMs);
+    const postImage = await fetchChartImageByPost(config, sizing);
+    if (postImage) return postImage;
+  }
+  return fetchChartImageByGet(config, sizing);
 }
 
 async function renderChartImage(report: ReportDefinition, subtitle: string, chartData: ChartDatum[], summary: SummaryDatum[]) {

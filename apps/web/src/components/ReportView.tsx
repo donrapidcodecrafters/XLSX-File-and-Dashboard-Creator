@@ -182,6 +182,7 @@ export function ReportView({
   const [exportJob, setExportJob] = useState<ExportJobStatus | null>(null);
   const [downloadedJobId, setDownloadedJobId] = useState("");
   const [pendingSaveOnReady, setPendingSaveOnReady] = useState(false);
+  const [pendingSaveTarget, setPendingSaveTarget] = useState<ExportSaveTarget | null>(null);
   const [toolbarCollapsed, setToolbarCollapsed] = useState(true);
   const autoExportStartedRef = useRef(false);
   const summaryAvailable = reportShowsSummary(report) && Boolean(result?.summary?.length);
@@ -256,16 +257,16 @@ export function ReportView({
   useEffect(() => {
     if (!exportJob || exportJob.status !== "failed") return;
     setPendingSaveOnReady(false);
+    setPendingSaveTarget(null);
   }, [exportJob]);
 
   useEffect(() => {
-    if (!exportJob || exportJob.status !== "complete" || downloadedJobId === exportJob.id || !pendingSaveOnReady) return;
+    if (!exportJob || exportJob.status !== "complete" || downloadedJobId === exportJob.id || !pendingSaveOnReady || !pendingSaveTarget) return;
     const completedJob = exportJob;
+    const saveTarget = pendingSaveTarget;
     let cancelled = false;
     async function saveWhenReady() {
       try {
-        const saveTarget = await createExportSaveTarget(buildExportFilename(report.name));
-        if (!saveTarget || cancelled) return;
         await downloadExportJob(completedJob.id, {
           directDownload: hosted.embed,
           saveTarget,
@@ -275,13 +276,14 @@ export function ReportView({
         setDownloadedJobId(completedJob.id);
       } finally {
         if (!cancelled) setPendingSaveOnReady(false);
+        if (!cancelled) setPendingSaveTarget(null);
       }
     }
     void saveWhenReady();
     return () => {
       cancelled = true;
     };
-  }, [downloadedJobId, exportJob, hosted.embed, pendingSaveOnReady, report.name]);
+  }, [downloadedJobId, exportJob, hosted.embed, pendingSaveOnReady, pendingSaveTarget]);
 
   useEffect(() => {
     if (hosted.autoDownload !== "xlsx") return;
@@ -308,8 +310,13 @@ export function ReportView({
       });
       setDownloadedJobId(exportJob.id);
       setPendingSaveOnReady(false);
+      setPendingSaveTarget(null);
       return;
     }
+    const supportsPicker = typeof (window as typeof window & { showSaveFilePicker?: unknown }).showSaveFilePicker === "function";
+    const saveTarget = await createExportSaveTarget(buildExportFilename(report.name));
+    if (supportsPicker && !saveTarget) return;
+    setPendingSaveTarget(saveTarget);
     setPendingSaveOnReady(true);
     await beginExportInPlace();
   }

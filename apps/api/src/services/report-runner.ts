@@ -218,6 +218,66 @@ function collectReportFieldIds(report: ReportDefinition, extraFilters: FilterDef
   ));
 }
 
+function getReportFieldDisplayLabel(report: ReportDefinition, table: TableDefinition, fieldId: string) {
+  const tableField = table.fields.find((field) => field.id === fieldId);
+  return report.displayLabels?.fields?.[fieldId]?.trim() || tableField?.label || fieldId;
+}
+
+function collectMissingReportFieldWarnings(report: ReportDefinition, table: TableDefinition, rows: DataRow[] = []) {
+  const warnings: string[] = [];
+  const knownFieldIds = new Set(table.fields.map((field) => String(field.id)));
+  const referencedFieldIds = collectReportFieldIds(report);
+  const missingFromDefinition = referencedFieldIds.filter((fieldId) => !knownFieldIds.has(String(fieldId)));
+  missingFromDefinition.forEach((fieldId) => {
+    const label = getReportFieldDisplayLabel(report, table, fieldId);
+    warnings.push(`Field "${label}" (${fieldId}) is used by this report but is not available in the Quickbase source table/report.`);
+  });
+  if (rows.length) {
+    referencedFieldIds
+      .filter((fieldId) => knownFieldIds.has(String(fieldId)))
+      .filter((fieldId) => rows.every((row) => !rowHasField(row, fieldId)))
+      .forEach((fieldId) => {
+        const label = getReportFieldDisplayLabel(report, table, fieldId);
+        warnings.push(`Quickbase did not return field "${label}" (${fieldId}) in the source rows for this report.`);
+      });
+  }
+  return Array.from(new Set(warnings));
+}
+
+function baseReportWarnings(report: ReportDefinition) {
+  return report.selectedFieldIds.length || !report.view.showDetails ? [] : ["This report has no selected fields."];
+}
+
+function mergeWarnings(...groups: Array<string[] | undefined>) {
+  return Array.from(new Set(groups.flatMap((group) => group || []).filter(Boolean)));
+}
+
+function isMissingFieldExecutionError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || "");
+  const normalized = message.toLowerCase();
+  return normalized.includes("unknown field")
+    || normalized.includes("field not found")
+    || normalized.includes("no such field")
+    || normalized.includes("invalid field")
+    || normalized.includes("invalid select option");
+}
+
+function createMissingFieldWarningResult(
+  report: ReportDefinition,
+  table: TableDefinition,
+  source: DataFreshnessInfo["source"] = "quickbase-live"
+) {
+  const warnings = mergeWarnings(
+    baseReportWarnings(report),
+    collectMissingReportFieldWarnings(report, table),
+    [`One or more fields used by this report are no longer available from Quickbase. Update the report fields or the Quickbase source report, then refresh again.`]
+  );
+  return {
+    ...createEmptyReportResult(report.id, table.id, "", source),
+    warnings
+  };
+}
+
 function chunk<T>(items: T[], size: number) {
   const groups: T[][] = [];
   for (let index = 0; index < items.length; index += size) {
@@ -684,7 +744,7 @@ function executeLocalReportPageOnly(
   const filterTree = getCombinedFilterTree(report, extraFilters);
   const filtered = filterTree ? rows.filter((row) => matchesFilterNode(row, filterTree)) : rows;
   const sorted = sortLocalRows(filtered, report.sorts);
-  const warnings = report.selectedFieldIds.length || !report.view.showDetails ? [] : ["This report has no selected fields."];
+  const warnings = mergeWarnings(baseReportWarnings(report), collectMissingReportFieldWarnings(report, table, rows));
   return {
     reportId: report.id,
     tableId: table.id,
@@ -824,7 +884,7 @@ async function fetchQuickbaseReportPageOnly(
   const filterTree = getCombinedFilterTree(report, extraFilters);
   const filters = extractFlatPushdownFilters(filterTree);
   const requestedFieldIds = collectReportFieldIds(report, extraFilters);
-  const warnings = report.selectedFieldIds.length || !report.view.showDetails ? [] : ["This report has no selected fields."];
+  const warnings = mergeWarnings(baseReportWarnings(report), collectMissingReportFieldWarnings(report, table));
   const { where } = buildQuickbaseWhere(filters);
   const sortBy = buildQuickbaseSort(report);
 
@@ -904,7 +964,7 @@ async function executeQuickbaseReportPage(
   const metricSet = report.summaryMetrics.length
     ? report.summaryMetrics
     : [{ id: "default-count", fieldId: report.selectedFieldIds[0] || "recordId", op: "count" as const, label: "Rows" }];
-  const warnings = report.selectedFieldIds.length || !report.view.showDetails ? [] : ["This report has no selected fields."];
+  const warnings = mergeWarnings(baseReportWarnings(report), collectMissingReportFieldWarnings(report, table));
   const { where } = buildQuickbaseWhere(filters);
   const sortBy = buildQuickbaseSort(report);
 
@@ -1009,7 +1069,10 @@ export async function executeReportPage(report: ReportDefinition, extraFilters: 
   }
 
   if (shouldUseLiveQuickbase(table.id, options.forceLive)) {
-    return executeQuickbaseReportPage(report, table, extraFilters, options).catch(async () => {
+    return executeQuickbaseReportPage(report, table, extraFilters, options).catch(async (error) => {
+      if (isMissingFieldExecutionError(error)) {
+        return createMissingFieldWarningResult(report, table);
+      }
       const rows = objectStore.getRows(table.id);
       const full = runReport(report, table, rows, extraFilters);
       const cachedFreshness = getCachedFreshness(table.id);
@@ -1027,6 +1090,7 @@ export async function executeReportPage(report: ReportDefinition, extraFilters: 
       : await runReportWorker({ report, table, rows, extraFilters });
     return {
       ...result,
+      warnings: mergeWarnings(result.warnings, collectMissingReportFieldWarnings(report, table, rows)),
       freshness: getCachedFreshness(table.id) || freshness("local-fallback")
     };
   });
@@ -1040,7 +1104,12 @@ export async function fetchReportPage(report: ReportDefinition, extraFilters: Fi
   }
 
   if (shouldUseLiveQuickbase(table.id, options.forceLive)) {
-    return fetchQuickbaseReportPageOnly(report, table, extraFilters, options);
+    return fetchQuickbaseReportPageOnly(report, table, extraFilters, options).catch((error) => {
+      if (isMissingFieldExecutionError(error)) {
+        return createMissingFieldWarningResult(report, table);
+      }
+      throw error;
+    });
   }
 
   if (!reportNeedsAggregates(report)) {
@@ -1057,6 +1126,7 @@ export async function fetchReportPage(report: ReportDefinition, extraFilters: Fi
       : await runReportWorker({ report, table, rows, extraFilters });
     return {
       ...result,
+      warnings: mergeWarnings(result.warnings, collectMissingReportFieldWarnings(report, table, rows)),
       freshness: getCachedFreshness(table.id) || freshness("local-fallback")
     };
   });
@@ -1076,55 +1146,62 @@ export async function fetchReportExportBundle(
 
   const quickbase = getQuickbaseConfigForTable(table);
   if (shouldUseLiveQuickbase(table.id, options.forceLive) && quickbase.realmHostname && quickbase.userToken && quickbase.appId) {
-    const filterTree = getCombinedFilterTree(report, extraFilters);
-    const filters = extractFlatPushdownFilters(filterTree);
-    const requestedFieldIds = collectReportFieldIds(report, extraFilters);
-    const { where } = buildQuickbaseWhere(filters);
-    const sortBy = buildQuickbaseSort(report);
-    const metricSet = report.summaryMetrics.length
-      ? report.summaryMetrics
-      : [{ id: "default-count", fieldId: report.selectedFieldIds[0] || "recordId", op: "count" as const, label: "Rows" }];
-    const warnings = report.selectedFieldIds.length || !report.view.showDetails ? [] : ["This report has no selected fields."];
-    const batchSize = 1000;
-    let skip = 0;
-    const rows: DataRow[] = [];
-    const summaryAccumulator = createMetricAccumulator(metricSet);
-    const chartGroups = new Map<string, { primary: number[]; secondary: number[] }>();
-    let processed = 0;
-    let expectedTotal = 0;
+    try {
+      const filterTree = getCombinedFilterTree(report, extraFilters);
+      const filters = extractFlatPushdownFilters(filterTree);
+      const requestedFieldIds = collectReportFieldIds(report, extraFilters);
+      const { where } = buildQuickbaseWhere(filters);
+      const sortBy = buildQuickbaseSort(report);
+      const metricSet = report.summaryMetrics.length
+        ? report.summaryMetrics
+        : [{ id: "default-count", fieldId: report.selectedFieldIds[0] || "recordId", op: "count" as const, label: "Rows" }];
+      const warnings = mergeWarnings(baseReportWarnings(report), collectMissingReportFieldWarnings(report, table));
+      const batchSize = 1000;
+      let skip = 0;
+      const rows: DataRow[] = [];
+      const summaryAccumulator = createMetricAccumulator(metricSet);
+      const chartGroups = new Map<string, { primary: number[]; secondary: number[] }>();
+      let processed = 0;
+      let expectedTotal = 0;
 
-    while (true) {
-      const batch = await fetchQuickbaseTablePage(quickbase, getQuickbaseTableId(table), requestedFieldIds, {
-        top: batchSize,
-        skip,
-        where,
-        sortBy
-      });
-      if (!batch.rows.length) break;
-      expectedTotal = Math.max(expectedTotal, batch.totalRecords ?? 0);
-      batch.rows.forEach((row) => {
-        if (filterTree && !isPushdownSafeTree(filterTree) && !matchesFilterNode(row, filterTree)) return;
-        rows.push(row);
-        addMetricRow(summaryAccumulator, row);
-        addChartRow(chartGroups, report, row);
-        processed += 1;
-      });
-      if (onProgress) {
-        const ratio = expectedTotal > 0 ? Math.min(1, processed / expectedTotal) : Math.min(1, processed / Math.max(batchSize, processed));
-        onProgress(10 + Math.round(ratio * 58), `Loading rows (${processed.toLocaleString()})`);
+      while (true) {
+        const batch = await fetchQuickbaseTablePage(quickbase, getQuickbaseTableId(table), requestedFieldIds, {
+          top: batchSize,
+          skip,
+          where,
+          sortBy
+        });
+        if (!batch.rows.length) break;
+        expectedTotal = Math.max(expectedTotal, batch.totalRecords ?? 0);
+        batch.rows.forEach((row) => {
+          if (filterTree && !isPushdownSafeTree(filterTree) && !matchesFilterNode(row, filterTree)) return;
+          rows.push(row);
+          addMetricRow(summaryAccumulator, row);
+          addChartRow(chartGroups, report, row);
+          processed += 1;
+        });
+        if (onProgress) {
+          const ratio = expectedTotal > 0 ? Math.min(1, processed / expectedTotal) : Math.min(1, processed / Math.max(batchSize, processed));
+          onProgress(10 + Math.round(ratio * 58), `Loading rows (${processed.toLocaleString()})`);
+        }
+        if (batch.rows.length < batchSize) break;
+        skip += batch.rows.length;
       }
-      if (batch.rows.length < batchSize) break;
-      skip += batch.rows.length;
+      return {
+        reportId: report.id,
+        tableId: table.id,
+        totalRows: rows.length,
+        rows: projectRows(report, rows),
+        summary: finalizeMetricAccumulator(summaryAccumulator, getReportDecimalPlaces(report)),
+        chartData: buildChartResult(chartGroups, report),
+        warnings
+      };
+    } catch (error) {
+      if (isMissingFieldExecutionError(error)) {
+        return createMissingFieldWarningResult(report, table);
+      }
+      throw error;
     }
-    return {
-      reportId: report.id,
-      tableId: table.id,
-      totalRows: rows.length,
-      rows: projectRows(report, rows),
-      summary: finalizeMetricAccumulator(summaryAccumulator, getReportDecimalPlaces(report)),
-      chartData: buildChartResult(chartGroups, report),
-      warnings
-    };
   }
 
   onProgress?.(68, "Preparing export data");
@@ -1135,6 +1212,7 @@ export async function fetchReportExportBundle(
       : await runReportWorker({ report, table, rows, extraFilters });
     return {
       ...result,
+      warnings: mergeWarnings(result.warnings, collectMissingReportFieldWarnings(report, table, rows)),
       freshness: getCachedFreshness(table.id) || freshness("local-fallback")
     };
   });
@@ -1152,9 +1230,19 @@ export async function executeReport(report: ReportDefinition, extraFilters: Filt
   }
   if (shouldUseLiveQuickbase(table.id, options.forceLive)) {
     if (!reportNeedsAggregates(report)) {
-      return fetchQuickbaseReportPageOnly(report, table, extraFilters, options);
+      return fetchQuickbaseReportPageOnly(report, table, extraFilters, options).catch((error) => {
+        if (isMissingFieldExecutionError(error)) {
+          return createMissingFieldWarningResult(report, table);
+        }
+        throw error;
+      });
     }
-    return executeQuickbaseReportPage(report, table, extraFilters, options);
+    return executeQuickbaseReportPage(report, table, extraFilters, options).catch((error) => {
+      if (isMissingFieldExecutionError(error)) {
+        return createMissingFieldWarningResult(report, table);
+      }
+      throw error;
+    });
   }
 
   const key = cacheKey(report, table, extraFilters);
@@ -1165,6 +1253,7 @@ export async function executeReport(report: ReportDefinition, extraFilters: Filt
       : await runReportWorker({ report, table, rows, extraFilters });
     return {
       ...result,
+      warnings: mergeWarnings(result.warnings, collectMissingReportFieldWarnings(report, table, rows)),
       freshness: getCachedFreshness(table.id) || freshness("local-fallback")
     };
   });
