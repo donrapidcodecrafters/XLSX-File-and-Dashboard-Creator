@@ -325,10 +325,12 @@ export function ReportView({
   const configuredShowChart = chartAvailable && (resolvedFocusMode === "default" || resolvedFocusMode === "chart");
   const configuredShowDetails = detailsAvailable && (resolvedFocusMode === "default" || resolvedFocusMode === "details");
   const hasConfiguredVisibleSection = configuredShowSummary || configuredShowChart || configuredShowDetails;
+  const totalRows = Number(result?.totalRows || 0);
+  const zeroRows = !loading && Boolean(result) && totalRows < 1;
   const showSummary = configuredShowSummary || (!hasConfiguredVisibleSection && Boolean(result?.summary?.length));
   const showChart = configuredShowChart || (!hasConfiguredVisibleSection && !showSummary && Boolean(result?.chartData?.length));
   const showDetails = configuredShowDetails || (!hasConfiguredVisibleSection && !showSummary && !showChart && (
-    Boolean(result?.rows?.length) || Number(result?.totalRows || 0) > 0
+    Boolean(result?.rows?.length) || totalRows > 0
   ));
 
   function resetView() {
@@ -599,6 +601,13 @@ export function ReportView({
         </div>
       ) : null}
 
+      {zeroRows ? (
+        <div className="sync-status sync-status-warn">
+          <strong>No rows found</strong>
+          <span>This report loaded successfully, but it returned 0 rows. Refresh all or Refresh now if you expected results.</span>
+        </div>
+      ) : null}
+
       {showSummary ? (
         <div className="summary-grid">
           {(result?.summary || []).map((item) => (
@@ -655,7 +664,7 @@ export function ReportView({
         <div className="card">
           <div className="card-head">
             <strong>Details</strong>
-            <span className="micro">{result?.totalRows || 0} rows</span>
+            <span className="micro">{totalRows} rows</span>
           </div>
           <div className="link-toolbar">
             <button className="ghost-button" disabled={currentPage <= 1 || loading} onClick={() => onPageChange(Math.max(1, currentPage - 1))}>Previous</button>
@@ -673,8 +682,12 @@ export function ReportView({
 
       {!loading && result && !showSummary && !showChart && !showDetails ? (
         <div className="sync-status sync-status-warn">
-          <strong>No visible report sections</strong>
-          <span>This report has data, but summary, chart, and detail sections are all hidden in the current configuration.</span>
+          <strong>{zeroRows ? "No rows found" : "No visible report sections"}</strong>
+          <span>
+            {zeroRows
+              ? "This report loaded successfully, but the current filters returned no rows."
+              : "This report has data, but summary, chart, and detail sections are all hidden in the current configuration."}
+          </span>
         </div>
       ) : null}
 

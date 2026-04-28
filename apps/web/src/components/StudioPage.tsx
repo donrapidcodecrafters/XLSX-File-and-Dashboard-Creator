@@ -439,6 +439,32 @@ function getActiveQuickbaseProfile(document: StudioDocument) {
   return document.quickbaseProfiles.find((profile) => profile.id === document.activeQuickbaseProfileId) || document.quickbaseProfiles[0] || null;
 }
 
+function hasProfileRefreshSourceConfig(profile: { refreshSource?: { tableIds?: string[]; reportIds?: Record<string, string> } } | null | undefined) {
+  const tableIds = Array.isArray(profile?.refreshSource?.tableIds) ? profile.refreshSource.tableIds.filter(Boolean) : [];
+  const reportIds = Object.values(profile?.refreshSource?.reportIds || {}).filter((value) => String(value || "").trim());
+  return tableIds.length > 0 || reportIds.length > 0;
+}
+
+function mergeRefreshSourceFallback(baseDocument: StudioDocument, incomingDocument: StudioDocument) {
+  return normalizeStudioDocument({
+    ...incomingDocument,
+    activeQuickbaseProfileId: incomingDocument.activeQuickbaseProfileId || baseDocument.activeQuickbaseProfileId,
+    quickbaseProfiles: incomingDocument.quickbaseProfiles.map((profile) => {
+      const baseProfile = baseDocument.quickbaseProfiles.find((item) => item.id === profile.id);
+      if (hasProfileRefreshSourceConfig(profile) || !hasProfileRefreshSourceConfig(baseProfile)) {
+        return profile;
+      }
+      return {
+        ...profile,
+        refreshSource: {
+          tableIds: [...(baseProfile?.refreshSource?.tableIds || [])],
+          reportIds: { ...(baseProfile?.refreshSource?.reportIds || {}) }
+        }
+      };
+    })
+  });
+}
+
 function typeLabel(type: StudioObject["type"]) {
   return type === "report" ? "Report" : "Dashboard";
 }
@@ -2904,7 +2930,7 @@ export function StudioPage({
     setSavingRemote(true);
     try {
       const response = await saveStudioDocument(nextDocument, { removedObjectIds: options?.removedObjectIds || [] });
-      const persistedDocument = normalizeStudioDocument(response.document);
+      const persistedDocument = mergeRefreshSourceFallback(nextDocument, normalizeStudioDocument(response.document));
       if (options?.removedObjectIds?.length) {
         stripRemovedObjectIds(persistedDocument, options.removedObjectIds);
       }
@@ -2945,7 +2971,7 @@ export function StudioPage({
     failureMessage?: string;
   }) {
     const response = await fetchStudioDocument();
-    const next = scopeDocument(normalizeStudioDocument(response.document));
+    const next = scopeDocument(mergeRefreshSourceFallback(documentState, normalizeStudioDocument(response.document)));
     next.sync.lastLoadedAt = new Date().toISOString();
     lastRemoteSnapshotKeyRef.current = buildWorkspaceSnapshotSignature(next);
     setSharedWorkspaceDirtyState(false);

@@ -441,6 +441,7 @@ function ObjectPage({
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [refreshJob, setRefreshJob] = useState<any>(null);
   const [startingRefresh, setStartingRefresh] = useState(false);
+  const [refreshNotice, setRefreshNotice] = useState("");
   const pageSize = 100;
   const scopedObjectFromDocument = useMemo(
     () => params.objectId && studioDocument ? studioDocument.bundle.objects[params.objectId] || null : null,
@@ -457,18 +458,29 @@ function ObjectPage({
       .some((profileId) => studioDocument?.quickbaseProfiles.find((profile) => profile.id === profileId)?.liveMode === true),
     [object, studioDocument, tables]
   );
+  const reportDefinitions = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.values(studioDocument?.bundle.objects || {})
+          .filter((item): item is ReportDefinition => item?.type === "report")
+          .map((report) => [report.id, report])
+      ),
+    [studioDocument]
+  );
+  const dashboardPersonalOverride = object?.type === "dashboard" && object.scope !== "personal"
+    ? getDashboardPersonalOverride(object.id, studioDocument)
+    : null;
 
-  async function reloadObject(targetObjectId = params.objectId) {
-    if (!targetObjectId) return;
-    setLoading(true);
-    setResultError("");
+  async function fetchObjectWithFallback(targetObjectId: string) {
     try {
-      const response = await fetchObject(targetObjectId);
-      setObject(response.object);
-    } catch (error) {
-      setResultError(error instanceof Error ? error.message : "That report or dashboard could not be loaded.");
-    } finally {
-      setLoading(false);
+      return (await fetchObject(targetObjectId)).object;
+    } catch (primaryError) {
+      const fallbackDocument = await fetchStudioDocument().catch(() => null);
+      const fallbackObject = fallbackDocument?.document?.bundle?.objects?.[targetObjectId] || null;
+      if (fallbackObject) {
+        return fallbackObject;
+      }
+      throw primaryError;
     }
   }
 
@@ -481,6 +493,7 @@ function ObjectPage({
         : null;
       setPage(reportOverride?.currentPage || 1);
       setObject(scopedObjectFromDocument);
+      setRefreshNotice("");
       if (!isSameObject) {
         setResult(null);
         setResultError("");
@@ -496,19 +509,20 @@ function ObjectPage({
     setRefreshNonce(0);
     setRefreshJob(null);
     setResultError("");
-    fetchObject(params.objectId)
-      .then((response) => {
+    setRefreshNotice("");
+    fetchObjectWithFallback(params.objectId)
+      .then((nextObject) => {
         if (!active) return;
-        const isSameObject = object?.id === response.object.id;
-        const reportOverride = response.object.type === "report" && response.object.scope !== "personal"
-          ? getReportPersonalOverride(response.object.id, studioDocument)
+        const isSameObject = object?.id === nextObject.id;
+        const reportOverride = nextObject.type === "report" && nextObject.scope !== "personal"
+          ? getReportPersonalOverride(nextObject.id, studioDocument)
           : null;
         setPage(reportOverride?.currentPage || 1);
-        setObject(response.object);
+        setObject(nextObject);
         if (!isSameObject) {
           setResult(null);
           setResultError("");
-          onObjectViewed(response.object.id);
+          onObjectViewed(nextObject.id);
         }
       })
       .catch((error) => {
@@ -550,6 +564,7 @@ function ObjectPage({
       .then((reportResult) => {
         if (!active) return;
         setResultError("");
+        setRefreshNotice("");
         setRefreshJob(reportResult.refreshJob || null);
         setResult((current: any) => page === 1 || !current
           ? reportResult
@@ -584,10 +599,16 @@ function ObjectPage({
           if (response.job.status === "complete") {
             await onRefreshComplete({ skipWhenLocalDirty: true }).catch(() => undefined);
             setRefreshJob(null);
+            setRefreshNotice("");
             setRefreshNonce((current) => current + 1);
             setLoading(true);
           } else if (response.job.status === "cancelled") {
             setRefreshJob(null);
+            setRefreshNotice(response.job.message || "Refresh cancelled.");
+            setLoading(false);
+          } else if (response.job.status === "failed") {
+            setRefreshJob(null);
+            setRefreshNotice(response.job.error || response.job.message || "Refresh failed.");
             setLoading(false);
           }
         })
@@ -599,9 +620,13 @@ function ObjectPage({
   async function startObjectRefresh() {
     if (!object) return;
     setStartingRefresh(true);
+    setRefreshNotice("");
     try {
       const response = await startStudioObjectRefresh(object.id);
       setRefreshJob(response.job);
+      if (response.job.status === "failed" || response.job.status === "cancelled") {
+        setRefreshNotice(response.job.error || response.job.message || "Refresh did not start.");
+      }
     } finally {
       window.setTimeout(() => setStartingRefresh(false), 700);
     }
@@ -617,19 +642,6 @@ function ObjectPage({
     return <div className="empty-page">That report or dashboard is not available for this session.</div>;
   }
 
-  const dashboardPersonalOverride = object.type === "dashboard" && object.scope !== "personal"
-    ? getDashboardPersonalOverride(object.id, studioDocument)
-    : null;
-  const reportDefinitions = useMemo(
-    () =>
-      Object.fromEntries(
-        Object.values(studioDocument?.bundle.objects || {})
-          .filter((item): item is ReportDefinition => item?.type === "report")
-          .map((report) => [report.id, report])
-      ),
-    [studioDocument]
-  );
-
   if (object.type === "report") {
     const table = resolveTableDefinition(tables, object.sourceTableId);
     const quickbaseLinkContext = getQuickbaseLinkContextForTable(table, studioDocument);
@@ -643,6 +655,12 @@ function ObjectPage({
           <div className="sync-status sync-status-warn">
             <strong>Live mode enabled</strong>
             <span>This report is loading live Quickbase data directly, so loading can take significantly longer.</span>
+          </div>
+        ) : null}
+        {refreshNotice ? (
+          <div className="sync-status sync-status-warn">
+            <strong>Refresh needs attention</strong>
+            <span>{refreshNotice}</span>
           </div>
         ) : null}
         {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" && refreshJob.status !== "cancelled" ? (
@@ -739,6 +757,12 @@ function ObjectPage({
         <div className="sync-status sync-status-warn">
           <strong>Live mode enabled</strong>
           <span>This dashboard is loading live Quickbase data directly, so loading can take significantly longer.</span>
+        </div>
+      ) : null}
+      {refreshNotice ? (
+        <div className="sync-status sync-status-warn">
+          <strong>Refresh needs attention</strong>
+          <span>{refreshNotice}</span>
         </div>
       ) : null}
       {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" && refreshJob.status !== "cancelled" ? (

@@ -64,6 +64,57 @@ function getTable(document: StudioDocument, tableId: string) {
   return document.bundle.tables.find((table) => table.id === tableId || table.quickbaseTableId === tableId);
 }
 
+function extractQuickbaseTableId(tableId: string) {
+  const trimmed = String(tableId || "").trim();
+  if (!trimmed) return "";
+  const [, quickbaseTableId = trimmed] = trimmed.split(":");
+  return quickbaseTableId || trimmed;
+}
+
+function inferQuickbaseProfileIdForTable(document: StudioDocument, tableId: string) {
+  const existing = getTable(document, tableId);
+  if (existing?.quickbaseProfileId) return existing.quickbaseProfileId;
+  const quickbaseTableId = extractQuickbaseTableId(tableId);
+  const sourceAppIdMatch = String(tableId || "").match(/^app-([^:]+):/i);
+  const sourceAppId = String(sourceAppIdMatch?.[1] || "").trim().toLowerCase();
+  const matchingProfile = document.quickbaseProfiles.find((profile) =>
+    String(profile.quickbase.appId || "").trim().toLowerCase() === sourceAppId
+  );
+  if (matchingProfile?.id) return matchingProfile.id;
+  const profileFromReports = Object.values(document.bundle.objects || {}).find((object) =>
+    object.type === "report"
+      && (object.sourceTableId === tableId || extractQuickbaseTableId(object.sourceTableId) === quickbaseTableId)
+  );
+  if (profileFromReports?.type === "report") {
+    const reportTable = getTable(document, profileFromReports.sourceTableId);
+    if (reportTable?.quickbaseProfileId) return reportTable.quickbaseProfileId;
+  }
+  if (document.quickbaseProfiles.length === 1) {
+    return document.quickbaseProfiles[0]?.id || "";
+  }
+  return "";
+}
+
+function buildSyntheticRefreshTable(document: StudioDocument, tableId: string) {
+  const quickbaseTableId = extractQuickbaseTableId(tableId);
+  const quickbaseProfileId = inferQuickbaseProfileIdForTable(document, tableId);
+  const profile = document.quickbaseProfiles.find((item) => item.id === quickbaseProfileId);
+  if (!profile || !quickbaseTableId) return null;
+  return {
+    id: tableId,
+    name: quickbaseTableId,
+    description: "Synthesized refresh table definition",
+    quickbaseProfileId,
+    quickbaseTableId,
+    quickbaseAppId: profile.quickbase.appId,
+    fields: []
+  } satisfies TableDefinition;
+}
+
+function resolveRefreshTable(document: StudioDocument, tableId: string) {
+  return getTable(document, tableId) || buildSyntheticRefreshTable(document, tableId);
+}
+
 function getQuickbaseConfigForTable(document: StudioDocument, table: TableDefinition) {
   const profileId = table.quickbaseProfileId || "";
   const profile = profileId ? document.quickbaseProfiles.find((item) => item.id === profileId) : null;
@@ -75,7 +126,7 @@ function getQuickbaseTableId(table: TableDefinition) {
 }
 
 function isQuickbaseRefreshableTable(document: StudioDocument, tableId: string) {
-  const table = getTable(document, tableId);
+  const table = resolveRefreshTable(document, tableId);
   if (!table) return false;
   const quickbase = getQuickbaseConfigForTable(document, table);
   return Boolean(
@@ -88,7 +139,7 @@ function isQuickbaseRefreshableTable(document: StudioDocument, tableId: string) 
 
 function getUsedTableIdsForProfile(document: StudioDocument, profileId: string) {
   return getUsedTableIds(document).filter((tableId) => {
-    const table = getTable(document, tableId);
+    const table = resolveRefreshTable(document, tableId);
     return table?.quickbaseProfileId === profileId && isQuickbaseRefreshableTable(document, tableId);
   });
 }
@@ -102,9 +153,9 @@ function getRefreshTableIdsForProfile(document: StudioDocument, profileId: strin
     return getUsedTableIdsForProfile(document, profileId);
   }
   return Array.from(new Set(
-    preferred.map((tableId) => getTable(document, tableId)?.id || tableId)
+    preferred.map((tableId) => resolveRefreshTable(document, tableId)?.id || tableId)
   )).filter((tableId) => {
-    const table = getTable(document, tableId);
+    const table = resolveRefreshTable(document, tableId);
     return table?.quickbaseProfileId === profileId && isQuickbaseRefreshableTable(document, tableId);
   });
 }
@@ -158,7 +209,7 @@ function getObjectOverrideReportIdForTable(document: StudioDocument, objectId: s
 function getProfilesForTableIds(document: StudioDocument, tableIds: string[]) {
   return Array.from(new Set(
     tableIds
-      .map((tableId) => getTable(document, tableId)?.quickbaseProfileId || "")
+      .map((tableId) => resolveRefreshTable(document, tableId)?.quickbaseProfileId || "")
       .filter(Boolean)
   ));
 }
@@ -808,7 +859,7 @@ export async function refreshAllCachedData(reason: "manual" | "scheduled" = "man
     const nextDocument = latest;
     let totalRows = 0;
     for (const tableId of tableIds) {
-      const table = getTable(nextDocument, tableId);
+      const table = resolveRefreshTable(nextDocument, tableId);
       if (!table) continue;
       const rows = await fetchAllTableRows(nextDocument, table);
       nextDocument.bundle.data[tableId] = rows;
@@ -946,7 +997,7 @@ export async function refreshAllCachedDataWithProgress(
 
     updateDocumentProgress(4, "Preparing refresh", { tableCount: tableIds.length, rowCount: 0 });
     for (const [index, tableId] of tableIds.entries()) {
-      const table = getTable(nextDocument, tableId);
+      const table = resolveRefreshTable(nextDocument, tableId);
       if (!table) continue;
       const startedTables = index;
       const elapsedSeconds = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
@@ -1131,7 +1182,7 @@ export async function refreshObjectCachedDataWithProgress(
 
     updateDocumentProgress(4, "Preparing object refresh", { tableCount: tableIds.length, rowCount: 0 });
     for (const [index, tableId] of tableIds.entries()) {
-      const table = getTable(nextDocument, tableId);
+      const table = resolveRefreshTable(nextDocument, tableId);
       if (!table) continue;
       const startedTables = index;
       const elapsedSeconds = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
