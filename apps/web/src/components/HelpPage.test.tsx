@@ -17,7 +17,7 @@ describe("HelpPage", () => {
     expect(within(sidebar).getByRole("link", { name: "Browse content" }).getAttribute("href")).toMatch(/^#?\/viewer$/);
     expect(within(sidebar).getByRole("link", { name: "Open building area" }).getAttribute("href")).toMatch(/^#?\/studio$/);
     expect(screen.getByRole("navigation", { name: "Manual sections" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /First Day Setup/ })).toHaveAttribute("href", "#first-day");
+    expect(screen.getByRole("button", { name: /First Day Setup/ })).toBeInTheDocument();
     expect(screen.getByText(/Open the platform from your Quickbase dashboard button/i)).toBeInTheDocument();
     expect(screen.getByText(/you now land on a workspace home first/i)).toBeInTheDocument();
     expect(screen.getByText(/Large report tables scroll inside the report itself/i)).toBeInTheDocument();

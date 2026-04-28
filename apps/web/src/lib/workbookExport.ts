@@ -347,7 +347,14 @@ function drawWaterfallChart(ctx: CanvasRenderingContext2D, data: ChartDatum[]) {
   });
 }
 
-function renderChartImage(title: string, subtitle: string, chartType: ReportDefinition["view"]["chartType"], data: ChartDatum[], summary: SummaryDatum[]) {
+function renderChartImage(
+  title: string,
+  subtitle: string,
+  chartType: ReportDefinition["view"]["chartType"],
+  chartOrientation: ReportDefinition["view"]["chartOrientation"],
+  data: ChartDatum[],
+  summary: SummaryDatum[]
+) {
   const canvas = createCanvas();
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
@@ -369,7 +376,19 @@ function renderChartImage(title: string, subtitle: string, chartType: ReportDefi
     drawPieChart(ctx, limited, 78);
     return canvas.toDataURL("image/png");
   }
-  if (chartType === "bar" || chartType === "stacked-bar" || chartType === "funnel") {
+  if (chartType === "horizontal-bar" || chartType === "horizontal-stacked-bar") {
+    drawColumnChart(ctx, limited, { horizontal: true });
+    return canvas.toDataURL("image/png");
+  }
+  if (chartType === "bar" || chartType === "stacked-bar") {
+    drawColumnChart(ctx, limited, { horizontal: chartOrientation === "horizontal" });
+    return canvas.toDataURL("image/png");
+  }
+  if (chartType === "column" || chartType === "stacked-column" || chartType === "variwide-bar" || chartType === "3d-bar" || chartType === "3d-stacked-bar") {
+    drawColumnChart(ctx, limited, { horizontal: false });
+    return canvas.toDataURL("image/png");
+  }
+  if (chartType === "funnel") {
     drawColumnChart(ctx, limited, { horizontal: true });
     return canvas.toDataURL("image/png");
   }
@@ -563,7 +582,7 @@ export async function exportReportWorkbook(
   summarySheet.getCell("A2").value = report.description || table.name;
   addSummaryTable(summarySheet, result.summary);
 
-  const image = renderChartImage(report.name, table.name, report.view.chartType, result.chartData, result.summary);
+  const image = renderChartImage(report.name, table.name, report.view.chartType, report.view.chartOrientation, result.chartData, result.summary);
   if (image) {
     const imageId = workbook.addImage({ base64: image, extension: "png" });
     summarySheet.addImage(imageId, { tl: { col: 3, row: 1 }, ext: { width: 760, height: 460 } });
@@ -635,7 +654,7 @@ export async function exportDashboardWorkbook(
       if (resolveWidgetDisplayMode(widget.widget, widget.report) === "table") {
         writeDetailRows(tabSheet, widget.report, table, exportResult, rowCursor);
       } else if (widgetShowsChart(widget.widget, widget.report)) {
-        const image = renderChartImage(widget.report.name, tab.name, widget.report.view.chartType, exportResult.chartData, exportResult.summary);
+        const image = renderChartImage(widget.report.name, tab.name, widget.report.view.chartType, widget.report.view.chartOrientation, exportResult.chartData, exportResult.summary);
         if (image) {
           addChartImage(workbook, tabSheet, image, rowCursor, 1080, 620);
           rowCursor += 30;
@@ -668,7 +687,7 @@ export async function exportDashboardWorkbook(
         rowCursor = writeSummaryRows(tabSheet, exportResult.summary, rowCursor);
       }
       if (widgetShowsChart(widget.widget, widget.report)) {
-        const image = renderChartImage(widget.report.name, tab.name, widget.report.view.chartType, exportResult.chartData, exportResult.summary);
+        const image = renderChartImage(widget.report.name, tab.name, widget.report.view.chartType, widget.report.view.chartOrientation, exportResult.chartData, exportResult.summary);
         if (image) {
           addChartImage(workbook, tabSheet, image, rowCursor, 920, 520);
           rowCursor += 26;

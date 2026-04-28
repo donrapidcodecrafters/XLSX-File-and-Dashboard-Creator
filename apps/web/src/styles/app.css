@@ -2307,7 +2307,8 @@ th {
 }
 
 .help-layout {
-  display: flex;
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
   gap: 20px;
   align-items: start;
   width: 100%;
@@ -2315,9 +2316,6 @@ th {
 }
 
 .help-sidebar {
-  flex: 0 0 300px;
-  width: 300px;
-  max-width: 300px;
   position: sticky;
   top: 18px;
   gap: 16px;
@@ -2350,6 +2348,8 @@ th {
   border: 1px solid var(--line);
   color: inherit;
   text-decoration: none;
+  text-align: left;
+  cursor: pointer;
 }
 
 .help-sidebar-link strong {
@@ -2365,8 +2365,7 @@ th {
 .help-content {
   display: grid;
   gap: 18px;
-  flex: 1 1 auto;
-  width: 0;
+  width: 100%;
   min-width: 0;
 }
 

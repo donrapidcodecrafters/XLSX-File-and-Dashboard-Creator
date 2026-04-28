@@ -18,6 +18,12 @@ const helpSections = [
 ];
 
 export function HelpPage() {
+  function scrollToSection(sectionId: string) {
+    const element = document.getElementById(sectionId);
+    if (!element) return;
+    element.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   return (
     <section className="surface stack viewer-page help-page">
       <div className="help-layout">
@@ -36,10 +42,15 @@ export function HelpPage() {
           </div>
           <nav className="help-sidebar-nav" aria-label="Manual sections">
             {helpSections.map((section) => (
-              <a className="help-sidebar-link" key={section.id} href={`#${section.id}`}>
+              <button
+                className="help-sidebar-link"
+                key={section.id}
+                type="button"
+                onClick={() => scrollToSection(section.id)}
+              >
                 <strong>{section.title}</strong>
                 <span>{section.summary}</span>
-              </a>
+              </button>
             ))}
           </nav>
         </aside>
