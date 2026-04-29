@@ -25,14 +25,46 @@ npm run build
 
 ## GitHub Pages
 
-Build the frontend with a repo-aware base path:
+This repo supports two GitHub Pages frontend builds without changing the Vite setup:
+
+- Live: `https://donaldlundgren.github.io/XLSX-File-and-Dashboard-Creator/`
+- Dev: `https://donaldlundgren.github.io/XLSX-File-and-Dashboard-Creator/dev/`
+
+Both builds use the same `apps/web` Vite app. The only difference is the base path.
+
+### Publish live without removing dev
 
 ```bash
-cd apps/web
-VITE_BASE_PATH=/your-repo-name/ npm run build
+VITE_API_BASE_URL="https://xlsx-file-and-dashboard-creator.onrender.com" npm run pages:live
 ```
 
-Then publish `apps/web/dist`.
+This builds with:
+
+- `VITE_BASE_PATH=/XLSX-File-and-Dashboard-Creator/`
+- output in `docs/`
+- preserves `docs/dev/`
+
+### Publish dev without touching live
+
+```bash
+VITE_API_BASE_URL="https://xlsx-file-and-dashboard-creator.onrender.com" npm run pages:dev
+```
+
+This builds with:
+
+- `VITE_BASE_PATH=/XLSX-File-and-Dashboard-Creator/dev/`
+- output in `docs/dev/`
+- does not overwrite the live site in `docs/`
+
+### Commit and push
+
+After either build:
+
+```bash
+git add -A
+git commit -m "Publish GitHub Pages build"
+git push origin main
+```
 
 ## Notes
 

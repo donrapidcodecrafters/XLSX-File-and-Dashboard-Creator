@@ -10,7 +10,9 @@
     "dev": "concurrently -k -n shared,api,web -c cyan,magenta,green \"npm run dev -w @studio/shared\" \"npm run dev -w @studio/api\" \"npm run dev -w @studio/web\"",
     "build": "npm run build -w @studio/shared && npm run build -w @studio/api && npm run build -w @studio/web",
     "check": "npm run check -w @studio/shared && npm run check -w @studio/api && npm run check -w @studio/web",
-    "smoke": "npm run smoke -w @studio/shared"
+    "smoke": "npm run smoke -w @studio/shared",
+    "pages:live": "node ./scripts/publish-pages.mjs live",
+    "pages:dev": "node ./scripts/publish-pages.mjs dev"
   },
   "devDependencies": {
     "concurrently": "^9.0.1"
