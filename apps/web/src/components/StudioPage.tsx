@@ -101,6 +101,7 @@ import { RefreshOverlay } from "./RefreshOverlay";
 import { StudioDraftReviewStep } from "./StudioDraftReviewStep";
 import { StudioDashboardPreview } from "./StudioDashboardPreview";
 import { StudioReportDraftDataStep } from "./StudioReportDraftDataStep";
+import { StudioReportDraftBasicsStep } from "./StudioReportDraftBasicsStep";
 import { StudioReportDraftViewStep } from "./StudioReportDraftViewStep";
 import { StudioReportPreview } from "./StudioReportPreview";
 import { SearchableSelect } from "./SearchableSelect";
@@ -110,12 +111,15 @@ import { StudioWorkspaceHome } from "./StudioWorkspaceHome";
 import { ClearableInputField } from "./ClearableInputField";
 import {
   DEFAULT_CHART_COLORS,
+  chartAggregationOptions,
   chartPrimaryFieldLabel,
+  chartRequiresSeries,
   chartSeriesFieldLabel,
   chartValueFieldLabel,
   getFieldComparisonOptions,
   getChartAxisLabels,
   getSortedFieldOptions,
+  normalizeChartPercentMode,
   reportShowsChart,
   reportShowsDetails,
   reportShowsSummary
@@ -217,6 +221,37 @@ interface SharingRosterUser {
 
 type CreateStep = StudioBuilderStep;
 type CreateObjectDraft = StudioBuilderDraft;
+type DashboardAddMode = "chooser" | "existing";
+
+interface DashboardWidgetBuilderDraft {
+  reportId: string;
+  titleOverride: string;
+  hideTitle: boolean;
+  width: number;
+  height: number;
+  tabId: string;
+  createNewTab: boolean;
+  newTabName: string;
+  newTabColor: string;
+  displayMode: "inherit" | "table" | "summary" | "chart";
+  showSummary: boolean;
+  showDetails: boolean;
+}
+
+type DashboardBuilderFlow =
+  | null
+  | {
+      type: "create-widget-report";
+      dashboardId: string;
+      widgetDraft: DashboardWidgetBuilderDraft;
+    }
+  | {
+      type: "edit-widget-report";
+      dashboardId: string;
+      tabId: string;
+      widgetId: string;
+      reportId: string;
+    };
 
 function buildDraftFromReport(report: ReportDefinition, table?: TableDefinition | null): CreateObjectDraft {
   const sourceTableId = table?.id || report.sourceTableId || "";
@@ -235,6 +270,23 @@ function buildDraftFromReport(report: ReportDefinition, table?: TableDefinition 
     summaryMetrics: clone(report.summaryMetrics || []),
     view: clone(report.view),
     displayLabels: clone(report.displayLabels || { fields: {}, chartValues: {} })
+  };
+}
+
+function buildDashboardWidgetDraft(defaults?: Partial<DashboardWidgetBuilderDraft>): DashboardWidgetBuilderDraft {
+  return {
+    reportId: defaults?.reportId || "",
+    titleOverride: defaults?.titleOverride || "",
+    hideTitle: defaults?.hideTitle === true,
+    width: Math.max(1, Math.min(12, Number(defaults?.width) || 6)),
+    height: Math.max(2, Math.min(10, Number(defaults?.height) || 4)),
+    tabId: defaults?.tabId || "",
+    createNewTab: defaults?.createNewTab === true,
+    newTabName: defaults?.newTabName || "",
+    newTabColor: defaults?.newTabColor || "#0d7c66",
+    displayMode: defaults?.displayMode || "inherit",
+    showSummary: defaults?.showSummary ?? false,
+    showDetails: defaults?.showDetails ?? false
   };
 }
 
@@ -1149,7 +1201,10 @@ function validationMessages(object: StudioObject, table?: TableDefinition | null
   if (object.type === "report") {
     if (!object.selectedFieldIds.length && object.view.showDetails) messages.push("Select at least one detail field or turn off detail rows.");
     if (reportShowsChart(object) && !object.view.chartFieldId) messages.push(`Choose a ${chartPrimaryFieldLabel(object.view.chartType).toLowerCase()} for the chart.`);
+    if (reportShowsChart(object) && chartRequiresSeries(object.view.chartType) && !object.view.chartSeriesFieldId) messages.push(`Choose a ${chartSeriesFieldLabel(object.view.chartType).toLowerCase()} for the chart.`);
+    if (reportShowsChart(object) && !chartAggregationOptions(object.view.chartType).some((option) => option.value === (object.view.chartAggregation === "avg" ? "average" : object.view.chartAggregation))) messages.push("The selected aggregation is not allowed for this chart type.");
     if (reportShowsChart(object) && object.view.chartAggregation !== "count" && !object.view.chartValueFieldId) messages.push(`Choose a ${chartValueFieldLabel(object.view.chartType).toLowerCase()} for the chart.`);
+    if (reportShowsChart(object) && object.view.chartAggregation === "percent" && !normalizeChartPercentMode(object.view.chartType, object.view.chartPercentMode)) messages.push("Choose a percent mode for this chart.");
     if (reportShowsChart(object) && object.view.chartUseSecondaryAxis && object.view.chartSecondaryAggregation !== "count" && !object.view.chartSecondaryValueFieldId) messages.push("Choose a secondary Y axis field or turn off the secondary axis.");
     if (object.view.mode === "timeline" && !object.view.timelineDateField) messages.push("Choose a timeline start field.");
     if (object.view.mode === "calendar" && !object.view.calendarDateField) messages.push("Choose a calendar date field.");
@@ -1437,12 +1492,15 @@ export function StudioPage({
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [recentOnly, setRecentOnly] = useState(false);
   const [selectedHomeReportIds, setSelectedHomeReportIds] = useState<string[]>([]);
-  const [dashboardInspectorTab, setDashboardInspectorTab] = useState<"design" | "filters">("design");
   const [activeTabId, setActiveTabId] = useState("");
   const [selectedWidgetId, setSelectedWidgetId] = useState("");
   const [widgetTargetTabId, setWidgetTargetTabId] = useState("");
   const [widgetSearch, setWidgetSearch] = useState("");
-  const [runtimeFilterModalOpen, setRuntimeFilterModalOpen] = useState(false);
+  const [dashboardAddModalOpen, setDashboardAddModalOpen] = useState(false);
+  const [dashboardAddMode, setDashboardAddMode] = useState<DashboardAddMode>("chooser");
+  const [dashboardWidgetDraft, setDashboardWidgetDraft] = useState<DashboardWidgetBuilderDraft>(buildDashboardWidgetDraft());
+  const [dashboardSettingsModalOpen, setDashboardSettingsModalOpen] = useState(false);
+  const [dashboardBuilderFlow, setDashboardBuilderFlow] = useState<DashboardBuilderFlow>(null);
   const [createStep, setCreateStep] = useState<CreateStep>("basics");
   const [createPreviewPage, setCreatePreviewPage] = useState(1);
   const [runtimeValues, setRuntimeValues] = useState<Record<string, string>>({});
@@ -1723,6 +1781,19 @@ export function StudioPage({
     () => Object.fromEntries(activeDashboardRefreshTables.map((table) => [table.id, getSortedFieldOptions(table)])),
     [activeDashboardRefreshTables]
   );
+  const activeDashboardTabOptions = useMemo(
+    () => activeDashboard?.tabs.map((tab) => ({ value: tab.id, label: tab.name })) || [],
+    [activeDashboard?.tabs]
+  );
+  const activeDashboardRuntimeFilterOptions = useMemo(() => {
+    if (!activeDashboard) return {} as Record<string, Array<{ value: string; label: string }>>;
+    return Object.fromEntries(
+      activeDashboard.runtimeFilters.map((filter) => {
+        const sourceTableId = filter.sourceTableId || (activeDashboardRefreshTables.length === 1 ? activeDashboardRefreshTables[0]?.id || "" : "");
+        return [filter.id, sourceTableId && filter.fieldId ? collectFieldValueOptions(sourceTableId, filter.fieldId) : []];
+      })
+    );
+  }, [activeDashboard, activeDashboardRefreshTables, bundle.data, bundle.tables]);
   const createDraftTable = bundle.tables.find((table) => table.id === createDraft.tableId) || bundle.tables[0] || null;
   const createSteps = useMemo(() => getStudioBuilderSteps(createDraft.type), [createDraft.type]);
   const activeCreateStep = createSteps.includes(createStep) ? createStep : createSteps[0];
@@ -2127,6 +2198,18 @@ export function StudioPage({
   }, [activeDashboard?.id, activeDashboard?.tabs, activeDashboardTab?.id, widgetTargetTabId]);
 
   useEffect(() => {
+    if (!activeDashboard) return;
+    if (!dashboardAddModalOpen) return;
+    setDashboardWidgetDraft((current) => {
+      const fallbackTabId = activeDashboardTab?.id || activeDashboard.defaultTabId || activeDashboard.tabs[0]?.id || "";
+      if (current.createNewTab || (current.tabId && activeDashboard.tabs.some((tab) => tab.id === current.tabId))) {
+        return current;
+      }
+      return { ...current, tabId: fallbackTabId };
+    });
+  }, [activeDashboard, activeDashboardTab?.id, dashboardAddModalOpen]);
+
+  useEffect(() => {
     setPreviewPage(1);
   }, [activeReport?.id, activeReport?.updatedAt]);
 
@@ -2343,7 +2426,12 @@ export function StudioPage({
           widgetId: widget.id,
           widget,
           report,
-          result: runReport(report, table, bundle.data[report.sourceTableId] || [], buildDashboardFilters(activeDashboard, report.id, runtimeValues, report.sourceTableId)),
+          result: runReport(
+            report,
+            table,
+            bundle.data[report.sourceTableId] || [],
+            buildDashboardFilters(activeDashboard, report.id, runtimeValues, report.sourceTableId, widget, tab.id)
+          ),
           status: "complete" as const,
           message: "Preview ready"
         };
@@ -2479,23 +2567,176 @@ export function StudioPage({
     }
   }
 
-  function addDashboardWidget(tabId: string, reportId: string, afterWidgetId?: string) {
+  function createDashboardTabInDefinition(
+    dashboard: DashboardDefinition,
+    options?: { name?: string; color?: string }
+  ) {
+    const nextTab = {
+      id: uid("tab"),
+      name: options?.name?.trim() || `Tab ${dashboard.tabs.length + 1}`,
+      color: options?.color || "#0d7c66",
+      widgets: []
+    };
+    return {
+      dashboard: {
+        ...dashboard,
+        defaultTabId: dashboard.defaultTabId || nextTab.id,
+        tabs: [...dashboard.tabs, nextTab]
+      },
+      tabId: nextTab.id
+    };
+  }
+
+  function removeDashboardTabWithFallback(tabId: string) {
     if (!activeDashboard) return;
+    const sourceTab = activeDashboard.tabs.find((tab) => tab.id === tabId);
+    if (!sourceTab) return;
+    if (activeDashboard.tabs.length === 1) {
+      const resetTab = { ...sourceTab, name: sourceTab.name || "Overview", widgets: [] };
+      writeObject({
+        ...activeDashboard,
+        defaultTabId: resetTab.id,
+        tabs: [resetTab]
+      });
+      setActiveTabId(resetTab.id);
+      setSelectedWidgetId("");
+      return;
+    }
+    const fallbackTab = activeDashboard.tabs.find((tab) => tab.id !== tabId) || activeDashboard.tabs[0];
+    const nextTabs = activeDashboard.tabs
+      .filter((tab) => tab.id !== tabId)
+      .map((tab) => tab.id === fallbackTab.id ? { ...tab, widgets: [...tab.widgets, ...sourceTab.widgets] } : tab);
+    writeObject({
+      ...activeDashboard,
+      defaultTabId: activeDashboard.defaultTabId === tabId ? fallbackTab.id : activeDashboard.defaultTabId,
+      tabs: nextTabs
+    });
+    setActiveTabId(fallbackTab.id);
+    if (sourceTab.widgets.some((widget) => widget.id === selectedWidgetId)) {
+      setSelectedWidgetId(sourceTab.widgets[0]?.id || "");
+    }
+  }
+
+  function addDashboardWidgetWithDraft(
+    draft: DashboardWidgetBuilderDraft,
+    options?: { reportId?: string; afterWidgetId?: string; selectAfterAdd?: boolean }
+  ) {
+    if (!activeDashboard) return null;
+    const reportId = options?.reportId || draft.reportId;
     const report = objects.find((object): object is ReportDefinition => object.type === "report" && object.id === reportId);
-    if (!report) return;
+    if (!report) {
+      pushToast("Choose a report or graph first.", "warn");
+      return null;
+    }
+    let nextDashboard = clone(activeDashboard);
+    let targetTabId = draft.tabId || activeDashboardTab?.id || nextDashboard.defaultTabId || nextDashboard.tabs[0]?.id || "";
+    if (draft.createNewTab || !targetTabId || !nextDashboard.tabs.some((tab) => tab.id === targetTabId)) {
+      const created = createDashboardTabInDefinition(nextDashboard, {
+        name: draft.newTabName,
+        color: draft.newTabColor
+      });
+      nextDashboard = created.dashboard;
+      targetTabId = created.tabId;
+    }
     const widgetId = uid("widget");
     const newWidget = {
       id: widgetId,
-      title: report.name,
+      title: draft.titleOverride.trim(),
+      hideTitle: draft.hideTitle,
+      zIndex: (nextDashboard.tabs.flatMap((tab) => tab.widgets).reduce((max, widget) => Math.max(max, widget.zIndex || 0), 0) || 0) + 1,
       mode: "linked" as const,
-      displayMode: "inherit" as const,
-      showDetails: false,
-      showSummary: true,
+      displayMode: draft.displayMode,
+      showDetails: draft.showDetails,
+      showSummary: draft.showSummary,
       reportId: report.id,
-      layout: { w: 6, h: 4 }
+      filterBehavior: "use-dashboard-filters" as const,
+      runtimeFilterMappings: {},
+      layout: { w: draft.width, h: draft.height }
     };
-    writeObject(insertDashboardWidget(activeDashboard, tabId, newWidget, afterWidgetId));
-    setSelectedWidgetId(widgetId);
+    writeObject(insertDashboardWidget(nextDashboard, targetTabId, newWidget, options?.afterWidgetId));
+    setActiveTabId(targetTabId);
+    if (options?.selectAfterAdd !== false) {
+      setSelectedWidgetId(widgetId);
+    }
+    return { widgetId, tabId: targetTabId };
+  }
+
+  function addDashboardWidget(tabId: string, reportId: string, afterWidgetId?: string) {
+    addDashboardWidgetWithDraft(
+      buildDashboardWidgetDraft({
+        reportId,
+        tabId,
+        width: 6,
+        height: 4,
+        displayMode: "inherit",
+        showSummary: false,
+        showDetails: false
+      }),
+      { afterWidgetId }
+    );
+  }
+
+  function cloneSelectedDashboardReport() {
+    if (!selectedDashboardWidgetReport) return;
+    cloneObject(selectedDashboardWidgetReport);
+  }
+
+  function setDashboardWidgetZIndex(tabId: string, widgetId: string, direction: "forward" | "backward") {
+    if (!activeDashboard) return;
+    const currentLevels = activeDashboard.tabs.flatMap((tab) => tab.widgets.map((widget) => widget.zIndex || 0));
+    const maxZ = currentLevels.length ? Math.max(...currentLevels) : 0;
+    updateActiveDashboardWidget(tabId, widgetId, (widget) => ({
+      ...widget,
+      zIndex: direction === "forward" ? maxZ + 1 : Math.max(0, (widget.zIndex || 0) - 1)
+    }));
+  }
+
+  function resetDashboardWidgetSize(tabId: string, widgetId: string) {
+    if (!activeDashboard) return;
+    updateActiveDashboardWidget(tabId, widgetId, (widget) => ({
+      ...widget,
+      layout: {
+        ...widget.layout,
+        w: 6,
+        h: widget.displayMode === "summary" ? 3 : 4
+      }
+    }));
+  }
+
+  function resetDashboardWidgetPosition(tabId: string, widgetId: string) {
+    if (!activeDashboard) return;
+    placeDashboardWidget(tabId, widgetId, { x: 1, y: 1 });
+  }
+
+  function alignDashboardWidget(tabId: string, widgetId: string, edge: "left" | "right" | "top" | "bottom") {
+    if (!activeDashboard) return;
+    const widget = activeDashboard.tabs.find((tab) => tab.id === tabId)?.widgets.find((candidate) => candidate.id === widgetId);
+    if (!widget) return;
+    const layout = widget.layout || { w: 6, h: 4, x: 1, y: 1 };
+    const rows = resolveDashboardRowsForTab(tabId);
+    const bottomRow = rows[rows.length - 1];
+    if (edge === "left") {
+      placeDashboardWidget(tabId, widgetId, { x: 1, y: layout.y || 1 });
+      return;
+    }
+    if (edge === "right") {
+      placeDashboardWidget(tabId, widgetId, { x: Math.max(1, 13 - clampDashboardWidgetWidth(layout.w)), y: layout.y || 1 });
+      return;
+    }
+    if (edge === "top") {
+      placeDashboardWidget(tabId, widgetId, { x: layout.x || 1, y: 1 });
+      return;
+    }
+    placeDashboardWidget(tabId, widgetId, { x: layout.x || 1, y: Math.max(1, (bottomRow?.endRow || 1) - clampDashboardWidgetHeight(layout.h) + 1) });
+  }
+
+  function moveDashboardWidgetToNewTab(widget: DashboardDefinition["tabs"][number]["widgets"][number], tabName: string, color: string) {
+    if (!activeDashboard || !activeDashboardTab) return;
+    const created = createDashboardTabInDefinition(activeDashboard, { name: tabName, color });
+    const moved = moveDashboardWidgetToTabInDefinition(created.dashboard, activeDashboardTab.id, widget.id, created.tabId);
+    writeObject(moved);
+    setActiveTabId(created.tabId);
+    setSelectedWidgetId(widget.id);
   }
 
   function toggleDashboardWidgetFullWidth(tabId: string, widgetId: string) {
@@ -2560,6 +2801,54 @@ export function StudioPage({
     setCreateModalOpen(true);
   }
 
+  function openDashboardAddModal() {
+    if (!activeDashboard) return;
+    setDashboardAddMode("chooser");
+    setDashboardWidgetDraft(buildDashboardWidgetDraft({
+      tabId: activeDashboardTab?.id || activeDashboard.defaultTabId || activeDashboard.tabs[0]?.id || "",
+      titleOverride: "",
+      hideTitle: false,
+      width: 6,
+      height: 4,
+      displayMode: "inherit",
+      showSummary: false,
+      showDetails: false
+    }));
+    setDashboardAddModalOpen(true);
+  }
+
+  async function saveDashboardBeforeBuilderAction(activityMessage: string) {
+    if (!activeDashboard) return;
+    await runWithActivityOverlay("Saving dashboard", activityMessage, async () => {
+      await persistRemote(documentState);
+    });
+  }
+
+  async function beginCreateDashboardReport() {
+    if (!activeDashboard) return;
+    await saveDashboardBeforeBuilderAction("Saving the current dashboard before opening the report builder…");
+    setDashboardBuilderFlow({
+      type: "create-widget-report",
+      dashboardId: activeDashboard.id,
+      widgetDraft: dashboardWidgetDraft
+    });
+    setDashboardAddModalOpen(false);
+    await openCreateModal("report");
+  }
+
+  async function beginEditDashboardWidgetReport(widget: DashboardDefinition["tabs"][number]["widgets"][number], report: ReportDefinition) {
+    if (!activeDashboard || !activeDashboardTab) return;
+    await saveDashboardBeforeBuilderAction("Saving the current dashboard before opening the report editor…");
+    setDashboardBuilderFlow({
+      type: "edit-widget-report",
+      dashboardId: activeDashboard.id,
+      tabId: activeDashboardTab.id,
+      widgetId: widget.id,
+      reportId: report.id
+    });
+    openEditReportModal(report);
+  }
+
   function openEditReportModal(report: ReportDefinition) {
     const table = bundle.tables.find((item) => item.id === report.sourceTableId) || null;
     setCreateDraft(buildDraftFromReport(report, table));
@@ -2587,6 +2876,11 @@ export function StudioPage({
     setCreateModalOpen(false);
     setEditingReportId(null);
     setImportEditingReportId(null);
+  }
+
+  function handleCloseCreateModal() {
+    closeCreateModal();
+    setDashboardBuilderFlow(null);
   }
 
   function updateCreateDraftTable(tableId: string) {
@@ -2655,8 +2949,10 @@ export function StudioPage({
         updatedAt: new Date().toISOString(),
         runtimeFilters: [],
         sourceReportOverrides: {},
-        tabs: [{ id: uid("tab"), name: "Overview", widgets: [] }]
+        defaultTabId: "",
+        tabs: [{ id: uid("tab"), name: "Overview", color: "#0d7c66", widgets: [] }]
       };
+      dashboard.defaultTabId = dashboard.tabs[0].id;
       applyDocumentUpdate((draft) => {
         draft.bundle.objects[dashboard.id] = dashboard;
         draft.bundle.order.unshift(dashboard.id);
@@ -2747,6 +3043,17 @@ export function StudioPage({
       }
     });
     closeCreateModal();
+    if (dashboardBuilderFlow?.type === "create-widget-report" && dashboardBuilderFlow.dashboardId === activeDashboard?.id && !existingReport) {
+      const added = addDashboardWidgetWithDraft(dashboardBuilderFlow.widgetDraft, { reportId: report.id });
+      setDashboardBuilderFlow(null);
+      pushToast(added ? "Report created and added to the dashboard." : "Report created.");
+      return;
+    }
+    if (dashboardBuilderFlow?.type === "edit-widget-report" && dashboardBuilderFlow.dashboardId === activeDashboard?.id && dashboardBuilderFlow.reportId === report.id) {
+      setDashboardBuilderFlow(null);
+      pushToast("Report updated and dashboard preserved.");
+      return;
+    }
     navigate(buildHostedRoute(`/studio/${report.id}`));
     pushToast(existingReport ? "Report updated." : "Report created.");
   }
@@ -3834,210 +4141,340 @@ export function StudioPage({
             </section>
           </div>
         ) : null}
-        {runtimeFilterModalOpen && activeDashboard ? (
-          <div className="studio-modal-backdrop" onClick={() => setRuntimeFilterModalOpen(false)}>
-            <section className="studio-modal" onClick={(event) => event.stopPropagation()}>
+        {dashboardAddModalOpen && activeDashboard ? (
+          <div className="studio-modal-backdrop" onClick={() => setDashboardAddModalOpen(false)}>
+            <section className="studio-modal studio-dashboard-builder-modal" onClick={(event) => event.stopPropagation()}>
               <div className="card-head">
                 <div>
-                  <strong>Dashboard runtime filters</strong>
-                  <div className="micro">{activeDashboard.name} · Configure runtime filters in one place.</div>
+                  <strong>Add report/graph</strong>
+                  <div className="micro">Create a new report/graph or place an existing one on this dashboard.</div>
                 </div>
-                <button type="button" onClick={() => setRuntimeFilterModalOpen(false)}>Close</button>
+                <button type="button" onClick={() => setDashboardAddModalOpen(false)}>Close</button>
+              </div>
+              <div className="builder-stepper">
+                <button type="button" className={dashboardAddMode === "chooser" ? "active-tab" : ""} onClick={() => setDashboardAddMode("chooser")}>Choose action</button>
+                <button type="button" className={dashboardAddMode === "existing" ? "active-tab" : ""} onClick={() => setDashboardAddMode("existing")}>Add existing</button>
+              </div>
+              {dashboardAddMode === "chooser" ? (
+                <div className="summary-grid">
+                  <button type="button" className="summary-card dashboard-builder-action-card" onClick={() => void beginCreateDashboardReport()}>
+                    <strong>Create new report/graph</strong>
+                    <span>Autosave the dashboard, open the existing report builder in this window, then place the new report automatically.</span>
+                  </button>
+                  <button type="button" className="summary-card dashboard-builder-action-card" onClick={() => setDashboardAddMode("existing")}>
+                    <strong>Add existing report/graph</strong>
+                    <span>Search an existing report, set widget overrides, choose a tab, and place it on the grid.</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="stack">
+                  <div className="filter-grid compact-grid">
+                    <label className="field">
+                      <span>Existing report/graph</span>
+                      <SearchableSelect value={dashboardWidgetDraft.reportId} options={reportObjectOptions} allowEmpty emptyOptionLabel="Choose a saved report" onChange={(value) => setDashboardWidgetDraft((current) => ({ ...current, reportId: value }))} />
+                    </label>
+                    <label className="field">
+                      <span>Title override</span>
+                      <input value={dashboardWidgetDraft.titleOverride} onChange={(event) => setDashboardWidgetDraft((current) => ({ ...current, titleOverride: event.target.value }))} placeholder="Leave blank to use the report title" />
+                    </label>
+                    <label className="toggle-row"><input type="checkbox" checked={dashboardWidgetDraft.hideTitle} onChange={(event) => setDashboardWidgetDraft((current) => ({ ...current, hideTitle: event.target.checked }))} /> Hide title</label>
+                    <label className="field-inline"><span>Width</span><input type="number" min="1" max="12" value={dashboardWidgetDraft.width} onChange={(event) => setDashboardWidgetDraft((current) => ({ ...current, width: Number(event.target.value) }))} /></label>
+                    <label className="field-inline"><span>Height</span><input type="number" min="2" max="10" value={dashboardWidgetDraft.height} onChange={(event) => setDashboardWidgetDraft((current) => ({ ...current, height: Number(event.target.value) }))} /></label>
+                    <label className="field">
+                      <span>Display mode</span>
+                      <select value={dashboardWidgetDraft.displayMode} onChange={(event) => setDashboardWidgetDraft((current) => ({ ...current, displayMode: event.target.value as DashboardWidgetBuilderDraft["displayMode"] }))}>
+                        <option value="inherit">Inherit report view</option>
+                        <option value="table">Table</option>
+                        <option value="summary">Summary</option>
+                        <option value="chart">Chart</option>
+                      </select>
+                    </label>
+                    <label className="toggle-row"><input type="checkbox" checked={dashboardWidgetDraft.showSummary} onChange={(event) => setDashboardWidgetDraft((current) => ({ ...current, showSummary: event.target.checked }))} /> Show summary metrics</label>
+                    <label className="toggle-row"><input type="checkbox" checked={dashboardWidgetDraft.showDetails} onChange={(event) => setDashboardWidgetDraft((current) => ({ ...current, showDetails: event.target.checked }))} /> Show row details</label>
+                  </div>
+                  <div className="filter-grid compact-grid">
+                    <label className="field">
+                      <span>Target tab</span>
+                      <select value={dashboardWidgetDraft.createNewTab ? "__new__" : dashboardWidgetDraft.tabId} onChange={(event) => setDashboardWidgetDraft((current) => ({ ...current, createNewTab: event.target.value === "__new__", tabId: event.target.value === "__new__" ? current.tabId : event.target.value }))}>
+                        {activeDashboardTabOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                        <option value="__new__">Create new tab</option>
+                      </select>
+                    </label>
+                    {dashboardWidgetDraft.createNewTab ? (
+                      <>
+                        <label className="field"><span>New tab name</span><input value={dashboardWidgetDraft.newTabName} onChange={(event) => setDashboardWidgetDraft((current) => ({ ...current, newTabName: event.target.value }))} /></label>
+                        <label className="field"><span>New tab color</span><input type="color" value={dashboardWidgetDraft.newTabColor} onChange={(event) => setDashboardWidgetDraft((current) => ({ ...current, newTabColor: event.target.value }))} /></label>
+                      </>
+                    ) : null}
+                  </div>
+                  <div className="studio-actions modal-actions">
+                    <button type="button" className="ghost-button" onClick={() => setDashboardAddModalOpen(false)}>Cancel</button>
+                    <button type="button" disabled={!dashboardWidgetDraft.reportId} onClick={() => {
+                      const added = addDashboardWidgetWithDraft(dashboardWidgetDraft);
+                      if (!added) return;
+                      setDashboardAddModalOpen(false);
+                      pushToast("Widget added to the dashboard.");
+                    }}>
+                      Add to dashboard
+                    </button>
+                  </div>
+                </div>
+              )}
+            </section>
+          </div>
+        ) : null}
+        {dashboardSettingsModalOpen && activeDashboard ? (
+          <div className="studio-modal-backdrop" onClick={() => setDashboardSettingsModalOpen(false)}>
+            <section className="studio-modal studio-dashboard-builder-modal" onClick={(event) => event.stopPropagation()}>
+              <div className="card-head">
+                <div>
+                  <strong>Dashboard settings</strong>
+                  <div className="micro">{activeDashboard.name} · tabs, runtime filters, and dashboard-level overrides.</div>
+                </div>
+                <button type="button" onClick={() => setDashboardSettingsModalOpen(false)}>Close</button>
               </div>
               <div className="stack">
-                {activeDashboard.runtimeFilters.length ? activeDashboard.runtimeFilters.map((filter) => {
-                  const resolvedTableId = filter.sourceTableId || (activeDashboardRefreshTables.length === 1 ? activeDashboardRefreshTables[0]?.id || "" : "");
-                  const selectedTable = activeDashboardRefreshTables.find((table) => table.id === resolvedTableId) || null;
-                  const fieldOptions = resolvedTableId ? (activeDashboardFieldOptionsByTableId[resolvedTableId] || []) : [];
-                  const selectedField = selectedTable?.fields.find((field) => field.id === filter.fieldId) || null;
-                  const operatorOptions = filterOperatorOptionsForField(selectedField);
-                  const comparisonFieldOptions = selectedTable && filter.fieldId ? getFieldComparisonOptions(selectedTable, filter.fieldId) : [];
-                  const valueOptions = resolvedTableId && filter.fieldId ? collectFieldValueOptions(resolvedTableId, filter.fieldId) : [];
-                  return (
-                    <div className="card" key={filter.id}>
-                      <div className="card-head">
-                        <strong>{filter.label || "Runtime filter"}</strong>
-                        <button type="button" onClick={() => updateObject({ ...activeDashboard, runtimeFilters: activeDashboard.runtimeFilters.filter((item) => item.id !== filter.id) })}>Remove</button>
-                      </div>
-                      <div className="filter-grid compact-grid">
-                        <label className="field">
-                          <span>Label</span>
-                          <input value={filter.label} onChange={(event) => updateRuntimeFilter(filter.id, (current) => ({ ...current, label: event.target.value }))} />
-                        </label>
-                        {activeDashboardRefreshTables.length > 1 ? (
-                          <label className="field">
-                            <span>Table</span>
-                            <SearchableSelect
-                              value={resolvedTableId}
-                              options={activeDashboardRefreshTables.map((table) => ({ value: table.id, label: table.name, keywords: [table.description] }))}
-                              allowEmpty
-                              emptyOptionLabel="Choose dashboard table"
-                              onChange={(value) => updateRuntimeFilter(filter.id, (current) => ({ ...current, sourceTableId: value, fieldId: "", defaultValue: "" }))}
-                            />
-                          </label>
-                        ) : (
-                          <label className="field">
-                            <span>Table</span>
-                            <input value={selectedTable?.name || "No dashboard table"} disabled />
-                          </label>
-                        )}
-                        <label className="field">
-                          <span>Field</span>
-                          <SearchableSelect
-                            value={filter.fieldId}
-                            options={fieldOptions}
-                            allowEmpty
-                            emptyOptionLabel={resolvedTableId ? "Choose table field" : "Choose a table first"}
-                            onChange={(value) => updateRuntimeFilter(filter.id, (current) => {
-                              const nextField = selectedTable?.fields.find((field) => field.id === value) || null;
-                              const nextOptions = filterOperatorOptionsForField(nextField);
-                              const nextOperator = nextOptions.some((option) => option.value === current.operator)
-                                ? current.operator
-                                : nextOptions[0]?.value || "equals";
-                              return {
-                                ...current,
-                                fieldId: value,
-                                operator: nextOperator,
-                                valueSource: "literal",
-                                compareFieldId: "",
-                                defaultValue: ""
-                              };
-                            })}
-                          />
-                        </label>
-                        <label className="field">
-                          <span>Operator</span>
-                          <select
-                            value={filter.operator}
-                            onChange={(event) => updateRuntimeFilter(filter.id, (current) => ({
-                              ...current,
-                              operator: event.target.value as FilterOperator,
-                              valueSource: filterNeedsValue(event.target.value as FilterOperator) ? (current.valueSource || "literal") : "literal",
-                              compareFieldId: filterNeedsValue(event.target.value as FilterOperator) ? current.compareFieldId || "" : "",
-                              defaultValue: filterNeedsValue(event.target.value as FilterOperator) ? current.defaultValue : ""
-                            }))}
-                          >
-                            {operatorOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                          </select>
-                        </label>
-                        <label className="field">
-                          <span>Mode</span>
-                          <select value={filter.mode} onChange={(event) => updateRuntimeFilter(filter.id, (current) => ({ ...current, mode: event.target.value as "global" | "selected", targetReportIds: event.target.value === "global" ? [] : current.targetReportIds }))}>
-                            <option value="global">Global</option>
-                            <option value="selected">Selected reports</option>
-                          </select>
-                        </label>
-                        {filterNeedsValue(filter.operator) ? (
-                          <label className="field">
-                            <span>Compare using</span>
-                            <select
-                              value={filter.valueSource || "literal"}
-                              onChange={(event) => updateRuntimeFilter(filter.id, (current) => ({
-                                ...current,
-                                valueSource: event.target.value as "literal" | "field",
-                                compareFieldId: event.target.value === "field" ? current.compareFieldId || "" : "",
-                                defaultValue: event.target.value === "field" ? "" : current.defaultValue
-                              }))}
-                            >
-                              <option value="literal">{selectedField?.type === "date" || selectedField?.type === "datetime" ? "specific date" : "specific value"}</option>
-                              <option value="field">{selectedField?.type === "date" || selectedField?.type === "datetime" ? "the date in the field" : "the value in the field"}</option>
-                            </select>
-                          </label>
-                        ) : null}
-                        {filterNeedsValue(filter.operator) && (filter.valueSource || "literal") === "field" ? (
-                          <label className="field">
-                            <span>Comparison field</span>
-                            <SearchableSelect
-                              value={filter.compareFieldId || ""}
-                              options={comparisonFieldOptions}
-                              allowEmpty
-                              emptyOptionLabel="Choose a comparison field"
-                              onChange={(value) => updateRuntimeFilter(filter.id, (current) => ({ ...current, compareFieldId: value }))}
-                            />
-                          </label>
-                        ) : null}
-                        {filterNeedsValue(filter.operator) && (filter.valueSource || "literal") !== "field" ? valueOptions.length ? (
-                          <label className="field">
-                            <span>Default value</span>
-                            <SearchableSelect
-                              value={filter.defaultValue}
-                              options={valueOptions}
-                              allowEmpty
-                              emptyOptionLabel="No default value"
-                              onChange={(value) => updateRuntimeFilter(filter.id, (current) => ({ ...current, defaultValue: value }))}
-                            />
-                          </label>
-                        ) : (
-                          <label className="field">
-                            <span>Default value</span>
-                            <input value={filter.defaultValue} onChange={(event) => updateRuntimeFilter(filter.id, (current) => ({ ...current, defaultValue: event.target.value }))} />
-                          </label>
-                        ) : null}
-                      </div>
-                      {filter.mode === "selected" ? (
-                        <div className="stack-compact">
-                          <span className="micro">Select which reports on the current dashboard this runtime filter should affect.</span>
-                          <div className="filter-grid compact-grid">
-                            {activeDashboardReportOptions.map((reportOption) => (
-                              <label className="toggle-row" key={reportOption.value}>
-                                <input
-                                  type="checkbox"
-                                  checked={filter.targetReportIds.includes(reportOption.value)}
-                                  onChange={(event) => updateRuntimeFilter(filter.id, (current) => ({
-                                    ...current,
-                                    targetReportIds: event.target.checked
-                                      ? Array.from(new Set([...current.targetReportIds, reportOption.value]))
-                                      : current.targetReportIds.filter((item) => item !== reportOption.value)
-                                  }))}
-                                />
-                                {reportOption.label}
-                              </label>
-                            ))}
-                          </div>
+                <div className="card">
+                  <div className="card-head">
+                    <strong>Tabs</strong>
+                    <button type="button" onClick={() => {
+                      const created = createDashboardTabInDefinition(activeDashboard, { color: "#0d7c66" });
+                      writeObject(created.dashboard);
+                      setActiveTabId(created.tabId);
+                    }}>Add tab</button>
+                  </div>
+                  <div className="stack-compact">
+                    {activeDashboard.tabs.map((tab, index) => (
+                      <div className="card" key={tab.id}>
+                        <div className="filter-grid compact-grid">
+                          <label className="field"><span>Name</span><input value={tab.name} onChange={(event) => updateObject({ ...activeDashboard, tabs: activeDashboard.tabs.map((item) => item.id === tab.id ? { ...item, name: event.target.value } : item) })} /></label>
+                          <label className="field"><span>Color</span><input type="color" value={tab.color || "#0d7c66"} onChange={(event) => updateObject({ ...activeDashboard, tabs: activeDashboard.tabs.map((item) => item.id === tab.id ? { ...item, color: event.target.value } : item) })} /></label>
+                          <label className="toggle-row"><input type="radio" checked={activeDashboard.defaultTabId === tab.id} name="default-dashboard-tab" onChange={() => updateObject({ ...activeDashboard, defaultTabId: tab.id })} /> Default tab</label>
                         </div>
-                      ) : null}
-                    </div>
-                  );
-                }) : <div className="empty-hint">No runtime filters yet.</div>}
-                <div className="studio-actions modal-actions">
-                  <button
-                    type="button"
-                    onClick={() => updateObject({
-                      ...activeDashboard,
-                      runtimeFilters: [
-                        ...activeDashboard.runtimeFilters,
-                        {
-                          id: uid("runtime"),
-                          label: "New filter",
-                          fieldId: "",
-                          operator: "equals",
-                          valueSource: "literal",
-                          compareFieldId: "",
-                          sourceTableId: activeDashboardRefreshTables.length === 1 ? activeDashboardRefreshTables[0].id : "",
-                          mode: "global",
-                          targetReportIds: [],
-                          defaultValue: ""
-                        }
-                      ]
-                    })}
-                  >
-                    Add runtime filter
-                  </button>
-                  <button type="button" className="ghost-button" onClick={() => setRuntimeFilterModalOpen(false)}>Done</button>
+                        <div className="widget-edit-actions">
+                          <button type="button" disabled={index === 0} onClick={() => {
+                            const nextTabs = [...activeDashboard.tabs];
+                            [nextTabs[index - 1], nextTabs[index]] = [nextTabs[index], nextTabs[index - 1]];
+                            updateObject({ ...activeDashboard, tabs: nextTabs });
+                          }}>Up</button>
+                          <button type="button" disabled={index === activeDashboard.tabs.length - 1} onClick={() => {
+                            const nextTabs = [...activeDashboard.tabs];
+                            [nextTabs[index + 1], nextTabs[index]] = [nextTabs[index], nextTabs[index + 1]];
+                            updateObject({ ...activeDashboard, tabs: nextTabs });
+                          }}>Down</button>
+                          <button type="button" className="ghost-button" onClick={() => removeDashboardTabWithFallback(tab.id)}>Delete tab</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
+
+                <div className="card">
+                  <div className="card-head">
+                    <strong>Runtime filters</strong>
+                    <button
+                      type="button"
+                      onClick={() => updateObject({
+                        ...activeDashboard,
+                        runtimeFilters: [
+                          ...activeDashboard.runtimeFilters,
+                          {
+                            id: uid("runtime"),
+                            label: "New filter",
+                            fieldId: "",
+                            sourceTableId: activeDashboardRefreshTables.length === 1 ? activeDashboardRefreshTables[0].id : "",
+                            uiType: "single-select",
+                            mode: "global",
+                            scope: "dashboard",
+                            targetReportIds: [],
+                            targetTabIds: [],
+                            targetWidgetIds: [],
+                            operator: "equals",
+                            defaultValue: "",
+                            displayOrder: activeDashboard.runtimeFilters.length,
+                            collapsedByDefault: false,
+                            allowBlank: false,
+                            valueSource: "literal",
+                            compareFieldId: ""
+                          }
+                        ]
+                      })}
+                    >
+                      Add runtime filter
+                    </button>
+                  </div>
+                  <div className="stack-compact">
+                    {activeDashboard.runtimeFilters.length ? activeDashboard.runtimeFilters
+                      .slice()
+                      .sort((left, right) => (left.displayOrder ?? 0) - (right.displayOrder ?? 0))
+                      .map((filter, index) => {
+                        const resolvedTableId = filter.sourceTableId || (activeDashboardRefreshTables.length === 1 ? activeDashboardRefreshTables[0]?.id || "" : "");
+                        const selectedTable = activeDashboardRefreshTables.find((table) => table.id === resolvedTableId) || null;
+                        const fieldOptions = resolvedTableId ? (activeDashboardFieldOptionsByTableId[resolvedTableId] || []) : [];
+                        const selectedField = selectedTable?.fields.find((field) => field.id === filter.fieldId) || null;
+                        const operatorOptions = filterOperatorOptionsForField(selectedField);
+                        const comparisonFieldOptions = selectedTable && filter.fieldId ? getFieldComparisonOptions(selectedTable, filter.fieldId) : [];
+                        const valueOptions = activeDashboardRuntimeFilterOptions[filter.id] || [];
+                        return (
+                          <div className="card" key={filter.id}>
+                            <div className="card-head">
+                              <strong>{filter.label || "Runtime filter"}</strong>
+                              <button type="button" className="ghost-button" onClick={() => updateObject({ ...activeDashboard, runtimeFilters: activeDashboard.runtimeFilters.filter((item) => item.id !== filter.id) })}>Remove</button>
+                            </div>
+                            <div className="filter-grid compact-grid">
+                              <label className="field"><span>Label</span><input value={filter.label} onChange={(event) => updateRuntimeFilter(filter.id, (current) => ({ ...current, label: event.target.value }))} /></label>
+                              <label className="field">
+                                <span>Display order</span>
+                                <input type="number" min="0" value={filter.displayOrder ?? index} onChange={(event) => updateRuntimeFilter(filter.id, (current) => ({ ...current, displayOrder: Number(event.target.value) }))} />
+                              </label>
+                              <label className="field">
+                                <span>Filter UI</span>
+                                <select value={filter.uiType || "single-select"} onChange={(event) => updateRuntimeFilter(filter.id, (current) => ({ ...current, uiType: event.target.value as typeof current.uiType }))}>
+                                  <option value="single-select">Single-select dropdown</option>
+                                  <option value="searchable-dropdown">Searchable dropdown</option>
+                                  <option value="multi-select">Multi-select dropdown</option>
+                                  <option value="date-range">Date range</option>
+                                  <option value="number-range">Number range</option>
+                                  <option value="user-picker">User picker</option>
+                                  <option value="boolean-toggle">Boolean toggle</option>
+                                </select>
+                              </label>
+                              {activeDashboardRefreshTables.length > 1 ? (
+                                <label className="field">
+                                  <span>Table</span>
+                                  <SearchableSelect value={resolvedTableId} options={activeDashboardRefreshTables.map((table) => ({ value: table.id, label: table.name, keywords: [table.description] }))} allowEmpty emptyOptionLabel="Choose dashboard table" onChange={(value) => updateRuntimeFilter(filter.id, (current) => ({ ...current, sourceTableId: value, fieldId: "", defaultValue: "" }))} />
+                                </label>
+                              ) : (
+                                <label className="field"><span>Table</span><input value={selectedTable?.name || "No dashboard table"} disabled /></label>
+                              )}
+                              <label className="field">
+                                <span>Field</span>
+                                <SearchableSelect
+                                  value={filter.fieldId}
+                                  options={fieldOptions}
+                                  allowEmpty
+                                  emptyOptionLabel={resolvedTableId ? "Choose table field" : "Choose a table first"}
+                                  onChange={(value) => updateRuntimeFilter(filter.id, (current) => ({ ...current, fieldId: value, defaultValue: "", valueSource: "literal", compareFieldId: "" }))}
+                                />
+                              </label>
+                              <label className="field">
+                                <span>Applies to</span>
+                                <select value={filter.scope || "dashboard"} onChange={(event) => updateRuntimeFilter(filter.id, (current) => ({ ...current, scope: event.target.value as typeof current.scope }))}>
+                                  <option value="dashboard">Entire dashboard</option>
+                                  <option value="tab">Specific tabs</option>
+                                  <option value="widgets">Selected widgets</option>
+                                </select>
+                              </label>
+                              <label className="field"><span>Operator</span><select value={filter.operator} onChange={(event) => updateRuntimeFilter(filter.id, (current) => ({ ...current, operator: event.target.value as FilterOperator }))}>{operatorOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+                              <label className="toggle-row"><input type="checkbox" checked={filter.collapsedByDefault === true} onChange={(event) => updateRuntimeFilter(filter.id, (current) => ({ ...current, collapsedByDefault: event.target.checked }))} /> Start collapsed</label>
+                            </div>
+                            {filter.scope === "tab" ? (
+                              <div className="filter-grid compact-grid">
+                                {activeDashboard.tabs.map((tab) => (
+                                  <label className="toggle-row" key={tab.id}>
+                                    <input
+                                      type="checkbox"
+                                      checked={filter.targetTabIds?.includes(tab.id) || false}
+                                      onChange={(event) => updateRuntimeFilter(filter.id, (current) => ({
+                                        ...current,
+                                        targetTabIds: event.target.checked
+                                          ? Array.from(new Set([...(current.targetTabIds || []), tab.id]))
+                                          : (current.targetTabIds || []).filter((item) => item !== tab.id)
+                                      }))}
+                                    />
+                                    {tab.name}
+                                  </label>
+                                ))}
+                              </div>
+                            ) : null}
+                            {filter.scope === "widgets" ? (
+                              <div className="filter-grid compact-grid">
+                                {activeDashboard.tabs.flatMap((tab) => tab.widgets.map((widget) => ({ id: widget.id, label: `${tab.name} · ${widget.title || widget.reportId}` }))).map((widget) => (
+                                  <label className="toggle-row" key={widget.id}>
+                                    <input
+                                      type="checkbox"
+                                      checked={filter.targetWidgetIds?.includes(widget.id) || false}
+                                      onChange={(event) => updateRuntimeFilter(filter.id, (current) => ({
+                                        ...current,
+                                        targetWidgetIds: event.target.checked
+                                          ? Array.from(new Set([...(current.targetWidgetIds || []), widget.id]))
+                                          : (current.targetWidgetIds || []).filter((item) => item !== widget.id)
+                                      }))}
+                                    />
+                                    {widget.label}
+                                  </label>
+                                ))}
+                              </div>
+                            ) : null}
+                            <div className="filter-grid compact-grid">
+                              <label className="field">
+                                <span>Compare using</span>
+                                <select value={filter.valueSource || "literal"} onChange={(event) => updateRuntimeFilter(filter.id, (current) => ({ ...current, valueSource: event.target.value as "literal" | "field", defaultValue: event.target.value === "field" ? "" : current.defaultValue, compareFieldId: event.target.value === "field" ? current.compareFieldId || "" : "" }))}>
+                                  <option value="literal">{selectedField?.type === "date" || selectedField?.type === "datetime" ? "specific date" : "specific value"}</option>
+                                  <option value="field">{selectedField?.type === "date" || selectedField?.type === "datetime" ? "the date in the field" : "the value in the field"}</option>
+                                </select>
+                              </label>
+                              {(filter.valueSource || "literal") === "field" ? (
+                                <label className="field">
+                                  <span>Comparison field</span>
+                                  <SearchableSelect value={filter.compareFieldId || ""} options={comparisonFieldOptions} allowEmpty emptyOptionLabel="Choose a comparison field" onChange={(value) => updateRuntimeFilter(filter.id, (current) => ({ ...current, compareFieldId: value }))} />
+                                </label>
+                              ) : valueOptions.length ? (
+                                <label className="field">
+                                  <span>Default value</span>
+                                  <SearchableSelect value={filter.defaultValue} options={valueOptions} allowEmpty emptyOptionLabel="No default value" onChange={(value) => updateRuntimeFilter(filter.id, (current) => ({ ...current, defaultValue: value }))} />
+                                </label>
+                              ) : (
+                                <label className="field"><span>Default value</span><input value={filter.defaultValue} onChange={(event) => updateRuntimeFilter(filter.id, (current) => ({ ...current, defaultValue: event.target.value }))} /></label>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      }) : <div className="empty-hint">No runtime filters configured yet.</div>}
+                  </div>
+                </div>
+
+                {activeDashboardRefreshTables.length ? (
+                  <div className="card">
+                    <div className="card-head">
+                      <strong>Source report overrides</strong>
+                      <span className="micro">Optional dashboard-only Quickbase report IDs.</span>
+                    </div>
+                    <div className="stack-compact">
+                      {activeDashboardRefreshTables.map((table) => {
+                        const tableKey = table.quickbaseTableId || table.id;
+                        return (
+                          <label className="field" key={table.id}>
+                            <span>{table.name}</span>
+                            <input
+                              value={activeDashboard.sourceReportOverrides?.[tableKey] || ""}
+                              onChange={(event) => updateObject({
+                                ...activeDashboard,
+                                sourceReportOverrides: event.target.value.trim()
+                                  ? { ...(activeDashboard.sourceReportOverrides || {}), [tableKey]: event.target.value.trim() }
+                                  : Object.fromEntries(Object.entries(activeDashboard.sourceReportOverrides || {}).filter(([key]) => key !== tableKey))
+                              })}
+                              placeholder="Optional Quickbase report ID"
+                            />
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </section>
           </div>
         ) : null}
         {createModalOpen ? (
-          <div className="studio-modal-backdrop" onClick={closeCreateModal}>
+          <div className="studio-modal-backdrop" onClick={handleCloseCreateModal}>
             <section className="studio-modal" onClick={(event) => event.stopPropagation()}>
               <div className="card-head">
                 <div>
                   <strong>{importEditingReportId ? "Edit Imported Report Setup" : editingReportId ? "Edit Report" : `Create ${createDraft.type === "report" ? "Report" : "Dashboard"}`}</strong>
                   <div className="micro">{importEditingReportId ? "Use the same builder workflow as a normal report: fields, filters, sorts, and chart setup all stay together here before the workbook import is applied." : editingReportId ? "Update the report configuration here. Changes stay in the modal instead of moving into a side setup column." : "Start fresh with the same field, filter, and sorting controls from the legacy builder."}</div>
                 </div>
-                <button onClick={closeCreateModal}>Close</button>
+                <button onClick={handleCloseCreateModal}>Close</button>
               </div>
               {importBuilderIdentity}
 
@@ -4115,6 +4552,13 @@ export function StudioPage({
                       }))}
                       onSharedUsersChange={(sharedUserIds) => setCreateDraft((current) => ({ ...current, sharedUserIds }))}
                     />
+                    {createDraft.type === "report" ? (
+                      <StudioReportDraftBasicsStep
+                        createDraft={createDraft}
+                        createDraftTable={createDraftTable}
+                        setCreateDraft={setCreateDraft}
+                      />
+                    ) : null}
                   </>
                 ) : null}
 
@@ -4446,7 +4890,7 @@ export function StudioPage({
     </div>
   ) : null;
 
-  const overlayOpen = importReviewModalOpen || runtimeFilterModalOpen || createModalOpen || Boolean(drawer);
+  const overlayOpen = importReviewModalOpen || dashboardAddModalOpen || dashboardSettingsModalOpen || createModalOpen || Boolean(drawer);
 
   const objectActionDock = hasActiveObject && !overlayOpen ? (
     <div className="studio-builder-dock" role="region" aria-label="Building actions">
@@ -4620,10 +5064,26 @@ export function StudioPage({
         ) : null}
 
         {activeDashboard && dashboardResult ? (
-          <section className="surface stack studio-dashboard-preview-panel">
+          <section className="surface stack studio-dashboard-preview-panel dashboard-builder-shell">
+                <div className="dashboard-builder-toolbar">
+                  <div className="dashboard-builder-toolbar-actions">
+                    <button type="button" onClick={openDashboardAddModal}>Add report/graph</button>
+                    <button type="button" className="ghost-button" onClick={() => setDashboardSettingsModalOpen(true)}>Dashboard settings</button>
+                  </div>
+                  <div className="dashboard-builder-toolbar-meta">
+                    <span className="micro">{activeDashboard.tabs.length} tabs</span>
+                    <span className="micro">{activeDashboard.tabs.reduce((sum, tab) => sum + tab.widgets.length, 0)} widgets</span>
+                  </div>
+                </div>
                 <div className="card-head">
-                  <strong>Dashboard Preview</strong>
-                  <span className="micro">{activeDashboard.tabs.length} tabs</span>
+                  <div>
+                    <strong>Inline dashboard builder</strong>
+                    <div className="micro">Manage layout, tabs, runtime filters, and widget presentation without leaving this dashboard.</div>
+                  </div>
+                  <div className="studio-actions">
+                    <button type="button" className="ghost-button" onClick={() => balanceActiveDashboardTab(activeDashboardTab?.id || resolvedActiveDashboardTabId)} disabled={!activeDashboardTab}>Balance tab</button>
+                    <button type="button" className="ghost-button" onClick={balanceAllDashboardTabs}>Balance dashboard</button>
+                  </div>
                 </div>
                 {dashboardResult.tabs.some((tab) => tab.widgets.some((widget) => widget.status === "failed" || widget.result.warnings.length)) ? (
                   <div className="sync-status sync-status-warn">
@@ -4648,734 +5108,246 @@ export function StudioPage({
                     placeholder="Find cards or reports"
                   />
                 </div>
-            <div className="studio-tab-strip">
+            <div className="studio-tab-strip dashboard-builder-tab-strip">
               {activeDashboard.tabs.map((tab) => (
-                <button key={tab.id} className={tab.id === activeTabId ? "active-tab" : ""} onClick={() => setActiveTabId(tab.id)}>{tab.name}</button>
+                <button
+                  key={tab.id}
+                  className={tab.id === activeTabId ? "active-tab" : ""}
+                  onClick={() => setActiveTabId(tab.id)}
+                  style={{
+                    borderColor: tab.color || undefined,
+                    background: tab.id === activeTabId && tab.color ? `${tab.color}18` : undefined,
+                    color: tab.id === activeTabId && tab.color ? tab.color : undefined
+                  }}
+                >
+                  {tab.name}
+                  {activeDashboard.defaultTabId === tab.id ? <span className="micro"> · default</span> : null}
+                </button>
               ))}
             </div>
-            <StudioDashboardPreview
-              dashboard={{ ...activeDashboard, tabs: activeDashboard.tabs.filter((tab) => !activeTabId || tab.id === activeTabId) }}
-              result={{ ...dashboardResult, tabs: dashboardResult.tabs.filter((tab) => !activeTabId || tab.id === activeTabId) }}
-              tables={bundle.tables}
-              runtimeValues={runtimeValues}
-              setRuntimeValues={setRuntimeValues}
-              widgetSearch={widgetSearch}
-              selectedWidgetId={selectedWidgetId}
-              draggingWidget={draggingWidget}
-              onSelectWidget={(tabId, widgetId) => {
-                setActiveTabId(tabId);
-                setSelectedWidgetId(widgetId);
-              }}
-              onOpenReport={(reportId) => {
-                if (openLinksInNewTab) {
-                  window.open(buildHostedHashUrl(`/studio/${reportId}`), "_blank", "noopener,noreferrer");
-                  return;
-                }
-                navigate(buildHostedRoute(`/studio/${reportId}`));
-              }}
-              onStartWidgetDrag={(tabId, widgetId) => setDraggingWidget({ tabId, widgetId })}
-              onEndWidgetDrag={() => setDraggingWidget(null)}
-              onDropWidget={(tabId, widgetId, position: DashboardWidgetDropPosition) => {
-                if (draggingWidget?.tabId === tabId) {
-                  writeObject(reorderDashboardWidgetByDropPositionInDefinition(activeDashboard, tabId, draggingWidget.widgetId, widgetId, position));
-                }
-                setDraggingWidget(null);
-              }}
-              onDropWidgetToRow={(tabId, rowIndex, edge) => {
-                if (draggingWidget?.tabId === tabId) {
-                  writeObject(reorderDashboardWidgetToRowEdgeInDefinition(activeDashboard, tabId, draggingWidget.widgetId, rowIndex, edge));
-                }
-                setDraggingWidget(null);
-              }}
-              onDropWidgetToTabEnd={(tabId) => {
-                if (draggingWidget?.tabId === tabId) {
-                  const tab = activeDashboard.tabs.find((item) => item.id === tabId);
-                  writeObject(reorderDashboardWidgetToIndexInDefinition(activeDashboard, tabId, draggingWidget.widgetId, tab?.widgets.length || 0));
-                }
-                setDraggingWidget(null);
-              }}
-              onDropWidgetToGridPosition={(tabId, position) => {
-                if (draggingWidget?.tabId === tabId) {
-                  placeDashboardWidget(tabId, draggingWidget.widgetId, position);
-                }
-                setDraggingWidget(null);
-              }}
-              onToggleFullWidth={toggleDashboardWidgetFullWidth}
-              onBeginResizeWidget={beginWidgetResize}
-              onMoveWidget={moveDashboardWidget}
-            />
+            {activeDashboardTab && !activeDashboardTab.widgets.length ? (
+              <div className="dashboard-empty-builder-state">
+                <strong>This tab is empty.</strong>
+                <span>Add a report or graph to start building the dashboard layout on this tab.</span>
+                <button type="button" onClick={openDashboardAddModal}>Add report/graph</button>
+              </div>
+            ) : null}
+            {activeDashboardTab?.widgets.length ? (
+              <StudioDashboardPreview
+                dashboard={{ ...activeDashboard, tabs: activeDashboard.tabs.filter((tab) => !activeTabId || tab.id === activeTabId) }}
+                result={{ ...dashboardResult, tabs: dashboardResult.tabs.filter((tab) => !activeTabId || tab.id === activeTabId) }}
+                tables={bundle.tables}
+                runtimeValues={runtimeValues}
+                runtimeFilterOptionsById={activeDashboardRuntimeFilterOptions}
+                setRuntimeValues={setRuntimeValues}
+                widgetSearch={widgetSearch}
+                activeTabId={activeTabId}
+                selectedWidgetId={selectedWidgetId}
+                draggingWidget={draggingWidget}
+                onSelectWidget={(tabId, widgetId) => {
+                  setActiveTabId(tabId);
+                  setSelectedWidgetId(widgetId);
+                }}
+                onEditReport={(widgetId, reportId) => {
+                  const widget = activeDashboardTab?.widgets.find((candidate) => candidate.id === widgetId) || null;
+                  const report = bundle.objects[reportId];
+                  if (!widget || !report || report.type !== "report") return;
+                  void beginEditDashboardWidgetReport(widget, report);
+                }}
+                onStartWidgetDrag={(tabId, widgetId) => setDraggingWidget({ tabId, widgetId })}
+                onEndWidgetDrag={() => setDraggingWidget(null)}
+                onDropWidget={(tabId, widgetId, position: DashboardWidgetDropPosition) => {
+                  if (draggingWidget?.tabId === tabId) {
+                    writeObject(reorderDashboardWidgetByDropPositionInDefinition(activeDashboard, tabId, draggingWidget.widgetId, widgetId, position));
+                  }
+                  setDraggingWidget(null);
+                }}
+                onDropWidgetToRow={(tabId, rowIndex, edge) => {
+                  if (draggingWidget?.tabId === tabId) {
+                    writeObject(reorderDashboardWidgetToRowEdgeInDefinition(activeDashboard, tabId, draggingWidget.widgetId, rowIndex, edge));
+                  }
+                  setDraggingWidget(null);
+                }}
+                onDropWidgetToTabEnd={(tabId) => {
+                  if (draggingWidget?.tabId === tabId) {
+                    const tab = activeDashboard.tabs.find((item) => item.id === tabId);
+                    writeObject(reorderDashboardWidgetToIndexInDefinition(activeDashboard, tabId, draggingWidget.widgetId, tab?.widgets.length || 0));
+                  }
+                  setDraggingWidget(null);
+                }}
+                onDropWidgetToGridPosition={(tabId, position) => {
+                  if (draggingWidget?.tabId === tabId) {
+                    placeDashboardWidget(tabId, draggingWidget.widgetId, position);
+                  }
+                  setDraggingWidget(null);
+                }}
+                onToggleFullWidth={toggleDashboardWidgetFullWidth}
+                onBeginResizeWidget={beginWidgetResize}
+                onMoveWidget={moveDashboardWidget}
+              />
+            ) : null}
           </section>
         ) : null}
         {objectActionDock}
       </div>
 
       {activeDashboard ? (
-        <aside className="studio-inspector">
+        <aside className="studio-inspector dashboard-builder-sidebar">
           <div className="surface stack">
             <div className="studio-section-head">
               <div>
-                <div className="eyebrow">Inspector</div>
-                <h2>Dashboard Setup</h2>
+                <div className="eyebrow">Widget</div>
+                <h2>{selectedDashboardWidget ? (selectedDashboardWidget.title || selectedDashboardWidgetReport?.name || "Selected widget") : "Dashboard builder"}</h2>
               </div>
-              <button onClick={() => deleteObject(activeDashboard.id)}>Delete</button>
+              <button type="button" className="ghost-button" onClick={() => setSelectedWidgetId("")}>{selectedDashboardWidget ? "Close" : "Tips"}</button>
             </div>
-            <div className="studio-tab-strip">
-              {["design", "filters"].map((tab) => <button key={tab} className={dashboardInspectorTab === tab ? "active-tab" : ""} onClick={() => setDashboardInspectorTab(tab as typeof dashboardInspectorTab)}>{tab}</button>)}
-            </div>
-            {dashboardInspectorTab === "design" ? (
-              <>
-                <label className="field"><span>Name</span><input value={activeDashboard.name} onChange={(event) => updateObject({ ...activeDashboard, name: event.target.value })} /></label>
-                <label className="field"><span>Description</span><input value={activeDashboard.description} onChange={(event) => updateObject({ ...activeDashboard, description: event.target.value })} /></label>
-                <SharingScopeEditor
-                  scope={activeDashboard.scope}
-                  ownerUserId={activeDashboard.ownerUserId}
-                  sharedUserIds={activeDashboard.sharedUserIds}
-                  currentUserId={currentUserId}
-                  rosterUsers={filteredSharingRosterUsers}
-                  rosterLookup={sharingRosterLookup}
-                  rosterLoading={sharingRosterLoading}
-                  rosterError={sharingRosterError}
-                  rosterConfigured={hasSharingRosterConfig(activeQuickbaseConfig)}
-                  rosterQuery={sharingRosterQuery}
-                  onRosterQueryChange={setSharingRosterQuery}
-                  onScopeChange={(scope) => updateObject({
-                    ...activeDashboard,
-                    ...normalizeStudioBuilderScopeOwner(scope, currentUserId, activeDashboard.ownerUserId, activeDashboard.sharedUserIds)
-                  })}
-                  onSharedUsersChange={(sharedUserIds) => updateObject({ ...activeDashboard, sharedUserIds })}
-                />
-                <div className="card">
-                  <div className="card-head">
-                    <strong>Tabs</strong>
-                    <button
-                      onClick={() => {
-                        const nextTab = { id: uid("tab"), name: `Tab ${activeDashboard.tabs.length + 1}`, widgets: [] };
-                        updateObject({ ...activeDashboard, tabs: [...activeDashboard.tabs, nextTab] });
-                        setActiveTabId(nextTab.id);
-                      }}
-                    >
-                      Add tab
-                    </button>
-                  </div>
-                  <div className="studio-tab-strip">
-                    {activeDashboard.tabs.map((tab) => (
-                      <button key={tab.id} className={tab.id === activeDashboardTab?.id ? "active-tab" : ""} onClick={() => setActiveTabId(tab.id)}>
-                        {tab.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                {activeDashboardTab ? (
-                  <div className="card">
-                    <div className="card-head">
-                      <strong>{activeDashboardTab.name}</strong>
-                      <div className="studio-actions">
-                        <button onClick={() => balanceActiveDashboardTab(activeDashboardTab.id)}>Balance tab</button>
-                        <button onClick={balanceAllDashboardTabs}>Balance dashboard</button>
-                        <button
-                          disabled={activeDashboard.tabs.length <= 1}
-                          onClick={() => {
-                            const remainingTabs = activeDashboard.tabs.filter((item) => item.id !== activeDashboardTab.id);
-                            updateObject({ ...activeDashboard, tabs: remainingTabs });
-                            setActiveTabId(remainingTabs[0]?.id || "");
-                          }}
-                        >
-                          Remove
-                        </button>
-                        <button
-                          disabled={activeDashboard.tabs.findIndex((item) => item.id === activeDashboardTab.id) === 0}
-                          onClick={() => {
-                            const tabIndex = activeDashboard.tabs.findIndex((item) => item.id === activeDashboardTab.id);
-                            if (tabIndex <= 0) return;
-                            const nextTabs = [...activeDashboard.tabs];
-                            const currentTab = nextTabs[tabIndex];
-                            nextTabs[tabIndex] = nextTabs[tabIndex - 1];
-                            nextTabs[tabIndex - 1] = currentTab;
-                            updateObject({ ...activeDashboard, tabs: nextTabs });
-                          }}
-                        >
-                          Up
-                        </button>
-                      </div>
-                    </div>
-                    <label className="field"><span>Tab name</span><input value={activeDashboardTab.name} onChange={(event) => updateObject({ ...activeDashboard, tabs: activeDashboard.tabs.map((item) => item.id === activeDashboardTab.id ? { ...item, name: event.target.value } : item) })} /></label>
-                    <div className="card widget-picker-card">
-                      <div className="card-head">
-                        <strong>Cards on this tab</strong>
-                        <div className="studio-actions">
-                          <span className="micro">{activeDashboardTab.widgets.length} total</span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const report = objects.find((object): object is ReportDefinition => object.type === "report");
-                              if (!report) return;
-                              addDashboardWidget(activeDashboardTab.id, report.id, selectedDashboardWidget?.id);
-                            }}
-                          >
-                            Add card
-                          </button>
-                        </div>
-                      </div>
-                      <div className="widget-picker-list">
-                        {activeDashboardTab.widgets.filter((widget) => !widgetSearch || `${widget.title} ${widget.reportId}`.toLowerCase().includes(widgetSearch.toLowerCase())).map((widget) => (
-                          <button
-                            type="button"
-                            className={`widget-picker-button${selectedDashboardWidget?.id === widget.id ? " active-card" : ""}`}
-                            key={widget.id}
-                            onClick={() => setSelectedWidgetId(widget.id)}
-                          >
-                            <strong>{widget.title || "Untitled card"}</strong>
-                            <span>{widget.reportId}</span>
-                          </button>
-                        ))}
-                        {!activeDashboardTab.widgets.filter((widget) => !widgetSearch || `${widget.title} ${widget.reportId}`.toLowerCase().includes(widgetSearch.toLowerCase())).length ? (
-                          <div className="empty-hint">No cards match this search.</div>
-                        ) : null}
-                      </div>
-                    </div>
-                    {selectedDashboardWidget ? (
-                      <div className="widget-edit-card">
-                        <div className="card-head">
-                          <strong>Selected card</strong>
-                          <span className="micro">{selectedDashboardWidget.title || selectedDashboardWidget.reportId}</span>
-                        </div>
-                        <label className="field"><span>Title</span><input value={selectedDashboardWidget.title} onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, (candidate) => ({ ...candidate, title: event.target.value }))} /></label>
-                        <div className="widget-editor-grid">
-                          <label className="field">
-                            <span>Report</span>
-                            <SearchableSelect value={selectedDashboardWidget.reportId} options={reportObjectOptions} onChange={(value) => updateActiveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, (candidate) => ({ ...candidate, reportId: value, snapshot: undefined, mode: "linked" }))} />
-                          </label>
-                          <label className="field">
-                            <span>Connection</span>
-                            <select value={selectedDashboardWidget.mode} onChange={(event) => {
-                              const report = bundle.objects[selectedDashboardWidget.reportId] as ReportDefinition | undefined;
-                              updateActiveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, (candidate) => ({
-                                ...candidate,
-                                mode: event.target.value as "linked" | "copied",
-                                snapshot: event.target.value === "copied" && report ? clone(report) : undefined
-                              }));
-                            }}>
-                              <option value="linked">Live report</option>
-                              <option value="copied">Saved copy</option>
-                            </select>
-                          </label>
-                          <label className="field">
-                            <span>Display</span>
-                            <select value={selectedDashboardWidget.displayMode} onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, (candidate) => ({ ...candidate, displayMode: event.target.value as "inherit" | "table" | "summary" | "chart" }))}>
-                              <option value="inherit">Inherit report view</option>
-                              <option value="table">Table only</option>
-                              <option value="summary">Summary only</option>
-                              <option value="chart">Chart/graph</option>
-                            </select>
-                          </label>
-                          {selectedDashboardWidget.mode !== "copied" && selectedDashboardWidgetReport ? (
-                            <div className="field">
-                              <span>Edit linked report</span>
-                              <button
-                                type="button"
-                                onClick={() => navigate(buildHostedRoute(`/studio/${selectedDashboardWidgetReport.id}`))}
-                              >
-                                Open report setup
-                              </button>
-                            </div>
-                          ) : null}
-                          <label className="toggle-row"><input type="checkbox" checked={selectedDashboardWidget.showSummary} onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, (candidate) => ({ ...candidate, showSummary: event.target.checked }))} /> Show summary</label>
-                          <label className="toggle-row"><input type="checkbox" checked={selectedDashboardWidget.showDetails} onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, (candidate) => ({ ...candidate, showDetails: event.target.checked }))} /> Show details</label>
-                          <label className="toggle-row"><input type="checkbox" checked={clampDashboardWidgetWidth(selectedDashboardWidget.layout.w) >= 12} onChange={() => toggleDashboardWidgetFullWidth(activeDashboardTab.id, selectedDashboardWidget.id)} /> Full width</label>
-                          <label className="field-inline"><span>Width</span><input type="number" min="1" max="12" value={selectedDashboardWidget.layout.w} onChange={(event) => applyDashboardWidgetPreset(activeDashboardTab.id, selectedDashboardWidget.id, { w: Number(event.target.value), h: selectedDashboardWidget.layout.h })} /></label>
-                          <label className="field-inline"><span>Height</span><input type="number" min="2" max="10" value={selectedDashboardWidget.layout.h} onChange={(event) => applyDashboardWidgetPreset(activeDashboardTab.id, selectedDashboardWidget.id, { w: selectedDashboardWidget.layout.w, h: Number(event.target.value) })} /></label>
-                          <label className="field-inline"><span>X</span><input type="number" min="1" max="12" value={selectedDashboardWidget.layout.x || 1} onChange={(event) => placeDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, { x: Number(event.target.value), y: selectedDashboardWidget.layout.y || 1 })} /></label>
-                          <label className="field-inline"><span>Y</span><input type="number" min="1" max="99" value={selectedDashboardWidget.layout.y || 1} onChange={(event) => placeDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, { x: selectedDashboardWidget.layout.x || 1, y: Number(event.target.value) })} /></label>
-                        </div>
-                        <div className="widget-layout-presets">
-                          {WIDGET_LAYOUT_PRESETS.map((preset) => (
-                            <button
-                              key={preset.id}
-                              type="button"
-                              className={`widget-layout-preset-button${clampDashboardWidgetWidth(selectedDashboardWidget.layout.w) === preset.w && clampDashboardWidgetHeight(selectedDashboardWidget.layout.h) === preset.h ? " active-card" : ""}`}
-                              onClick={() => applyDashboardWidgetPreset(activeDashboardTab.id, selectedDashboardWidget.id, preset)}
-                            >
-                              {preset.label}
-                            </button>
-                          ))}
-                        </div>
-                        {selectedDashboardRow ? (
-                          <div className="card">
-                            <div className="card-head">
-                              <strong>Selected row</strong>
-                              <span className="micro">Row {selectedDashboardRow.rowIndex + 1} · {selectedDashboardRow.widgetIds.length} cards · {selectedDashboardRow.remainingColumns} open columns</span>
-                            </div>
-                            <div className="widget-layout-presets">
-                              <button type="button" onClick={() => balanceDashboardRow(activeDashboardTab.id, selectedDashboardRow.rowIndex)}>
-                                Balance row
-                              </button>
-                              {selectedDashboardRow.widgetIds.length <= 3 ? (
-                                <>
-                                  <button type="button" onClick={() => applyDashboardRowPreset(activeDashboardTab.id, selectedDashboardRow.rowIndex, "equal")}>
-                                    Split evenly
-                                  </button>
-                                  {selectedDashboardRow.widgetIds.length >= 2 ? (
-                                    <>
-                                      <button type="button" onClick={() => applyDashboardRowPreset(activeDashboardTab.id, selectedDashboardRow.rowIndex, "wide-left")}>
-                                        Emphasize first
-                                      </button>
-                                      <button type="button" onClick={() => applyDashboardRowPreset(activeDashboardTab.id, selectedDashboardRow.rowIndex, "wide-right")}>
-                                        Emphasize last
-                                      </button>
-                                    </>
-                                  ) : null}
-                                </>
-                              ) : null}
-                            </div>
-                            <div className="micro">Row presets apply to the current row only and keep the rest of the tab intact.</div>
-                          </div>
-                        ) : null}
-                        {activeDashboard.tabs.length > 1 ? (
-                          <div className="widget-tab-actions">
-                            <label className="field">
-                              <span>Target tab</span>
-                              <select value={widgetTargetTabId} onChange={(event) => setWidgetTargetTabId(event.target.value)}>
-                                {activeDashboard.tabs.map((tab) => (
-                                  <option key={tab.id} value={tab.id}>
-                                    {tab.name}{tab.id === activeDashboardTab.id ? " (current)" : ""}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                            <div className="widget-edit-actions">
-                              <button
-                                type="button"
-                                disabled={!widgetTargetTabId || widgetTargetTabId === activeDashboardTab.id}
-                                onClick={() => copyDashboardWidgetToTab(activeDashboardTab.id, selectedDashboardWidget.id, widgetTargetTabId)}
-                              >
-                                Copy to tab
-                              </button>
-                              <button
-                                type="button"
-                                disabled={!widgetTargetTabId || widgetTargetTabId === activeDashboardTab.id}
-                                onClick={() => moveDashboardWidgetToTab(activeDashboardTab.id, selectedDashboardWidget.id, widgetTargetTabId)}
-                              >
-                                Move to tab
-                              </button>
-                            </div>
-                          </div>
-                        ) : null}
-                        <div className="widget-edit-actions">
-                          <button onClick={() => balanceActiveDashboardTab(activeDashboardTab.id)}>Balance tab</button>
-                          <button onClick={balanceAllDashboardTabs}>Balance dashboard</button>
-                          <button onClick={() => moveDashboardWidgetByRow(activeDashboardTab.id, selectedDashboardWidget.id, "up")}>Move up a row</button>
-                          <button onClick={() => moveDashboardWidgetByRow(activeDashboardTab.id, selectedDashboardWidget.id, "down")}>Move down a row</button>
-                          <button onClick={() => moveDashboardWidgetToRowEdge(activeDashboardTab.id, selectedDashboardWidget.id, "start")}>Move to row start</button>
-                          <button onClick={() => moveDashboardWidgetToRowEdge(activeDashboardTab.id, selectedDashboardWidget.id, "end")}>Move to row end</button>
-                          <button onClick={() => moveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, "left")}>Move left</button>
-                          <button onClick={() => moveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, "right")}>Move right</button>
-                          <button onClick={() => moveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, "up")}>Move up</button>
-                          <button onClick={() => moveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, "down")}>Move down</button>
-                          <button onClick={() => moveDashboardWidgetToEdge(activeDashboardTab.id, selectedDashboardWidget.id, "start")}>Move to top</button>
-                          <button onClick={() => moveDashboardWidgetToEdge(activeDashboardTab.id, selectedDashboardWidget.id, "end")}>Move to bottom</button>
-                          <button onClick={() => duplicateDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id)}>Duplicate</button>
-                          <button onClick={() => toggleDashboardWidgetFullWidth(activeDashboardTab.id, selectedDashboardWidget.id)}>
-                            {clampDashboardWidgetWidth(selectedDashboardWidget.layout.w) >= 12 ? "Restore width" : "Make full width"}
-                          </button>
-                          <button onClick={() => removeDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id)}>Remove card</button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="empty-hint">Select a card on the canvas or in the list to edit it.</div>
-                    )}
-                    <div className="micro">New cards are inserted after the current selection so placement stays tied to the active canvas context.</div>
-                  </div>
-                ) : null}
-                {activeDashboardRefreshTables.length ? (
-                  <div className="card">
-                    <div className="card-head">
-                      <strong>Source report overrides</strong>
-                      <span className="micro">Optional dashboard-only Quickbase source reports. Leave blank to use each app default.</span>
-                    </div>
-                    <div className="stack-compact">
-                      {activeDashboardRefreshTables.map((table) => {
-                        const tableKey = table.quickbaseTableId || table.id;
-                        return (
-                          <label className="field" key={table.id}>
-                            <span>{table.name}</span>
-                            <input
-                              value={activeDashboard.sourceReportOverrides?.[tableKey] || ""}
-                              onChange={(event) => updateObject({
-                                ...activeDashboard,
-                                sourceReportOverrides: event.target.value.trim()
-                                  ? { ...(activeDashboard.sourceReportOverrides || {}), [tableKey]: event.target.value.trim() }
-                                  : Object.fromEntries(Object.entries(activeDashboard.sourceReportOverrides || {}).filter(([key]) => key !== tableKey))
-                              })}
-                              placeholder="Optional Quickbase report ID for this dashboard"
-                            />
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : null}
-              </>
-            ) : null}
-            {dashboardInspectorTab === "filters" ? (
+            {selectedDashboardWidget && activeDashboardTab ? (
               <>
                 <div className="card">
                   <div className="card-head">
-                    <strong>Runtime filters</strong>
-                    <button type="button" onClick={() => setRuntimeFilterModalOpen(true)}>Open runtime filters</button>
+                    <strong>Report actions</strong>
+                    <span className="micro">{selectedDashboardWidgetReport?.name || selectedDashboardWidget.reportId}</span>
                   </div>
-                  <div className="stack-compact">
-                    <span className="micro">
-                      Configure dashboard runtime filters in a dedicated modal. Fields are limited to the tables used by this dashboard.
-                    </span>
-                    {activeDashboard.runtimeFilters.length ? activeDashboard.runtimeFilters.map((filter) => {
-                      const sourceTableId = filter.sourceTableId || (activeDashboardRefreshTables.length === 1 ? activeDashboardRefreshTables[0]?.id || "" : "");
-                      const sourceTable = activeDashboardRefreshTables.find((table) => table.id === sourceTableId) || null;
-                      const fieldLabel = sourceTable?.fields.find((field) => field.id === filter.fieldId)?.label || filter.fieldId || "No field selected";
-                      return (
-                        <div className="inline-edit-row" key={filter.id}>
-                          <strong>{filter.label}</strong>
-                          <span className="micro">
-                            {sourceTable ? `${sourceTable.name} · ${fieldLabel}` : fieldLabel}
-                            {filter.mode === "selected" && filter.targetReportIds.length ? ` · ${filter.targetReportIds.length} selected report${filter.targetReportIds.length === 1 ? "" : "s"}` : " · all current dashboard reports"}
-                          </span>
-                        </div>
-                      );
-                    }) : <div className="empty-hint">No runtime filters yet.</div>}
+                  <div className="widget-edit-actions">
+                    {selectedDashboardWidgetReport ? (
+                      <button type="button" onClick={() => void beginEditDashboardWidgetReport(selectedDashboardWidget, selectedDashboardWidgetReport)}>Edit report</button>
+                    ) : null}
+                    {selectedDashboardWidgetReport ? <button type="button" onClick={cloneSelectedDashboardReport}>Clone report</button> : null}
+                    <button type="button" onClick={() => removeDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id)}>Remove from dashboard</button>
                   </div>
                 </div>
-              </>
-            ) : null}
-          </div>
-        </aside>
-      ) : null}
 
-      {createModalOpen ? (
-        <div className="studio-modal-backdrop" onClick={closeCreateModal}>
-          <section className="studio-modal" onClick={(event) => event.stopPropagation()}>
-            <div className="card-head">
-              <div>
-                <strong>{importEditingReportId ? "Edit Imported Report Setup" : editingReportId ? "Edit Report" : `Create ${createDraft.type === "report" ? "Report" : "Dashboard"}`}</strong>
-                <div className="micro">{importEditingReportId ? "Use the same builder workflow as a normal report: fields, filters, sorts, and chart setup all stay together here before the workbook import is applied." : editingReportId ? "Update the report configuration here. Changes stay in the modal instead of moving into a side setup column." : "Start fresh with the same field, filter, and sorting controls from the legacy builder."}</div>
-              </div>
-              <button onClick={closeCreateModal}>Close</button>
-            </div>
-            {importBuilderIdentity}
-
-            <div className="stack">
-              <div className="builder-stepper">
-                {createSteps.map((step, index) => (
-                  <button
-                    key={step}
-                    type="button"
-                    className={`builder-step-button${step === activeCreateStep ? " active-tab" : ""}${createSteps.indexOf(activeCreateStep) > index ? " builder-step-complete" : ""}`}
-                    onClick={() => setCreateStep(step)}
-                  >
-                    <span className="badge">{index + 1}</span>
-                    <strong>{getStudioBuilderStepLabel(step)}</strong>
-                  </button>
-                ))}
-              </div>
-
-              <div className="sync-status">
-                <strong>{getStudioBuilderStepLabel(activeCreateStep)}</strong>
-                <span>{getStudioBuilderStepDescription(activeCreateStep, createDraft.type)}</span>
-              </div>
-
-              {createStepIssues.length ? (
-                <div className="sync-status sync-status-warn">
-                  <strong>Resolve before continuing</strong>
-                  <ul className="flat-list import-review-list">
-                    {createStepIssues.map((issue) => <li key={issue}>{issue}</li>)}
-                  </ul>
-                </div>
-              ) : null}
-
-              {activeCreateStep === "basics" ? (
-                <>
-                  <div className="filter-grid compact-grid">
+                <div className="card">
+                  <div className="card-head">
+                    <strong>Widget settings</strong>
+                    <span className="micro">Dashboard-only presentation</span>
+                  </div>
+                  <div className="widget-editor-grid">
                     <label className="field">
-                      <span>Type</span>
-                      <select
-                        value={createDraft.type}
-                        disabled={Boolean(editingReportId)}
-                        onChange={(event) => {
-                          const nextType = event.target.value as CreateModalType;
-                          setCreateDraft(buildStudioBuilderDraft(bundle.tables[0] || null, nextType, currentUserId, uid));
-                          setCreateStep(getStudioBuilderSteps(nextType)[0]);
-                        }}
-                      >
-                        <option value="report">Report</option>
-                        <option value="dashboard">Dashboard</option>
+                      <span>Title override</span>
+                      <input value={selectedDashboardWidget.title} onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, (widget) => ({ ...widget, title: event.target.value }))} />
+                    </label>
+                    <label className="toggle-row"><input type="checkbox" checked={selectedDashboardWidget.hideTitle === true} onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, (widget) => ({ ...widget, hideTitle: event.target.checked }))} /> Hide title</label>
+                    <label className="field">
+                      <span>Display mode</span>
+                      <select value={selectedDashboardWidget.displayMode} onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, (widget) => ({ ...widget, displayMode: event.target.value as "inherit" | "table" | "summary" | "chart" }))}>
+                        <option value="inherit">Inherit report</option>
+                        <option value="table">Table</option>
+                        <option value="summary">Summary</option>
+                        <option value="chart">Chart</option>
                       </select>
                     </label>
-                    <label className="field">
-                      <span>Name</span>
-                      <input value={createDraft.name} onChange={(event) => setCreateDraft((current) => ({ ...current, name: event.target.value }))} />
-                    </label>
+                    <label className="field-inline"><span>Width</span><input type="number" min="1" max="12" value={selectedDashboardWidget.layout.w} onChange={(event) => applyDashboardWidgetPreset(activeDashboardTab.id, selectedDashboardWidget.id, { w: Number(event.target.value), h: selectedDashboardWidget.layout.h })} /></label>
+                    <label className="field-inline"><span>Height</span><input type="number" min="2" max="10" value={selectedDashboardWidget.layout.h} onChange={(event) => applyDashboardWidgetPreset(activeDashboardTab.id, selectedDashboardWidget.id, { w: selectedDashboardWidget.layout.w, h: Number(event.target.value) })} /></label>
+                    <label className="field-inline"><span>X</span><input type="number" min="1" max="12" value={selectedDashboardWidget.layout.x || 1} onChange={(event) => placeDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, { x: Number(event.target.value), y: selectedDashboardWidget.layout.y || 1 })} /></label>
+                    <label className="field-inline"><span>Y</span><input type="number" min="1" max="99" value={selectedDashboardWidget.layout.y || 1} onChange={(event) => placeDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, { x: selectedDashboardWidget.layout.x || 1, y: Number(event.target.value) })} /></label>
+                    <label className="toggle-row"><input type="checkbox" checked={selectedDashboardWidget.showSummary} onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, (widget) => ({ ...widget, showSummary: event.target.checked }))} /> Show summary metrics</label>
+                    <label className="toggle-row"><input type="checkbox" checked={selectedDashboardWidget.showDetails} onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, (widget) => ({ ...widget, showDetails: event.target.checked }))} /> Show row details</label>
+                  </div>
+                </div>
+
+                <div className="card">
+                  <div className="card-head">
+                    <strong>Tab management</strong>
+                    <span className="micro">Move or copy this widget across tabs</span>
                   </div>
                   <label className="field">
-                    <span>Description</span>
-                    <input value={createDraft.description} onChange={(event) => setCreateDraft((current) => ({ ...current, description: event.target.value }))} />
+                    <span>Existing tab</span>
+                    <select value={widgetTargetTabId} onChange={(event) => setWidgetTargetTabId(event.target.value)}>
+                      {activeDashboardTabOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </select>
                   </label>
-                  <SharingScopeEditor
-                    scope={createDraft.scope}
-                    ownerUserId={createDraft.ownerUserId}
-                    sharedUserIds={createDraft.sharedUserIds}
-                    currentUserId={currentUserId}
-                    rosterUsers={filteredSharingRosterUsers}
-                    rosterLookup={sharingRosterLookup}
-                    rosterLoading={sharingRosterLoading}
-                    rosterError={sharingRosterError}
-                    rosterConfigured={hasSharingRosterConfig(activeQuickbaseConfig)}
-                    rosterQuery={sharingRosterQuery}
-                    onRosterQueryChange={setSharingRosterQuery}
-                    onScopeChange={(scope) => setCreateDraft((current) => ({
-                      ...current,
-                      ...normalizeStudioBuilderScopeOwner(scope, currentUserId, current.ownerUserId, current.sharedUserIds)
-                    }))}
-                    onSharedUsersChange={(sharedUserIds) => setCreateDraft((current) => ({ ...current, sharedUserIds }))}
-                  />
-                </>
-              ) : null}
-
-              {activeCreateStep === "data" && createDraft.type === "report" && createDraftTable ? (
-                <StudioReportDraftDataStep
-                  tables={bundle.tables}
-                  createDraft={createDraft}
-                  createDraftTable={createDraftTable}
-                  chartValueLabelOptions={chartValueLabelOptions}
-                  setCreateDraft={setCreateDraft}
-                  updateCreateDraftTable={updateCreateDraftTable}
-                />
-              ) : null}
-
-              {activeCreateStep === "filters" && createDraft.type === "report" && createDraftTable ? (
-                <ReportFiltersAndSortsEditor
-                  table={createDraftTable}
-                  rows={bundle.data[createDraftTable.id] || []}
-                  filterTree={createDraft.filterTree}
-                  sorts={createDraft.sorts}
-                  onChangeFilterTree={(filterTree) => setCreateDraft((current) => ({ ...current, filterTree }))}
-                  onChangeSorts={(sorts) => setCreateDraft((current) => ({ ...current, sorts }))}
-                />
-              ) : null}
-
-              {activeCreateStep === "view" && createDraft.type === "report" && createDraftTable ? (
-                <StudioReportDraftViewStep
-                  createDraft={createDraft}
-                  createDraftTable={createDraftTable}
-                  createDraftPreviewChartData={createDraftPreview?.chartData || []}
-                  setCreateDraft={setCreateDraft}
-                />
-              ) : null}
-
-              {activeCreateStep === "layout" && createDraft.type === "dashboard" ? (
-                <>
-                  <div className="card">
-                    <div className="card-head">
-                      <strong>Dashboard starter</strong>
-                      <span className="micro">New dashboards start with one clean tab so you can keep layout work on the canvas after saving.</span>
-                    </div>
-                    <div className="summary-grid">
-                      <div className="summary-card">
-                        <strong>1</strong>
-                        <span>Starter tab</span>
-                      </div>
-                      <div className="summary-card">
-                        <strong>0</strong>
-                        <span>Cards at creation</span>
-                      </div>
-                      <div className="summary-card">
-                        <strong>Canvas first</strong>
-                        <span>Add and arrange cards after save</span>
-                      </div>
-                    </div>
+                  <div className="widget-edit-actions">
+                    <button type="button" disabled={!widgetTargetTabId || widgetTargetTabId === activeDashboardTab.id} onClick={() => moveDashboardWidgetToTab(activeDashboardTab.id, selectedDashboardWidget.id, widgetTargetTabId)}>Move to tab</button>
+                    <button type="button" disabled={!widgetTargetTabId || widgetTargetTabId === activeDashboardTab.id} onClick={() => copyDashboardWidgetToTab(activeDashboardTab.id, selectedDashboardWidget.id, widgetTargetTabId)}>Copy to tab</button>
                   </div>
-                  <div className="sync-status sync-status-ok">
-                    <strong>What happens next</strong>
-                    <span>After saving, the dashboard opens directly in Studio so you can add tabs, add cards to the active tab, resize them, and move or copy them across tabs from the selected-card inspector.</span>
+                  <div className="filter-grid compact-grid">
+                    <label className="field"><span>New tab name</span><input value={dashboardWidgetDraft.newTabName} onChange={(event) => setDashboardWidgetDraft((current) => ({ ...current, newTabName: event.target.value }))} placeholder="New tab" /></label>
+                    <label className="field"><span>New tab color</span><input type="color" value={dashboardWidgetDraft.newTabColor} onChange={(event) => setDashboardWidgetDraft((current) => ({ ...current, newTabColor: event.target.value }))} /></label>
                   </div>
-                </>
-              ) : null}
-
-              {activeCreateStep === "review" ? (
-                <StudioDraftReviewStep
-                  createDraft={createDraft}
-                  createDraftTable={createDraftTable}
-                  createDraftIssues={createDraftIssues}
-                  filterCount={createDraftFilterCount}
-                  previewReport={createDraftPreviewReport}
-                  previewResult={createDraftPreview}
-                  currentPreviewPage={createPreviewPage}
-                  onPreviewPageChange={setCreatePreviewPage}
-                />
-              ) : null}
-
-              <div className="studio-actions modal-actions">
-                {createSteps.indexOf(activeCreateStep) > 0 ? (
-                  <button type="button" className="ghost-button" onClick={() => setCreateStep(createSteps[Math.max(0, createSteps.indexOf(activeCreateStep) - 1)])}>
-                    Back
-                  </button>
-                ) : null}
-                {activeCreateStep !== "review" ? (
-                  <button
-                    type="button"
-                    onClick={() => setCreateStep(createSteps[Math.min(createSteps.length - 1, createSteps.indexOf(activeCreateStep) + 1)])}
-                    disabled={createStepIssues.length > 0}
-                  >
-                    Next
-                  </button>
-                ) : (
-                  <button onClick={createFromDraft} disabled={createDraftIssues.length > 0}>
-                    {importEditingReportId ? "Save imported report setup" : editingReportId ? "Save report" : createDraft.type === "report" ? "Create report" : "Create dashboard"}
-                  </button>
-                )}
-              </div>
-            </div>
-          </section>
-        </div>
-      ) : null}
-
-      {drawer ? (
-        <div className={drawer === "settings" ? "studio-modal-backdrop" : "studio-drawer-backdrop"} onClick={() => setDrawer(null)}>
-          <section className={drawer === "settings" ? "studio-modal studio-settings-modal" : "studio-drawer"} onClick={(event) => event.stopPropagation()}>
-            <div className="card-head">
-              <strong>{drawer === "settings" ? "System Settings" : drawer === "share" ? "Share" : drawer === "templates" ? "Templates" : drawer === "export" ? "Export" : "History"}</strong>
-              <button onClick={() => setDrawer(null)}>Close</button>
-            </div>
-
-            {drawer === "settings" ? (
-              <StudioSettingsPanel
-                documentState={documentState}
-                activeQuickbaseProfile={activeQuickbaseProfile}
-                activeQuickbaseConfig={activeQuickbaseConfig}
-                activeProfileTables={activeProfileTables}
-                savedRowsForApp={savedRowsForApp}
-                refreshStatusTitle={refreshStatusTitle}
-                refreshStatusDetail={refreshStatusDetail}
-                realmApps={realmApps}
-                realmAppsLoading={realmAppsLoading}
-                quickbaseSchema={quickbaseSchema}
-                quickbaseSchemaLoading={quickbaseSchemaLoading}
-                savingRemote={savingRemote}
-                refreshingCache={refreshingCache}
-                lastQuickbaseSync={lastQuickbaseSync}
-                weekdayOptions={WEEKDAY_OPTIONS}
-                timezoneOptions={TIMEZONE_OPTIONS}
-                applyDocumentUpdate={applyDocumentUpdate}
-                setActiveQuickbaseProfile={setActiveQuickbaseProfile}
-                updateQuickbaseProfileLabel={updateQuickbaseProfileLabel}
-                updateQuickbaseProfileLiveMode={updateQuickbaseProfileLiveMode}
-                addQuickbaseProfile={addQuickbaseProfile}
-                removeQuickbaseProfile={removeQuickbaseProfile}
-                updateQuickbaseField={updateQuickbaseField}
-                applyQuickbaseAppSelection={applyQuickbaseAppSelection}
-                loadRealmApps={loadRealmApps}
-                loadQuickbaseMetadata={() => loadQuickbaseMetadata()}
-                autoDetectQuickbaseMappings={autoDetectQuickbaseMappings}
-                updateRefreshScheduleField={updateRefreshScheduleField}
-                updateRefreshSourceTables={updateRefreshSourceTables}
-                updateRefreshSourceReportId={updateRefreshSourceReportId}
-                saveRemote={saveRemote}
-                refreshAllNow={refreshAllNow}
-                reloadRemote={reloadRemote}
-              />
-            ) : null}
-
-            {drawer === "share" ? (
-              <div className="stack">
-                <label className="field"><span>Default URL</span><input readOnly value={defaultUrl} /></label>
-                <label className="field"><span>Viewer URL</span><input readOnly value={viewerUrl} /></label>
-                <label className="field"><span>Embed URL</span><input readOnly value={embedUrl} /></label>
-              </div>
-            ) : null}
-
-            {drawer === "templates" ? (
-              <div className="stack">
-                <div className="studio-actions">
-                  <button onClick={() => addTemplate("layout")}>Save layout template</button>
-                  <button onClick={() => addTemplate("yaml")}>Save report template</button>
-                  <button onClick={() => addTemplate("upload")}>Save upload mapping</button>
+                  <button type="button" onClick={() => moveDashboardWidgetToNewTab(selectedDashboardWidget, dashboardWidgetDraft.newTabName, dashboardWidgetDraft.newTabColor)}>Create tab and move widget</button>
                 </div>
-                {[...documentState.templates.layouts, ...documentState.templates.yaml, ...documentState.templates.upload].map((template) => (
-                  <div className="card" key={template.id}>
-                    <div className="card-head">
-                      <strong>{template.name}</strong>
-                      <span className="micro">{template.type}</span>
-                    </div>
-                    {template.columnMap ? <div className="micro">{Object.entries(template.columnMap).map(([key, value]) => `${key} -> ${value}`).join(", ")}</div> : null}
-                    {template.object ? <button onClick={() => applyTemplate(template)}>Apply template</button> : null}
+
+                <div className="card">
+                  <div className="card-head">
+                    <strong>Runtime filter behavior</strong>
+                    <span className="micro">Choose how dashboard filters affect this widget</span>
                   </div>
-                ))}
-              </div>
-            ) : null}
+                  <label className="field">
+                    <span>Filter behavior</span>
+                    <select value={selectedDashboardWidget.filterBehavior || "use-dashboard-filters"} onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, (widget) => ({ ...widget, filterBehavior: event.target.value as typeof widget.filterBehavior }))}>
+                      <option value="use-dashboard-filters">Use dashboard filters</option>
+                      <option value="ignore-dashboard-filters">Ignore dashboard filters</option>
+                      <option value="custom-mappings">Custom mappings</option>
+                    </select>
+                  </label>
+                  {activeDashboard.runtimeFilters.length ? activeDashboard.runtimeFilters.map((filter) => (
+                    <label className="field" key={filter.id}>
+                      <span>{filter.label}</span>
+                      <select
+                        value={selectedDashboardWidget.runtimeFilterMappings?.[filter.id] || ""}
+                        onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, (widget) => ({
+                          ...widget,
+                          runtimeFilterMappings: {
+                            ...(widget.runtimeFilterMappings || {}),
+                            [filter.id]: event.target.value
+                          }
+                        }))}
+                      >
+                        <option value="">Use default field</option>
+                        {activeDashboardFieldOptionsByTableId[selectedDashboardWidgetReport?.sourceTableId || ""]?.map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                  )) : <div className="empty-hint">No runtime filters are configured yet.</div>}
+                </div>
 
-            {drawer === "export" ? (
-              <div className="stack">
-                <div className="studio-actions">
-                  <button onClick={exportWorkbook}>Download Excel file</button>
-                  <button onClick={exportJson}>Download JSON file</button>
-                  <button onClick={() => { void refreshExportJobs(); }}>Refresh status</button>
-                </div>
-                <div className="stack-compact">
-                  {mergedExportJobs.map((job) => {
-                    const matchingLiveJob = job.sourceJobId ? liveExportJobs.find((item) => item.id === job.sourceJobId) : null;
-                    const object = bundle.objects[job.objectId];
-                    return (
-                    <div className="card" key={job.id}>
-                      <div className="card-head">
-                        <strong>{object?.name || job.objectId}</strong>
-                        <span className="micro">{job.format} · {job.status}</span>
-                      </div>
-                      <div className="micro">{new Date(job.createdAt).toLocaleString()}</div>
-                      <div className="micro">{job.message}{job.error ? ` · ${job.error}` : ""}</div>
-                      {job.format === "xlsx" ? (
-                        <div className="progress-meter" aria-hidden="true">
-                          <div className="progress-meter-fill" style={{ width: `${job.progress}%` }} />
-                        </div>
-                      ) : null}
-                      <div className="studio-actions">
-                        {job.format === "xlsx" && matchingLiveJob?.status === "complete" && job.sourceJobId ? (
-                          <button onClick={() => { void saveExportJobToMachine(job); }}>Save to machine</button>
-                        ) : null}
-                        {job.format === "xlsx" ? (
-                          <button onClick={() => { void retryExportJob(job); }}>
-                            {job.status === "failed" ? "Retry" : "Run again"}
-                          </button>
-                        ) : null}
-                        {job.format === "json" ? <button onClick={exportJson}>Download again</button> : null}
-                      </div>
-                    </div>
-                  );})}
-                  {!mergedExportJobs.length ? <div className="empty">No exports yet.</div> : null}
-                </div>
-              </div>
-            ) : null}
-
-            {drawer === "versions" ? (
-              <div className="stack">
-                <div className="studio-actions">
-                  <button onClick={snapshotCurrentObject}>Save current version</button>
-                </div>
-                {versionList.length ? versionList.map((version) => (
-                  <div className="card" key={version.id}>
-                    <div className="card-head">
-                      <strong>{version.label}</strong>
-                      <span className="micro">{new Date(version.savedAt).toLocaleString()}</span>
-                    </div>
-                    <button onClick={() => restoreVersion(version.id)}>Restore this version</button>
+                <div className="card">
+                  <div className="card-head">
+                    <strong>Layout controls</strong>
+                    <span className="micro">Grid snapping stays enforced</span>
                   </div>
-                )) : <div className="empty">No saved versions yet.</div>}
+                  <div className="widget-layout-presets">
+                    {WIDGET_LAYOUT_PRESETS.map((preset) => (
+                      <button key={preset.id} type="button" onClick={() => applyDashboardWidgetPreset(activeDashboardTab.id, selectedDashboardWidget.id, preset)}>{preset.label}</button>
+                    ))}
+                  </div>
+                  <div className="widget-edit-actions">
+                    <button type="button" onClick={() => moveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, "left")}>Move left</button>
+                    <button type="button" onClick={() => moveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, "right")}>Move right</button>
+                    <button type="button" onClick={() => moveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, "up")}>Move up</button>
+                    <button type="button" onClick={() => moveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, "down")}>Move down</button>
+                    <button type="button" onClick={() => alignDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, "left")}>Align left</button>
+                    <button type="button" onClick={() => alignDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, "right")}>Align right</button>
+                    <button type="button" onClick={() => alignDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, "top")}>Align top</button>
+                    <button type="button" onClick={() => alignDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, "bottom")}>Align bottom</button>
+                    <button type="button" onClick={() => setDashboardWidgetZIndex(activeDashboardTab.id, selectedDashboardWidget.id, "forward")}>Bring forward</button>
+                    <button type="button" onClick={() => setDashboardWidgetZIndex(activeDashboardTab.id, selectedDashboardWidget.id, "backward")}>Send backward</button>
+                    <button type="button" onClick={() => duplicateDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id)}>Duplicate widget</button>
+                    <button type="button" onClick={() => resetDashboardWidgetSize(activeDashboardTab.id, selectedDashboardWidget.id)}>Reset size</button>
+                    <button type="button" onClick={() => resetDashboardWidgetPosition(activeDashboardTab.id, selectedDashboardWidget.id)}>Reset position</button>
+                    <button type="button" onClick={() => toggleDashboardWidgetFullWidth(activeDashboardTab.id, selectedDashboardWidget.id)}>{clampDashboardWidgetWidth(selectedDashboardWidget.layout.w) >= 12 ? "Restore width" : "Full width"}</button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="card dashboard-builder-sidebar-empty">
+                <strong>Select a widget on the canvas.</strong>
+                <span>Widget-specific settings, report actions, tab movement, runtime filter mapping, and layout controls appear here.</span>
+                <button type="button" onClick={openDashboardAddModal}>Add report/graph</button>
+                <button type="button" className="ghost-button" onClick={() => setDashboardSettingsModalOpen(true)}>Open dashboard settings</button>
               </div>
-            ) : null}
-          </section>
-        </div>
+            )}
+          </div>
+        </aside>
       ) : null}
 
       <div className="toast-stack">
         {toasts.map((toast) => <div key={toast.id} className={`toast toast-${toast.tone}`}>{toast.message}</div>)}
       </div>
       </section>
+      {renderStudioOverlays()}
     </>
   );
 }

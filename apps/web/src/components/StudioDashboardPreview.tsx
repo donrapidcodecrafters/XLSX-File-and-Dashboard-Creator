@@ -157,11 +157,13 @@ export function StudioDashboardPreview({
   result,
   tables,
   runtimeValues,
+  runtimeFilterOptionsById = {},
   setRuntimeValues,
   widgetSearch,
+  activeTabId = "",
   selectedWidgetId,
   draggingWidget,
-  onOpenReport,
+  onEditReport = () => undefined,
   onSelectWidget,
   onStartWidgetDrag,
   onEndWidgetDrag,
@@ -177,11 +179,13 @@ export function StudioDashboardPreview({
   result: DashboardRunResult;
   tables: TableDefinition[];
   runtimeValues: Record<string, string>;
+  runtimeFilterOptionsById?: Record<string, Array<{ value: string; label: string }>>;
   setRuntimeValues: Dispatch<SetStateAction<Record<string, string>>>;
   widgetSearch: string;
+  activeTabId?: string;
   selectedWidgetId: string;
   draggingWidget: { tabId: string; widgetId: string } | null;
-  onOpenReport: (reportId: string) => void;
+  onEditReport?: (widgetId: string, reportId: string) => void;
   onSelectWidget: (tabId: string, widgetId: string) => void;
   onStartWidgetDrag: (tabId: string, widgetId: string) => void;
   onEndWidgetDrag: () => void;
@@ -195,6 +199,7 @@ export function StudioDashboardPreview({
 }) {
   const normalizedQuery = widgetSearch.trim().toLowerCase();
   const [dropTarget, setDropTarget] = useState<DashboardPreviewDropTarget | null>(null);
+  const [showAllRuntimeFilters, setShowAllRuntimeFilters] = useState(false);
   const [widgetChartHeights, setWidgetChartHeights] = useState<Record<string, number>>({});
   const chartMeasureObserversRef = useRef<Record<string, ResizeObserver>>({});
   const basePlacementLookup = useMemo(() => {
@@ -265,22 +270,71 @@ export function StudioDashboardPreview({
     chartMeasureObserversRef.current = {};
   }, []);
 
+  const visibleRuntimeFilters = useMemo(
+    () => [...dashboard.runtimeFilters]
+      .sort((left, right) => (left.displayOrder ?? 0) - (right.displayOrder ?? 0))
+      .filter((filter) => !filter.targetTabIds?.length || !activeTabId || filter.targetTabIds.includes(activeTabId)),
+    [activeTabId, dashboard.runtimeFilters]
+  );
+  const inlineRuntimeFilters = showAllRuntimeFilters ? visibleRuntimeFilters : visibleRuntimeFilters.slice(0, 4);
+  const overflowRuntimeFilters = showAllRuntimeFilters ? [] : visibleRuntimeFilters.slice(4);
+  const activeFilterChips = visibleRuntimeFilters
+    .map((filter) => ({ id: filter.id, label: filter.label, value: runtimeValues[filter.id] || "" }))
+    .filter((item) => String(item.value || "").trim());
+
+  function updateRuntimeValue(filterId: string, value: string) {
+    setRuntimeValues((current) => ({ ...current, [filterId]: value }));
+  }
+
   return (
     <div className="studio-preview-stack">
-      {dashboard.runtimeFilters.length ? (
-        <section className="card">
+      {visibleRuntimeFilters.length ? (
+        <section className="card dashboard-runtime-filter-bar">
           <div className="card-head">
-            <strong>Filters</strong>
-            <span className="micro">Live dashboard controls</span>
+            <strong>Runtime filters</strong>
+            <div className="studio-actions">
+              <button type="button" className="ghost-button" onClick={() => setRuntimeValues({})}>Clear all</button>
+              {overflowRuntimeFilters.length ? (
+                <button type="button" className="ghost-button" onClick={() => setShowAllRuntimeFilters((current) => !current)}>
+                  {showAllRuntimeFilters ? "Show fewer" : `More filters (${overflowRuntimeFilters.length})`}
+                </button>
+              ) : null}
+            </div>
           </div>
-          <div className="filter-grid">
-            {dashboard.runtimeFilters.map((filter) => (
-              <label className="field" key={filter.id}>
-                <span>{filter.label}</span>
-                <input value={runtimeValues[filter.id] || ""} onChange={(event) => setRuntimeValues((current) => ({ ...current, [filter.id]: event.target.value }))} />
-              </label>
-            ))}
+          <div className="dashboard-runtime-filter-grid">
+            {inlineRuntimeFilters.map((filter) => {
+              const options = runtimeFilterOptionsById[filter.id] || [];
+              const value = runtimeValues[filter.id] || "";
+              return (
+                <label className="field" key={filter.id}>
+                  <span>{filter.label}</span>
+                  {filter.uiType === "boolean-toggle" ? (
+                    <select value={value} onChange={(event) => updateRuntimeValue(filter.id, event.target.value)}>
+                      <option value="">Any</option>
+                      <option value="true">True</option>
+                      <option value="false">False</option>
+                    </select>
+                  ) : options.length ? (
+                    <select value={value} onChange={(event) => updateRuntimeValue(filter.id, event.target.value)}>
+                      <option value="">All</option>
+                      {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </select>
+                  ) : (
+                    <input value={value} onChange={(event) => updateRuntimeValue(filter.id, event.target.value)} />
+                  )}
+                </label>
+              );
+            })}
           </div>
+          {activeFilterChips.length ? (
+            <div className="dashboard-runtime-filter-chips">
+              {activeFilterChips.map((chip) => (
+                <button key={chip.id} type="button" className="dashboard-runtime-filter-chip" onClick={() => updateRuntimeValue(chip.id, "")}>
+                  {chip.label}: {chip.value}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </section>
       ) : null}
       {result.tabs.map((tab) => {
@@ -491,7 +545,7 @@ export function StudioDashboardPreview({
                     }}
                   >
                     <div className="widget-head">
-                      <strong>{widget.widget.title || widget.report.name}</strong>
+                      {!widget.widget.hideTitle ? <strong>{widget.widget.title || widget.report.name}</strong> : <strong className="micro">Title hidden</strong>}
                       <div className="widget-preview-controls">
                         <button className="link-like" onClick={() => onMoveWidget(tab.id, widget.widgetId, "left")}>Move left</button>
                         <button className="link-like" onClick={() => onMoveWidget(tab.id, widget.widgetId, "right")}>Move right</button>
@@ -500,7 +554,7 @@ export function StudioDashboardPreview({
                         <button className="link-like" onClick={() => onToggleFullWidth(tab.id, widget.widgetId)}>
                           {clampDashboardWidgetWidth(widget.widget.layout.w) >= 12 ? "Restore width" : "Full width"}
                         </button>
-                        <button className="link-like" onClick={() => onOpenReport(widget.report.id)} disabled={!widget.report.sourceTableId}>Edit report</button>
+                        <button className="link-like" onClick={() => onEditReport(widget.widgetId, widget.report.id)} disabled={!widget.report.sourceTableId}>Edit report</button>
                       </div>
                     </div>
                     <div className={`widget-state-banner ${widget.status === "failed" ? "widget-state-banner-failed" : "widget-state-banner-ready"}`}>
@@ -675,7 +729,9 @@ export function StudioDashboardPreview({
                     }}
                   />
                 ) : null}
-                <div className="dashboard-empty-dropzone">Drag a card here to add it to this tab.</div>
+                <div className="dashboard-empty-dropzone">
+                  {draggingLayout ? "Drop the widget anywhere on this tab to place it on the grid." : "This tab has no widgets yet."}
+                </div>
               </div>
             )}
           </section>
