@@ -1,5 +1,5 @@
 import { type Dispatch, type SetStateAction } from "react";
-import type { StudioBuilderDraft, TableDefinition } from "@studio/shared";
+import { studioBuilderNeedsSelectedFields, type StudioBuilderDraft, type TableDefinition } from "@studio/shared";
 import { reportShowsChart } from "./studioReportUtils";
 import { FieldTransferPicker } from "./FieldTransferPicker";
 
@@ -18,6 +18,7 @@ export function StudioReportDraftDataStep({
   setCreateDraft: Dispatch<SetStateAction<StudioBuilderDraft>>;
   updateCreateDraftTable: (tableId: string) => void;
 }) {
+  const needsSelectedFields = studioBuilderNeedsSelectedFields(createDraft.view);
   return (
     <>
       <div className="card">
@@ -51,51 +52,63 @@ export function StudioReportDraftDataStep({
         </label>
       </div>
 
-      <div className="card">
-        <div className="card-head">
-          <strong>Fields</strong>
-          <span className="micro">{createDraft.selectedFieldIds.length} selected</span>
+      {needsSelectedFields ? (
+        <div className="card">
+          <div className="card-head">
+            <strong>Fields</strong>
+            <span className="micro">{createDraft.selectedFieldIds.length} selected</span>
+          </div>
+          <FieldTransferPicker
+            table={createDraftTable}
+            selectedFieldIds={createDraft.selectedFieldIds}
+            onChange={(selectedFieldIds) => setCreateDraft((current) => ({
+              ...current,
+              selectedFieldIds
+            }))}
+          />
         </div>
-        <FieldTransferPicker
-          table={createDraftTable}
-          selectedFieldIds={createDraft.selectedFieldIds}
-          onChange={(selectedFieldIds) => setCreateDraft((current) => ({
-            ...current,
-            selectedFieldIds
-          }))}
-        />
-      </div>
+      ) : (
+        <div className="card">
+          <div className="card-head">
+            <strong>Fields</strong>
+            <span className="micro">Not required for this view setup</span>
+          </div>
+          <div className="empty-hint">Selected fields stay hidden until the report mode, summary metrics, or detail rows require them.</div>
+        </div>
+      )}
 
       <div className="card">
         <div className="card-head">
           <strong>Display labels</strong>
           <span className="micro">Override field headers and chart labels with client-facing names.</span>
         </div>
-        <div className="stack-compact">
-          {createDraft.selectedFieldIds.length ? createDraft.selectedFieldIds.map((fieldId) => {
-            const field = createDraftTable.fields.find((item) => item.id === fieldId);
-            if (!field) return null;
-            return (
-              <label className="field" key={fieldId}>
-                <span>{field.label}</span>
-                <input
-                  value={createDraft.displayLabels.fields[fieldId] || ""}
-                  onChange={(event) => setCreateDraft((current) => ({
-                    ...current,
-                    displayLabels: {
-                      ...current.displayLabels,
-                      fields: {
-                        ...current.displayLabels.fields,
-                        [fieldId]: event.target.value
+        {needsSelectedFields ? (
+          <div className="stack-compact">
+            {createDraft.selectedFieldIds.length ? createDraft.selectedFieldIds.map((fieldId) => {
+              const field = createDraftTable.fields.find((item) => item.id === fieldId);
+              if (!field) return null;
+              return (
+                <label className="field" key={fieldId}>
+                  <span>{field.label}</span>
+                  <input
+                    value={createDraft.displayLabels.fields[fieldId] || ""}
+                    onChange={(event) => setCreateDraft((current) => ({
+                      ...current,
+                      displayLabels: {
+                        ...current.displayLabels,
+                        fields: {
+                          ...current.displayLabels.fields,
+                          [fieldId]: event.target.value
+                        }
                       }
-                    }
-                  }))}
-                  placeholder={`Use "${field.label}"`}
-                />
-              </label>
-            );
-          }) : <div className="empty-hint">Select fields first to set custom headers.</div>}
-        </div>
+                    }))}
+                    placeholder={`Use "${field.label}"`}
+                  />
+                </label>
+              );
+            }) : <div className="empty-hint">Select fields first to set custom headers.</div>}
+          </div>
+        ) : null}
         {reportShowsChart({ view: createDraft.view }) ? (
           <div className="stack-compact">
             <div className="micro">Chart value labels</div>
@@ -119,6 +132,9 @@ export function StudioReportDraftDataStep({
               </label>
             )) : <div className="empty-hint">Chart value overrides appear once the draft chart has labels to rename.</div>}
           </div>
+        ) : null}
+        {!needsSelectedFields && !reportShowsChart({ view: createDraft.view }) ? (
+          <div className="empty-hint">Display labels will appear here when this report setup uses fields or chart labels.</div>
         ) : null}
       </div>
     </>

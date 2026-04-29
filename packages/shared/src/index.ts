@@ -1,4 +1,5 @@
 export * from "./models.js";
+export * from "./chart-spec.js";
 export * from "./seed.js";
 export * from "./report-engine.js";
 export * from "./dashboard-editor.js";

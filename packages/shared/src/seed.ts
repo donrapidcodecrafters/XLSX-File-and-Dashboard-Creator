@@ -690,18 +690,30 @@ export function normalizeStudioDocument(input: Partial<StudioDocument> | null | 
         sourceReportOverrides: Object.fromEntries(
           Object.entries(object.sourceReportOverrides || {}).map(([key, value]) => [String(key), String(value || "")])
         ),
+        defaultTabId: String(object.defaultTabId || ""),
         tabs: (object.tabs || []).map((tab, tabIndex) => ({
           ...tab,
           id: String(tab.id || `tab-${tabIndex + 1}`),
           name: String(tab.name || `Tab ${tabIndex + 1}`),
+          color: String(tab.color || ""),
           widgets: (tab.widgets || []).map((widget, widgetIndex) => ({
             id: String(widget.id || `widget-${tabIndex + 1}-${widgetIndex + 1}`),
             title: String(widget.title || ""),
+            hideTitle: widget.hideTitle === true,
             mode: widget.mode === "copied" ? "copied" : "linked",
             displayMode: widget.displayMode === "table" || widget.displayMode === "summary" || widget.displayMode === "chart" ? widget.displayMode : "inherit",
             showDetails: widget.showDetails === true,
             showSummary: widget.showSummary !== false,
             reportId: String(widget.reportId || ""),
+            zIndex: Number.isFinite(Number(widget.zIndex)) ? Math.max(0, Math.round(Number(widget.zIndex))) : 0,
+            filterBehavior: widget.filterBehavior === "ignore-dashboard-filters"
+              ? "ignore-dashboard-filters"
+              : widget.filterBehavior === "custom-mappings"
+                ? "custom-mappings"
+                : "use-dashboard-filters",
+            runtimeFilterMappings: Object.fromEntries(
+              Object.entries(widget.runtimeFilterMappings || {}).map(([key, value]) => [String(key), String(value || "")])
+            ),
             layout: {
               w: Math.max(1, Number(widget.layout?.w) || 6),
               h: Math.max(2, Number(widget.layout?.h) || 3),
@@ -716,10 +728,24 @@ export function normalizeStudioDocument(input: Partial<StudioDocument> | null | 
           label: String(filter?.label || "Runtime filter"),
           fieldId: String(filter?.fieldId || ""),
           sourceTableId: String(filter?.sourceTableId || ""),
+          uiType: filter?.uiType === "multi-select"
+            || filter?.uiType === "searchable-dropdown"
+            || filter?.uiType === "date-range"
+            || filter?.uiType === "number-range"
+            || filter?.uiType === "user-picker"
+            || filter?.uiType === "boolean-toggle"
+            ? filter.uiType
+            : "single-select",
           mode: filter?.mode === "selected" ? "selected" : "global",
           targetReportIds: Array.isArray(filter?.targetReportIds) ? filter.targetReportIds.map(String).filter(Boolean) : [],
+          scope: filter?.scope === "tab" || filter?.scope === "widgets" ? filter.scope : "dashboard",
+          targetTabIds: Array.isArray(filter?.targetTabIds) ? filter.targetTabIds.map(String).filter(Boolean) : [],
+          targetWidgetIds: Array.isArray(filter?.targetWidgetIds) ? filter.targetWidgetIds.map(String).filter(Boolean) : [],
           operator: (filter?.operator || "equals"),
           defaultValue: String(filter?.defaultValue || ""),
+          displayOrder: Number.isFinite(Number(filter?.displayOrder)) ? Math.max(0, Math.round(Number(filter?.displayOrder))) : filterIndex,
+          collapsedByDefault: filter?.collapsedByDefault === true,
+          allowBlank: filter?.allowBlank === true,
           valueSource: filter?.valueSource === "field" ? "field" : "literal",
           compareFieldId: String(filter?.compareFieldId || "")
         }))

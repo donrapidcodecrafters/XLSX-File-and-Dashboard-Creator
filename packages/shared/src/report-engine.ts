@@ -16,8 +16,10 @@ import type {
   ReportRunResult,
   SummaryDatum,
   SummaryMetric,
-  TableDefinition
+  TableDefinition,
+  WidgetDefinition
 } from "./models.js";
+import { getDefaultPercentMode, normalizeChartAggregation } from "./chart-spec.js";
 
 const DATE_TOKENS = new Set(["CURRENT_MONTH", "LAST_30_DAYS", "CURRENT_YEAR"]);
 
@@ -320,11 +322,13 @@ function summarize(rows: DataRow[], metrics: SummaryMetric[], decimalPlaces: num
 }
 
 function aggregateValues(values: number[], aggregation: ChartAggregation): number {
-  if (aggregation === "count") return values.length;
+  const normalizedAggregation = normalizeChartAggregation(aggregation);
+  if (normalizedAggregation === "count") return values.length;
   if (!values.length) return 0;
-  if (aggregation === "sum") return values.reduce((sum, value) => sum + value, 0);
-  if (aggregation === "avg") return values.reduce((sum, value) => sum + value, 0) / values.length;
-  if (aggregation === "min") return Math.min(...values);
+  if (normalizedAggregation === "sum") return values.reduce((sum, value) => sum + value, 0);
+  if (normalizedAggregation === "average") return values.reduce((sum, value) => sum + value, 0) / values.length;
+  if (normalizedAggregation === "min") return Math.min(...values);
+  if (normalizedAggregation === "percent") return values.reduce((sum, value) => sum + value, 0);
   return Math.max(...values);
 }
 
@@ -372,9 +376,9 @@ function chartRows(rows: DataRow[], report: ReportDefinition): ChartDatum[] {
   if (!fieldId) return [];
   const seriesFieldId = report.view.chartSeriesFieldId || "";
   const valueFieldId = report.view.chartValueFieldId || "";
-  const aggregation = report.view.chartAggregation || "count";
+  const aggregation = normalizeChartAggregation(report.view.chartAggregation || "count");
   const secondaryValueFieldId = report.view.chartUseSecondaryAxis ? (report.view.chartSecondaryValueFieldId || "") : "";
-  const secondaryAggregation = report.view.chartSecondaryAggregation || "sum";
+  const secondaryAggregation = normalizeChartAggregation(report.view.chartSecondaryAggregation || "sum");
   const groups = new Map<string, { primary: number[]; secondary: number[] }>();
   for (const row of rows) {
     const categoryKey = normalizeChartGroupValue(row[fieldId]);
@@ -410,6 +414,39 @@ function chartRows(rows: DataRow[], report: ReportDefinition): ChartDatum[] {
       });
     }
     groupedByCategory.set(rawLabel, entries);
+  }
+  const percentMode = report.view.chartPercentMode || getDefaultPercentMode(report.view.chartType);
+  if (aggregation === "percent") {
+    const primaryEntries = Array.from(groupedByCategory.values()).flatMap((entries) => entries.filter((entry) => (entry.axis || "primary") === "primary"));
+    const primaryTotal = primaryEntries.reduce((sum, entry) => sum + entry.value, 0) || 1;
+    groupedByCategory.forEach((entries) => {
+      const groupTotal = entries
+        .filter((entry) => (entry.axis || "primary") === "primary")
+        .reduce((sum, entry) => sum + entry.value, 0) || 1;
+      entries.forEach((entry) => {
+        if ((entry.axis || "primary") !== "primary") return;
+        const denominator = percentMode === "percent_of_stack" || percentMode === "percent_of_group"
+          ? groupTotal
+          : primaryTotal;
+        entry.value = denominator ? (entry.value / denominator) * 100 : 0;
+      });
+    });
+  }
+  if (secondaryValueFieldId && secondaryAggregation === "percent") {
+    const secondaryEntries = Array.from(groupedByCategory.values()).flatMap((entries) => entries.filter((entry) => entry.axis === "secondary"));
+    const secondaryTotal = secondaryEntries.reduce((sum, entry) => sum + entry.value, 0) || 1;
+    groupedByCategory.forEach((entries) => {
+      const groupTotal = entries
+        .filter((entry) => entry.axis === "secondary")
+        .reduce((sum, entry) => sum + entry.value, 0) || 1;
+      entries.forEach((entry) => {
+        if (entry.axis !== "secondary") return;
+        const denominator = percentMode === "percent_of_stack" || percentMode === "percent_of_group"
+          ? groupTotal
+          : secondaryTotal;
+        entry.value = denominator ? (entry.value / denominator) * 100 : 0;
+      });
+    });
   }
   const sortedCategories = Array.from(groupedByCategory.entries());
   const sort = report.view.chartSort || "value-desc";
@@ -475,17 +512,28 @@ export function buildDashboardFilters(
   dashboard: DashboardDefinition,
   reportId: string,
   runtimeValues: Record<string, string>,
-  reportSourceTableId = ""
+  reportSourceTableId = "",
+  widget?: Pick<WidgetDefinition, "id" | "filterBehavior" | "runtimeFilterMappings"> | null,
+  tabId = ""
 ): FilterDefinition[] {
   return dashboard.runtimeFilters
     .filter((filter) => {
-      if (filter.sourceTableId && reportSourceTableId && filter.sourceTableId !== reportSourceTableId) return false;
-      if (filter.mode === "global") return true;
-      return filter.targetReportIds.includes(reportId);
+      const widgetBehavior = widget?.filterBehavior || "use-dashboard-filters";
+      if (widgetBehavior === "ignore-dashboard-filters") return false;
+      const mappedFieldId = widget?.runtimeFilterMappings?.[filter.id] || "";
+      const scope = filter.scope || (filter.mode === "selected" ? "widgets" : "dashboard");
+      if (scope === "tab" && tabId && filter.targetTabIds?.length && !filter.targetTabIds.includes(tabId)) return false;
+      if (scope === "widgets" && widget?.id && filter.targetWidgetIds?.length && !filter.targetWidgetIds.includes(widget.id)) {
+        if (!(filter.mode === "selected" && filter.targetReportIds.includes(reportId))) return false;
+      }
+      if (filter.mode === "selected" && filter.targetReportIds.length && !filter.targetReportIds.includes(reportId) && !mappedFieldId) return false;
+      if (widgetBehavior === "custom-mappings" && !mappedFieldId) return false;
+      if (!mappedFieldId && filter.sourceTableId && reportSourceTableId && filter.sourceTableId !== reportSourceTableId) return false;
+      return true;
     })
     .map((filter) => ({
       id: "runtime-" + filter.id,
-      fieldId: filter.fieldId,
+      fieldId: widget?.runtimeFilterMappings?.[filter.id] || filter.fieldId,
       operator: filter.operator || "equals",
       value: runtimeValues[filter.id] ?? filter.defaultValue ?? "",
       valueSource: filter.valueSource || "literal",

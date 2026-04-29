@@ -126,6 +126,15 @@ function normalizeChartType(chartType: ChartType, orientation: ChartOrientation)
   if (chartType === "variwide-bar") return "variwide-bar";
   if (chartType === "progress-bar") return "progress-bar";
   if (chartType === "bullet") return "bullet";
+  if (chartType === "solid-gauge") return "gauge";
+  if (chartType === "histogram") return "column";
+  if (chartType === "pareto") return "line-bar";
+  if (chartType === "treemap") return "heatmap";
+  if (chartType === "sunburst") return "donut";
+  if (chartType === "box-plot") return "bullet";
+  if (chartType === "candlestick") return "line";
+  if (chartType === "sankey") return "funnel";
+  if (chartType === "network-graph") return "scatter";
   return chartType;
 }
 
@@ -519,6 +528,17 @@ export function ChartPreview({
           </div>
         </div>
         {renderAxisLegend(primaryItems, compact, showLegend, showValues, palette, getDatumHref, openLinksInNewTab)}
+      </div>
+    );
+  }
+
+  if (normalizedChartType === "kpi-card" || normalizedChartType === "big-number-card") {
+    const lead = items[0];
+    return (
+      <div className="summary-card">
+        {renderTitle(title)}
+        <strong>{formatAxisValue(lead?.value || 0, decimalPlaces)}</strong>
+        <span>{lead?.label || (normalizedChartType === "kpi-card" ? "KPI" : "Value")}</span>
       </div>
     );
   }

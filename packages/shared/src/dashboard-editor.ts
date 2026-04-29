@@ -114,7 +114,11 @@ export function getDashboardWidgetLayoutStyle(widget: WidgetDefinition, placemen
 
 export function resolveActiveDashboardTabId(dashboard: DashboardDefinition | null | undefined, activeTabId = "") {
   if (!dashboard?.tabs.length) return "";
-  return dashboard.tabs.some((tab) => tab.id === activeTabId) ? activeTabId : dashboard.tabs[0].id;
+  if (dashboard.tabs.some((tab) => tab.id === activeTabId)) return activeTabId;
+  if (dashboard.defaultTabId && dashboard.tabs.some((tab) => tab.id === dashboard.defaultTabId)) {
+    return dashboard.defaultTabId;
+  }
+  return dashboard.tabs[0].id;
 }
 
 export function resolveSelectedDashboardWidgetId(tab: DashboardTabDefinition | null | undefined, selectedWidgetId = "") {

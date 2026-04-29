@@ -1,4 +1,5 @@
 import { createFilterGroup } from "./report-engine.js";
+import { getAllowedAggregations, getChartSpec, normalizeChartAggregation } from "./chart-spec.js";
 import type {
   FilterGroupDefinition,
   ReportDefinition,
@@ -30,6 +31,15 @@ export interface StudioBuilderDraft {
 export const STUDIO_DEFAULT_CHART_COLORS = ["#0d7c66", "#d88d3d", "#5b7cfa", "#9b59b6", "#e66f5c", "#3a9782", "#b7a26a", "#4f8fba"];
 export const STUDIO_BUILDER_REPORT_STEPS: StudioBuilderStep[] = ["basics", "data", "filters", "view", "review"];
 export const STUDIO_BUILDER_DASHBOARD_STEPS: StudioBuilderStep[] = ["basics", "layout", "review"];
+
+export function studioBuilderNeedsSelectedFields(view: Pick<ReportDefinition, "view">["view"]) {
+  return view.mode === "table"
+    || view.mode === "timeline"
+    || view.mode === "calendar"
+    || view.mode === "kanban"
+    || Boolean(view.showSummary)
+    || Boolean(view.showDetails);
+}
 
 export function normalizeStudioBuilderScopeOwner(
   scope: StudioObjectScope,
@@ -74,17 +84,12 @@ export function buildStudioBuilderDraft(
     selectedFieldIds: [],
     filterTree: createFilterGroup("and", []),
     sorts: [],
-    summaryMetrics: [{
-      id: createId("metric"),
-      fieldId: "",
-      op: "count",
-      label: "Count rows"
-    }],
+    summaryMetrics: [],
     view: {
       mode: "table",
       showChartInTable: false,
-      showSummary: true,
-      showDetails: true,
+      showSummary: false,
+      showDetails: false,
       chartTitle: "",
       decimalPlaces: 2,
       chartType: "bar",
@@ -174,15 +179,22 @@ export function getStudioBuilderDraftIssues(
     issues.push("Pick a source table.");
     return issues;
   }
-  if (!draft.selectedFieldIds.length && studioBuilderReportShowsDetails({ view: draft.view })) {
+  if (!draft.selectedFieldIds.length && studioBuilderNeedsSelectedFields(draft.view)) {
     issues.push("Select at least one detail field or turn off detail rows.");
   }
   if (studioBuilderReportShowsChart({ view: draft.view })) {
     if (!draft.view.chartFieldId) {
-      issues.push("Choose an X axis field for the chart.");
+      issues.push(`Choose a ${getChartSpec(draft.view.chartType).primaryFieldLabel.toLowerCase()} for the chart.`);
     }
-    if (draft.view.chartAggregation !== "count" && !draft.view.chartValueFieldId) {
-      issues.push("Choose a value field for the selected chart aggregation.");
+    const aggregation = normalizeChartAggregation(draft.view.chartAggregation);
+    if (!getAllowedAggregations(draft.view.chartType).includes(aggregation)) {
+      issues.push("The selected chart aggregation is not allowed for this chart type.");
+    }
+    if (getChartSpec(draft.view.chartType).requiresSeries && !draft.view.chartSeriesFieldId) {
+      issues.push(`Choose a ${getChartSpec(draft.view.chartType).seriesFieldLabel?.toLowerCase() || "series field"} for this chart type.`);
+    }
+    if (aggregation !== "count" && !draft.view.chartValueFieldId) {
+      issues.push(`Choose a ${getChartSpec(draft.view.chartType).valueFieldLabel.toLowerCase()} for the selected chart aggregation.`);
     }
   }
   if (draft.view.mode === "kanban" && !draft.view.kanbanField) {
@@ -221,7 +233,7 @@ export function getStudioBuilderStepIssues(
   if (step === "data") {
     const issues: string[] = [];
     if (!table) issues.push("Pick a source table.");
-    if (table && !draft.selectedFieldIds.length && studioBuilderReportShowsDetails({ view: draft.view })) {
+    if (table && !draft.selectedFieldIds.length && studioBuilderNeedsSelectedFields(draft.view)) {
       issues.push("Select at least one detail field or turn off detail rows.");
     }
     return issues;

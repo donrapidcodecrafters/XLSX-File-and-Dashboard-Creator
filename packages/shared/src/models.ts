@@ -51,13 +51,46 @@ export type ChartType =
   | "3d-pie"
   | "3d-donut"
   | "3d-funnel"
-  | "3d-scatter";
-export type ChartAggregation = "count" | "sum" | "avg" | "min" | "max";
+  | "3d-scatter"
+  | "solid-gauge"
+  | "kpi-card"
+  | "big-number-card"
+  | "treemap"
+  | "sunburst"
+  | "box-plot"
+  | "candlestick"
+  | "histogram"
+  | "pareto"
+  | "map"
+  | "sankey"
+  | "network-graph";
+export type ChartAggregation = "count" | "sum" | "avg" | "average" | "min" | "max" | "percent";
 export type ChartSortMode = "value-desc" | "value-asc" | "label-asc" | "label-desc";
 export type ChartOrientation = "vertical" | "horizontal";
 export type ChartAxisAssignment = "primary" | "secondary";
 export type ChartSeriesType = "line" | "area" | "bar" | "column";
+export type ChartPercentMode =
+  | "percent_of_total"
+  | "percent_of_group"
+  | "percent_of_stack"
+  | "percent_of_previous"
+  | "range_progress"
+  | "target_ratio"
+  | "category_max_ratio"
+  | "width_percent"
+  | "value_percent"
+  | "cumulative_percent_of_total";
 export type RuntimeFilterMode = "global" | "selected";
+export type DashboardRuntimeFilterUi =
+  | "single-select"
+  | "multi-select"
+  | "searchable-dropdown"
+  | "date-range"
+  | "number-range"
+  | "user-picker"
+  | "boolean-toggle";
+export type DashboardRuntimeFilterScope = "dashboard" | "tab" | "widgets";
+export type DashboardWidgetFilterBehavior = "use-dashboard-filters" | "ignore-dashboard-filters" | "custom-mappings";
 export type RefreshCadence = "daily" | "weekly" | "monthly";
 export type FilterValueSource = "literal" | "field";
 
@@ -130,6 +163,7 @@ export interface ReportViewDefinition {
   chartSeriesFieldId: string;
   chartValueFieldId: string;
   chartAggregation: ChartAggregation;
+  chartPercentMode?: ChartPercentMode;
   chartSecondaryValueFieldId: string;
   chartSecondaryAggregation: ChartAggregation;
   chartUseSecondaryAxis: boolean;
@@ -188,23 +222,28 @@ export interface ReportDefinition extends BaseStudioObject {
 export interface WidgetDefinition {
   id: string;
   title: string;
+  hideTitle?: boolean;
   layout: {
     w: number;
     h: number;
     x?: number;
     y?: number;
   };
+  zIndex?: number;
   mode: WidgetMode;
   displayMode: "inherit" | "table" | "summary" | "chart";
   showDetails: boolean;
   showSummary: boolean;
   reportId: string;
+  filterBehavior?: DashboardWidgetFilterBehavior;
+  runtimeFilterMappings?: Record<string, string>;
   snapshot?: ReportDefinition;
 }
 
 export interface DashboardTabDefinition {
   id: string;
   name: string;
+  color?: string;
   widgets: WidgetDefinition[];
 }
 
@@ -213,10 +252,17 @@ export interface RuntimeFilterDefinition {
   label: string;
   fieldId: string;
   sourceTableId?: string;
+  uiType?: DashboardRuntimeFilterUi;
   mode: RuntimeFilterMode;
   targetReportIds: string[];
+  scope?: DashboardRuntimeFilterScope;
+  targetTabIds?: string[];
+  targetWidgetIds?: string[];
   operator: FilterOperator;
   defaultValue: string;
+  displayOrder?: number;
+  collapsedByDefault?: boolean;
+  allowBlank?: boolean;
   valueSource?: FilterValueSource;
   compareFieldId?: string;
 }
@@ -224,6 +270,7 @@ export interface RuntimeFilterDefinition {
 export interface DashboardDefinition extends BaseStudioObject {
   type: "dashboard";
   tabs: DashboardTabDefinition[];
+  defaultTabId?: string;
   runtimeFilters: RuntimeFilterDefinition[];
   sourceReportOverrides?: Record<string, string>;
 }

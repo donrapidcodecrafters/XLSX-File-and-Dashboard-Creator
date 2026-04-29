@@ -7,9 +7,11 @@ import {
   createFilterGroup,
   filterHasValue,
   formatMetricValue,
+  getDefaultPercentMode,
   getChartLabel,
   getReportDecimalPlaces,
   matchesFilterNode,
+  normalizeChartAggregation,
   runReport,
   type ChartAggregation,
   type DashboardDefinition,
@@ -762,11 +764,13 @@ function executeLocalReportPageOnly(
 }
 
 function aggregateChartValues(values: number[], aggregation: ChartAggregation) {
-  if (aggregation === "count") return values.length;
+  const normalizedAggregation = normalizeChartAggregation(aggregation);
+  if (normalizedAggregation === "count") return values.length;
   if (!values.length) return 0;
-  if (aggregation === "sum") return values.reduce((sum, value) => sum + value, 0);
-  if (aggregation === "avg") return values.reduce((sum, value) => sum + value, 0) / values.length;
-  if (aggregation === "min") return Math.min(...values);
+  if (normalizedAggregation === "sum") return values.reduce((sum, value) => sum + value, 0);
+  if (normalizedAggregation === "average") return values.reduce((sum, value) => sum + value, 0) / values.length;
+  if (normalizedAggregation === "min") return Math.min(...values);
+  if (normalizedAggregation === "percent") return values.reduce((sum, value) => sum + value, 0);
   return Math.max(...values);
 }
 
@@ -805,9 +809,9 @@ function compareChartCategories(report: ReportDefinition, left: string, right: s
 }
 
 function buildChartResult(chartGroups: Map<string, { primary: number[]; secondary: number[] }>, report: ReportDefinition) {
-  const aggregation = report.view.chartAggregation || "count";
+  const aggregation = normalizeChartAggregation(report.view.chartAggregation || "count");
   const secondaryEnabled = report.view.chartUseSecondaryAxis && Boolean(report.view.chartSecondaryValueFieldId);
-  const secondaryAggregation = report.view.chartSecondaryAggregation || "sum";
+  const secondaryAggregation = normalizeChartAggregation(report.view.chartSecondaryAggregation || "sum");
   const groupedByCategory = new Map<string, BuiltChartDatum[]>();
   for (const [key, values] of chartGroups.entries()) {
     const [rawLabel, rawSeries = ""] = key.split("::");
@@ -831,6 +835,31 @@ function buildChartResult(chartGroups: Map<string, { primary: number[]; secondar
       });
     }
     groupedByCategory.set(rawLabel, entries);
+  }
+  const percentMode = report.view.chartPercentMode || getDefaultPercentMode(report.view.chartType);
+  if (aggregation === "percent") {
+    const primaryEntries = Array.from(groupedByCategory.values()).flatMap((entries) => entries.filter((entry) => entry.axis === "primary"));
+    const primaryTotal = primaryEntries.reduce((sum, entry) => sum + entry.value, 0) || 1;
+    groupedByCategory.forEach((entries) => {
+      const groupTotal = entries.filter((entry) => entry.axis === "primary").reduce((sum, entry) => sum + entry.value, 0) || 1;
+      entries.forEach((entry) => {
+        if (entry.axis !== "primary") return;
+        const denominator = percentMode === "percent_of_stack" || percentMode === "percent_of_group" ? groupTotal : primaryTotal;
+        entry.value = denominator ? (entry.value / denominator) * 100 : 0;
+      });
+    });
+  }
+  if (secondaryEnabled && secondaryAggregation === "percent") {
+    const secondaryEntries = Array.from(groupedByCategory.values()).flatMap((entries) => entries.filter((entry) => entry.axis === "secondary"));
+    const secondaryTotal = secondaryEntries.reduce((sum, entry) => sum + entry.value, 0) || 1;
+    groupedByCategory.forEach((entries) => {
+      const groupTotal = entries.filter((entry) => entry.axis === "secondary").reduce((sum, entry) => sum + entry.value, 0) || 1;
+      entries.forEach((entry) => {
+        if (entry.axis !== "secondary") return;
+        const denominator = percentMode === "percent_of_stack" || percentMode === "percent_of_group" ? groupTotal : secondaryTotal;
+        entry.value = denominator ? (entry.value / denominator) * 100 : 0;
+      });
+    });
   }
   const rows = Array.from(groupedByCategory.entries());
   const sort = report.view.chartSort || "value-desc";
@@ -861,10 +890,10 @@ function addChartRow(chartGroups: Map<string, { primary: number[]; secondary: nu
   if (!chartField) return;
   const seriesField = report.view.chartSeriesFieldId || "";
   const key = `${normalizeChartGroupValue(row[chartField])}::${seriesField ? normalizeChartGroupValue(row[seriesField]) : ""}`;
-  const aggregation = report.view.chartAggregation || "count";
+  const aggregation = normalizeChartAggregation(report.view.chartAggregation || "count");
   const valueFieldId = report.view.chartValueFieldId || "";
   const secondaryValueFieldId = report.view.chartUseSecondaryAxis ? (report.view.chartSecondaryValueFieldId || "") : "";
-  const secondaryAggregation = report.view.chartSecondaryAggregation || "sum";
+  const secondaryAggregation = normalizeChartAggregation(report.view.chartSecondaryAggregation || "sum");
   const next = chartGroups.get(key) || { primary: [], secondary: [] };
   next.primary.push(aggregation === "count" ? 1 : asNumber(row[valueFieldId]));
   if (secondaryValueFieldId) {

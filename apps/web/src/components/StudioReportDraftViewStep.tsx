@@ -1,24 +1,25 @@
 import { type Dispatch, type SetStateAction, useMemo } from "react";
-import { type ChartAggregation, type ChartDatum, type ChartSortMode, type ChartType, type ChartSeriesType, type ReportViewMode, type StudioBuilderDraft, type SummaryMetric, type TableDefinition } from "@studio/shared";
+import { type ChartAggregation, type ChartDatum, type ChartSortMode, type ChartType, type ChartSeriesType, type StudioBuilderDraft, type SummaryMetric, type TableDefinition } from "@studio/shared";
 import {
-  CHART_AGGREGATION_OPTIONS,
   CHART_SERIES_TYPE_OPTIONS,
   CHART_SORT_OPTIONS,
   DEFAULT_CHART_COLORS,
-  REPORT_VIEW_OPTIONS,
+  chartAggregationOptions,
   chartColorKeyLabel,
   chartPrimaryFieldLabel,
+  chartPercentModeOptions,
+  chartRequiresSeries,
   chartSeriesFieldLabel,
   chartSupportsSecondaryAxis,
+  chartSupportsPercentAggregation,
   chartSupportsSeries,
   chartTypeSelectOptions,
   chartUsesAxes,
   getChartColorKey,
+  normalizeChartPercentMode,
   chartValueFieldLabel,
   getSortedFieldOptions,
-  reportShowsChart,
-  reportShowsDetails,
-  reportShowsSummary
+  reportShowsChart
 } from "./studioReportUtils";
 import { SearchableSelect } from "./SearchableSelect";
 
@@ -52,62 +53,6 @@ export function StudioReportDraftViewStep({
         <span className="micro">Only the settings relevant to the chosen report mode stay visible here.</span>
       </div>
       <div className="view-layout-grid">
-        <section className="builder-subsection">
-          <div className="builder-subsection-head">
-            <strong>Basics</strong>
-            <span className="micro">Choose the default layout and core formatting.</span>
-          </div>
-          <div className="builder-subsection-grid">
-            <label className="field">
-              <span>Mode</span>
-              <select
-                value={createDraft.view.mode}
-                onChange={(event) => setCreateDraft((current) => {
-                  const nextMode = event.target.value as ReportViewMode;
-                  return {
-                    ...current,
-                    view: {
-                      ...current.view,
-                      mode: nextMode,
-                      showChartInTable: nextMode === "table" ? current.view.showChartInTable : false,
-                      showSummary: nextMode === "table" || nextMode === "summary" || nextMode === "chart",
-                      showDetails: nextMode === "table" || nextMode === "timeline" || nextMode === "calendar" || nextMode === "kanban"
-                    }
-                  };
-                })}
-              >
-                {REPORT_VIEW_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
-              </select>
-            </label>
-            <label className="field">
-              <span>Record title field</span>
-              <SearchableSelect value={createDraft.view.titleFieldId} options={fieldOptions} onChange={(value) => setCreateDraft((current) => ({ ...current, view: { ...current.view, titleFieldId: value } }))} />
-            </label>
-            <label className="field">
-              <span>Decimal places</span>
-              <input type="number" min="0" max="6" value={createDraft.view.decimalPlaces} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, decimalPlaces: Math.max(0, Math.min(6, Number(event.target.value) || 0)) } }))} />
-            </label>
-            <label className="toggle-row builder-subsection-toggle">
-              <input type="checkbox" checked={createDraft.view.showSummary ?? reportShowsSummary({ view: createDraft.view })} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, showSummary: event.target.checked } }))} />
-              Show summary metrics
-            </label>
-            <label className="toggle-row builder-subsection-toggle">
-              <input type="checkbox" checked={createDraft.view.showDetails ?? reportShowsDetails({ view: createDraft.view })} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, showDetails: event.target.checked } }))} />
-              {createDraft.view.mode === "chart" || createDraft.view.mode === "summary"
-                ? "Include detail rows"
-                : createDraft.view.mode === "kanban" || createDraft.view.mode === "timeline" || createDraft.view.mode === "calendar"
-                  ? "Show detail cards"
-                  : "Show detail rows"}
-            </label>
-            {createDraft.view.mode === "table" ? (
-              <label className="toggle-row builder-subsection-toggle">
-                <input type="checkbox" checked={createDraft.view.showChartInTable} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, showChartInTable: event.target.checked } }))} />
-                Include chart above table
-              </label>
-            ) : null}
-          </div>
-        </section>
-
         <section className="builder-subsection">
           <div className="builder-subsection-head">
             <strong>Summary Metrics</strong>
@@ -201,11 +146,20 @@ export function StudioReportDraftViewStep({
                 const nextChartType = event.target.value as ChartType;
                 const nextSupportsSecondary = chartSupportsSecondaryAxis(nextChartType);
                 const nextSupportsSeries = chartSupportsSeries(nextChartType);
+                const nextAggregationOptions = chartAggregationOptions(nextChartType);
+                const normalizedCurrentAggregation = current.view.chartAggregation === "avg" ? "average" : current.view.chartAggregation;
+                const nextAggregation = nextAggregationOptions.some((option) => option.value === normalizedCurrentAggregation)
+                  ? normalizedCurrentAggregation
+                  : (nextAggregationOptions[0]?.value || "count");
                 return {
                   ...current,
                   view: {
                     ...current.view,
                     chartType: nextChartType,
+                    chartAggregation: nextAggregation,
+                    chartPercentMode: nextAggregation === "percent"
+                      ? normalizeChartPercentMode(nextChartType, current.view.chartPercentMode)
+                      : current.view.chartPercentMode,
                     chartSeriesFieldId: nextSupportsSeries ? current.view.chartSeriesFieldId : "",
                     chartUseSecondaryAxis: nextSupportsSecondary ? current.view.chartUseSecondaryAxis : false,
                     chartSecondaryValueFieldId: nextSupportsSecondary ? current.view.chartSecondaryValueFieldId : "",
@@ -220,11 +174,46 @@ export function StudioReportDraftViewStep({
               {chartSupportsSeries(createDraft.view.chartType) ? (
                 <label className="field">
                   <span>{chartSeriesFieldLabel(createDraft.view.chartType)}</span>
-                  <SearchableSelect value={createDraft.view.chartSeriesFieldId} options={fieldOptions} allowEmpty emptyOptionLabel="Single series" onChange={(value) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartSeriesFieldId: value } }))} />
+                  <SearchableSelect value={createDraft.view.chartSeriesFieldId} options={fieldOptions} allowEmpty emptyOptionLabel={chartRequiresSeries(createDraft.view.chartType) ? "Choose a series field" : "Single series"} onChange={(value) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartSeriesFieldId: value } }))} />
                 </label>
               ) : null}
               <label className="field"><span>{chartValueFieldLabel(createDraft.view.chartType)}</span><SearchableSelect value={createDraft.view.chartValueFieldId} options={fieldOptions} allowEmpty emptyOptionLabel="Count rows" onChange={(value) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartValueFieldId: value, chartAggregation: value ? current.view.chartAggregation : "count" } }))} /></label>
-              <label className="field"><span>Primary aggregation</span><select value={createDraft.view.chartAggregation} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartAggregation: event.target.value as ChartAggregation, chartValueFieldId: event.target.value === "count" ? "" : current.view.chartValueFieldId } }))}>{CHART_AGGREGATION_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
+              <label className="field">
+                <span>Primary aggregation</span>
+                <select
+                  value={createDraft.view.chartAggregation === "avg" ? "average" : createDraft.view.chartAggregation}
+                  onChange={(event) => setCreateDraft((current) => ({
+                    ...current,
+                    view: {
+                      ...current.view,
+                      chartAggregation: event.target.value as ChartAggregation,
+                      chartPercentMode: event.target.value === "percent"
+                        ? normalizeChartPercentMode(current.view.chartType, current.view.chartPercentMode)
+                        : current.view.chartPercentMode,
+                      chartValueFieldId: event.target.value === "count" ? "" : current.view.chartValueFieldId
+                    }
+                  }))}
+                >
+                  {chartAggregationOptions(createDraft.view.chartType).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </label>
+              {createDraft.view.chartAggregation === "percent" && chartSupportsPercentAggregation(createDraft.view.chartType) ? (
+                <label className="field">
+                  <span>Percent mode</span>
+                  <select
+                    value={normalizeChartPercentMode(createDraft.view.chartType, createDraft.view.chartPercentMode) || ""}
+                    onChange={(event) => setCreateDraft((current) => ({
+                      ...current,
+                      view: {
+                        ...current.view,
+                        chartPercentMode: event.target.value ? event.target.value as typeof current.view.chartPercentMode : undefined
+                      }
+                    }))}
+                  >
+                    {chartPercentModeOptions(createDraft.view.chartType).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </label>
+              ) : null}
             </div>
             <details className="builder-details">
               <summary>Advanced chart settings</summary>
@@ -256,7 +245,22 @@ export function StudioReportDraftViewStep({
                         <>
                           <label className="field"><span>Secondary series type</span><select value={createDraft.view.chartSecondarySeriesType} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartSecondarySeriesType: event.target.value as ChartSeriesType } }))}>{CHART_SERIES_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
                           <label className="field"><span>Secondary Y axis field</span><SearchableSelect value={createDraft.view.chartSecondaryValueFieldId} options={fieldOptions} allowEmpty emptyOptionLabel="Count rows" onChange={(value) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartSecondaryValueFieldId: value, chartSecondaryAggregation: value ? current.view.chartSecondaryAggregation : "count" } }))} /></label>
-                          <label className="field"><span>Secondary aggregation</span><select value={createDraft.view.chartSecondaryAggregation} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartSecondaryAggregation: event.target.value as ChartAggregation, chartSecondaryValueFieldId: event.target.value === "count" ? "" : current.view.chartSecondaryValueFieldId } }))}>{CHART_AGGREGATION_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
+                          <label className="field">
+                            <span>Secondary aggregation</span>
+                            <select
+                              value={createDraft.view.chartSecondaryAggregation === "avg" ? "average" : createDraft.view.chartSecondaryAggregation}
+                              onChange={(event) => setCreateDraft((current) => ({
+                                ...current,
+                                view: {
+                                  ...current.view,
+                                  chartSecondaryAggregation: event.target.value as ChartAggregation,
+                                  chartSecondaryValueFieldId: event.target.value === "count" ? "" : current.view.chartSecondaryValueFieldId
+                                }
+                              }))}
+                            >
+                              {chartAggregationOptions(createDraft.view.chartType).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                            </select>
+                          </label>
                           <label className="field"><span>Secondary Y axis label</span><input value={createDraft.view.chartSecondaryYAxisLabel} onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, chartSecondaryYAxisLabel: event.target.value } }))} placeholder="Optional secondary axis label" /></label>
                         </>
                       ) : null}

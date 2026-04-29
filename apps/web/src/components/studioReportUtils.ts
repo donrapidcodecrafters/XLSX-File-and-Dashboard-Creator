@@ -1,8 +1,17 @@
 import {
+  CHART_AGGREGATION_OPTIONS as SHARED_CHART_AGGREGATION_OPTIONS,
+  CHART_PERCENT_MODE_OPTIONS,
+  CHART_SPECS,
   formatReportCellValue,
+  getAllowedAggregations,
+  getAllowedPercentModes,
+  getChartSpec,
+  getDefaultPercentMode,
   getReportFieldLabel,
+  normalizeChartAggregation,
   STUDIO_DEFAULT_CHART_COLORS,
   type ChartAggregation,
+  type ChartPercentMode,
   type ChartSeriesType,
   type ChartSortMode,
   type ChartType,
@@ -17,77 +26,9 @@ export const DEFAULT_CHART_COLORS = STUDIO_DEFAULT_CHART_COLORS;
 
 export const REPORT_VIEW_OPTIONS: ReportViewMode[] = ["table", "summary", "chart", "timeline", "calendar", "kanban"];
 
-export const SUPPORTED_CHART_OPTIONS: ChartType[] = [
-  "bar",
-  "horizontal-bar",
-  "stacked-bar",
-  "horizontal-stacked-bar",
-  "column",
-  "stacked-column",
-  "line",
-  "line-bar",
-  "area",
-  "spline",
-  "area-spline",
-  "streamgraph",
-  "pie",
-  "donut",
-  "funnel",
-  "scatter",
-  "bubble",
-  "gauge",
-  "heatmap",
-  "waterfall",
-  "progress-bar",
-  "radial-bar",
-  "variwide-bar",
-  "bullet",
-  "radar",
-  "3d-bar",
-  "3d-stacked-bar",
-  "3d-area",
-  "3d-pie",
-  "3d-donut",
-  "3d-funnel",
-  "3d-scatter"
-];
+export const SUPPORTED_CHART_OPTIONS: ChartType[] = Object.keys(CHART_SPECS) as ChartType[];
 
-const CHART_TYPE_LABELS: Record<ChartType, string> = {
-  bar: "Bar",
-  "horizontal-bar": "Horizontal bar",
-  "stacked-bar": "Stacked bar",
-  "horizontal-stacked-bar": "Horizontal stacked bar",
-  column: "Column",
-  "stacked-column": "Stacked column",
-  line: "Line",
-  "line-bar": "Line and bar combo",
-  area: "Area",
-  spline: "Spline",
-  "area-spline": "Area spline",
-  streamgraph: "Streamgraph",
-  pie: "Pie",
-  donut: "Doughnut",
-  funnel: "Funnel",
-  scatter: "Scatter",
-  bubble: "Bubble",
-  gauge: "Gauge",
-  "progress-bar": "Progress bar",
-  bullet: "Bullet",
-  waterfall: "Waterfall",
-  "radial-bar": "Radial bar",
-  "variwide-bar": "Variwide bar",
-  heatmap: "Heatmap",
-  radar: "Radar",
-  "3d-bar": "3D bar",
-  "3d-stacked-bar": "3D stacked bar",
-  "3d-area": "3D area",
-  "3d-pie": "3D pie",
-  "3d-donut": "3D doughnut",
-  "3d-funnel": "3D funnel",
-  "3d-scatter": "3D scatter"
-};
-
-export const CHART_AGGREGATION_OPTIONS: ChartAggregation[] = ["count", "sum", "avg", "min", "max"];
+export const CHART_AGGREGATION_OPTIONS = SHARED_CHART_AGGREGATION_OPTIONS;
 
 export const CHART_SERIES_TYPE_OPTIONS: Array<{ value: ChartSeriesType; label: string }> = [
   { value: "line", label: "Line" },
@@ -183,34 +124,11 @@ export function reportShowsDetails(report: Pick<ReportDefinition, "view">) {
 }
 
 export function chartUsesAxes(chartType: ChartType) {
-  return [
-    "bar",
-    "horizontal-bar",
-    "column",
-    "stacked-bar",
-    "horizontal-stacked-bar",
-    "stacked-column",
-    "line",
-    "line-bar",
-    "area",
-    "spline",
-    "area-spline",
-    "streamgraph",
-    "scatter",
-    "bubble",
-    "waterfall",
-    "variwide-bar",
-    "bullet",
-    "progress-bar",
-    "3d-bar",
-    "3d-stacked-bar",
-    "3d-area",
-    "3d-scatter"
-  ].includes(chartType);
+  return Boolean(getChartSpec(chartType).usesAxes);
 }
 
 export function chartTypeLabel(chartType: ChartType) {
-  return CHART_TYPE_LABELS[chartType] || chartType;
+  return getChartSpec(chartType).label || chartType;
 }
 
 export function chartTypeSelectOptions(currentType: ChartType) {
@@ -228,89 +146,62 @@ export function chartTypeSelectOptions(currentType: ChartType) {
 }
 
 export function chartSupportsSeries(chartType: ChartType) {
-  return [
-    "bar",
-    "horizontal-bar",
-    "column",
-    "stacked-bar",
-    "horizontal-stacked-bar",
-    "stacked-column",
-    "line",
-    "line-bar",
-    "area",
-    "spline",
-    "area-spline",
-    "streamgraph",
-    "heatmap",
-    "radar",
-    "3d-bar",
-    "3d-stacked-bar",
-    "3d-area"
-  ].includes(chartType);
+  return Boolean(getChartSpec(chartType).supportsSeries);
 }
 
 export function chartSupportsSecondaryAxis(chartType: ChartType) {
-  return [
-    "line",
-    "area",
-    "spline",
-    "area-spline",
-    "line-bar",
-    "streamgraph",
-    "bullet",
-    "3d-area"
-  ].includes(chartType);
+  return Boolean(getChartSpec(chartType).supportsSecondaryAxis);
 }
 
-function chartUsesCategoryAsSeries(chartType: ChartType) {
-  return [
-    "pie",
-    "donut",
-    "3d-pie",
-    "3d-donut",
-    "funnel",
-    "3d-funnel",
-    "gauge",
-    "radial-bar",
-    "progress-bar"
-  ].includes(chartType);
+export function chartRequiresSeries(chartType: ChartType) {
+  return Boolean(getChartSpec(chartType).requiresSeries);
 }
 
 export function chartPrimaryFieldLabel(chartType: ChartType) {
-  if (chartType === "scatter" || chartType === "bubble") return "X axis or category field";
-  if (chartType === "heatmap") return "Column/category field";
-  if (chartType === "waterfall") return "Step/category field";
-  if (chartUsesCategoryAsSeries(chartType)) return "Series/category field";
-  return "X axis field";
+  return getChartSpec(chartType).primaryFieldLabel;
 }
 
 export function chartSeriesFieldLabel(chartType: ChartType) {
-  if (chartType === "heatmap") return "Row series field";
-  if (chartType === "radar") return "Legend series field";
-  return "Series field";
+  return getChartSpec(chartType).seriesFieldLabel || "Series field";
 }
 
 export function chartValueFieldLabel(chartType: ChartType) {
-  if (chartType === "scatter") return "Y axis field";
-  if (chartType === "bubble") return "Y axis field";
-  if (chartType === "gauge") return "Gauge value field";
-  if (chartType === "heatmap") return "Cell value field";
-  if (chartType === "waterfall") return "Step change field";
-  if (chartType === "variwide-bar") return "Width/value field";
-  if (chartType === "progress-bar" || chartType === "radial-bar") return "Percent/value field";
-  if (chartType === "bullet") return "Actual value field";
-  if (chartType === "funnel") return "Stage value field";
-  return "Primary Y axis field";
+  return getChartSpec(chartType).valueFieldLabel;
 }
 
 export function chartColorKeyLabel(chartType: ChartType) {
-  if (chartUsesCategoryAsSeries(chartType)) return "Series value";
+  if (!chartUsesAxes(chartType) && !chartSupportsSeries(chartType)) return "Category value";
   return chartSupportsSeries(chartType) ? "Series or category value" : "Category value";
+}
+
+export function chartAggregationLabel(aggregation: ChartAggregation) {
+  const normalized = normalizeChartAggregation(aggregation);
+  return CHART_AGGREGATION_OPTIONS.find((option) => option.value === normalized)?.label || normalized;
+}
+
+export function chartAggregationOptions(chartType: ChartType) {
+  const allowed = new Set(getAllowedAggregations(chartType).map((value) => normalizeChartAggregation(value)));
+  return CHART_AGGREGATION_OPTIONS.filter((option) => allowed.has(option.value));
+}
+
+export function chartSupportsPercentAggregation(chartType: ChartType) {
+  return getAllowedAggregations(chartType).includes("percent");
+}
+
+export function chartPercentModeOptions(chartType: ChartType) {
+  const allowed = new Set(getAllowedPercentModes(chartType));
+  return CHART_PERCENT_MODE_OPTIONS.filter((option) => allowed.has(option.value));
+}
+
+export function normalizeChartPercentMode(chartType: ChartType, mode?: ChartPercentMode | null) {
+  const allowed = getAllowedPercentModes(chartType);
+  if (mode && allowed.includes(mode)) return mode;
+  return getDefaultPercentMode(chartType);
 }
 
 export function getChartViewportBounds(chartType: ChartType, datumCount: number, compact = false, requestedHeight = 0) {
   const safeCount = Math.max(1, datumCount || 1);
-  if (["pie", "donut", "3d-pie", "3d-donut", "gauge", "radial-bar", "progress-bar"].includes(chartType)) {
+  if (["pie", "donut", "3d-pie", "3d-donut", "gauge", "solid-gauge", "radial-bar", "progress-bar", "sunburst", "kpi-card", "big-number-card"].includes(chartType)) {
     return {
       minWidth: compact ? 340 : 420,
       minHeight: Math.max(compact ? 220 : 300, requestedHeight || 0)
@@ -322,7 +213,7 @@ export function getChartViewportBounds(chartType: ChartType, datumCount: number,
       minHeight: Math.max(compact ? 220 : 280, safeCount * (compact ? 28 : 34), requestedHeight || 0)
     };
   }
-  if (["line", "line-bar", "area", "spline", "area-spline", "streamgraph", "scatter", "bubble", "radar", "3d-area", "3d-scatter"].includes(chartType)) {
+  if (["line", "line-bar", "area", "spline", "area-spline", "streamgraph", "scatter", "bubble", "radar", "3d-area", "3d-scatter", "candlestick", "pareto", "network-graph"].includes(chartType)) {
     return {
       minWidth: Math.max(compact ? 420 : 640, safeCount * (compact ? 40 : 54)),
       minHeight: Math.max(compact ? 280 : 360, requestedHeight || 0)
