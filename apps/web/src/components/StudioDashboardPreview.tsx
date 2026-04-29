@@ -485,16 +485,7 @@ export function StudioDashboardPreview({
                     className={`widget-card dashboard-layout-item${isDragging ? " is-dragging" : ""}${isSelected ? " is-selected" : ""}${isDisplaced ? " is-displaced" : ""}${dropPosition === "before" ? " is-drop-before" : ""}${dropPosition === "after" ? " is-drop-after" : ""}`}
                     key={widget.widgetId}
                     style={getDashboardWidgetLayoutStyle(widget.widget, rowRelativePlacement)}
-                    role="button"
-                    tabIndex={0}
                     draggable
-                    onClick={() => onSelectWidget(tab.id, widget.widgetId)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        onSelectWidget(tab.id, widget.widgetId);
-                      }
-                    }}
                     onDragStart={() => onStartWidgetDrag(tab.id, widget.widgetId)}
                     onDragEnd={() => {
                       setDropTarget(null);
@@ -519,7 +510,19 @@ export function StudioDashboardPreview({
                     <div className="widget-head">
                       <div className="widget-head-copy">
                         {!widget.widget.hideTitle ? <strong>{widget.widget.title || widget.report.name}</strong> : <strong className="micro">Title hidden</strong>}
-                        <span className="micro">Click card to edit widget settings</span>
+                        <div className="widget-head-actions">
+                          <button
+                            type="button"
+                            className="link-like"
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              onSelectWidget(tab.id, widget.widgetId);
+                            }}
+                          >
+                            {selectedWidgetId === widget.widgetId ? "Widget settings open" : "Open widget settings"}
+                          </button>
+                        </div>
                       </div>
                       {selectedWidgetId === widget.widgetId ? <span className="badge">Selected</span> : null}
                     </div>

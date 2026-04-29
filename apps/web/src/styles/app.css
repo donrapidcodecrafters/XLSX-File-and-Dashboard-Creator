@@ -1703,6 +1703,13 @@ th {
   overflow-wrap: anywhere;
 }
 
+.widget-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .saved-view-toolbar {
   display: flex;
   gap: 10px;
@@ -3448,10 +3455,6 @@ select {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .dashboard-layout-grid {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-  }
-
   .studio-drawer {
     width: 100%;
   }
@@ -3500,20 +3503,12 @@ select {
 }
 
 @media (max-width: 920px) {
-  .dashboard-layout-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
   .reader-page-shell {
     grid-template-columns: minmax(0, 1fr);
   }
 
   .reader-sidebar {
     position: static;
-  }
-
-  .dashboard-layout-item {
-    grid-column: 1 / -1 !important;
   }
 
   .reader-content .surface {
@@ -3577,6 +3572,16 @@ select {
   }
 }
 
+@media (max-width: 560px) {
+  .dashboard-builder-widget-drawer .widget-editor-grid,
+  .dashboard-builder-widget-drawer .filter-grid.compact-grid,
+  .dashboard-builder-widget-drawer .widget-layout-row,
+  .dashboard-builder-widget-drawer .widget-edit-actions,
+  .dashboard-builder-widget-drawer .widget-layout-presets {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .dashboard-builder-shell {
   gap: 18px;
 }
@@ -3637,7 +3642,12 @@ select {
 }
 
 .dashboard-builder-widget-drawer {
-  width: min(520px, 100vw);
+  width: min(640px, 100vw);
+  height: 100vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  box-sizing: border-box;
+  padding: 20px 20px 160px;
   gap: 18px;
 }
 
@@ -3653,11 +3663,17 @@ select {
 .dashboard-builder-widget-drawer .widget-editor-grid,
 .dashboard-builder-widget-drawer .filter-grid.compact-grid,
 .dashboard-builder-widget-drawer .widget-layout-row {
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .dashboard-builder-widget-drawer .card-head {
   align-items: start;
+}
+
+.dashboard-builder-widget-drawer .widget-edit-actions,
+.dashboard-builder-widget-drawer .widget-layout-presets {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .dashboard-runtime-filter-bar {
