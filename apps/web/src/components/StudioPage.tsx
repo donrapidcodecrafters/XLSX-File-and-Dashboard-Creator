@@ -2181,8 +2181,21 @@ export function StudioPage({
   useEffect(() => {
     if (!activeDashboard) return;
     setActiveTabId((current) => resolveActiveDashboardTabId(activeDashboard, current));
-    setRuntimeValues(Object.fromEntries(activeDashboard.runtimeFilters.map((filter) => [filter.id, filter.defaultValue || ""])));
-  }, [activeDashboard?.id, activeDashboard?.tabs, activeDashboard?.runtimeFilters]);
+    setRuntimeValues((current) => {
+      const nextEntries = Object.fromEntries(
+        activeDashboard.runtimeFilters.map((filter) => [filter.id, current[filter.id] ?? (filter.defaultValue || "")])
+      );
+      const currentKeys = Object.keys(current);
+      const nextKeys = Object.keys(nextEntries);
+      if (
+        currentKeys.length === nextKeys.length
+        && nextKeys.every((key) => current[key] === nextEntries[key])
+      ) {
+        return current;
+      }
+      return nextEntries;
+    });
+  }, [activeDashboard?.id, activeDashboard?.runtimeFilters]);
 
   useEffect(() => {
     const nextSelectedWidgetId = resolveSelectedDashboardWidgetId(activeDashboardTab, selectedWidgetId);

@@ -3650,6 +3650,16 @@ select {
   backdrop-filter: blur(8px);
 }
 
+.dashboard-builder-widget-drawer .widget-editor-grid,
+.dashboard-builder-widget-drawer .filter-grid.compact-grid,
+.dashboard-builder-widget-drawer .widget-layout-row {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.dashboard-builder-widget-drawer .card-head {
+  align-items: start;
+}
+
 .dashboard-runtime-filter-bar {
   gap: 14px;
 }
