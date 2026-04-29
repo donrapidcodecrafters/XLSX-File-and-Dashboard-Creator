@@ -1959,10 +1959,15 @@ export function StudioPage({
         || job.id === entry.id
       );
       if (currentIndex >= 0) {
-        draft.exportJobs[currentIndex] = {
-          ...draft.exportJobs[currentIndex],
+        const currentJob = draft.exportJobs[currentIndex];
+        const nextJob = {
+          ...currentJob,
           ...entry
         };
+        if (JSON.stringify(currentJob) === JSON.stringify(nextJob)) {
+          return;
+        }
+        draft.exportJobs[currentIndex] = nextJob;
       } else {
         draft.exportJobs.unshift(entry);
       }
@@ -2306,7 +2311,21 @@ export function StudioPage({
       runtimeFilters: activeDashboard && exportJob.objectType === "dashboard" && exportJob.objectId === activeDashboard.id ? runtimeValues : {},
       createdAt: exportJob.createdAt
     });
-  }, [activeDashboard, exportJob, runtimeValues]);
+  }, [
+    activeDashboard?.id,
+    exportJob?.id,
+    exportJob?.objectId,
+    exportJob?.objectType,
+    exportJob?.format,
+    exportJob?.status,
+    exportJob?.progress,
+    exportJob?.message,
+    exportJob?.filename,
+    exportJob?.error,
+    exportJob?.updatedAt,
+    exportJob?.createdAt,
+    runtimeValues
+  ]);
 
   useEffect(() => {
     if (!exportJob || exportJob.status !== "complete" || downloadedJobId === exportJob.id) return;
