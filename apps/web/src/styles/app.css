@@ -3666,6 +3666,12 @@ select {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.dashboard-builder-widget-drawer .card {
+  overflow: visible;
+  min-height: auto;
+  align-content: start;
+}
+
 .dashboard-builder-widget-drawer .card-head {
   align-items: start;
 }
@@ -3673,7 +3679,13 @@ select {
 .dashboard-builder-widget-drawer .widget-edit-actions,
 .dashboard-builder-widget-drawer .widget-layout-presets {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  align-items: start;
+}
+
+.dashboard-builder-widget-drawer .widget-edit-actions > *,
+.dashboard-builder-widget-drawer .widget-layout-presets > * {
+  width: 100%;
 }
 
 .dashboard-runtime-filter-bar {
