@@ -112,7 +112,7 @@ function testDashboardEditorHelpers() {
 
   const activeTab = dashboard.tabs.find((tab) => tab.id === activeTabId);
   const selectedWidgetId = resolveSelectedDashboardWidgetId(activeTab, "missing-widget");
-  assert.equal(selectedWidgetId, activeTab.widgets[0].id, "expected selected widget fallback to first widget");
+  assert.equal(selectedWidgetId, "", "expected no widget to be selected by default when the requested widget is missing");
 
   const movedDown = moveDashboardWidget(dashboard, activeTab.id, activeTab.widgets[0].id, 1);
   assert.equal(movedDown.tabs[0].widgets[1].id, activeTab.widgets[0].id, "expected widget move down to reorder tab widgets");

@@ -1495,7 +1495,7 @@ export function StudioPage({
   const [activeTabId, setActiveTabId] = useState("");
   const [selectedWidgetId, setSelectedWidgetId] = useState("");
   const [widgetTargetTabId, setWidgetTargetTabId] = useState("");
-  const [widgetSearch, setWidgetSearch] = useState("");
+  const widgetSearch = "";
   const [dashboardAddModalOpen, setDashboardAddModalOpen] = useState(false);
   const [dashboardAddMode, setDashboardAddMode] = useState<DashboardAddMode>("chooser");
   const [dashboardWidgetDraft, setDashboardWidgetDraft] = useState<DashboardWidgetBuilderDraft>(buildDashboardWidgetDraft());
@@ -2186,7 +2186,7 @@ export function StudioPage({
 
   useEffect(() => {
     const nextSelectedWidgetId = resolveSelectedDashboardWidgetId(activeDashboardTab, selectedWidgetId);
-    if (nextSelectedWidgetId !== selectedWidgetId) {
+    if (selectedWidgetId && nextSelectedWidgetId !== selectedWidgetId) {
       setSelectedWidgetId(nextSelectedWidgetId);
     }
   }, [activeDashboardTab, selectedWidgetId]);
@@ -4893,7 +4893,7 @@ export function StudioPage({
   const defaultUrl = buildHostedHashUrl(`/${activeObject.type}/${activeObject.id}`);
   const viewerUrl = buildHostedHashUrl(`/${activeObject.type}/${activeObject.id}`, { viewer: true });
   const embedUrl = buildHostedHashUrl(`/${activeObject.type}/${activeObject.id}`, { embed: true, viewer: true });
-  const shortcutsSection = hasActiveObject ? (
+  const shortcutsSection = hasActiveObject && !activeDashboard ? (
     <div className="surface stack studio-shortcuts-panel">
       <div className="card-head">
         <strong>Shortcuts</strong>
@@ -4911,7 +4911,7 @@ export function StudioPage({
 
   const overlayOpen = importReviewModalOpen || dashboardAddModalOpen || dashboardSettingsModalOpen || createModalOpen || Boolean(drawer);
 
-  const objectActionDock = hasActiveObject && !overlayOpen ? (
+  const objectActionDock = hasActiveObject && !activeDashboard && !overlayOpen ? (
     <div className="studio-builder-dock" role="region" aria-label="Building actions">
       <div className="studio-builder-dock-inner">
         <Link className="ghost-button" to={buildHostedRoute("/studio")}>Back to Building home</Link>
@@ -5107,16 +5107,6 @@ export function StudioPage({
                 </ul>
               </div>
             ) : null}
-            <div className="filter-grid compact-grid">
-              <ClearableInputField
-                label="Card search"
-                id="studio-widget-search"
-                name="studioWidgetSearch"
-                value={widgetSearch}
-                onChange={setWidgetSearch}
-                placeholder="Find cards or reports"
-              />
-            </div>
             <div className="studio-tab-strip dashboard-builder-tab-strip">
               {activeDashboard.tabs.map((tab) => (
                 <button

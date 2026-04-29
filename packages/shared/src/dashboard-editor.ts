@@ -123,7 +123,7 @@ export function resolveActiveDashboardTabId(dashboard: DashboardDefinition | nul
 
 export function resolveSelectedDashboardWidgetId(tab: DashboardTabDefinition | null | undefined, selectedWidgetId = "") {
   if (!tab?.widgets.length) return "";
-  return tab.widgets.some((widget) => widget.id === selectedWidgetId) ? selectedWidgetId : tab.widgets[0].id;
+  return tab.widgets.some((widget) => widget.id === selectedWidgetId) ? selectedWidgetId : "";
 }
 
 function clampIndex(value: number, max: number) {
