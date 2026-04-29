@@ -1690,12 +1690,17 @@ th {
   padding-bottom: 2px;
 }
 
-.widget-preview-controls {
+.widget-head-copy {
   display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.widget-head-copy strong,
+.widget-head-copy span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .saved-view-toolbar {
@@ -3625,6 +3630,24 @@ select {
 .dashboard-builder-sidebar .surface {
   position: sticky;
   top: 24px;
+}
+
+.dashboard-builder-drawer-backdrop {
+  z-index: 125;
+}
+
+.dashboard-builder-widget-drawer {
+  width: min(520px, 100vw);
+  gap: 18px;
+}
+
+.dashboard-builder-drawer-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding-bottom: 8px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0.9));
+  backdrop-filter: blur(8px);
 }
 
 .dashboard-runtime-filter-bar {

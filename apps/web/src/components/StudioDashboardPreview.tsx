@@ -163,7 +163,6 @@ export function StudioDashboardPreview({
   activeTabId = "",
   selectedWidgetId,
   draggingWidget,
-  onEditReport = () => undefined,
   onSelectWidget,
   onStartWidgetDrag,
   onEndWidgetDrag,
@@ -171,9 +170,8 @@ export function StudioDashboardPreview({
   onDropWidgetToRow,
   onDropWidgetToTabEnd,
   onDropWidgetToGridPosition,
-  onToggleFullWidth,
   onBeginResizeWidget,
-  onMoveWidget
+  onMoveWidget: _onMoveWidget
 }: {
   dashboard: DashboardDefinition;
   result: DashboardRunResult;
@@ -185,7 +183,6 @@ export function StudioDashboardPreview({
   activeTabId?: string;
   selectedWidgetId: string;
   draggingWidget: { tabId: string; widgetId: string } | null;
-  onEditReport?: (widgetId: string, reportId: string) => void;
   onSelectWidget: (tabId: string, widgetId: string) => void;
   onStartWidgetDrag: (tabId: string, widgetId: string) => void;
   onEndWidgetDrag: () => void;
@@ -193,7 +190,6 @@ export function StudioDashboardPreview({
   onDropWidgetToRow: (tabId: string, rowIndex: number, edge: DashboardWidgetRowEdge) => void;
   onDropWidgetToTabEnd: (tabId: string) => void;
   onDropWidgetToGridPosition: (tabId: string, position: { x: number; y: number }) => void;
-  onToggleFullWidth: (tabId: string, widgetId: string) => void;
   onBeginResizeWidget: (event: ReactPointerEvent<HTMLButtonElement>, tabId: string, widgetId: string, layout: { w: number; h: number }) => void;
   onMoveWidget: (tabId: string, widgetId: string, direction: DashboardWidgetMoveDirection) => void;
 }) {
@@ -545,17 +541,11 @@ export function StudioDashboardPreview({
                     }}
                   >
                     <div className="widget-head">
-                      {!widget.widget.hideTitle ? <strong>{widget.widget.title || widget.report.name}</strong> : <strong className="micro">Title hidden</strong>}
-                      <div className="widget-preview-controls">
-                        <button className="link-like" onClick={() => onMoveWidget(tab.id, widget.widgetId, "left")}>Move left</button>
-                        <button className="link-like" onClick={() => onMoveWidget(tab.id, widget.widgetId, "right")}>Move right</button>
-                        <button className="link-like" onClick={() => onMoveWidget(tab.id, widget.widgetId, "up")}>Move up</button>
-                        <button className="link-like" onClick={() => onMoveWidget(tab.id, widget.widgetId, "down")}>Move down</button>
-                        <button className="link-like" onClick={() => onToggleFullWidth(tab.id, widget.widgetId)}>
-                          {clampDashboardWidgetWidth(widget.widget.layout.w) >= 12 ? "Restore width" : "Full width"}
-                        </button>
-                        <button className="link-like" onClick={() => onEditReport(widget.widgetId, widget.report.id)} disabled={!widget.report.sourceTableId}>Edit report</button>
+                      <div className="widget-head-copy">
+                        {!widget.widget.hideTitle ? <strong>{widget.widget.title || widget.report.name}</strong> : <strong className="micro">Title hidden</strong>}
+                        <span className="micro">Click card to edit widget settings</span>
                       </div>
+                      {selectedWidgetId === widget.widgetId ? <span className="badge">Selected</span> : null}
                     </div>
                     <div className={`widget-state-banner ${widget.status === "failed" ? "widget-state-banner-failed" : "widget-state-banner-ready"}`}>
                       <strong>{widget.status === "failed" ? "Card unavailable" : "Preview ready"}</strong>

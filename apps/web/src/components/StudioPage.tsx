@@ -5084,49 +5084,39 @@ export function StudioPage({
 
         {activeDashboard && dashboardResult ? (
           <section className="surface stack studio-dashboard-preview-panel dashboard-builder-shell">
-                <div className="dashboard-builder-toolbar">
-                  <div className="dashboard-builder-toolbar-actions">
-                    <button type="button" onClick={openDashboardAddModal}>Add report/graph</button>
-                    <button type="button" className="ghost-button" onClick={() => setDashboardSettingsModalOpen(true)}>Dashboard settings</button>
-                  </div>
-                  <div className="dashboard-builder-toolbar-meta">
-                    <span className="micro">{activeDashboard.tabs.length} tabs</span>
-                    <span className="micro">{activeDashboard.tabs.reduce((sum, tab) => sum + tab.widgets.length, 0)} widgets</span>
-                  </div>
-                </div>
-                <div className="card-head">
-                  <div>
-                    <strong>Inline dashboard builder</strong>
-                    <div className="micro">Manage layout, tabs, runtime filters, and widget presentation without leaving this dashboard.</div>
-                  </div>
-                  <div className="studio-actions">
-                    <button type="button" className="ghost-button" onClick={() => balanceActiveDashboardTab(activeDashboardTab?.id || resolvedActiveDashboardTabId)} disabled={!activeDashboardTab}>Balance tab</button>
-                    <button type="button" className="ghost-button" onClick={balanceAllDashboardTabs}>Balance dashboard</button>
-                  </div>
-                </div>
-                {dashboardResult.tabs.some((tab) => tab.widgets.some((widget) => widget.status === "failed" || widget.result.warnings.length)) ? (
-                  <div className="sync-status sync-status-warn">
-                    <strong>Dashboard warnings</strong>
-                    <ul className="flat-list import-review-list">
-                      {dashboardResult.tabs.flatMap((tab) =>
-                        tab.widgets.flatMap((widget) => [
-                          ...(widget.status === "failed" ? [`${tab.name} / ${widget.widget.title || widget.report.name}: ${widget.error || widget.message}`] : []),
-                          ...widget.result.warnings.map((warning) => `${tab.name} / ${widget.widget.title || widget.report.name}: ${warning}`)
-                        ])
-                      ).map((warning) => <li key={warning}>{warning}</li>)}
-                    </ul>
-                  </div>
-                ) : null}
-                <div className="filter-grid compact-grid">
-                  <ClearableInputField
-                    label="Card search"
-                    id="studio-widget-search"
-                    name="studioWidgetSearch"
-                    value={widgetSearch}
-                    onChange={setWidgetSearch}
-                    placeholder="Find cards or reports"
-                  />
-                </div>
+            <div className="dashboard-builder-toolbar">
+              <div className="dashboard-builder-toolbar-actions">
+                <button type="button" onClick={openDashboardAddModal}>Add report/graph</button>
+                <button type="button" className="ghost-button" onClick={() => setDashboardSettingsModalOpen(true)}>Dashboard settings</button>
+              </div>
+              <div className="dashboard-builder-toolbar-meta">
+                <span className="micro">{activeDashboard.tabs.length} tabs</span>
+                <span className="micro">{activeDashboard.tabs.reduce((sum, tab) => sum + tab.widgets.length, 0)} widgets</span>
+              </div>
+            </div>
+            {dashboardResult.tabs.some((tab) => tab.widgets.some((widget) => widget.status === "failed" || widget.result.warnings.length)) ? (
+              <div className="sync-status sync-status-warn">
+                <strong>Dashboard warnings</strong>
+                <ul className="flat-list import-review-list">
+                  {dashboardResult.tabs.flatMap((tab) =>
+                    tab.widgets.flatMap((widget) => [
+                      ...(widget.status === "failed" ? [`${tab.name} / ${widget.widget.title || widget.report.name}: ${widget.error || widget.message}`] : []),
+                      ...widget.result.warnings.map((warning) => `${tab.name} / ${widget.widget.title || widget.report.name}: ${warning}`)
+                    ])
+                  ).map((warning) => <li key={warning}>{warning}</li>)}
+                </ul>
+              </div>
+            ) : null}
+            <div className="filter-grid compact-grid">
+              <ClearableInputField
+                label="Card search"
+                id="studio-widget-search"
+                name="studioWidgetSearch"
+                value={widgetSearch}
+                onChange={setWidgetSearch}
+                placeholder="Find cards or reports"
+              />
+            </div>
             <div className="studio-tab-strip dashboard-builder-tab-strip">
               {activeDashboard.tabs.map((tab) => (
                 <button
@@ -5167,12 +5157,6 @@ export function StudioPage({
                   setActiveTabId(tabId);
                   setSelectedWidgetId(widgetId);
                 }}
-                onEditReport={(widgetId, reportId) => {
-                  const widget = activeDashboardTab?.widgets.find((candidate) => candidate.id === widgetId) || null;
-                  const report = bundle.objects[reportId];
-                  if (!widget || !report || report.type !== "report") return;
-                  void beginEditDashboardWidgetReport(widget, report);
-                }}
                 onStartWidgetDrag={(tabId, widgetId) => setDraggingWidget({ tabId, widgetId })}
                 onEndWidgetDrag={() => setDraggingWidget(null)}
                 onDropWidget={(tabId, widgetId, position: DashboardWidgetDropPosition) => {
@@ -5200,7 +5184,6 @@ export function StudioPage({
                   }
                   setDraggingWidget(null);
                 }}
-                onToggleFullWidth={toggleDashboardWidgetFullWidth}
                 onBeginResizeWidget={beginWidgetResize}
                 onMoveWidget={moveDashboardWidget}
               />
@@ -5210,19 +5193,17 @@ export function StudioPage({
         {objectActionDock}
       </div>
 
-      {activeDashboard ? (
-        <aside className="studio-inspector dashboard-builder-sidebar">
-          <div className="surface stack">
-            <div className="studio-section-head">
+      {activeDashboard && selectedDashboardWidget && activeDashboardTab ? (
+        <div className="studio-drawer-backdrop dashboard-builder-drawer-backdrop" onClick={() => setSelectedWidgetId("")}>
+          <aside className="studio-drawer dashboard-builder-widget-drawer" onClick={(event) => event.stopPropagation()}>
+            <div className="studio-section-head dashboard-builder-drawer-head">
               <div>
                 <div className="eyebrow">Widget</div>
-                <h2>{selectedDashboardWidget ? (selectedDashboardWidget.title || selectedDashboardWidgetReport?.name || "Selected widget") : "Dashboard builder"}</h2>
+                <h2>{selectedDashboardWidget.title || selectedDashboardWidgetReport?.name || "Selected widget"}</h2>
               </div>
-              <button type="button" className="ghost-button" onClick={() => setSelectedWidgetId("")}>{selectedDashboardWidget ? "Close" : "Tips"}</button>
+              <button type="button" className="ghost-button" onClick={() => setSelectedWidgetId("")}>Close</button>
             </div>
-            {selectedDashboardWidget && activeDashboardTab ? (
-              <>
-                <div className="card">
+            <div className="card">
                   <div className="card-head">
                     <strong>Report actions</strong>
                     <span className="micro">{selectedDashboardWidgetReport?.name || selectedDashboardWidget.reportId}</span>
@@ -5234,9 +5215,9 @@ export function StudioPage({
                     {selectedDashboardWidgetReport ? <button type="button" onClick={cloneSelectedDashboardReport}>Clone report</button> : null}
                     <button type="button" onClick={() => removeDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id)}>Remove from dashboard</button>
                   </div>
-                </div>
+            </div>
 
-                <div className="card">
+            <div className="card">
                   <div className="card-head">
                     <strong>Widget settings</strong>
                     <span className="micro">Dashboard-only presentation</span>
@@ -5263,9 +5244,9 @@ export function StudioPage({
                     <label className="toggle-row"><input type="checkbox" checked={selectedDashboardWidget.showSummary} onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, (widget) => ({ ...widget, showSummary: event.target.checked }))} /> Show summary metrics</label>
                     <label className="toggle-row"><input type="checkbox" checked={selectedDashboardWidget.showDetails} onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, (widget) => ({ ...widget, showDetails: event.target.checked }))} /> Show row details</label>
                   </div>
-                </div>
+            </div>
 
-                <div className="card">
+            <div className="card">
                   <div className="card-head">
                     <strong>Tab management</strong>
                     <span className="micro">Move or copy this widget across tabs</span>
@@ -5285,9 +5266,9 @@ export function StudioPage({
                     <label className="field"><span>New tab color</span><input type="color" value={dashboardWidgetDraft.newTabColor} onChange={(event) => setDashboardWidgetDraft((current) => ({ ...current, newTabColor: event.target.value }))} /></label>
                   </div>
                   <button type="button" onClick={() => moveDashboardWidgetToNewTab(selectedDashboardWidget, dashboardWidgetDraft.newTabName, dashboardWidgetDraft.newTabColor)}>Create tab and move widget</button>
-                </div>
+            </div>
 
-                <div className="card">
+            <div className="card">
                   <div className="card-head">
                     <strong>Runtime filter behavior</strong>
                     <span className="micro">Choose how dashboard filters affect this widget</span>
@@ -5320,9 +5301,9 @@ export function StudioPage({
                       </select>
                     </label>
                   )) : <div className="empty-hint">No runtime filters are configured yet.</div>}
-                </div>
+            </div>
 
-                <div className="card">
+            <div className="card">
                   <div className="card-head">
                     <strong>Layout controls</strong>
                     <span className="micro">Grid snapping stays enforced</span>
@@ -5348,18 +5329,9 @@ export function StudioPage({
                     <button type="button" onClick={() => resetDashboardWidgetPosition(activeDashboardTab.id, selectedDashboardWidget.id)}>Reset position</button>
                     <button type="button" onClick={() => toggleDashboardWidgetFullWidth(activeDashboardTab.id, selectedDashboardWidget.id)}>{clampDashboardWidgetWidth(selectedDashboardWidget.layout.w) >= 12 ? "Restore width" : "Full width"}</button>
                   </div>
-                </div>
-              </>
-            ) : (
-              <div className="card dashboard-builder-sidebar-empty">
-                <strong>Select a widget on the canvas.</strong>
-                <span>Widget-specific settings, report actions, tab movement, runtime filter mapping, and layout controls appear here.</span>
-                <button type="button" onClick={openDashboardAddModal}>Add report/graph</button>
-                <button type="button" className="ghost-button" onClick={() => setDashboardSettingsModalOpen(true)}>Open dashboard settings</button>
-              </div>
-            )}
-          </div>
-        </aside>
+            </div>
+          </aside>
+        </div>
       ) : null}
 
       <div className="toast-stack">
