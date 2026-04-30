@@ -9,8 +9,8 @@ import type {
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "http://localhost:3001").replace(/\/$/, "");
 const REQUEST_TIMEOUT_MS = 20_000;
-const REPORT_RUN_TIMEOUT_MS = 120_000;
-const DASHBOARD_RENDER_TIMEOUT_MS = 120_000;
+const REPORT_RUN_TIMEOUT_MS = 300_000;
+const DASHBOARD_RENDER_TIMEOUT_MS = 300_000;
 
 export interface ExportSaveTarget {
   createWritable: () => Promise<{

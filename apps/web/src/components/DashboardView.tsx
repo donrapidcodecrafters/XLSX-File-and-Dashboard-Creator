@@ -250,6 +250,7 @@ export function DashboardView({
   const tabLoadingRef = useRef(tabLoading);
   const onRefreshJobDetectedRef = useRef(onRefreshJobDetected);
   const tabRequestSequenceRef = useRef<Record<string, number>>({});
+  const tabLoadGenerationRef = useRef(0);
   const chartMeasureObserversRef = useRef<Record<string, ResizeObserver>>({});
   const resolvedActiveTabId = resolveActiveDashboardTabId(dashboard, activeTabId);
   const activeTabResult = tabResults[resolvedActiveTabId] || null;
@@ -257,7 +258,10 @@ export function DashboardView({
     const tab = dashboard.tabs.find((item) => item.id === resolvedActiveTabId);
     return new Map((tab ? getDashboardWidgetPlacements(tab) : []).map((placement) => [placement.widgetId, placement]));
   }, [dashboard.tabs, resolvedActiveTabId]);
+  const activeTabError = tabErrors[resolvedActiveTabId] || "";
   const loading = Boolean(tabLoading[resolvedActiveTabId]);
+  const waitingForActiveTab = Boolean(resolvedActiveTabId) && !activeTabResult && !activeTabError;
+  const dashboardLoading = loading || waitingForActiveTab;
   const shouldPreloadRemainingTabs = false;
   const runtimeFiltersKey = useMemo(() => JSON.stringify(runtimeFilters), [runtimeFilters]);
   const exportDashboard = useMemo(
@@ -317,13 +321,14 @@ export function DashboardView({
 
   useEffect(() => {
     setRuntimeFilters(mergedDefaults);
-  }, [mergedDefaults]);
+  }, [dashboard.id]);
 
   useEffect(() => {
     setFocusedWidgetId(initialFocusedWidgetId || "");
-  }, [dashboard.id, initialFocusedWidgetId]);
+  }, [dashboard.id]);
 
   useEffect(() => {
+    tabLoadGenerationRef.current += 1;
     tabResultsRef.current = {};
     tabLoadingRef.current = {};
     tabRequestSequenceRef.current = {};
@@ -342,13 +347,15 @@ export function DashboardView({
       }
       return resolveActiveDashboardTabId(dashboard, current);
     });
-  }, [dashboard.id, initialActiveTabId]);
+  }, [dashboard.id]);
 
   useEffect(() => {
     async function loadTab(tabId: string) {
       if (!tabId || tabResultsRef.current[tabId] || tabLoadingRef.current[tabId]) return;
+      const requestGeneration = tabLoadGenerationRef.current;
       const requestSequence = (tabRequestSequenceRef.current[tabId] || 0) + 1;
       tabRequestSequenceRef.current[tabId] = requestSequence;
+      tabLoadingRef.current = { ...tabLoadingRef.current, [tabId]: true };
       setTabLoading((current) => ({ ...current, [tabId]: true }));
       setTabErrors((current) => {
         if (!current[tabId]) return current;
@@ -356,22 +363,27 @@ export function DashboardView({
         delete next[tabId];
         return next;
       });
+      const requestIsCurrent = () =>
+        tabLoadGenerationRef.current === requestGeneration
+        && tabRequestSequenceRef.current[tabId] === requestSequence;
       try {
         const next = await renderDashboard(dashboard.id, runtimeFilters, tabId, { forceLive, dashboard });
-        if (tabRequestSequenceRef.current[tabId] !== requestSequence) return;
+        if (!requestIsCurrent()) return;
         onRefreshJobDetectedRef.current?.(next.refreshJob || null);
         const renderedTab = next.tabs.find((tab) => tab.id === tabId) || next.tabs[0];
         if (renderedTab) {
+          tabResultsRef.current = { ...tabResultsRef.current, [renderedTab.id]: renderedTab };
           setTabResults((current) => ({ ...current, [renderedTab.id]: renderedTab }));
         }
       } catch (error) {
-        if (tabRequestSequenceRef.current[tabId] !== requestSequence) return;
+        if (!requestIsCurrent()) return;
         setTabErrors((current) => ({
           ...current,
           [tabId]: error instanceof Error ? error.message : "Dashboard tab failed to load."
         }));
       } finally {
-        if (tabRequestSequenceRef.current[tabId] === requestSequence) {
+        if (requestIsCurrent()) {
+          tabLoadingRef.current = { ...tabLoadingRef.current, [tabId]: false };
           setTabLoading((current) => ({ ...current, [tabId]: false }));
         }
       }
@@ -432,12 +444,12 @@ export function DashboardView({
     const handle = window.setTimeout(() => {
       onStateChange({
         runtimeFilters,
-        activeTabId,
+        activeTabId: resolvedActiveTabId,
         focusedWidgetId
       });
     }, 250);
     return () => window.clearTimeout(handle);
-  }, [activeTabId, focusedWidgetId, onStateChange, runtimeFilters]);
+  }, [focusedWidgetId, onStateChange, resolvedActiveTabId, runtimeFilters]);
 
   function resetView() {
     setRuntimeFilters(defaults);
@@ -539,7 +551,6 @@ export function DashboardView({
   }
 
   async function beginNativeChartExport() {
-    if (!import.meta.env.DEV) return;
     if (localExporting || nativeChartExporting) return;
     const { buildNativeDashboardExportFilename, exportDashboardNativeChartWorkbook } = await import("../lib/nativeExcelDashboardExport");
     const filename = buildNativeDashboardExportFilename(dashboard.name);
@@ -586,7 +597,7 @@ export function DashboardView({
 
   return (
     <>
-      {loading && !activeTabResult ? (
+      {dashboardLoading ? (
         <RefreshOverlay
           title="Loading this dashboard"
           indeterminate
@@ -638,14 +649,12 @@ export function DashboardView({
                   <button className="ghost-button" onClick={() => { void beginExport(); }} disabled={!activeTabResult || localExporting || nativeChartExporting}>
                     {localExporting ? "Generating xlsx…" : preparedExport ? (exportSaved ? "Save again" : "Save xlsx") : "Download xlsx"}
                   </button>
-                  {import.meta.env.DEV ? (
-                    <button className="ghost-button" onClick={() => { void beginNativeChartExport(); }} disabled={!activeTabResult || localExporting || nativeChartExporting}>
-                      {nativeChartExporting ? "Generating native xlsx..." : "Dev native chart xlsx"}
-                    </button>
-                  ) : null}
+                  <button className="ghost-button" onClick={() => { void beginNativeChartExport(); }} disabled={!activeTabResult || localExporting || nativeChartExporting}>
+                    {nativeChartExporting ? "Generating native xlsx..." : "Dev native chart xlsx"}
+                  </button>
                   {onRefresh ? (
-                    <button className="ghost-button" onClick={onRefresh} disabled={loading}>
-                      {loading ? "Refreshing…" : "Refresh now"}
+                    <button className="ghost-button" onClick={onRefresh} disabled={dashboardLoading}>
+                      {dashboardLoading ? "Refreshing…" : "Refresh now"}
                     </button>
                   ) : null}
                   <button className="ghost-button" onClick={resetView}>Reset view</button>
@@ -1024,8 +1033,8 @@ export function DashboardView({
                 </article>
               );
             })}
-            {loading && !activeTab.widgets.length ? <div className="empty">Rendering dashboard…</div> : null}
-            {!loading && !tabErrors[activeTab.id] && !activeTab.widgets.length ? (
+            {dashboardLoading && !activeTab.widgets.length ? <div className="empty">Rendering dashboard…</div> : null}
+            {!dashboardLoading && !tabErrors[activeTab.id] && !activeTab.widgets.length ? (
               <div className="sync-status sync-status-warn">
                 <strong>No cards are visible on this tab</strong>
                 <span>This tab finished loading but did not return any widget content. Open the dashboard in the building area and confirm the tab still has linked cards.</span>

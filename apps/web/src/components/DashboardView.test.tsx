@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { buildDashboardResult, buildStudioDocument, runReport, type DashboardDefinition, type TableDefinition, type ReportDefinition } from "@studio/shared";
@@ -38,6 +38,24 @@ function buildFixture() {
   };
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((innerResolve) => {
+    resolve = innerResolve;
+  });
+  return { promise, resolve };
+}
+
+function resultForTab(fixture: ReturnType<typeof buildFixture>, tabId: string) {
+  return {
+    ...fixture.result,
+    tabs: fixture.result.tabs.map((tab) => ({
+      ...tab,
+      widgets: tab.id === tabId ? tab.widgets : []
+    }))
+  };
+}
+
 describe("DashboardView", () => {
   it("supports saved views, reset, and focused card inspection", async () => {
     const user = userEvent.setup();
@@ -74,6 +92,7 @@ describe("DashboardView", () => {
     });
 
     await user.click(screen.getByRole("button", { name: "Show tools" }));
+    expect(screen.getByRole("button", { name: "Dev native chart xlsx" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Status: Done" }));
     expect((screen.getByLabelText("Status") as HTMLInputElement).value).toBe("Done");
@@ -99,6 +118,90 @@ describe("DashboardView", () => {
 
     await waitFor(() => {
       expect(onStateChange).toHaveBeenCalled();
+    });
+  });
+
+  it("keeps showing the dashboard loader until the current tab request finishes", async () => {
+    const fixture = buildFixture();
+    const firstTabId = fixture.dashboard.tabs[0].id;
+    const firstRequest = deferred<typeof fixture.result>();
+    const secondRequest = deferred<typeof fixture.result>();
+    vi.mocked(renderDashboard)
+      .mockReturnValueOnce(firstRequest.promise)
+      .mockReturnValueOnce(secondRequest.promise);
+
+    render(
+      <MemoryRouter>
+        <DashboardView
+          dashboard={fixture.dashboard}
+          tables={fixture.tables}
+          initialRuntimeFilters={{ "runtime-status": "Open" }}
+        />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("Loading this dashboard")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Status"), { target: { value: "Done" } });
+
+    await act(async () => {
+      firstRequest.resolve(resultForTab(fixture, firstTabId));
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText("Loading this dashboard")).toBeInTheDocument();
+    expect(screen.queryAllByRole("button", { name: "Focus card" })).toHaveLength(0);
+
+    await act(async () => {
+      secondRequest.resolve(resultForTab(fixture, firstTabId));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(screen.getAllByRole("button", { name: "Focus card" }).length).toBeGreaterThan(0);
+    });
+  });
+
+  it("does not revert the selected tab when a saved tab prop arrives late", async () => {
+    const user = userEvent.setup();
+    const fixture = buildFixture();
+    const firstTab = fixture.dashboard.tabs[0];
+    const secondTab = fixture.dashboard.tabs[1];
+    vi.mocked(renderDashboard).mockImplementation((_id, _filters, activeTabId) =>
+      Promise.resolve(resultForTab(fixture, activeTabId || firstTab.id))
+    );
+
+    const view = render(
+      <MemoryRouter>
+        <DashboardView
+          dashboard={fixture.dashboard}
+          tables={fixture.tables}
+          initialActiveTabId=""
+        />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: new RegExp(firstTab.name) }).className).toContain("active");
+    });
+
+    await user.click(screen.getByRole("button", { name: new RegExp(secondTab.name) }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: new RegExp(secondTab.name) }).className).toContain("active");
+    });
+
+    view.rerender(
+      <MemoryRouter>
+        <DashboardView
+          dashboard={fixture.dashboard}
+          tables={fixture.tables}
+          initialActiveTabId={firstTab.id}
+        />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: new RegExp(secondTab.name) }).className).toContain("active");
     });
   });
 });

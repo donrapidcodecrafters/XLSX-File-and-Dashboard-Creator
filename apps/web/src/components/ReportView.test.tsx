@@ -61,6 +61,7 @@ describe("ReportView", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "Show tools" }));
+    expect(screen.getByRole("button", { name: "Dev native chart xlsx" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Save view" }));
     expect(onSaveView).toHaveBeenCalledWith(expect.objectContaining({ name: "Chart Bookmark" }));

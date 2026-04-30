@@ -18,6 +18,10 @@ interface NativeDashboardExportOptions {
   tablesById?: Record<string, TableDefinition>;
 }
 
+interface NativeReportExportOptions {
+  filename?: string;
+}
+
 interface NativeChartSeries {
   label: string;
   rawSeries: string;
@@ -689,5 +693,81 @@ export async function exportDashboardNativeChartWorkbook(
 }
 
 export function buildNativeDashboardExportFilename(name: string) {
+  return `${safeFileName(name)} native charts dev ${buildTimestamp()}.xlsx`;
+}
+
+export async function exportReportNativeChartWorkbook(
+  report: ReportDefinition,
+  table: TableDefinition | undefined,
+  result: ReportRunResult,
+  options: NativeReportExportOptions = {}
+) {
+  void options;
+  const ExcelJS = await import("exceljs");
+  const workbook = new ExcelJS.Workbook();
+  const usedNames = new Set<string>();
+  workbook.creator = "Cadence Reporting Portal";
+  workbook.created = new Date();
+
+  const sheet = workbook.addWorksheet(safeSheetName(report.name || "Report", usedNames));
+  sheet.columns = Array.from({ length: 12 }, () => ({ width: 14 }));
+  sheet.getCell("A1").value = report.name;
+  sheet.getCell("A1").font = { bold: true, size: 18 };
+  sheet.getCell("A2").value = "Development export: this sheet uses native Excel chart objects; chart source ranges are on a hidden worksheet.";
+  sheet.mergeCells("A2:L2");
+  sheet.getCell("A4").value = `${result.totalRows.toLocaleString()} rows`;
+  sheet.getCell("A4").font = { bold: true };
+  sheet.getCell("A4").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEAF5F1" } };
+  sheet.mergeCells("A4:L4");
+
+  const dataSheetName = safeSheetName("_native_chart_data", usedNames);
+  const dataSheet = workbook.addWorksheet(dataSheetName);
+  dataSheet.state = "hidden";
+  dataSheet.columns = Array.from({ length: 24 }, () => ({ width: 22 }));
+  const chartsBySheet = new Map<string, NativeChartPlacement[]>();
+  const sheetCharts: NativeChartPlacement[] = [];
+  let contentRow = 6;
+
+  if (reportShowsSummary(report) && result.summary.length) {
+    contentRow = writeSummarySheet(sheet, result, contentRow, 1, 12) + 1;
+  }
+
+  if (reportShowsChart(report) && result.chartData.length) {
+    const written = writeHiddenChartData(dataSheet, dataSheetName, 1, report, result, table, 1);
+    sheetCharts.push({
+      chart: written.source,
+      fromCol: 0,
+      fromRow: contentRow - 1,
+      toCol: 12,
+      toRow: contentRow + 22
+    });
+    contentRow += 25;
+  }
+
+  if (reportShowsRows(report) && result.rows.length) {
+    writeRowsSheet(sheet, report, table, result, contentRow, 1);
+  }
+
+  chartsBySheet.set(sheet.name, sheetCharts);
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  return injectNativeCharts(blob, chartsBySheet);
+}
+
+function reportShowsChart(report: ReportDefinition) {
+  return report.view.mode === "chart" || (report.view.mode === "table" && report.view.showChartInTable);
+}
+
+function reportShowsSummary(report: ReportDefinition) {
+  if (typeof report.view.showSummary === "boolean") return report.view.showSummary;
+  return report.view.mode === "table" || report.view.mode === "summary" || report.view.mode === "chart";
+}
+
+function reportShowsRows(report: ReportDefinition) {
+  if (typeof report.view.showDetails === "boolean") return report.view.showDetails;
+  return report.view.mode === "table" || report.view.mode === "timeline" || report.view.mode === "calendar" || report.view.mode === "kanban";
+}
+
+export function buildNativeReportExportFilename(name: string) {
   return `${safeFileName(name)} native charts dev ${buildTimestamp()}.xlsx`;
 }

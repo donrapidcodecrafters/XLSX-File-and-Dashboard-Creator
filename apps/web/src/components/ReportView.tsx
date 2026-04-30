@@ -210,6 +210,7 @@ export function ReportView({
   const fullScreenUrl = buildObjectUrl("report", report.id, { viewer: true });
   const totalPages = result?.totalPages || 1;
   const [localExporting, setLocalExporting] = useState(false);
+  const [nativeChartExporting, setNativeChartExporting] = useState(false);
   const [exportError, setExportError] = useState("");
   const [preparedExport, setPreparedExport] = useState<{ filename: string; blob: Blob } | null>(null);
   const [exportSaved, setExportSaved] = useState(false);
@@ -285,7 +286,7 @@ export function ReportView({
   }, [hosted.autoDownload, report.id]);
 
   async function beginExport(options: { skipPicker?: boolean } = {}) {
-    if (localExporting) return;
+    if (localExporting || nativeChartExporting) return;
     if (preparedExport && !options.skipPicker) {
       const saveTarget = await createExportSaveTarget(preparedExport.filename);
       if (!saveTarget && typeof (window as typeof window & { showSaveFilePicker?: unknown }).showSaveFilePicker === "function") return;
@@ -317,6 +318,30 @@ export function ReportView({
       setExportError(error instanceof Error ? error.message : "Export failed.");
     } finally {
       setLocalExporting(false);
+    }
+  }
+
+  async function beginNativeChartExport() {
+    if (localExporting || nativeChartExporting) return;
+    const { buildNativeReportExportFilename, exportReportNativeChartWorkbook } = await import("../lib/nativeExcelDashboardExport");
+    const filename = buildNativeReportExportFilename(report.name);
+    setNativeChartExporting(true);
+    setExportError("");
+    setPreparedExport(null);
+    setExportSaved(false);
+    try {
+      const exportBundle = await fetchReportExportBundle(report.id);
+      const blob = await exportReportNativeChartWorkbook(report, buildExportTableFallback(report, table), exportBundle.result, {
+        filename
+      });
+      const saveTarget = await createExportSaveTarget(filename);
+      if (!saveTarget && typeof (window as typeof window & { showSaveFilePicker?: unknown }).showSaveFilePicker === "function") return;
+      await savePreparedWorkbook(blob, filename, saveTarget);
+      setExportSaved(true);
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : "Native chart export failed.");
+    } finally {
+      setNativeChartExporting(false);
     }
   }
 
@@ -501,8 +526,11 @@ export function ReportView({
                         {isFavorite ? "Unfavorite" : "Favorite"}
                       </button>
                     ) : null}
-                    <button className="ghost-button" onClick={() => { void beginExport(); }} disabled={!result || localExporting}>
+                    <button className="ghost-button" onClick={() => { void beginExport(); }} disabled={!result || localExporting || nativeChartExporting}>
                       {localExporting ? "Generating xlsx…" : preparedExport ? (exportSaved ? "Save again" : "Save xlsx") : "Download xlsx"}
+                    </button>
+                    <button className="ghost-button" onClick={() => { void beginNativeChartExport(); }} disabled={!result || localExporting || nativeChartExporting}>
+                      {nativeChartExporting ? "Generating native xlsx..." : "Dev native chart xlsx"}
                     </button>
                     <button className="ghost-button" onClick={onRefresh} disabled={loading}>
                       {loading ? "Refreshing…" : "Refresh now"}
@@ -568,6 +596,16 @@ export function ReportView({
         <div className="sync-status">
           <strong>Generating export</strong>
           <span>Building the workbook and chart image from the current report.</span>
+          <div className="progress-meter" aria-hidden="true">
+            <div className="progress-meter-fill" style={{ width: "72%" }} />
+          </div>
+        </div>
+      ) : null}
+
+      {nativeChartExporting ? (
+        <div className="sync-status">
+          <strong>Generating native chart export</strong>
+          <span>Building native Excel chart objects from hidden workbook ranges.</span>
           <div className="progress-meter" aria-hidden="true">
             <div className="progress-meter-fill" style={{ width: "72%" }} />
           </div>
