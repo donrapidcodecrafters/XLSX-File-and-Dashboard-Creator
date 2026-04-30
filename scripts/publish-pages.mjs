@@ -75,10 +75,10 @@ writeFileSync(path.join(docsDir, ".nojekyll"), "");
 
 if (mode === "dev") {
   const devTarget = path.join(docsDir, "dev");
-  rmSync(devTarget, { recursive: true, force: true });
+  emptyDirectory(devTarget, new Set(["assets"]));
   copyDist(devTarget);
 } else {
-  emptyDirectory(docsDir, new Set(["dev"]));
+  emptyDirectory(docsDir, new Set(["assets", "dev"]));
   copyDist(docsDir);
 }
 
