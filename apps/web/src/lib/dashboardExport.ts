@@ -9,6 +9,9 @@ export function buildDashboardExportDefinition(
   const tabs = dashboard.tabs.map((tab) => ({
     ...tab,
     widgets: tab.widgets.map((widget) => {
+      if (widget.mode === "copied" && widget.snapshot) {
+        return widget;
+      }
       const report = reportDefinitions[widget.reportId];
       if (!report) return widget;
       changed = true;

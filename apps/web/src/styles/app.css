@@ -2381,22 +2381,23 @@ th {
   position: sticky;
   top: 18px;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  align-self: start;
   gap: 16px;
   padding: 18px;
-  max-height: calc(100vh - 36px);
+  height: calc(100vh - 36px);
   min-height: 0;
   overflow: hidden;
+}
+
+.help-sidebar-top {
+  display: grid;
+  gap: 16px;
 }
 
 .help-sidebar-actions {
   display: grid;
   gap: 10px;
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  padding-bottom: 2px;
-  background: inherit;
 }
 
 .help-sidebar-actions .ghost-button,
@@ -2404,17 +2405,23 @@ th {
   width: 100%;
 }
 
-.help-sidebar-nav {
-  display: grid;
-  gap: 10px;
+.help-sidebar-scroller {
   min-height: 0;
   overflow: auto;
   padding-right: 6px;
+  overscroll-behavior: contain;
+}
+
+.help-sidebar-nav {
+  display: grid;
+  gap: 10px;
+  align-content: start;
 }
 
 .help-sidebar-link {
   display: grid;
   gap: 4px;
+  min-height: 0;
   padding: 12px 14px;
   border-radius: 14px;
   background: rgba(247, 248, 243, 0.96);
@@ -2423,6 +2430,10 @@ th {
   text-decoration: none;
   text-align: left;
   cursor: pointer;
+  justify-items: start;
+  align-content: start;
+  line-height: 1.35;
+  box-shadow: none;
 }
 
 .help-sidebar-link strong {
@@ -2485,12 +2496,14 @@ th {
   }
 
   .help-sidebar {
-    flex: none;
-    width: auto;
-    max-width: none;
     position: static;
-    max-height: none;
+    height: auto;
     overflow: visible;
+  }
+
+  .help-sidebar-scroller {
+    overflow: visible;
+    padding-right: 0;
   }
 }
 

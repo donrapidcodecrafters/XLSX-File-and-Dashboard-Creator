@@ -28,31 +28,35 @@ export function HelpPage() {
     <section className="surface stack viewer-page help-page">
       <div className="help-layout">
         <aside className="card help-sidebar">
-          <div className="card-head">
-            <div>
-              <span className="badge brand">Help</span>
-              <strong>Platform Manual</strong>
+          <div className="help-sidebar-top">
+            <div className="card-head">
+              <div>
+                <span className="badge brand">Help</span>
+                <strong>Platform Manual</strong>
+              </div>
+              <span className="micro">Use the left navigation to move through the manual.</span>
             </div>
-            <span className="micro">Use the left navigation to move through the manual.</span>
+            <div className="help-sidebar-actions">
+              <Link className="ghost-button" to={buildHostedRoute("/")}>Home</Link>
+              <Link className="ghost-button" to={buildHostedRoute("/viewer")}>Browse content</Link>
+              <Link className="ghost-button" to={buildHostedRoute("/studio")}>Open building area</Link>
+            </div>
           </div>
-          <div className="help-sidebar-actions">
-            <Link className="ghost-button" to={buildHostedRoute("/")}>Home</Link>
-            <Link className="ghost-button" to={buildHostedRoute("/viewer")}>Browse content</Link>
-            <Link className="ghost-button" to={buildHostedRoute("/studio")}>Open building area</Link>
+          <div className="help-sidebar-scroller">
+            <nav className="help-sidebar-nav" aria-label="Manual sections">
+              {helpSections.map((section) => (
+                <button
+                  className="help-sidebar-link"
+                  key={section.id}
+                  type="button"
+                  onClick={() => scrollToSection(section.id)}
+                >
+                  <strong>{section.title}</strong>
+                  <span>{section.summary}</span>
+                </button>
+              ))}
+            </nav>
           </div>
-          <nav className="help-sidebar-nav" aria-label="Manual sections">
-            {helpSections.map((section) => (
-              <button
-                className="help-sidebar-link"
-                key={section.id}
-                type="button"
-                onClick={() => scrollToSection(section.id)}
-              >
-                <strong>{section.title}</strong>
-                <span>{section.summary}</span>
-              </button>
-            ))}
-          </nav>
         </aside>
 
         <div className="help-content">
