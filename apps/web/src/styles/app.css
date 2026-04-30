@@ -54,8 +54,8 @@ button,
   align-items: center;
   justify-content: center;
   text-align: center;
-  border: 1px solid rgba(13, 124, 102, 0.18);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(241, 247, 243, 0.94));
+  border: 1px solid rgba(13, 124, 102, 0.24);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(235, 244, 239, 0.97));
   color: var(--text);
   border-radius: 14px;
   min-height: 44px;
@@ -65,7 +65,9 @@ button,
   white-space: normal;
   overflow-wrap: anywhere;
   font-weight: 700;
-  box-shadow: 0 6px 18px rgba(22, 39, 31, 0.08);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.78),
+    0 8px 20px rgba(22, 39, 31, 0.08);
   transition:
     transform 140ms ease,
     box-shadow 140ms ease,
@@ -77,8 +79,11 @@ button,
 button:hover,
 .ghost-button:hover {
   transform: translateY(-1px);
-  box-shadow: 0 10px 24px rgba(22, 39, 31, 0.12);
-  border-color: rgba(13, 124, 102, 0.32);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.86),
+    0 12px 28px rgba(22, 39, 31, 0.12);
+  border-color: rgba(13, 124, 102, 0.38);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 1), rgba(239, 247, 242, 0.98));
 }
 
 button:focus-visible,
@@ -90,7 +95,9 @@ button:focus-visible,
 button:active,
 .ghost-button:active {
   transform: translateY(0);
-  box-shadow: 0 4px 12px rgba(22, 39, 31, 0.12);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    0 5px 14px rgba(22, 39, 31, 0.12);
 }
 
 button:disabled,
@@ -1710,6 +1717,56 @@ th {
   flex-wrap: wrap;
 }
 
+.widget-action-button,
+.widget-settings-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border-color: rgba(13, 124, 102, 0.14);
+  background: rgba(255, 255, 255, 0.88);
+  color: var(--brand-deep);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  box-shadow: 0 6px 16px rgba(22, 39, 31, 0.06);
+}
+
+.widget-action-button::before,
+.widget-settings-button::before {
+  content: "";
+  display: block;
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(13, 124, 102, 0.88), rgba(216, 141, 61, 0.82));
+  box-shadow: 0 0 0 3px rgba(13, 124, 102, 0.08);
+}
+
+.widget-action-button:hover,
+.widget-settings-button:hover {
+  background: rgba(244, 250, 247, 0.98);
+}
+
+.widget-settings-button[aria-pressed="true"] {
+  border-color: rgba(13, 124, 102, 0.28);
+  background: linear-gradient(135deg, rgba(13, 124, 102, 0.16), rgba(216, 141, 61, 0.12));
+  color: #0a5f4f;
+  box-shadow: 0 8px 20px rgba(13, 124, 102, 0.12);
+}
+
+.widget-preview-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .saved-view-toolbar {
   display: flex;
   gap: 10px;
@@ -1861,13 +1918,6 @@ th {
 .dashboard-tab-button-error {
   border-color: rgba(178, 108, 12, 0.28);
   background: rgba(178, 108, 12, 0.08);
-}
-
-.widget-link {
-  color: var(--brand-deep);
-  font-weight: 700;
-  text-decoration: underline;
-  text-underline-offset: 3px;
 }
 
 .widget-resize-handle {

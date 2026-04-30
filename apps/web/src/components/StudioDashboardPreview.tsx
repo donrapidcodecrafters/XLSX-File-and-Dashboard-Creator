@@ -513,14 +513,15 @@ export function StudioDashboardPreview({
                         <div className="widget-head-actions">
                           <button
                             type="button"
-                            className="link-like"
+                            className="widget-settings-button"
+                            aria-pressed={selectedWidgetId === widget.widgetId}
                             onClick={(event) => {
                               event.preventDefault();
                               event.stopPropagation();
                               onSelectWidget(tab.id, widget.widgetId);
                             }}
                           >
-                            {selectedWidgetId === widget.widgetId ? "Widget settings open" : "Open widget settings"}
+                            {selectedWidgetId === widget.widgetId ? "Settings open" : "Open settings"}
                           </button>
                         </div>
                       </div>

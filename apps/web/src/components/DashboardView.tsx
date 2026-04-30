@@ -806,9 +806,9 @@ export function DashboardView({
                 <div className="widget-head">
                   <strong>{widget.widget.title || widget.report.name}</strong>
                   <div className="widget-preview-controls">
-                    <button className="link-like" onClick={() => setFocusedWidgetId(widget.widgetId)}>Focus card</button>
+                    <button type="button" className="widget-action-button" onClick={() => setFocusedWidgetId(widget.widgetId)}>Focus card</button>
                     {widget.report.sourceTableId ? (
-                      <Link to={buildHostedRoute(`/report/${widget.report.id}`)} className="widget-link" target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>Open report</Link>
+                      <Link to={buildHostedRoute(`/report/${widget.report.id}`)} className="widget-action-button" target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>Open report</Link>
                     ) : null}
                   </div>
                 </div>
