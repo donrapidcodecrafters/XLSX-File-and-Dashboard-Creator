@@ -438,6 +438,20 @@ export function StudioSettingsPanel({
       </div>
       <div className="card">
         <div className="card-head">
+          <strong>Helpdesk tickets</strong>
+          <span className="micro">Configure the popup ticket form shown in the top bar for this app profile.</span>
+        </div>
+        <div className="filter-grid compact-grid">
+          <label className="field"><span>Helpdesk App DBID</span><input value={activeQuickbaseConfig.helpdeskAppDbid} onChange={(event) => updateQuickbaseField("helpdeskAppDbid", event.target.value)} placeholder="App DBID" /></label>
+          <label className="field"><span>Tickets Table DBID</span><input value={activeQuickbaseConfig.helpdeskTicketsTableDbid} onChange={(event) => updateQuickbaseField("helpdeskTicketsTableDbid", event.target.value)} placeholder="Table DBID" /></label>
+        </div>
+        <div className="filter-grid compact-grid">
+          <label className="field"><span>Parent Table DBID</span><input value={activeQuickbaseConfig.helpdeskParentTableDbid} onChange={(event) => updateQuickbaseField("helpdeskParentTableDbid", event.target.value)} placeholder="Table DBID" /></label>
+          <label className="field"><span>Parent App ID FID</span><input value={activeQuickbaseConfig.helpdeskParentAppIdFid} onChange={(event) => updateQuickbaseField("helpdeskParentAppIdFid", event.target.value)} placeholder="FID" /></label>
+        </div>
+      </div>
+      <div className="card">
+        <div className="card-head">
           <strong>User settings</strong>
           <span className="micro">Enter the DBID and field FIDs for user settings.</span>
         </div>

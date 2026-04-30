@@ -1749,6 +1749,10 @@ async function syncSettingsRecords(document: StudioDocument, user: QuickbaseUser
       type: "storageConfig",
       scope: `${normalizeHostname(config.realmHostname)}::${config.appId}`,
       storage: {
+        helpdeskAppDbid: config.helpdeskAppDbid,
+        helpdeskTicketsTableDbid: config.helpdeskTicketsTableDbid,
+        helpdeskParentTableDbid: config.helpdeskParentTableDbid,
+        helpdeskParentAppIdFid: config.helpdeskParentAppIdFid,
         objectTableId: config.objectTableId,
         objectKeyFieldId: config.objectKeyFieldId,
         objectTypeFieldId: config.objectTypeFieldId,

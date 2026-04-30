@@ -34,7 +34,7 @@ import {
   typeLabel
 } from "./lib/catalog";
 import { buildHostedRoute, getHostedContext } from "./lib/embed";
-import type { QuickbaseTableLinkContext } from "./lib/quickbaseLinks";
+import { buildQuickbaseHelpdeskTicketUrl, type QuickbaseTableLinkContext } from "./lib/quickbaseLinks";
 import { fetchStudioDocument, fetchStudioRefreshJob, saveStudioUserSettings, startStudioObjectRefresh, startStudioRefresh, updateStudioSession } from "./lib/studioApi";
 
 const SESSION_RECENT_KEY = "studio-session-recent";
@@ -947,6 +947,26 @@ export function App() {
     () => (displayDocument?.quickbaseProfiles || []).filter((profile) => !profile.bootstrap.ready || profile.bootstrap.autoProvisioned || profile.bootstrap.error),
     [displayDocument]
   );
+  const activeQuickbaseProfile = useMemo(() => {
+    const sourceDocument = displayDocument || studioDocument;
+    if (!sourceDocument) return null;
+    const launchedAppId = String(hosted.appId || "").trim().toLowerCase();
+    if (launchedAppId) {
+      const launchedProfile = sourceDocument.quickbaseProfiles.find((profile) => String(profile.quickbase.appId || "").trim().toLowerCase() === launchedAppId);
+      if (launchedProfile) return launchedProfile;
+    }
+    return sourceDocument.quickbaseProfiles.find((profile) => profile.id === sourceDocument.activeQuickbaseProfileId) || sourceDocument.quickbaseProfiles[0] || null;
+  }, [displayDocument, hosted.appId, studioDocument]);
+  const helpdeskTicketUrl = useMemo(() => {
+    const sourceDocument = displayDocument || studioDocument;
+    const quickbaseConfig = activeQuickbaseProfile?.quickbase || sourceDocument?.quickbase;
+    const currentAppId = String(hosted.appId || quickbaseConfig?.appId || "").trim();
+    if (!quickbaseConfig) return "";
+    return buildQuickbaseHelpdeskTicketUrl({
+      ...quickbaseConfig,
+      realmHostname: hosted.realmHostname || quickbaseConfig.realmHostname
+    }, currentAppId);
+  }, [activeQuickbaseProfile, displayDocument, hosted.appId, hosted.realmHostname, studioDocument]);
   const visibleObjects = useMemo(
     () => filterStudioLibraryItems(
       displayDocument
@@ -1024,6 +1044,16 @@ export function App() {
     } finally {
       window.setTimeout(() => setTopbarStartingRefresh(false), 700);
     }
+  }
+
+  function openHelpdeskTicket() {
+    if (!helpdeskTicketUrl) return;
+    const popup = window.open(
+      helpdeskTicketUrl,
+      `studio-helpdesk-${activeQuickbaseProfile?.quickbase.helpdeskAppDbid || "ticket"}`,
+      "popup=yes,width=1320,height=900,resizable=yes,scrollbars=yes"
+    );
+    popup?.focus();
   }
 
   useEffect(() => {
@@ -1209,6 +1239,14 @@ export function App() {
             {viewerRoute ? (
               <button className="ghost-button topbar-action" onClick={() => { void startTopbarRefresh(); }}>Refresh all</button>
             ) : null}
+            <button
+              className="ghost-button topbar-action"
+              onClick={openHelpdeskTicket}
+              disabled={!helpdeskTicketUrl}
+              title={helpdeskTicketUrl ? "Open a new helpdesk ticket in Quickbase" : "Configure the helpdesk DBIDs and Parent App ID FID in Settings → Storage to enable this button."}
+            >
+              Open Helpdesk Ticket
+            </button>
             {!helpRoute ? <Link className="ghost-button topbar-action" to={buildHostedRoute("/help")}>Help</Link> : null}
             <span className="badge">{hosted.mode === "viewer" ? "Full-screen view" : navLabel}</span>
             <span className="badge brand">{visibleObjects.length} saved views</span>

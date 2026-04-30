@@ -366,6 +366,10 @@ export interface QuickbaseConnectionConfig {
   appToken: string;
   appId: string;
   apiBaseUrl: string;
+  helpdeskAppDbid: string;
+  helpdeskTicketsTableDbid: string;
+  helpdeskParentTableDbid: string;
+  helpdeskParentAppIdFid: string;
   objectTableId: string;
   objectKeyFieldId: string;
   objectTypeFieldId: string;

@@ -1,4 +1,4 @@
-import { buildCombinedFilterTree, filterHasValue, type ChartDatum, type FilterDefinition, type FilterGroupDefinition, type FilterNodeDefinition, type ReportDefinition, type TableDefinition } from "@studio/shared";
+import { buildCombinedFilterTree, filterHasValue, type ChartDatum, type FilterDefinition, type FilterGroupDefinition, type FilterNodeDefinition, type QuickbaseConnectionConfig, type ReportDefinition, type TableDefinition } from "@studio/shared";
 
 export interface QuickbaseTableLinkContext {
   realmHostname: string;
@@ -27,6 +27,24 @@ export function buildQuickbaseSavedReportUrl(context: QuickbaseTableLinkContext 
   if (!canBuildQuickbaseLinks(context) || !reportId) return "";
   const hostname = normalizeHostname(context!.realmHostname);
   return `https://${hostname}/db/${encodeURIComponent(context!.tableId)}?a=q&qid=${encodeURIComponent(reportId)}`;
+}
+
+export function buildQuickbaseHelpdeskTicketUrl(
+  config: Pick<QuickbaseConnectionConfig, "realmHostname" | "helpdeskAppDbid" | "helpdeskTicketsTableDbid" | "helpdeskParentTableDbid" | "helpdeskParentAppIdFid"> | null | undefined,
+  currentAppId: string
+) {
+  const hostname = normalizeHostname(String(config?.realmHostname || ""));
+  const helpdeskAppDbid = String(config?.helpdeskAppDbid || "").trim();
+  const ticketsTableDbid = String(config?.helpdeskTicketsTableDbid || "").trim();
+  const parentTableDbid = String(config?.helpdeskParentTableDbid || "").trim();
+  const parentAppIdFid = String(config?.helpdeskParentAppIdFid || "").trim();
+  const resolvedAppId = String(currentAppId || "").trim();
+  if (!hostname || !helpdeskAppDbid || !ticketsTableDbid || !parentTableDbid || !parentAppIdFid || !resolvedAppId) return "";
+  const params = new URLSearchParams();
+  params.set("a", "API_GenAddRecordForm");
+  params.set(`_fid_${parentAppIdFid}`, resolvedAppId);
+  params.set("z", `/db/${parentTableDbid}`);
+  return `https://${hostname}/db/${encodeURIComponent(ticketsTableDbid)}?${params.toString()}`;
 }
 
 export function buildQuickbaseFilteredQueryUrl(
