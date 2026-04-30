@@ -476,19 +476,17 @@ export function DashboardView({
         return rendered.tabs.find((item) => item.id === tab.id) || { id: tab.id, name: tab.name, widgets: [] };
       })
     );
-    const exportResultsByReportId = Object.fromEntries(
+    const exportResultsByWidgetId = Object.fromEntries(
       await Promise.all(
-        Array.from(
-          new Set(
-            renderedTabs.flatMap((tab) => tab.widgets.map((widget) => widget.report.id))
-          )
-        ).map(async (reportId) => {
-          const widget = renderedTabs.flatMap((tab) => tab.widgets).find((item) => item.report.id === reportId);
-          if (!widget) return [reportId, null] as const;
-          const filters = buildDashboardFilters(dashboard, reportId, runtimeFilters, widget.report.sourceTableId);
-          const response = await fetchReportExportBundle(reportId, filters);
-          return [reportId, response.result] as const;
-        })
+        renderedTabs
+          .flatMap((tab) => tab.widgets)
+          .map(async (widget) => {
+            const filters = buildDashboardFilters(dashboard, widget.report.id, runtimeFilters, widget.report.sourceTableId);
+            const response = await fetchReportExportBundle(widget.report.id, filters, {
+              report: widget.report
+            });
+            return [widget.widgetId, response.result] as const;
+          })
       )
     );
     return {
@@ -496,8 +494,8 @@ export function DashboardView({
         dashboard: exportDashboard,
         tabs: renderedTabs
       } as DashboardRunResult,
-      exportResultsByReportId: Object.fromEntries(
-        Object.entries(exportResultsByReportId).filter((entry): entry is [string, ReportRunResult] => Boolean(entry[1]))
+      exportResultsByWidgetId: Object.fromEntries(
+        Object.entries(exportResultsByWidgetId).filter((entry): entry is [string, ReportRunResult] => Boolean(entry[1]))
       )
     };
   }
@@ -518,7 +516,7 @@ export function DashboardView({
     setExportSaved(false);
     try {
       const exportPayload = await buildDashboardExportResult();
-      const blob = await exportDashboardWorkbook(dashboard, exportPayload.result, exportPayload.exportResultsByReportId, {
+      const blob = await exportDashboardWorkbook(dashboard, exportPayload.result, exportPayload.exportResultsByWidgetId, {
         filename,
         tablesById: Object.fromEntries((tables || []).map((table) => [table.id, table])),
         returnBlob: true

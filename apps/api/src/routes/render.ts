@@ -257,14 +257,17 @@ export async function registerRenderRoutes(app: FastifyInstance) {
   app.post("/api/reports/:id/export-bundle", async (request, reply) => {
     await studioStore.hydrateFromQuickbase();
     const { id } = request.params as { id: string };
-    const report = objectStore.getReport(id);
+    const body = (request.body as {
+      filters?: Array<{ fieldId: string; operator?: string; value: string }>;
+      report?: ReportDefinition;
+    } | undefined) || {};
+    const report = body.report?.id === id
+      ? body.report
+      : objectStore.getReport(id);
     if (!report) {
       reply.code(404);
       return { message: "Report not found." };
     }
-    const body = (request.body as {
-      filters?: Array<{ fieldId: string; operator?: string; value: string }>;
-    } | undefined) || {};
     const extraFilters = normalizeClientFilters(body.filters || []);
     const result = await fetchReportExportBundle(report, extraFilters);
     return { result };
@@ -324,45 +327,41 @@ export async function registerRenderRoutes(app: FastifyInstance) {
     const job = exportJobStore.createJob(dashboard.id, "dashboard", filename, async ({ jobId, update }) => {
       update(5, "Rendering dashboard");
       const rendered = await executeDashboard(dashboard.id, runtimeFilters, { dashboard });
-      const renderedReportsById = Object.fromEntries(
-        rendered.tabs
-          .flatMap((tab) => tab.widgets.map((widget) => [widget.report.id, widget.report] as const))
-      );
-      const widgetReportIds = Array.from(new Set(rendered.tabs.flatMap((tab) => tab.widgets.map((widget) => widget.report.id))));
-      const exportResultsByReportId: Record<string, ReportRunResult> = {};
+      const renderedWidgets = rendered.tabs.flatMap((tab) => tab.widgets);
+      const exportResultsByWidgetId: Record<string, ReportRunResult> = {};
       const reportProgress = new Map<string, number>();
       const reportMessage = new Map<string, string>();
       const updateOverallProgress = () => {
-        const total = Math.max(widgetReportIds.length, 1);
-        const average = widgetReportIds.reduce((sum, reportId) => sum + (reportProgress.get(reportId) || 0), 0) / total;
-        const leadReport = widgetReportIds
-          .map((reportId) => ({
-            reportId,
-            progress: reportProgress.get(reportId) || 0,
-            message: reportMessage.get(reportId) || ""
+        const total = Math.max(renderedWidgets.length, 1);
+        const average = renderedWidgets.reduce((sum, widget) => sum + (reportProgress.get(widget.widgetId) || 0), 0) / total;
+        const leadReport = renderedWidgets
+          .map((widget) => ({
+            widgetId: widget.widgetId,
+            progress: reportProgress.get(widget.widgetId) || 0,
+            message: reportMessage.get(widget.widgetId) || ""
           }))
           .sort((left, right) => right.progress - left.progress)[0];
         const message = leadReport?.message || "Loading dashboard reports";
         update(10 + Math.round(average * 55), message);
       };
-      await runWithConcurrency(widgetReportIds, 2, async (reportId, index) => {
-        const report = renderedReportsById[reportId] || objectStore.getReport(reportId) as ReportDefinition | undefined;
+      await runWithConcurrency(renderedWidgets, 2, async (widget) => {
+        const report = widget.report;
         if (!report) return;
         const filters = buildDashboardFilters(dashboard, report.id, runtimeFilters, report.sourceTableId);
-        reportProgress.set(report.id, 0);
-        reportMessage.set(report.id, `Loading ${report.name}`);
+        reportProgress.set(widget.widgetId, 0);
+        reportMessage.set(widget.widgetId, `Loading ${report.name}`);
         updateOverallProgress();
         try {
-          exportResultsByReportId[reportId] = await fetchReportExportBundle(report, filters, (progress, message) => {
-            reportProgress.set(report.id, Math.max(0, Math.min(100, progress)));
-            reportMessage.set(report.id, `${report.name}: ${message}`);
+          exportResultsByWidgetId[widget.widgetId] = await fetchReportExportBundle(report, filters, (progress, message) => {
+            reportProgress.set(widget.widgetId, Math.max(0, Math.min(100, progress)));
+            reportMessage.set(widget.widgetId, `${report.name}: ${message}`);
             updateOverallProgress();
           });
-          reportProgress.set(report.id, 100);
-          reportMessage.set(report.id, `${report.name}: ready`);
+          reportProgress.set(widget.widgetId, 100);
+          reportMessage.set(widget.widgetId, `${report.name}: ready`);
         } catch (error) {
-          reportProgress.set(report.id, 100);
-          reportMessage.set(report.id, `${report.name}: ${error instanceof Error ? error.message : "failed"}`);
+          reportProgress.set(widget.widgetId, 100);
+          reportMessage.set(widget.widgetId, `${report.name}: ${error instanceof Error ? error.message : "failed"}`);
         }
         updateOverallProgress();
       });
@@ -372,7 +371,7 @@ export async function registerRenderRoutes(app: FastifyInstance) {
       if (!stream) {
         throw new Error("Unable to create export file stream.");
       }
-      await streamDashboardWorkbook(stream, dashboard, rendered, exportResultsByReportId, tablesById, update, runtimeFilters);
+      await streamDashboardWorkbook(stream, dashboard, rendered, exportResultsByWidgetId, tablesById, update, runtimeFilters);
     });
     return { job };
   });

@@ -237,11 +237,19 @@ function reportShowsDetails(report: ReportDefinition) {
   return report.view.mode === "table" || report.view.mode === "timeline" || report.view.mode === "calendar" || report.view.mode === "kanban";
 }
 
-function widgetDisplayMode(widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], report: ReportDefinition) {
+function widgetBaseMode(widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], report: ReportDefinition) {
   if (widget.displayMode !== "inherit") return widget.displayMode;
-  if (report.view.mode === "summary") return "summary";
-  if (report.view.mode === "chart") return "chart";
+  return report.view.mode;
+}
+
+function widgetDisplayMode(widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], report: ReportDefinition) {
+  const mode = widgetBaseMode(widget, report);
+  if (mode === "summary" || mode === "chart" || mode === "table") return mode;
   return "table";
+}
+
+function widgetShowsSummary(widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], report: ReportDefinition, result: ReportRunResult) {
+  return Boolean(result.summary.length && (widget.showSummary || widgetBaseMode(widget, report) === "summary"));
 }
 
 function widgetShowsChart(widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], report: ReportDefinition) {
@@ -250,7 +258,7 @@ function widgetShowsChart(widget: DashboardRunResult["tabs"][number]["widgets"][
 }
 
 function widgetShowsDetails(widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], report: ReportDefinition) {
-  return widgetDisplayMode(widget, report) === "table" || widget.showDetails;
+  return widget.showDetails || ["table", "timeline", "calendar", "kanban"].includes(widgetBaseMode(widget, report));
 }
 
 function widgetNeedsSeparateDetailSheet(
@@ -262,9 +270,9 @@ function widgetNeedsSeparateDetailSheet(
 
 function resolveWidgetExportResult(
   widget: DashboardRunResult["tabs"][number]["widgets"][number],
-  exportResultsByReportId: Record<string, ReportRunResult>
+  exportResultsByWidgetId: Record<string, ReportRunResult>
 ) {
-  const exported = exportResultsByReportId[widget.report.id];
+  const exported = exportResultsByWidgetId[widget.widgetId];
   if (!exported) return widget.result;
   return {
     ...exported,
@@ -1090,7 +1098,7 @@ async function writeDashboardTabSheet(
   sheet: ExcelJS.Worksheet,
   tab: DashboardRunResult["tabs"][number],
   tablesById: Record<string, TableDefinition>,
-  exportResultsByReportId: Record<string, ReportRunResult>,
+  exportResultsByWidgetId: Record<string, ReportRunResult>,
   detailSheetNames: Record<string, string>,
   onProgress?: ExportProgressCallback
 ) {
@@ -1099,7 +1107,7 @@ async function writeDashboardTabSheet(
     : null;
   if (singleWidgetPlacement) {
     const widget = singleWidgetPlacement.widget;
-    const exportResult = resolveWidgetExportResult(widget, exportResultsByReportId);
+    const exportResult = resolveWidgetExportResult(widget, exportResultsByWidgetId);
     const table = tablesById[widget.report.sourceTableId];
     if (widget.status === "failed") {
       writeOverviewHeader(sheet, widget.widget.title || widget.report.name, widget.error || widget.message || "Widget failed to load.");
@@ -1124,7 +1132,7 @@ async function writeDashboardTabSheet(
   const placements = layoutDashboardWidgets(dashboard, tab.id, tab.widgets);
   for (const placement of placements) {
     const { widget, startCol, endCol, startRow, endRow } = placement;
-    const exportResult = resolveWidgetExportResult(widget, exportResultsByReportId);
+    const exportResult = resolveWidgetExportResult(widget, exportResultsByWidgetId);
     const table = tablesById[widget.report.sourceTableId];
     writeWidgetTitle(sheet, startRow, startCol, endCol, widget.widget.title || widget.report.name, widget.report.name !== widget.widget.title ? widget.report.name : "");
     if (widget.status === "failed") {
@@ -1136,7 +1144,7 @@ async function writeDashboardTabSheet(
       continue;
     }
     let contentRow = startRow + 3;
-    if (widget.widget.showSummary) {
+    if (widgetShowsSummary(widget.widget, widget.report, exportResult)) {
       contentRow = writeWidgetSummaryBlock(sheet, exportResult, contentRow, startCol, endCol) + 1;
     }
     if (widgetShowsChart(widget.widget, widget.report)) {
@@ -1263,7 +1271,7 @@ export async function streamDashboardWorkbook(
   output: Stream,
   dashboard: DashboardDefinition,
   rendered: DashboardRunResult,
-  exportResultsByReportId: Record<string, ReportRunResult>,
+  exportResultsByWidgetId: Record<string, ReportRunResult>,
   tablesById: Record<string, TableDefinition>,
   onProgress?: ExportProgressCallback,
   runtimeFilters: Record<string, string> = {}
@@ -1314,7 +1322,7 @@ export async function streamDashboardWorkbook(
     tab.widgets.forEach((widget) => {
       if (widget.status === "failed") return;
       const table = tablesById[widget.report.sourceTableId];
-      const exportResult = resolveWidgetExportResult(widget, exportResultsByReportId);
+      const exportResult = resolveWidgetExportResult(widget, exportResultsByWidgetId);
       if (!widgetNeedsSeparateDetailSheet(widget.widget, widget.report)) return;
       if (!table || !exportResult.rows.length) return;
       const detailSheet = workbook.addWorksheet(safeSheetName(`${tab.name} ${widget.report.name} Data`, usedNames));
@@ -1331,7 +1339,7 @@ export async function streamDashboardWorkbook(
   rendered.tabs.forEach((tab) => {
     tab.widgets.forEach((widget) => {
       const table = tablesById[widget.report.sourceTableId];
-      const exportResult = resolveWidgetExportResult(widget, exportResultsByReportId);
+      const exportResult = resolveWidgetExportResult(widget, exportResultsByWidgetId);
       const runtimeWidgetFilters = table
         ? buildDashboardFilters(dashboard, widget.report.id, runtimeFilters, widget.report.sourceTableId).map((filter) => describeReportFilter(widget.report, table, filter))
         : [];
@@ -1342,9 +1350,9 @@ export async function streamDashboardWorkbook(
       const parts = widget.status === "failed"
         ? [`failed: ${widget.error || widget.message || "Widget load failed"}`]
         : [
-            widget.widget.showSummary ? "summary" : "",
+            widgetShowsSummary(widget.widget, widget.report, exportResult) ? "summary" : "",
             widgetShowsChart(widget.widget, widget.report) ? "chart" : "",
-            widgetDisplayMode(widget.widget, widget.report) === "table" ? "table rows" : "",
+            widgetShowsDetails(widget.widget, widget.report) && widgetDisplayMode(widget.widget, widget.report) === "table" ? "table rows" : "",
             detailSheetNames[widget.widgetId] ? "detail sheet" : ""
           ].filter(Boolean);
       overview.getCell(`A${overviewRow}`).value = tab.name;
@@ -1386,7 +1394,7 @@ export async function streamDashboardWorkbook(
     sheet.getCell("A1").value = tab.name;
     sheet.getCell("A1").font = { size: 18, bold: true };
     sheet.getCell("A2").value = dashboard.name;
-    await writeDashboardTabSheet(workbook, dashboard, sheet, tab, tablesById, exportResultsByReportId, detailSheetNames, onProgress);
+    await writeDashboardTabSheet(workbook, dashboard, sheet, tab, tablesById, exportResultsByWidgetId, detailSheetNames, onProgress);
   }
 
   await workbook.xlsx.write(output);

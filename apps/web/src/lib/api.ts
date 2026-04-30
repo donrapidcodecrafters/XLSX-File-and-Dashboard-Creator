@@ -186,11 +186,15 @@ export function runReportPage(
 
 export function fetchReportExportBundle(
   id: string,
-  filters: Array<{ fieldId: string; value: string; operator?: string }> = []
+  filters: Array<{ fieldId: string; value: string; operator?: string }> = [],
+  options: { report?: unknown } = {}
 ) {
   return request<{ result: ReportRunResult }>("/api/reports/" + encodeURIComponent(id) + "/export-bundle", {
     method: "POST",
-    body: JSON.stringify({ filters }),
+    body: JSON.stringify({
+      filters,
+      report: options.report
+    }),
     timeoutMs: REPORT_RUN_TIMEOUT_MS
   });
 }

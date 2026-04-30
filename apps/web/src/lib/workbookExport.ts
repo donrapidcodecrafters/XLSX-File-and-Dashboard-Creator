@@ -2,6 +2,7 @@ import {
   ChartDatum,
   DashboardRunResult,
   DataRow,
+  getDashboardWidgetPlacements,
   getReportFieldLabel,
   ReportDefinition,
   ReportRunResult,
@@ -580,10 +581,14 @@ async function writeWorkbookFileWithOptions(
   return blob;
 }
 
-function resolveWidgetDisplayMode(widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], report: ReportDefinition) {
+function widgetBaseMode(widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], report: ReportDefinition) {
   if (widget.displayMode !== "inherit") return widget.displayMode;
-  if (report.view.mode === "summary") return "summary";
-  if (report.view.mode === "chart") return "chart";
+  return report.view.mode;
+}
+
+function resolveWidgetDisplayMode(widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], report: ReportDefinition) {
+  const mode = widgetBaseMode(widget, report);
+  if (mode === "summary" || mode === "chart" || mode === "table") return mode;
   return "table";
 }
 
@@ -592,12 +597,36 @@ function widgetShowsChart(widget: DashboardRunResult["tabs"][number]["widgets"][
   return displayMode === "chart" || (displayMode === "table" && report.view.showChartInTable);
 }
 
-function widgetNeedsSeparateDetailSheet(widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], report: ReportDefinition) {
-  return resolveWidgetDisplayMode(widget, report) !== "table" && widget.showDetails;
+function widgetShowsDetails(widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], report: ReportDefinition) {
+  return widget.showDetails || ["table", "timeline", "calendar", "kanban"].includes(widgetBaseMode(widget, report));
+}
+
+function widgetNeedsSeparateDetailSheet(
+  widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"],
+  report: ReportDefinition,
+  isMultiWidgetTab = false
+) {
+  return widgetShowsDetails(widget, report) && (resolveWidgetDisplayMode(widget, report) !== "table" || isMultiWidgetTab);
 }
 
 function widgetShowsSummary(widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], report: ReportDefinition, exportResult: ReportRunResult) {
-  return Boolean(widget.showSummary || (report.view.mode === "summary" && exportResult.summary.length));
+  return Boolean(exportResult.summary.length && (widget.showSummary || widgetBaseMode(widget, report) === "summary"));
+}
+
+function resolveWidgetExportResult(
+  widget: DashboardRunResult["tabs"][number]["widgets"][number],
+  exportResultsByWidgetId?: Record<string, ReportRunResult>
+) {
+  const exported = exportResultsByWidgetId?.[widget.widgetId];
+  if (!exported) return widget.result;
+  return {
+    ...exported,
+    rows: exported.rows.length ? exported.rows : widget.result.rows,
+    summary: exported.summary.length ? exported.summary : widget.result.summary,
+    chartData: exported.chartData.length ? exported.chartData : widget.result.chartData,
+    warnings: exported.warnings.length ? exported.warnings : widget.result.warnings,
+    totalRows: exported.totalRows || widget.result.totalRows
+  };
 }
 
 function stripDataUrlPrefix(image: string) {
@@ -613,34 +642,80 @@ function addChartImage(workbook: any, sheet: any, image: string, row: number, wi
   });
 }
 
-function resolveWidgetExportImageSize(widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"]) {
-  const widthUnits = Math.max(1, Math.min(12, Number(widget.layout.w || 6)));
-  const heightUnits = Math.max(2, Math.min(10, Number(widget.layout.h || 4)));
-  const fullWidth = 1180;
-  const width = Math.max(560, Math.round((widthUnits / 12) * fullWidth));
-  const height = Math.max(360, Math.round(180 + heightUnits * 82));
-  return { width, height };
+function addPositionedChartImage(
+  workbook: any,
+  sheet: any,
+  image: string,
+  startCol: number,
+  startRow: number,
+  width: number,
+  height: number
+) {
+  const imageId = workbook.addImage({ base64: stripDataUrlPrefix(image), extension: "png" });
+  sheet.addImage(imageId, {
+    tl: {
+      col: Math.max(0, startCol - 1 + 0.08),
+      row: Math.max(0, startRow - 1 + 0.08)
+    },
+    ext: { width, height }
+  });
 }
 
-function writeSummaryRows(sheet: any, summary: SummaryDatum[], startRow: number) {
+function sheetHyperlink(sheetName: string) {
+  return `#'${sheetName.replace(/'/g, "''")}'!A1`;
+}
+
+function mergeRowRange(sheet: any, row: number, startCol: number, endCol: number) {
+  if (endCol > startCol) {
+    sheet.mergeCells(row, startCol, row, endCol);
+  }
+}
+
+function writeOverviewHeader(sheet: any, title: string, description: string) {
+  sheet.columns = [
+    { width: 24 },
+    { width: 24 },
+    { width: 24 },
+    { width: 24 },
+    { width: 18 },
+    { width: 18 },
+    { width: 20 },
+    { width: 20 }
+  ];
+  sheet.views = [{ state: "frozen", ySplit: 3 }];
+  sheet.mergeCells("A1:H1");
+  sheet.mergeCells("A2:H2");
+  sheet.getCell("A1").value = title;
+  sheet.getCell("A1").font = { size: 18, bold: true };
+  sheet.getCell("A2").value = description;
+  sheet.getCell("A2").alignment = { wrapText: true };
+}
+
+function writeMetadataRows(sheet: any, startRow: number, items: Array<{ label: string; value: string | number }>) {
   let row = startRow;
-  if (!summary.length) return row;
-  sheet.getCell(`A${row}`).value = "Summary metrics";
+  items.forEach((item) => {
+    sheet.getCell(`A${row}`).value = item.label;
+    sheet.getCell(`A${row}`).font = { bold: true };
+    sheet.mergeCells(`B${row}:D${row}`);
+    sheet.getCell(`B${row}`).value = item.value;
+    sheet.getCell(`B${row}`).alignment = { wrapText: true };
+    row += 1;
+  });
+  return row;
+}
+
+function writeTextListSection(sheet: any, startRow: number, title: string, items: string[], emptyText = "None") {
+  let row = startRow;
+  sheet.getCell(`A${row}`).value = title;
   sheet.getCell(`A${row}`).font = { bold: true };
   row += 1;
-  sheet.columns = [
-    { width: 28 },
-    { width: 18 },
-    { width: 18 },
-    { width: 18 },
-    { width: 18 },
-    { width: 18 },
-    { width: 18 },
-    { width: 18 }
-  ];
-  summary.forEach((item) => {
-    sheet.getCell(`A${row}`).value = item.label;
-    sheet.getCell(`B${row}`).value = item.value;
+  if (!items.length) {
+    sheet.getCell(`A${row}`).value = emptyText;
+    return row + 2;
+  }
+  items.forEach((item) => {
+    sheet.getCell(`A${row}`).value = `• ${item}`;
+    sheet.getCell(`A${row}`).alignment = { wrapText: true };
     row += 1;
   });
   return row + 1;
@@ -657,6 +732,155 @@ function writeWarningRows(sheet: any, warnings: string[], startRow: number) {
     row += 1;
   });
   return row + 1;
+}
+
+function writeWidgetWarningBlock(
+  sheet: any,
+  warnings: string[],
+  startRow: number,
+  startCol: number,
+  endCol: number
+) {
+  let row = startRow;
+  if (!warnings.length) return row;
+  mergeRowRange(sheet, row, startCol, endCol);
+  sheet.getCell(row, startCol).value = "Warnings";
+  sheet.getCell(row, startCol).font = { bold: true, color: { argb: "FF8A4B08" } };
+  row += 1;
+  warnings.forEach((warning) => {
+    mergeRowRange(sheet, row, startCol, endCol);
+    sheet.getCell(row, startCol).value = `• ${warning}`;
+    sheet.getCell(row, startCol).alignment = { wrapText: true, vertical: "middle" };
+    sheet.getCell(row, startCol).font = { color: { argb: "FF8A4B08" } };
+    row += 1;
+  });
+  return row + 1;
+}
+
+function setDashboardLayoutColumns(sheet: any) {
+  sheet.columns = Array.from({ length: 12 }, () => ({ width: 14 }));
+}
+
+function layoutDashboardWidgets(
+  dashboard: DashboardRunResult["dashboard"],
+  tabId: string,
+  widgets: DashboardRunResult["tabs"][number]["widgets"],
+  startRowOffset = 4
+) {
+  const dashboardTab = dashboard.tabs.find((tab) => tab.id === tabId);
+  if (!dashboardTab) return [];
+  const placementsById = new Map(
+    getDashboardWidgetPlacements(dashboardTab).map((placement) => [placement.widgetId, placement])
+  );
+  return widgets
+    .map((widget) => {
+      const placement = placementsById.get(widget.widgetId);
+      if (!placement) return null;
+      return {
+        widget,
+        startCol: placement.startCol,
+        endCol: placement.endCol,
+        startRow: ((placement.startRow - 1) * 7) + startRowOffset,
+        endRow: (((placement.endRow - placement.startRow + 1) * 7) + ((placement.startRow - 1) * 7)) - 1 + startRowOffset
+      };
+    })
+    .filter(Boolean) as Array<{
+      widget: DashboardRunResult["tabs"][number]["widgets"][number];
+      startCol: number;
+      endCol: number;
+      startRow: number;
+      endRow: number;
+    }>;
+}
+
+function writeWidgetTitle(sheet: any, row: number, startCol: number, endCol: number, title: string, subtitle: string) {
+  mergeRowRange(sheet, row, startCol, endCol);
+  sheet.getCell(row, startCol).value = title;
+  sheet.getCell(row, startCol).font = { size: 14, bold: true };
+  if (subtitle) {
+    mergeRowRange(sheet, row + 1, startCol, endCol);
+    sheet.getCell(row + 1, startCol).value = subtitle;
+    sheet.getCell(row + 1, startCol).font = { italic: true, color: { argb: "FF56685E" } };
+  }
+}
+
+function writeWidgetMessageBlock(sheet: any, row: number, startCol: number, endCol: number, message: string) {
+  mergeRowRange(sheet, row, startCol, endCol);
+  const cell = sheet.getCell(row, startCol);
+  cell.value = message;
+  cell.alignment = { wrapText: true, vertical: "middle" };
+  cell.font = { italic: true, color: { argb: "FF8A4B08" } };
+  return row + 2;
+}
+
+function writeWidgetSummaryBlock(
+  sheet: any,
+  result: ReportRunResult,
+  startRow: number,
+  startCol: number,
+  endCol: number
+) {
+  let row = startRow;
+  mergeRowRange(sheet, row, startCol, endCol);
+  sheet.getCell(row, startCol).value = "Summary";
+  sheet.getCell(row, startCol).font = { bold: true };
+  row += 1;
+  const summaryItems = result.summary.length
+    ? result.summary
+    : [{ label: "Rows", value: String(result.totalRows), numericValue: result.totalRows }];
+  summaryItems.slice(0, 10).forEach((item) => {
+    mergeRowRange(sheet, row, startCol, endCol - 2 >= startCol ? endCol - 2 : startCol);
+    const valueCol = endCol - 1 >= startCol ? endCol - 1 : endCol;
+    if (valueCol > startCol) {
+      sheet.mergeCells(row, valueCol, row, endCol);
+    }
+    sheet.getCell(row, startCol).value = item.label;
+    sheet.getCell(row, valueCol).value = item.value;
+    row += 1;
+  });
+  return row;
+}
+
+function writeWidgetTablePreview(
+  sheet: any,
+  report: ReportDefinition,
+  table: TableDefinition,
+  result: ReportRunResult,
+  startRow: number,
+  startCol: number,
+  endCol: number,
+  maxRows = 12
+) {
+  const availableColumns = Math.max(1, endCol - startCol + 1);
+  const previewFieldIds = report.selectedFieldIds.slice(0, availableColumns);
+  const headers = previewFieldIds.map((fieldId) => resolveExportFieldLabel(report, table, fieldId));
+  const widths = headers.map((header) => Math.min(30, Math.max(14, String(header || "").length + 3)));
+  headers.forEach((header, index) => {
+    const cell = sheet.getCell(startRow, startCol + index);
+    cell.value = header;
+    cell.font = { bold: true };
+  });
+  result.rows.slice(0, maxRows).forEach((dataRow, rowIndex) => {
+    previewFieldIds.forEach((fieldId, fieldIndex) => {
+      const formatted = formatCell(dataRow[fieldId]);
+      sheet.getCell(startRow + 1 + rowIndex, startCol + fieldIndex).value = formatted;
+      widths[fieldIndex] = Math.min(34, Math.max(widths[fieldIndex], String(formatted ?? "").length + 2));
+    });
+  });
+  widths.forEach((width, index) => {
+    sheet.getColumn(startCol + index).width = Math.max(sheet.getColumn(startCol + index).width || 0, width);
+  });
+  let row = startRow + 1 + Math.min(result.rows.length, maxRows);
+  if (result.rows.length > maxRows || report.selectedFieldIds.length > previewFieldIds.length) {
+    row = writeWidgetMessageBlock(
+      sheet,
+      row,
+      startCol,
+      endCol,
+      `${result.totalRows.toLocaleString()} rows exported${report.selectedFieldIds.length > previewFieldIds.length ? ` · showing ${previewFieldIds.length} of ${report.selectedFieldIds.length} fields here` : ""}.`
+    );
+  }
+  return row;
 }
 
 function writeDetailRows(
@@ -727,7 +951,7 @@ export async function exportReportWorkbook(
 export async function exportDashboardWorkbook(
   dashboard: DashboardRunResult["dashboard"],
   result: DashboardRunResult,
-  exportResultsByReportId?: Record<string, ReportRunResult>,
+  exportResultsByWidgetId?: Record<string, ReportRunResult>,
   options: WorkbookExportOptions = {}
 ) {
   const ExcelJS = await import("exceljs");
@@ -737,98 +961,135 @@ export async function exportDashboardWorkbook(
   workbook.created = new Date();
 
   const overviewSheet = workbook.addWorksheet(safeSheetName(`${dashboard.name} Overview`, usedNames));
-  overviewSheet.getCell("A1").value = dashboard.name;
-  overviewSheet.getCell("A1").font = { size: 20, bold: true };
-  overviewSheet.getCell("A2").value = dashboard.description || "Dashboard export";
-  overviewSheet.getCell("A4").value = "Tabs";
-  overviewSheet.getCell("A4").font = { bold: true };
-  result.tabs.forEach((tab, index) => {
-    overviewSheet.getCell(`A${5 + index}`).value = `${tab.name} (${tab.widgets.length} cards)`;
+  writeOverviewHeader(overviewSheet, dashboard.name, dashboard.description || "Dashboard export");
+  let overviewRow = writeMetadataRows(overviewSheet, 4, [
+    { label: "Generated", value: new Date(workbook.created).toLocaleString() },
+    { label: "Tabs exported", value: result.tabs.length },
+    { label: "Cards exported", value: result.tabs.reduce((sum, tab) => sum + tab.widgets.length, 0) }
+  ]);
+  overviewRow = writeTextListSection(
+    overviewSheet,
+    overviewRow + 1,
+    "Tabs",
+    result.tabs.map((tab) => `${tab.name} (${tab.widgets.length} cards)`)
+  );
+  overviewSheet.getCell(`A${overviewRow}`).value = "Tab";
+  overviewSheet.getCell(`B${overviewRow}`).value = "Card";
+  overviewSheet.getCell(`C${overviewRow}`).value = "Report";
+  overviewSheet.getCell(`D${overviewRow}`).value = "Rows";
+  overviewSheet.getCell(`E${overviewRow}`).value = "Sheet";
+  overviewSheet.getCell(`F${overviewRow}`).value = "Exported content";
+  overviewSheet.getRow(overviewRow).font = { bold: true };
+  overviewRow += 1;
+
+  const detailSheetNames: Record<string, string> = {};
+  const tabSheetNamesById: Record<string, string> = {};
+
+  result.tabs.forEach((tab) => {
+    const sheet = workbook.addWorksheet(safeSheetName(tab.name, usedNames));
+    tabSheetNamesById[tab.id] = sheet.name;
   });
 
   result.tabs.forEach((tab) => {
-    const tabSheet = workbook.addWorksheet(safeSheetName(tab.name, usedNames));
-    tabSheet.columns = [
-      { width: 24 },
-      { width: 22 },
-      { width: 22 },
-      { width: 22 },
-      { width: 22 },
-      { width: 22 },
-      { width: 22 },
-      { width: 22 },
-      { width: 22 },
-      { width: 22 }
-    ];
-
-    if (tab.widgets.length === 1) {
-      const widget = tab.widgets[0];
-      const exportResult = exportResultsByReportId?.[widget.report.id] || widget.result;
+    tab.widgets.forEach((widget) => {
+      if (widget.status === "failed") return;
       const table = options.tablesById?.[widget.report.sourceTableId];
-      const imageSize = resolveWidgetExportImageSize(widget.widget);
-      tabSheet.getCell("A1").value = widget.widget.title || widget.report.name;
-      tabSheet.getCell("A1").font = { size: 18, bold: true };
-      tabSheet.getCell("A2").value = widget.report.name !== (widget.widget.title || widget.report.name)
-        ? widget.report.name
-        : table?.name || tab.name;
-      if (widget.status === "failed") {
-        tabSheet.getCell("A4").value = widget.error || widget.message || "Widget failed to load.";
+      const exportResult = resolveWidgetExportResult(widget, exportResultsByWidgetId);
+      if (!table || !exportResult.rows.length) return;
+      if (!widgetNeedsSeparateDetailSheet(widget.widget, widget.report, tab.widgets.length > 1)) return;
+      const detailSheet = workbook.addWorksheet(safeSheetName(`${tab.name} ${widget.report.name} Data`, usedNames));
+      detailSheetNames[widget.widgetId] = detailSheet.name;
+      writeOverviewHeader(detailSheet, widget.report.name, widget.report.description || table.name);
+      writeDetailRows(detailSheet, widget.report, table, exportResult, 4);
+    });
+  });
+
+  result.tabs.forEach((tab) => {
+    tab.widgets.forEach((widget) => {
+      const exportResult = resolveWidgetExportResult(widget, exportResultsByWidgetId);
+      const parts = widget.status === "failed"
+        ? [`failed: ${widget.error || widget.message || "Widget load failed"}`]
+        : [
+            widgetShowsSummary(widget.widget, widget.report, exportResult) ? "summary" : "",
+            widgetShowsChart(widget.widget, widget.report) ? "chart" : "",
+            widgetShowsDetails(widget.widget, widget.report) ? "data rows" : "",
+            detailSheetNames[widget.widgetId] ? "detail sheet" : ""
+          ].filter(Boolean);
+      overviewSheet.getCell(`A${overviewRow}`).value = tab.name;
+      overviewSheet.getCell(`B${overviewRow}`).value = widget.widget.title || widget.report.name;
+      overviewSheet.getCell(`C${overviewRow}`).value = widget.report.name;
+      overviewSheet.getCell(`D${overviewRow}`).value = exportResult.totalRows;
+      const destinationSheet = detailSheetNames[widget.widgetId] || tabSheetNamesById[tab.id] || "";
+      if (destinationSheet) {
+        overviewSheet.getCell(`E${overviewRow}`).value = {
+          text: destinationSheet,
+          hyperlink: sheetHyperlink(destinationSheet)
+        };
+        overviewSheet.getCell(`E${overviewRow}`).font = { color: { argb: "FF1F5AA6" }, underline: true };
+      } else {
+        overviewSheet.getCell(`E${overviewRow}`).value = "None";
+      }
+      overviewSheet.getCell(`F${overviewRow}`).value = parts.join(", ") || "metadata only";
+      overviewRow += 1;
+    });
+  });
+
+  result.tabs.forEach((tab) => {
+    const tabSheet = workbook.getWorksheet(tabSheetNamesById[tab.id]);
+    if (!tabSheet) return;
+    setDashboardLayoutColumns(tabSheet);
+    tabSheet.mergeCells(1, 1, 1, 12);
+    tabSheet.mergeCells(2, 1, 2, 12);
+    tabSheet.getCell(1, 1).value = tab.name;
+    tabSheet.getCell(1, 1).font = { size: 18, bold: true };
+    tabSheet.getCell(2, 1).value = `${tab.widgets.length} cards`;
+    tabSheet.getCell(2, 1).font = { color: { argb: "FF56685E" } };
+
+    const singleWidget = tab.widgets.length === 1 ? tab.widgets[0] : null;
+    if (singleWidget) {
+      const table = options.tablesById?.[singleWidget.report.sourceTableId];
+      const exportResult = resolveWidgetExportResult(singleWidget, exportResultsByWidgetId);
+      if (
+        singleWidget.status === "complete"
+        && table
+        && resolveWidgetDisplayMode(singleWidget.widget, singleWidget.report) === "table"
+        && !widgetShowsChart(singleWidget.widget, singleWidget.report)
+        && !widgetShowsSummary(singleWidget.widget, singleWidget.report, exportResult)
+      ) {
+        writeDetailRows(tabSheet, singleWidget.report, table, exportResult, 4);
         return;
       }
-      let rowCursor = 4;
-      if (widgetShowsSummary(widget.widget, widget.report, exportResult)) {
-        rowCursor = writeSummaryRows(tabSheet, exportResult.summary, rowCursor);
-      }
-      if (resolveWidgetDisplayMode(widget.widget, widget.report) === "table") {
-        writeDetailRows(tabSheet, widget.report, table, exportResult, rowCursor);
-      } else if (widgetShowsChart(widget.widget, widget.report)) {
-        const image = renderChartImage(
-          widget.widget.title || widget.report.name,
-          widget.report.name !== (widget.widget.title || widget.report.name) ? widget.report.name : tab.name,
-          widget.report.view.chartType,
-          widget.report.view.chartOrientation,
-          exportResult.chartData,
-          exportResult.summary,
-          {
-            chartColors: widget.report.view.chartColors,
-            chartValueColors: widget.report.view.chartValueColors,
-            targetWidth: imageSize.width,
-            targetHeight: imageSize.height
-          }
-        );
-        if (image) {
-          addChartImage(workbook, tabSheet, image, rowCursor, imageSize.width, imageSize.height);
-          rowCursor += Math.max(22, Math.ceil(imageSize.height / 22));
-        } else {
-          tabSheet.getCell(`A${rowCursor}`).value = "Chart image unavailable for this widget.";
-          rowCursor += 2;
-        }
-        rowCursor = writeWarningRows(tabSheet, exportResult.warnings || [], rowCursor);
-        if (widgetNeedsSeparateDetailSheet(widget.widget, widget.report)) {
-          const tableSheet = workbook.addWorksheet(safeSheetName(`${tab.name} ${widget.report.name} Data`, usedNames));
-          writeDetailRows(tableSheet, widget.report, table, exportResult, 1);
-        }
-      }
-      return;
     }
 
-    let rowCursor = 1;
-    tab.widgets.forEach((widget) => {
-      const exportResult = exportResultsByReportId?.[widget.report.id] || widget.result;
+    layoutDashboardWidgets(dashboard, tab.id, tab.widgets).forEach((placement) => {
+      const { widget, startCol, endCol, startRow, endRow } = placement;
+      const exportResult = resolveWidgetExportResult(widget, exportResultsByWidgetId);
       const table = options.tablesById?.[widget.report.sourceTableId];
-      const imageSize = resolveWidgetExportImageSize(widget.widget);
-      tabSheet.getCell(`A${rowCursor}`).value = widget.widget.title || widget.report.name;
-      tabSheet.getCell(`A${rowCursor}`).font = { size: 16, bold: true };
-      rowCursor += 1;
+      writeWidgetTitle(
+        tabSheet,
+        startRow,
+        startCol,
+        endCol,
+        widget.widget.title || widget.report.name,
+        widget.report.name !== (widget.widget.title || widget.report.name)
+          ? widget.report.name
+          : table?.name || tab.name
+      );
       if (widget.status === "failed") {
-        tabSheet.getCell(`A${rowCursor}`).value = widget.error || widget.message || "Widget failed to load.";
-        rowCursor += 3;
+        writeWidgetMessageBlock(tabSheet, startRow + 3, startCol, endCol, widget.error || widget.message || "Widget failed to load.");
         return;
       }
+      if (!table) {
+        writeWidgetMessageBlock(tabSheet, startRow + 3, startCol, endCol, "Source table unavailable for this widget.");
+        return;
+      }
+      let contentRow = startRow + 3;
       if (widgetShowsSummary(widget.widget, widget.report, exportResult)) {
-        rowCursor = writeSummaryRows(tabSheet, exportResult.summary, rowCursor);
+        contentRow = writeWidgetSummaryBlock(tabSheet, exportResult, contentRow, startCol, endCol) + 1;
       }
       if (widgetShowsChart(widget.widget, widget.report)) {
+        const imageWidth = Math.max(360, Math.min(1480, (endCol - startCol + 1) * 118));
+        const imageHeight = Math.max(260, Math.min(760, Math.max(280, (endRow - contentRow + 1) * 20)));
         const image = renderChartImage(
           widget.widget.title || widget.report.name,
           widget.report.name !== (widget.widget.title || widget.report.name) ? widget.report.name : tab.name,
@@ -839,26 +1100,40 @@ export async function exportDashboardWorkbook(
           {
             chartColors: widget.report.view.chartColors,
             chartValueColors: widget.report.view.chartValueColors,
-            targetWidth: imageSize.width,
-            targetHeight: imageSize.height
+            targetWidth: imageWidth,
+            targetHeight: imageHeight
           }
         );
         if (image) {
-          addChartImage(workbook, tabSheet, image, rowCursor, imageSize.width, imageSize.height);
-          rowCursor += Math.max(20, Math.ceil(imageSize.height / 22));
+          addPositionedChartImage(workbook, tabSheet, image, startCol, contentRow, imageWidth, imageHeight);
+          contentRow += Math.max(10, Math.ceil(imageHeight / 24));
         } else {
-          tabSheet.getCell(`A${rowCursor}`).value = "Chart image unavailable for this widget.";
-          rowCursor += 2;
+          contentRow = writeWidgetMessageBlock(tabSheet, contentRow, startCol, endCol, "Chart image unavailable for this widget.");
         }
-      } else if (resolveWidgetDisplayMode(widget.widget, widget.report) === "table") {
-        writeDetailRows(tabSheet, widget.report, table, exportResult, rowCursor);
-        rowCursor += Math.max(8, exportResult.rows.length + 4);
       }
-      rowCursor = writeWarningRows(tabSheet, exportResult.warnings || [], rowCursor);
-      rowCursor += 2;
-      if (widgetNeedsSeparateDetailSheet(widget.widget, widget.report)) {
-        const tableSheet = workbook.addWorksheet(safeSheetName(`${tab.name} ${widget.report.name} Data`, usedNames));
-        writeDetailRows(tableSheet, widget.report, table, exportResult, 1);
+      if (resolveWidgetDisplayMode(widget.widget, widget.report) === "table") {
+        if (tab.widgets.length === 1) {
+          writeDetailRows(tabSheet, widget.report, table, exportResult, contentRow);
+        } else {
+          contentRow = writeWidgetTablePreview(tabSheet, widget.report, table, exportResult, contentRow, startCol, endCol);
+        }
+      } else if (widgetShowsDetails(widget.widget, widget.report) && detailSheetNames[widget.widgetId]) {
+        contentRow = writeWidgetMessageBlock(
+          tabSheet,
+          Math.min(contentRow, Math.max(startRow + 4, endRow - 2)),
+          startCol,
+          endCol,
+          `Row details exported on "${detailSheetNames[widget.widgetId]}".`
+        );
+      }
+      if (exportResult.warnings.length) {
+        writeWidgetWarningBlock(
+          tabSheet,
+          exportResult.warnings,
+          Math.min(contentRow, Math.max(startRow + 5, endRow - 1)),
+          startCol,
+          endCol
+        );
       }
     });
   });

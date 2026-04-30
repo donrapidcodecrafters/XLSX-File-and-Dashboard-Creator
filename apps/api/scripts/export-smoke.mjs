@@ -197,7 +197,11 @@ async function main() {
       stream,
       dashboard,
       rendered,
-      { [report.id]: dashboardReportResult, [chartReport.id]: dashboardChartResult, [donutReport.id]: dashboardDonutResult },
+      {
+        "widget-export-chart": dashboardChartResult,
+        "widget-export-invoice": dashboardReportResult,
+        "widget-export-donut": dashboardDonutResult
+      },
       Object.fromEntries(document.bundle.tables.map((item) => [item.id, item])),
       undefined,
       runtimeValues
