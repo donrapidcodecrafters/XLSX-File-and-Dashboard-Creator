@@ -14,7 +14,7 @@ import {
   TableDefinition
 } from "@studio/shared";
 
-const CHART_COLORS = ["#0d7c66", "#d88d3d", "#5b7cfa", "#9b59b6", "#e66f5c", "#3a9782", "#b7a26a"];
+const CHART_COLORS = ["#0d7c66", "#d88d3d", "#5b7cfa", "#9b59b6", "#e66f5c", "#3a9782", "#b7a26a", "#4f8fba"];
 
 interface WorkbookSaveTarget {
   createWritable: () => Promise<{
@@ -668,11 +668,11 @@ function drawExportLegend(
 ) {
   let x = options.x;
   let y = options.y;
-  const lineHeight = 32;
-  ctx.font = "700 14px Manrope, Arial, sans-serif";
+  const lineHeight = 34;
+  ctx.font = "700 15px Manrope, Arial, sans-serif";
   items.forEach((item, index) => {
     const valueText = options.showValues && typeof item.value === "number" ? ` · ${formatChartValue(item.value, options.decimalPlaces)}` : "";
-    const label = `${truncateLabel(String(item.label || "Unassigned"), 28)}${valueText}`;
+    const label = `${truncateLabel(String(item.label || "Unassigned"), 24)}${valueText}`;
     const width = Math.min(options.maxWidth, Math.max(92, ctx.measureText(label).width + 42));
     if (x > options.x && x + width > options.x + options.maxWidth) {
       x = options.x;
@@ -695,6 +695,30 @@ function drawExportLegend(
   return y + lineHeight;
 }
 
+function measureExportLegendHeight(
+  ctx: CanvasRenderingContext2D,
+  items: Array<ChartDatum | { label: string; value?: number; rawLabel?: string; rawSeries?: string; series?: string }>,
+  maxWidth: number,
+  showValues: boolean,
+  decimalPlaces: number
+) {
+  if (!items.length || maxWidth <= 0) return 0;
+  let x = 0;
+  let rows = 1;
+  ctx.font = "700 15px Manrope, Arial, sans-serif";
+  items.forEach((item) => {
+    const valueText = showValues && typeof item.value === "number" ? ` · ${formatChartValue(item.value, decimalPlaces)}` : "";
+    const label = `${truncateLabel(String(item.label || "Unassigned"), 24)}${valueText}`;
+    const width = Math.min(maxWidth, Math.max(92, ctx.measureText(label).width + 42));
+    if (x > 0 && x + width > maxWidth) {
+      rows += 1;
+      x = 0;
+    }
+    x += width + 10;
+  });
+  return rows * 34;
+}
+
 function drawExportAxes(
   ctx: CanvasRenderingContext2D,
   bounds: { left: number; top: number; width: number; height: number },
@@ -712,7 +736,7 @@ function drawExportAxes(
     ctx.lineTo(bounds.left + bounds.width, y);
     ctx.stroke();
     ctx.fillStyle = "#56685e";
-    ctx.font = "600 12px IBM Plex Mono, monospace";
+    ctx.font = "600 14px IBM Plex Mono, monospace";
     ctx.textAlign = "right";
     ctx.fillText(formatChartValue(tick, decimalPlaces), bounds.left - 12, y + 4);
   });
@@ -726,7 +750,7 @@ function drawExportAxes(
   if (yAxisLabel) {
     ctx.save();
     ctx.fillStyle = "#56685e";
-    ctx.font = "700 12px Manrope, Arial, sans-serif";
+    ctx.font = "700 15px Manrope, Arial, sans-serif";
     ctx.translate(18, bounds.top + bounds.height / 2);
     ctx.rotate(-Math.PI / 2);
     ctx.textAlign = "center";
@@ -750,7 +774,9 @@ function drawPieExportChart(
 ) {
   const width = ctx.canvas.width;
   const total = Math.max(items.reduce((sum, item) => sum + item.value, 0), 1);
-  const legendAreaHeight = options.showLegend ? Math.min(260, 48 + Math.ceil(items.length / 5) * 34) : 0;
+  const legendAreaHeight = options.showLegend
+    ? Math.min(ctx.canvas.height * 0.34, 28 + measureExportLegendHeight(ctx, items, width - 64, options.showValues, options.decimalPlaces))
+    : 0;
   const availableHeight = ctx.canvas.height - options.top - legendAreaHeight - 32;
   const radius = Math.max(90, Math.min(width * 0.22, availableHeight * 0.42));
   const cx = Math.max(180, Math.min(width * 0.5, 120 + radius));
@@ -779,7 +805,7 @@ function drawPieExportChart(
       const labelX = cx + Math.cos(mid) * (radius + 28);
       const labelY = cy + Math.sin(mid) * (radius + 28);
       ctx.fillStyle = "#173126";
-      ctx.font = "700 13px Manrope, Arial, sans-serif";
+      ctx.font = "700 15px Manrope, Arial, sans-serif";
       ctx.textAlign = Math.cos(mid) >= 0 ? "left" : "right";
       ctx.fillText(formatChartValue(item.value, options.decimalPlaces), labelX, labelY);
       ctx.textAlign = "left";
@@ -979,7 +1005,14 @@ function drawCategoryExportChart(
   const { ticks, axisMax } = axisMaxFor([maxValue], categories.length > 16 ? 3 : 4);
   const left = axisTickWidth(ticks, options.decimalPlaces) + (options.yAxisLabel ? 28 : 8);
   const bottomLabelRoom = categories.length > 12 ? 112 : categories.length > 7 ? 92 : 68;
-  const legendRoom = options.showLegend && (primarySeries.length > 1 || secondarySeries.length || horizontal) ? 54 : 0;
+  const legendItems = [
+    ...(horizontal ? primaryItems : primarySeries.map((series) => ({ label: series.label, rawLabel: series.rawSeries, rawSeries: series.rawSeries, series: series.label }))),
+    ...secondarySeries.map((series) => ({ label: `${series.label} (secondary)`, rawLabel: series.rawSeries, rawSeries: series.rawSeries, series: `${series.label} (secondary)` }))
+  ];
+  const showCategoryLegend = options.showLegend && (primarySeries.length > 1 || secondarySeries.length || horizontal);
+  const legendRoom = showCategoryLegend
+    ? Math.min(ctx.canvas.height * 0.28, 24 + measureExportLegendHeight(ctx, legendItems, ctx.canvas.width - left - 36, false, options.decimalPlaces))
+    : 0;
   const bounds = {
     left,
     top: options.top + legendRoom,
@@ -987,11 +1020,8 @@ function drawCategoryExportChart(
     height: ctx.canvas.height - options.top - legendRoom - bottomLabelRoom - 38
   };
   if (bounds.height < 120) bounds.height = 120;
-  if (options.showLegend && (primarySeries.length > 1 || secondarySeries.length || horizontal)) {
-    drawExportLegend(ctx, [
-      ...(horizontal ? primaryItems : primarySeries.map((series) => ({ label: series.label, rawLabel: series.rawSeries, rawSeries: series.rawSeries, series: series.label }))),
-      ...secondarySeries.map((series) => ({ label: `${series.label} (secondary)`, rawLabel: series.rawSeries, rawSeries: series.rawSeries, series: `${series.label} (secondary)` }))
-    ], {
+  if (showCategoryLegend) {
+    drawExportLegend(ctx, legendItems, {
       x: left,
       y: options.top + 24,
       maxWidth: ctx.canvas.width - left - 36,
@@ -1004,6 +1034,7 @@ function drawCategoryExportChart(
   drawExportAxes(ctx, bounds, ticks, axisMax, options.decimalPlaces, options.yAxisLabel);
 
   if (horizontal) {
+    const horizontalSingleSeries = primarySeries.length <= 1 && !primarySeries[0]?.rawSeries;
     const rowGap = 14;
     const rowHeight = Math.max(18, Math.min(42, (bounds.height - rowGap * Math.max(0, primaryItems.length - 1)) / Math.max(1, primaryItems.length)));
     const maxLabelWidth = Math.min(210, Math.max(90, primaryItems.reduce((max, item) => Math.max(max, item.label.length * 8), 80)));
@@ -1011,16 +1042,16 @@ function drawCategoryExportChart(
       const y = bounds.top + index * (rowHeight + rowGap);
       const width = (item.value / axisMax) * Math.max(1, bounds.width - maxLabelWidth - 24);
       ctx.fillStyle = "#173126";
-      ctx.font = "700 12px Manrope, Arial, sans-serif";
+      ctx.font = "700 14px Manrope, Arial, sans-serif";
       ctx.textAlign = "right";
       ctx.fillText(truncateLabel(item.label, 24), bounds.left + maxLabelWidth - 12, y + rowHeight / 2 + 4);
       ctx.textAlign = "left";
-      ctx.fillStyle = getChartColorOverride(options.palette, index, options.overrides, item);
+      ctx.fillStyle = getChartColorOverride(options.palette, horizontalSingleSeries ? 0 : index, options.overrides, item);
       roundedRect(ctx, bounds.left + maxLabelWidth, y, Math.max(6, width), rowHeight, 10);
       ctx.fill();
       if (options.showValues) {
         ctx.fillStyle = "#173126";
-        ctx.font = "700 12px Manrope, Arial, sans-serif";
+        ctx.font = "700 14px Manrope, Arial, sans-serif";
         ctx.fillText(formatChartValue(item.value, options.decimalPlaces), bounds.left + maxLabelWidth + width + 8, y + rowHeight / 2 + 4);
       }
     });
@@ -1036,7 +1067,7 @@ function drawCategoryExportChart(
     const drawValueLabel = (value: number, x: number, y: number) => {
       if (!options.showValues) return;
       ctx.fillStyle = "#173126";
-      ctx.font = "800 11px Manrope, Arial, sans-serif";
+      ctx.font = "800 13px Manrope, Arial, sans-serif";
       ctx.textAlign = "center";
       ctx.fillText(formatChartValue(value, options.decimalPlaces), x, Math.max(bounds.top + 12, y - 7));
       ctx.textAlign = "left";
@@ -1050,7 +1081,7 @@ function drawCategoryExportChart(
           const colorKey = simpleSeries
             ? (primaryItems.find((item) => String(item.rawLabel ?? item.label ?? "") === category.rawLabel) || category.label)
             : (series.rawSeries || series.label);
-          ctx.fillStyle = getChartColorOverride(options.palette, simpleSeries ? categoryIndex : seriesIndex, options.overrides, colorKey as ChartDatum | string);
+          ctx.fillStyle = getChartColorOverride(options.palette, seriesIndex, options.overrides, colorKey as ChartDatum | string);
           roundedRect(ctx, centerX - barGroupWidth / 2, stackY - height, barGroupWidth, Math.max(0, height), 9);
           ctx.fill();
           stackY -= height;
@@ -1070,7 +1101,7 @@ function drawCategoryExportChart(
             && String(item.rawSeries || item.series || "") === series.rawSeries
             && (item.axis || "primary") === "primary"
           ) || { label: category.label, rawLabel: category.rawLabel, value, axis: "primary" as const };
-          ctx.fillStyle = getChartColorOverride(options.palette, simpleSeries ? categoryIndex : seriesIndex, options.overrides, simpleSeries ? datum : (series.rawSeries || series.label));
+          ctx.fillStyle = getChartColorOverride(options.palette, seriesIndex, options.overrides, simpleSeries ? datum : (series.rawSeries || series.label));
           roundedRect(ctx, x, baseY - height, barWidth, Math.max(0, height), 10);
           ctx.fill();
           drawValueLabel(value, x + barWidth / 2, baseY - height);
@@ -1080,7 +1111,7 @@ function drawCategoryExportChart(
     const label = truncateLabel(formatCategoryTickLabel(category.label || category.rawLabel), 22);
     ctx.save();
     ctx.fillStyle = "#173126";
-    ctx.font = "700 12px Manrope, Arial, sans-serif";
+    ctx.font = "700 14px Manrope, Arial, sans-serif";
     ctx.textAlign = categories.length > 5 ? "right" : "center";
     const labelY = baseY + 24;
     if (categories.length > 5) {
@@ -1155,14 +1186,14 @@ function drawCategoryExportChart(
 
   if (options.xAxisLabel) {
     ctx.fillStyle = "#56685e";
-    ctx.font = "700 12px Manrope, Arial, sans-serif";
+    ctx.font = "700 15px Manrope, Arial, sans-serif";
     ctx.textAlign = "center";
     ctx.fillText(options.xAxisLabel, bounds.left + bounds.width / 2, ctx.canvas.height - 12);
     ctx.textAlign = "left";
   }
   if (options.secondaryYAxisLabel) {
     ctx.fillStyle = "#56685e";
-    ctx.font = "700 12px Manrope, Arial, sans-serif";
+    ctx.font = "700 15px Manrope, Arial, sans-serif";
     ctx.textAlign = "right";
     ctx.fillText(options.secondaryYAxisLabel, ctx.canvas.width - 16, bounds.top + 18);
     ctx.textAlign = "left";
@@ -1184,21 +1215,19 @@ function renderChartImage(
   const primaryItems = collapseChartData(sortedData, "primary");
   const categories = deriveCategories(sortedData.length ? sortedData : primaryItems);
   const longestLabel = categories.reduce((max, item) => Math.max(max, String(item.label || "").length), 0);
-  const requestedWidth = style.targetWidth ? Math.round(style.targetWidth * 2) : 0;
-  const requestedHeight = style.targetHeight ? Math.round(style.targetHeight * 2) : 0;
+  const requestedWidth = style.targetWidth ? Math.round(style.targetWidth) : 0;
+  const requestedHeight = style.targetHeight ? Math.round(style.targetHeight) : 0;
   const circular = ["pie", "donut", "radial-bar", "gauge", "kpi-card", "big-number-card"].includes(normalizedChartType);
   const canvasWidth = Math.min(
     7200,
-    Math.max(
-      requestedWidth || 0,
+    requestedWidth || Math.max(
       circular ? 1200 : 1300,
       circular ? 900 + Math.min(2600, primaryItems.length * 74) : 260 + Math.max(1, categories.length) * Math.min(180, Math.max(88, longestLabel * 11))
     )
   );
   const canvasHeight = Math.min(
     3200,
-    Math.max(
-      requestedHeight || 0,
+    requestedHeight || Math.max(
       circular ? 760 : 720,
       normalizedChartType === "radial-bar" ? 920 : 0,
       normalizedChartType === "progress-bar" || normalizedChartType === "bullet" ? 180 + primaryItems.length * 52 : 0
