@@ -2739,10 +2739,6 @@ th {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
-.studio-library .toggle-row {
-  justify-content: space-between;
-}
-
 .studio-library .nav-list {
   display: grid;
   grid-auto-flow: column;
@@ -2848,9 +2844,13 @@ th {
 }
 
 .toggle-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: 8px;
+  justify-content: start;
+  justify-items: start;
+  column-gap: 10px;
+  row-gap: 6px;
   min-height: 40px;
   padding: 0 12px;
   border: 1px solid var(--line);
@@ -2858,6 +2858,14 @@ th {
   background: rgba(255, 255, 255, 0.92);
   font-size: 13px;
   color: var(--text-soft);
+  text-align: left;
+}
+
+.toggle-row input[type="checkbox"],
+.toggle-row input[type="radio"] {
+  margin: 0;
+  align-self: center;
+  justify-self: start;
 }
 
 .view-layout-grid {
