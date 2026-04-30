@@ -1216,7 +1216,7 @@ export function App() {
         </header>
       )}
 
-      <div className={`main-layout ${hosted.embed || studioRoute || readerRoute || viewerRoute || homeRoute ? "embed-layout" : ""} ${readerRoute ? "reader-layout" : ""}`}>
+      <div className={`main-layout ${hosted.embed || studioRoute || readerRoute || viewerRoute || homeRoute || helpRoute ? "embed-layout" : ""} ${readerRoute ? "reader-layout" : ""}`}>
         {hideSidebar ? null : (
           <aside className="sidebar">
             <div className="sidebar-head">
