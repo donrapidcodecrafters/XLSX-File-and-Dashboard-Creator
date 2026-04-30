@@ -977,12 +977,13 @@ function parseJsonValue(value: unknown) {
 
 function mergeQuickbaseConfig(
   current: StudioDocument["quickbase"],
-  loaded?: Partial<StudioDocument["quickbase"]> | null
+  loaded?: Partial<StudioDocument["quickbase"]> | null,
+  options: { allowEmpty?: boolean } = {}
 ) {
   if (!loaded) return current;
   const next = { ...current };
   Object.entries(loaded).forEach(([key, value]) => {
-    if (value === undefined || value === null || value === "") return;
+    if (value === undefined || value === null || (!options.allowEmpty && value === "")) return;
     next[key as keyof StudioDocument["quickbase"]] = String(value) as never;
   });
   return next;
@@ -1046,8 +1047,9 @@ async function resolveStoredQuickbaseConfig(
 
   return {
     config: mergeQuickbaseConfig(
-      mergeQuickbaseConfig(bootstrapConfig, storagePayload?.storage || null),
-      detectedConfig
+      mergeQuickbaseConfig(config, detectedConfig),
+      storagePayload?.storage || null,
+      { allowEmpty: true }
     ),
     bootstrapRows
   };

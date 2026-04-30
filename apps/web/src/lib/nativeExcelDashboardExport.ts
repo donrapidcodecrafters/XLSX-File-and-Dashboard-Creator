@@ -41,6 +41,7 @@ interface NativeChartSource {
   chartSort: ChartSortMode;
   showLegend: boolean;
   showValues: boolean;
+  hiddenLabelIndexes: number[];
   xAxisTitle: string;
   yAxisTitle: string;
   categories: string[];
@@ -60,6 +61,7 @@ const CHART_COLORS = ["#0d7c66", "#d88d3d", "#5b7cfa", "#9b59b6", "#e66f5c", "#3
 const CHART_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.drawingml.chart+xml";
 const DRAWING_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.drawing+xml";
 const DRAWING_RELATIONSHIP_TYPE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing";
+const MAX_NATIVE_CHART_SERIES = 32;
 
 function resolveWidgetDisplayMode(widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], reportMode: string) {
   if (widget.displayMode !== "inherit") return widget.displayMode;
@@ -335,12 +337,26 @@ function writeHiddenChartData(
   const simpleTypes = ["pie", "donut", "radial-bar", "progress-bar", "gauge", "kpi-card", "big-number-card"].includes(normalizedType);
   const scatterLike = normalizedType === "scatter" || normalizedType === "bubble" || normalizedType === "3d-scatter";
   const collapsed = collapseChartData(sortedData);
+  const derivedSeries = deriveSeries(sortedData);
+  const collapseExcessSeries = !simpleTypes && derivedSeries.length > MAX_NATIVE_CHART_SERIES;
   const categories = simpleTypes
     ? collapsed.map((item) => ({ rawLabel: String(item.rawLabel ?? item.label ?? ""), label: item.label }))
     : deriveCategories(sortedData);
   const seriesDefinitions = simpleTypes
     ? [{ rawSeries: "", label: report.view.chartTitle || report.name }]
-    : deriveSeries(sortedData);
+    : collapseExcessSeries
+      ? [{ rawSeries: "", label: "Total" }]
+      : derivedSeries;
+  const totalValue = collapsed.reduce((sum, item) => sum + item.value, 0);
+  const visiblePieLabelIndexes = new Set(
+    simpleTypes
+      ? collapsed
+          .map((item, index) => ({ index, value: item.value }))
+          .sort((left, right) => right.value - left.value)
+          .filter((item, rank) => rank < 4 || (totalValue > 0 && item.value / totalValue >= 0.035))
+          .map((item) => item.index)
+      : []
+  );
   const headerRow = nextRow;
   const dataStartRow = headerRow + 1;
   dataSheet.getCell(headerRow, 1).value = `${report.name} category`;
@@ -353,6 +369,8 @@ function writeHiddenChartData(
       rawSeries: definition.rawSeries,
       values: categories.map((category) => simpleTypes
         ? (collapsed.find((item) => String(item.rawLabel ?? item.label ?? "") === category.rawLabel)?.value || 0)
+        : collapseExcessSeries
+          ? (collapsed.find((item) => String(item.rawLabel ?? item.label ?? "") === category.rawLabel)?.value || 0)
         : valueForCategory(sortedData, category.rawLabel, definition.rawSeries)),
       color: colorForDatum(report, palette, index, definition.rawSeries || label),
       pointColors: simpleTypes
@@ -386,6 +404,9 @@ function writeHiddenChartData(
       chartSort: report.view.chartSort || "value-desc",
       showLegend: report.view.chartShowLegend !== false,
       showValues: report.view.chartShowValues !== false,
+      hiddenLabelIndexes: simpleTypes
+        ? categories.map((_, index) => index).filter((index) => !visiblePieLabelIndexes.has(index))
+        : [],
       xAxisTitle,
       yAxisTitle,
       categories: categories.map((category) => category.label || "Unassigned"),
@@ -421,8 +442,9 @@ function pointColorXml(colors: string[] | undefined) {
   return (colors || []).map((color, index) => `<c:dPt><c:idx val="${index}"/>${shapeColorXml(color)}</c:dPt>`).join("");
 }
 
-function dataLabelsXml(showValues: boolean, position = "") {
-  return `<c:dLbls>${position ? `<c:dLblPos val="${attr(position)}"/>` : ""}<c:showLegendKey val="0"/><c:showVal val="${showValues ? 1 : 0}"/><c:showCatName val="0"/><c:showSerName val="0"/><c:showPercent val="0"/><c:showBubbleSize val="0"/>${position === "outEnd" ? "<c:showLeaderLines val=\"1\"/>" : ""}</c:dLbls>`;
+function dataLabelsXml(showValues: boolean, position = "", hiddenIndexes: number[] = []) {
+  const hidden = hiddenIndexes.map((index) => `<c:dLbl><c:idx val="${index}"/><c:delete val="1"/></c:dLbl>`).join("");
+  return `<c:dLbls>${hidden}${position ? `<c:dLblPos val="${attr(position)}"/>` : ""}<c:showLegendKey val="0"/><c:showVal val="${showValues ? 1 : 0}"/><c:showCatName val="0"/><c:showSerName val="0"/><c:showPercent val="0"/><c:showBubbleSize val="0"/>${position === "outEnd" ? "<c:showLeaderLines val=\"1\"/>" : ""}</c:dLbls>`;
 }
 
 function categorySeriesXml(source: NativeChartSource) {
@@ -457,7 +479,7 @@ function nativeChartXml(source: NativeChartSource) {
   let plotXml = "";
   if (kind === "pie" || kind === "doughnut") {
     const tag = kind === "doughnut" ? "doughnutChart" : "pieChart";
-    plotXml = `<c:${tag}><c:varyColors val="1"/>${categorySeriesXml(source)}${dataLabelsXml(source.showValues, "outEnd")}${kind === "doughnut" ? "<c:holeSize val=\"55\"/>" : "<c:firstSliceAng val=\"0\"/>"}</c:${tag}>`;
+    plotXml = `<c:${tag}><c:varyColors val="1"/>${categorySeriesXml(source)}${dataLabelsXml(source.showValues, "bestFit", source.hiddenLabelIndexes)}${kind === "doughnut" ? "<c:holeSize val=\"55\"/>" : "<c:firstSliceAng val=\"0\"/>"}</c:${tag}>`;
   } else if (kind === "line" || kind === "area") {
     const tag = kind === "area" ? "areaChart" : "lineChart";
     plotXml = `<c:${tag}><c:grouping val="standard"/>${categorySeriesXml(source)}${dataLabelsXml(source.showValues)}<c:axId val="${catAxisId}"/><c:axId val="${valAxisId}"/></c:${tag}>${axesXml(catAxisId, valAxisId, source)}`;
