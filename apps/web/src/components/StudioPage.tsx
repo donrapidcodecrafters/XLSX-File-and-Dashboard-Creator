@@ -2709,8 +2709,35 @@ export function StudioPage({
   }
 
   function cloneSelectedDashboardReport() {
-    if (!selectedDashboardWidgetReport) return;
-    cloneObject(selectedDashboardWidgetReport);
+    if (!activeDashboard || !activeDashboardTab || !selectedDashboardWidget || !selectedDashboardWidgetReport) return;
+    const reportCopy = clone(selectedDashboardWidgetReport);
+    reportCopy.id = uid("report");
+    reportCopy.name = `${selectedDashboardWidgetReport.name} Copy`;
+    reportCopy.updatedAt = new Date().toISOString();
+
+    const widgetId = uid("widget");
+    const widgetCopy = {
+      ...clone(selectedDashboardWidget),
+      id: widgetId,
+      reportId: reportCopy.id,
+      snapshot: selectedDashboardWidget.mode === "copied" ? clone(reportCopy) : undefined
+    };
+
+    applyDocumentUpdate((draft) => {
+      draft.bundle.objects[reportCopy.id] = reportCopy;
+      draft.bundle.order.unshift(reportCopy.id);
+      const dashboard = draft.bundle.objects[activeDashboard.id];
+      if (!dashboard || dashboard.type !== "dashboard") return;
+      draft.bundle.objects[activeDashboard.id] = insertDashboardWidget(
+        dashboard,
+        activeDashboardTab.id,
+        widgetCopy,
+        selectedDashboardWidget.id
+      );
+    });
+
+    setSelectedWidgetId(widgetId);
+    pushToast("Report cloned and added to the dashboard.");
   }
 
   function setDashboardWidgetZIndex(tabId: string, widgetId: string, direction: "forward" | "backward") {
@@ -2870,6 +2897,7 @@ export function StudioPage({
 
   async function beginEditDashboardWidgetReport(widget: DashboardDefinition["tabs"][number]["widgets"][number], report: ReportDefinition) {
     if (!activeDashboard || !activeDashboardTab) return;
+    setSelectedWidgetId("");
     await saveDashboardBeforeBuilderAction("Saving the current dashboard before opening the report editor…");
     setDashboardBuilderFlow({
       type: "edit-widget-report",
@@ -5105,6 +5133,21 @@ export function StudioPage({
               <div className="dashboard-builder-toolbar-meta">
                 <span className="micro">{activeDashboard.tabs.length} tabs</span>
                 <span className="micro">{activeDashboard.tabs.reduce((sum, tab) => sum + tab.widgets.length, 0)} widgets</span>
+              </div>
+            </div>
+            <div className="dashboard-builder-toolbar dashboard-builder-toolbar-secondary">
+              <div className="dashboard-builder-toolbar-actions">
+                <Link className="ghost-button" to={buildHostedRoute("/studio")}>Back to Building home</Link>
+                <button type="button" onClick={() => addTemplate("layout")}>Save as template</button>
+                <button type="button" onClick={snapshotCurrentObject}>Save version</button>
+                <button type="button" onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save to server"}</button>
+                <button type="button" onClick={() => toggleFavorite(activeDashboard.id)}>{documentState.favorites.includes(activeDashboard.id) ? "Unfavorite" : "Favorite"}</button>
+                <button type="button" onClick={() => cloneObject(activeDashboard)}>Clone dashboard</button>
+                <button type="button" onClick={undo} disabled={!history.length}>Undo</button>
+                <button type="button" onClick={redo} disabled={!future.length}>Redo</button>
+                <button type="button" onClick={() => setDrawer("share")}>Share</button>
+                <button type="button" onClick={() => setDrawer("export")}>Export</button>
+                <button type="button" onClick={openVersions}>History</button>
               </div>
             </div>
             {dashboardResult.tabs.some((tab) => tab.widgets.some((widget) => widget.status === "failed" || widget.result.warnings.length)) ? (

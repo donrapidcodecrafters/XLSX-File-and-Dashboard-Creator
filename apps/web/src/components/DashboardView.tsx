@@ -341,7 +341,7 @@ export function DashboardView({
       }
       return resolveActiveDashboardTabId(dashboard, current);
     });
-  }, [dashboard.id, dashboard.tabs, initialActiveTabId]);
+  }, [dashboard.id, initialActiveTabId]);
 
   useEffect(() => {
     async function loadTab(tabId: string) {

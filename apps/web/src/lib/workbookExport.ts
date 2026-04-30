@@ -25,6 +25,13 @@ interface WorkbookExportOptions {
   returnBlob?: boolean;
 }
 
+interface ExportChartStyleOptions {
+  chartColors?: string[];
+  chartValueColors?: Record<string, string>;
+  targetWidth?: number;
+  targetHeight?: number;
+}
+
 function formatCell(value: unknown) {
   if (Array.isArray(value)) return value.join(", ");
   return String(value ?? "");
@@ -37,6 +44,23 @@ function formatChartValue(value: number) {
     minimumFractionDigits: whole ? 0 : 2,
     maximumFractionDigits: 2
   }).format(value);
+}
+
+function getChartPalette(chartColors?: string[]) {
+  return chartColors?.length ? chartColors : CHART_COLORS;
+}
+
+function getChartColorOverride(
+  palette: string[],
+  index: number,
+  overrides: Record<string, string> | undefined,
+  datumOrKey: ChartDatum | string
+) {
+  const key = typeof datumOrKey === "string"
+    ? String(datumOrKey || "").trim()
+    : String(datumOrKey.rawSeries || datumOrKey.series || (datumOrKey.rawLabel ?? datumOrKey.label ?? "")).trim();
+  const override = key ? String(overrides?.[key] || "").trim() : "";
+  return /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(override) ? override : palette[index % palette.length];
 }
 
 function downloadBlob(filename: string, blob: Blob) {
@@ -147,7 +171,11 @@ function drawAxes(ctx: CanvasRenderingContext2D, left: number, top: number, widt
   }
 }
 
-function drawColumnChart(ctx: CanvasRenderingContext2D, data: ChartDatum[], options: { horizontal?: boolean; area?: boolean; line?: boolean }) {
+function drawColumnChart(
+  ctx: CanvasRenderingContext2D,
+  data: ChartDatum[],
+  options: { horizontal?: boolean; area?: boolean; line?: boolean; palette: string[]; overrides?: Record<string, string> }
+) {
   const longestLabel = data.reduce((max, item) => Math.max(max, String(item.label || "").length), 0);
   const left = options.horizontal ? 200 : 90;
   const top = 280;
@@ -164,7 +192,7 @@ function drawColumnChart(ctx: CanvasRenderingContext2D, data: ChartDatum[], opti
     data.forEach((item, index) => {
       const y = top + index * (rowHeight + gap);
       const barWidth = (item.value / maxValue) * (width - 140);
-      ctx.fillStyle = CHART_COLORS[index % CHART_COLORS.length];
+      ctx.fillStyle = getChartColorOverride(options.palette, index, options.overrides, item);
       roundedRect(ctx, left + 130, y, Math.max(18, barWidth), rowHeight, 12);
       ctx.fill();
       ctx.fillStyle = "#173126";
@@ -183,7 +211,7 @@ function drawColumnChart(ctx: CanvasRenderingContext2D, data: ChartDatum[], opti
     const y = top + height - valueHeight;
     points.push({ x: x + barWidth / 2, y });
     if (!options.line && !options.area) {
-      ctx.fillStyle = CHART_COLORS[index % CHART_COLORS.length];
+      ctx.fillStyle = getChartColorOverride(options.palette, index, options.overrides, item);
       roundedRect(ctx, x, y, barWidth, valueHeight, 12);
       ctx.fill();
     }
@@ -204,7 +232,7 @@ function drawColumnChart(ctx: CanvasRenderingContext2D, data: ChartDatum[], opti
   });
 
   if (options.line || options.area) {
-    ctx.strokeStyle = CHART_COLORS[0];
+    ctx.strokeStyle = getChartColorOverride(options.palette, 0, options.overrides, data[0] || "Values");
     ctx.lineWidth = 4;
     ctx.beginPath();
     points.forEach((point, index) => {
@@ -222,7 +250,7 @@ function drawColumnChart(ctx: CanvasRenderingContext2D, data: ChartDatum[], opti
     }
 
     points.forEach((point, index) => {
-      ctx.fillStyle = CHART_COLORS[index % CHART_COLORS.length];
+      ctx.fillStyle = getChartColorOverride(options.palette, index, options.overrides, data[index] || "Values");
       ctx.beginPath();
       ctx.arc(point.x, point.y, 6, 0, Math.PI * 2);
       ctx.fill();
@@ -235,7 +263,13 @@ function drawColumnChart(ctx: CanvasRenderingContext2D, data: ChartDatum[], opti
   }
 }
 
-function drawPieChart(ctx: CanvasRenderingContext2D, data: ChartDatum[], innerRadius = 0) {
+function drawPieChart(
+  ctx: CanvasRenderingContext2D,
+  data: ChartDatum[],
+  palette: string[],
+  overrides?: Record<string, string>,
+  innerRadius = 0
+) {
   const total = Math.max(data.reduce((sum, item) => sum + item.value, 0), 1);
   const cx = Math.min(520, Math.round(ctx.canvas.width * 0.35));
   const cy = 420;
@@ -245,7 +279,7 @@ function drawPieChart(ctx: CanvasRenderingContext2D, data: ChartDatum[], innerRa
   data.forEach((item, index) => {
     const slice = (item.value / total) * Math.PI * 2;
     const end = start + slice;
-    ctx.fillStyle = CHART_COLORS[index % CHART_COLORS.length];
+    ctx.fillStyle = getChartColorOverride(palette, index, overrides, item);
     ctx.beginPath();
     ctx.moveTo(cx, cy);
     ctx.arc(cx, cy, radius, start, end);
@@ -284,7 +318,7 @@ function drawPieChart(ctx: CanvasRenderingContext2D, data: ChartDatum[], innerRa
   data.slice(0, 6).forEach((item, index) => {
     const x = Math.round(ctx.canvas.width * 0.56);
     const y = 290 + index * 48;
-    ctx.fillStyle = CHART_COLORS[index % CHART_COLORS.length];
+    ctx.fillStyle = getChartColorOverride(palette, index, overrides, item);
     roundedRect(ctx, x, y, 20, 20, 6);
     ctx.fill();
     ctx.fillStyle = "#173126";
@@ -293,7 +327,7 @@ function drawPieChart(ctx: CanvasRenderingContext2D, data: ChartDatum[], innerRa
   });
 }
 
-function drawRadarChart(ctx: CanvasRenderingContext2D, data: ChartDatum[]) {
+function drawRadarChart(ctx: CanvasRenderingContext2D, data: ChartDatum[], palette: string[], overrides?: Record<string, string>) {
   const cx = 390;
   const cy = 430;
   const radius = 170;
@@ -324,11 +358,11 @@ function drawRadarChart(ctx: CanvasRenderingContext2D, data: ChartDatum[]) {
   });
   ctx.closePath();
   ctx.fill();
-  ctx.strokeStyle = CHART_COLORS[0];
+  ctx.strokeStyle = getChartColorOverride(palette, 0, overrides, data[0] || "Values");
   ctx.lineWidth = 4;
   ctx.stroke();
   points.forEach((point, index) => {
-    ctx.fillStyle = CHART_COLORS[index % CHART_COLORS.length];
+    ctx.fillStyle = getChartColorOverride(palette, index, overrides, point.item);
     ctx.beginPath();
     ctx.arc(point.x, point.y, 6, 0, Math.PI * 2);
     ctx.fill();
@@ -340,7 +374,7 @@ function drawRadarChart(ctx: CanvasRenderingContext2D, data: ChartDatum[]) {
   });
 }
 
-function drawGaugeChart(ctx: CanvasRenderingContext2D, data: ChartDatum[]) {
+function drawGaugeChart(ctx: CanvasRenderingContext2D, data: ChartDatum[], palette: string[], overrides?: Record<string, string>) {
   const current = data[0]?.value || 0;
   const maxValue = Math.max(...data.map((item) => item.value), 1);
   const percent = Math.max(0, Math.min(1, current / maxValue));
@@ -352,7 +386,7 @@ function drawGaugeChart(ctx: CanvasRenderingContext2D, data: ChartDatum[]) {
   ctx.beginPath();
   ctx.arc(cx, cy, radius, Math.PI, 0);
   ctx.stroke();
-  ctx.strokeStyle = CHART_COLORS[0];
+  ctx.strokeStyle = getChartColorOverride(palette, 0, overrides, data[0] || "Current");
   ctx.beginPath();
   ctx.arc(cx, cy, radius, Math.PI, Math.PI + Math.PI * percent);
   ctx.stroke();
@@ -364,7 +398,7 @@ function drawGaugeChart(ctx: CanvasRenderingContext2D, data: ChartDatum[]) {
   ctx.fillText((data[0]?.label || "Current").slice(0, 18), cx - 50, cy + 28);
 }
 
-function drawWaterfallChart(ctx: CanvasRenderingContext2D, data: ChartDatum[]) {
+function drawWaterfallChart(ctx: CanvasRenderingContext2D, data: ChartDatum[], palette: string[], overrides?: Record<string, string>) {
   const left = 70;
   const top = 280;
   const width = 1040;
@@ -384,7 +418,7 @@ function drawWaterfallChart(ctx: CanvasRenderingContext2D, data: ChartDatum[]) {
     const y = top + height - (item.end / maxTotal) * (height - 24);
     const startY = top + height - (item.start / maxTotal) * (height - 24);
     const valueHeight = Math.max(18, startY - y);
-    ctx.fillStyle = CHART_COLORS[index % CHART_COLORS.length];
+    ctx.fillStyle = getChartColorOverride(palette, index, overrides, item);
     roundedRect(ctx, x, y, barWidth, valueHeight, 12);
     ctx.fill();
     ctx.fillStyle = "#173126";
@@ -403,13 +437,17 @@ function renderChartImage(
   chartType: ReportDefinition["view"]["chartType"],
   chartOrientation: ReportDefinition["view"]["chartOrientation"],
   data: ChartDatum[],
-  summary: SummaryDatum[]
+  summary: SummaryDatum[],
+  style: ExportChartStyleOptions = {}
 ) {
+  const palette = getChartPalette(style.chartColors);
   const longestLabel = data.reduce((max, item) => Math.max(max, String(item.label || "").length), 0);
-  const canvasWidth = Math.min(2800, Math.max(1400, 560 + data.length * 130 + longestLabel * 14));
+  const requestedWidth = style.targetWidth ? Math.round(style.targetWidth * 1.35) : 0;
+  const requestedHeight = style.targetHeight ? Math.round(style.targetHeight * 1.35) : 0;
+  const canvasWidth = Math.min(3200, Math.max(requestedWidth || 0, 1400, 560 + data.length * 130 + longestLabel * 14));
   const canvasHeight = chartType === "pie" || chartType === "donut"
-    ? 940
-    : Math.min(1400, Math.max(900, 720 + Math.min(220, longestLabel * 6)));
+    ? Math.min(1600, Math.max(requestedHeight || 0, 940))
+    : Math.min(1600, Math.max(requestedHeight || 0, 900, 720 + Math.min(220, longestLabel * 6)));
   const canvas = createCanvas(canvasWidth, canvasHeight);
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
@@ -424,47 +462,47 @@ function renderChartImage(
   }
 
   if (chartType === "pie") {
-    drawPieChart(ctx, limited);
+    drawPieChart(ctx, limited, palette, style.chartValueColors);
     return canvas.toDataURL("image/png");
   }
   if (chartType === "donut") {
-    drawPieChart(ctx, limited, 78);
+    drawPieChart(ctx, limited, palette, style.chartValueColors, 78);
     return canvas.toDataURL("image/png");
   }
   if (chartType === "horizontal-bar" || chartType === "horizontal-stacked-bar") {
-    drawColumnChart(ctx, limited, { horizontal: true });
+    drawColumnChart(ctx, limited, { horizontal: true, palette, overrides: style.chartValueColors });
     return canvas.toDataURL("image/png");
   }
   if (chartType === "bar" || chartType === "stacked-bar") {
-    drawColumnChart(ctx, limited, { horizontal: chartOrientation === "horizontal" });
+    drawColumnChart(ctx, limited, { horizontal: chartOrientation === "horizontal", palette, overrides: style.chartValueColors });
     return canvas.toDataURL("image/png");
   }
   if (chartType === "column" || chartType === "stacked-column" || chartType === "variwide-bar" || chartType === "3d-bar" || chartType === "3d-stacked-bar") {
-    drawColumnChart(ctx, limited, { horizontal: false });
+    drawColumnChart(ctx, limited, { horizontal: false, palette, overrides: style.chartValueColors });
     return canvas.toDataURL("image/png");
   }
   if (chartType === "funnel") {
-    drawColumnChart(ctx, limited, { horizontal: true });
+    drawColumnChart(ctx, limited, { horizontal: true, palette, overrides: style.chartValueColors });
     return canvas.toDataURL("image/png");
   }
   if (chartType === "line") {
-    drawColumnChart(ctx, limited, { line: true });
+    drawColumnChart(ctx, limited, { line: true, palette, overrides: style.chartValueColors });
     return canvas.toDataURL("image/png");
   }
   if (chartType === "radar") {
-    drawRadarChart(ctx, limited);
+    drawRadarChart(ctx, limited, palette, style.chartValueColors);
     return canvas.toDataURL("image/png");
   }
   if (chartType === "gauge") {
-    drawGaugeChart(ctx, limited);
+    drawGaugeChart(ctx, limited, palette, style.chartValueColors);
     return canvas.toDataURL("image/png");
   }
   if (chartType === "waterfall") {
-    drawWaterfallChart(ctx, limited);
+    drawWaterfallChart(ctx, limited, palette, style.chartValueColors);
     return canvas.toDataURL("image/png");
   }
   if (chartType === "area") {
-    drawColumnChart(ctx, limited, { area: true });
+    drawColumnChart(ctx, limited, { area: true, palette, overrides: style.chartValueColors });
     return canvas.toDataURL("image/png");
   }
   if (chartType === "heatmap") {
@@ -475,7 +513,13 @@ function renderChartImage(
       const x = left + (index % 5) * (size + 18);
       const y = top + Math.floor(index / 5) * (size + 18);
       const alpha = Math.max(0.15, item.value / Math.max(...limited.map((entry) => entry.value), 1));
-      ctx.fillStyle = `rgba(13,124,102,${alpha})`;
+      const rawColor = getChartColorOverride(palette, index, style.chartValueColors, item);
+      const hex = rawColor.replace("#", "");
+      const expanded = hex.length === 3 ? hex.split("").map((part) => `${part}${part}`).join("") : hex;
+      const red = Number.parseInt(expanded.slice(0, 2), 16);
+      const green = Number.parseInt(expanded.slice(2, 4), 16);
+      const blue = Number.parseInt(expanded.slice(4, 6), 16);
+      ctx.fillStyle = `rgba(${red},${green},${blue},${alpha})`;
       roundedRect(ctx, x, y, size, size, 18);
       ctx.fill();
       ctx.fillStyle = alpha > 0.5 ? "#ffffff" : "#173126";
@@ -487,7 +531,7 @@ function renderChartImage(
     return canvas.toDataURL("image/png");
   }
 
-  drawColumnChart(ctx, limited, {});
+  drawColumnChart(ctx, limited, { palette, overrides: style.chartValueColors });
   return canvas.toDataURL("image/png");
 }
 
@@ -569,6 +613,15 @@ function addChartImage(workbook: any, sheet: any, image: string, row: number, wi
   });
 }
 
+function resolveWidgetExportImageSize(widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"]) {
+  const widthUnits = Math.max(1, Math.min(12, Number(widget.layout.w || 6)));
+  const heightUnits = Math.max(2, Math.min(10, Number(widget.layout.h || 4)));
+  const fullWidth = 1180;
+  const width = Math.max(560, Math.round((widthUnits / 12) * fullWidth));
+  const height = Math.max(360, Math.round(180 + heightUnits * 82));
+  return { width, height };
+}
+
 function writeSummaryRows(sheet: any, summary: SummaryDatum[], startRow: number) {
   let row = startRow;
   if (!summary.length) return row;
@@ -646,7 +699,12 @@ export async function exportReportWorkbook(
   summarySheet.getCell("A2").value = report.description || table.name;
   addSummaryTable(summarySheet, result.summary);
 
-  const image = renderChartImage(report.name, table.name, report.view.chartType, report.view.chartOrientation, result.chartData, result.summary);
+  const image = renderChartImage(report.name, table.name, report.view.chartType, report.view.chartOrientation, result.chartData, result.summary, {
+    chartColors: report.view.chartColors,
+    chartValueColors: report.view.chartValueColors,
+    targetWidth: 980,
+    targetHeight: 560
+  });
   if (image) {
     const imageId = workbook.addImage({ base64: image, extension: "png" });
     summarySheet.addImage(imageId, { tl: { col: 3, row: 1 }, ext: { width: 760, height: 460 } });
@@ -707,6 +765,7 @@ export async function exportDashboardWorkbook(
       const widget = tab.widgets[0];
       const exportResult = exportResultsByReportId?.[widget.report.id] || widget.result;
       const table = options.tablesById?.[widget.report.sourceTableId];
+      const imageSize = resolveWidgetExportImageSize(widget.widget);
       tabSheet.getCell("A1").value = widget.widget.title || widget.report.name;
       tabSheet.getCell("A1").font = { size: 18, bold: true };
       tabSheet.getCell("A2").value = widget.report.name !== (widget.widget.title || widget.report.name)
@@ -723,10 +782,23 @@ export async function exportDashboardWorkbook(
       if (resolveWidgetDisplayMode(widget.widget, widget.report) === "table") {
         writeDetailRows(tabSheet, widget.report, table, exportResult, rowCursor);
       } else if (widgetShowsChart(widget.widget, widget.report)) {
-        const image = renderChartImage(widget.report.name, tab.name, widget.report.view.chartType, widget.report.view.chartOrientation, exportResult.chartData, exportResult.summary);
+        const image = renderChartImage(
+          widget.widget.title || widget.report.name,
+          widget.report.name !== (widget.widget.title || widget.report.name) ? widget.report.name : tab.name,
+          widget.report.view.chartType,
+          widget.report.view.chartOrientation,
+          exportResult.chartData,
+          exportResult.summary,
+          {
+            chartColors: widget.report.view.chartColors,
+            chartValueColors: widget.report.view.chartValueColors,
+            targetWidth: imageSize.width,
+            targetHeight: imageSize.height
+          }
+        );
         if (image) {
-          addChartImage(workbook, tabSheet, image, rowCursor, 1080, 620);
-          rowCursor += 30;
+          addChartImage(workbook, tabSheet, image, rowCursor, imageSize.width, imageSize.height);
+          rowCursor += Math.max(22, Math.ceil(imageSize.height / 22));
         } else {
           tabSheet.getCell(`A${rowCursor}`).value = "Chart image unavailable for this widget.";
           rowCursor += 2;
@@ -744,6 +816,7 @@ export async function exportDashboardWorkbook(
     tab.widgets.forEach((widget) => {
       const exportResult = exportResultsByReportId?.[widget.report.id] || widget.result;
       const table = options.tablesById?.[widget.report.sourceTableId];
+      const imageSize = resolveWidgetExportImageSize(widget.widget);
       tabSheet.getCell(`A${rowCursor}`).value = widget.widget.title || widget.report.name;
       tabSheet.getCell(`A${rowCursor}`).font = { size: 16, bold: true };
       rowCursor += 1;
@@ -756,10 +829,23 @@ export async function exportDashboardWorkbook(
         rowCursor = writeSummaryRows(tabSheet, exportResult.summary, rowCursor);
       }
       if (widgetShowsChart(widget.widget, widget.report)) {
-        const image = renderChartImage(widget.report.name, tab.name, widget.report.view.chartType, widget.report.view.chartOrientation, exportResult.chartData, exportResult.summary);
+        const image = renderChartImage(
+          widget.widget.title || widget.report.name,
+          widget.report.name !== (widget.widget.title || widget.report.name) ? widget.report.name : tab.name,
+          widget.report.view.chartType,
+          widget.report.view.chartOrientation,
+          exportResult.chartData,
+          exportResult.summary,
+          {
+            chartColors: widget.report.view.chartColors,
+            chartValueColors: widget.report.view.chartValueColors,
+            targetWidth: imageSize.width,
+            targetHeight: imageSize.height
+          }
+        );
         if (image) {
-          addChartImage(workbook, tabSheet, image, rowCursor, 920, 520);
-          rowCursor += 26;
+          addChartImage(workbook, tabSheet, image, rowCursor, imageSize.width, imageSize.height);
+          rowCursor += Math.max(20, Math.ceil(imageSize.height / 22));
         } else {
           tabSheet.getCell(`A${rowCursor}`).value = "Chart image unavailable for this widget.";
           rowCursor += 2;

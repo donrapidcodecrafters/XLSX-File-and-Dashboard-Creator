@@ -3597,6 +3597,11 @@ select {
   background: linear-gradient(135deg, rgba(255,255,255,0.96), rgba(243, 250, 247, 0.96));
 }
 
+.dashboard-builder-toolbar-secondary {
+  padding: 14px 18px;
+  background: rgba(255, 255, 255, 0.9);
+}
+
 .dashboard-builder-toolbar-actions,
 .dashboard-builder-toolbar-meta,
 .dashboard-runtime-filter-chips {
