@@ -22,7 +22,9 @@ await app.register(cors, {
     const allowedOrigins = [
       /^https?:\/\/localhost(?::\d+)?$/i,
       /^https?:\/\/127\.0\.0\.1(?::\d+)?$/i,
-      /^https:\/\/donrapidcodecrafters\.github\.io$/i
+      /^https:\/\/donrapidcodecrafters\.github\.io$/i,
+      /^https:\/\/donaldlundgren\.github\.io$/i,
+      /^https:\/\/[a-z0-9-]+\.github\.io$/i
     ];
     callback(null, allowedOrigins.some((pattern) => pattern.test(origin)));
   },

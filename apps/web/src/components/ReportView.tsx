@@ -327,8 +327,6 @@ export function ReportView({
       .replace(/[\\/:*?"<>|]+/g, " ")
       .replace(/\s+/g, " ")
       .trim() || "report"} native charts dev ${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19).replace("T", "_")}.xlsx`;
-    const saveTarget = await createExportSaveTarget(filename);
-    if (!saveTarget && typeof (window as typeof window & { showSaveFilePicker?: unknown }).showSaveFilePicker === "function") return;
     setNativeChartExporting(true);
     setExportError("");
     setPreparedExport(null);
@@ -339,8 +337,10 @@ export function ReportView({
       const blob = await exportReportNativeChartWorkbook(report, buildExportTableFallback(report, table), exportBundle.result, {
         filename
       });
-      await savePreparedWorkbook(blob, filename, saveTarget);
-      setExportSaved(true);
+      if (!(blob instanceof Blob)) {
+        throw new Error("Native chart export did not produce a workbook file.");
+      }
+      setPreparedExport({ filename, blob });
     } catch (error) {
       setExportError(error instanceof Error ? error.message : "Native chart export failed.");
     } finally {

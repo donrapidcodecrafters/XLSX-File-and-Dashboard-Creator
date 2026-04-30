@@ -556,8 +556,6 @@ export function DashboardView({
       .replace(/[\\/:*?"<>|]+/g, " ")
       .replace(/\s+/g, " ")
       .trim() || "dashboard"} native charts dev ${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19).replace("T", "_")}.xlsx`;
-    const saveTarget = await createExportSaveTarget(filename);
-    if (!saveTarget && typeof (window as typeof window & { showSaveFilePicker?: unknown }).showSaveFilePicker === "function") return;
     setNativeChartExporting(true);
     setExportError("");
     setPreparedExport(null);
@@ -569,8 +567,10 @@ export function DashboardView({
         filename,
         tablesById: Object.fromEntries((tables || []).map((table) => [table.id, table]))
       });
-      await savePreparedWorkbook(blob, filename, saveTarget);
-      setExportSaved(true);
+      if (!(blob instanceof Blob)) {
+        throw new Error("Native chart export did not produce a workbook file.");
+      }
+      setPreparedExport({ filename, blob });
     } catch (error) {
       setExportError(error instanceof Error ? error.message : "Native chart export failed.");
     } finally {
