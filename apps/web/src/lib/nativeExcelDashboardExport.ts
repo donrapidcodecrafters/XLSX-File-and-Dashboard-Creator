@@ -36,6 +36,7 @@ interface NativeChartSource {
   id: number;
   title: string;
   chartType: ChartType;
+  originalChartType: ChartType;
   chartOrientation: ChartOrientation;
   chartSort: ChartSortMode;
   showLegend: boolean;
@@ -354,7 +355,7 @@ function writeHiddenChartData(
         ? (collapsed.find((item) => String(item.rawLabel ?? item.label ?? "") === category.rawLabel)?.value || 0)
         : valueForCategory(sortedData, category.rawLabel, definition.rawSeries)),
       color: colorForDatum(report, palette, index, definition.rawSeries || label),
-      pointColors: simpleTypes || seriesDefinitions.length === 1
+      pointColors: simpleTypes
         ? categories.map((category, categoryIndex) => {
             const datum = collapsed.find((item) => String(item.rawLabel ?? item.label ?? "") === category.rawLabel) || category.label;
             return colorForDatum(report, palette, categoryIndex, datum);
@@ -380,6 +381,7 @@ function writeHiddenChartData(
       id: chartId,
       title: report.view.chartTitle || report.name,
       chartType: normalizedType,
+      originalChartType: report.view.chartType,
       chartOrientation: report.view.chartOrientation,
       chartSort: report.view.chartSort || "value-desc",
       showLegend: report.view.chartShowLegend !== false,
@@ -419,8 +421,8 @@ function pointColorXml(colors: string[] | undefined) {
   return (colors || []).map((color, index) => `<c:dPt><c:idx val="${index}"/>${shapeColorXml(color)}</c:dPt>`).join("");
 }
 
-function dataLabelsXml(showValues: boolean) {
-  return `<c:dLbls><c:showLegendKey val="0"/><c:showVal val="${showValues ? 1 : 0}"/><c:showCatName val="0"/><c:showSerName val="0"/><c:showPercent val="0"/><c:showBubbleSize val="0"/></c:dLbls>`;
+function dataLabelsXml(showValues: boolean, position = "") {
+  return `<c:dLbls>${position ? `<c:dLblPos val="${attr(position)}"/>` : ""}<c:showLegendKey val="0"/><c:showVal val="${showValues ? 1 : 0}"/><c:showCatName val="0"/><c:showSerName val="0"/><c:showPercent val="0"/><c:showBubbleSize val="0"/>${position === "outEnd" ? "<c:showLeaderLines val=\"1\"/>" : ""}</c:dLbls>`;
 }
 
 function categorySeriesXml(source: NativeChartSource) {
@@ -455,16 +457,19 @@ function nativeChartXml(source: NativeChartSource) {
   let plotXml = "";
   if (kind === "pie" || kind === "doughnut") {
     const tag = kind === "doughnut" ? "doughnutChart" : "pieChart";
-    plotXml = `<c:${tag}><c:varyColors val="1"/>${categorySeriesXml(source)}${dataLabelsXml(source.showValues)}${kind === "doughnut" ? "<c:holeSize val=\"55\"/>" : "<c:firstSliceAng val=\"0\"/>"}</c:${tag}>`;
+    plotXml = `<c:${tag}><c:varyColors val="1"/>${categorySeriesXml(source)}${dataLabelsXml(source.showValues, "outEnd")}${kind === "doughnut" ? "<c:holeSize val=\"55\"/>" : "<c:firstSliceAng val=\"0\"/>"}</c:${tag}>`;
   } else if (kind === "line" || kind === "area") {
     const tag = kind === "area" ? "areaChart" : "lineChart";
     plotXml = `<c:${tag}><c:grouping val="standard"/>${categorySeriesXml(source)}${dataLabelsXml(source.showValues)}<c:axId val="${catAxisId}"/><c:axId val="${valAxisId}"/></c:${tag}>${axesXml(catAxisId, valAxisId, source)}`;
   } else if (kind === "scatter") {
     plotXml = `<c:scatterChart><c:scatterStyle val="marker"/>${scatterSeriesXml(source)}${dataLabelsXml(source.showValues)}<c:axId val="${catAxisId}"/><c:axId val="${valAxisId}"/></c:scatterChart>${axesXml(catAxisId, valAxisId, source)}`;
   } else {
-    const horizontal = source.chartType === "bar" || source.chartType === "stacked-bar" || source.chartOrientation === "horizontal";
+    const horizontal = source.originalChartType === "horizontal-bar"
+      || source.originalChartType === "horizontal-stacked-bar"
+      || (source.chartType === "bar" && source.chartOrientation === "horizontal")
+      || (source.chartType === "stacked-bar" && source.chartOrientation === "horizontal");
     const stacked = source.chartType === "stacked-bar" || source.chartType === "stacked-column";
-    plotXml = `<c:barChart><c:barDir val="${horizontal ? "bar" : "col"}"/><c:grouping val="${stacked ? "stacked" : "clustered"}"/><c:varyColors val="${source.series.length === 1 ? 1 : 0}"/>${categorySeriesXml(source)}${dataLabelsXml(source.showValues)}${stacked ? "<c:overlap val=\"100\"/>" : ""}<c:axId val="${catAxisId}"/><c:axId val="${valAxisId}"/></c:barChart>${axesXml(catAxisId, valAxisId, source)}`;
+    plotXml = `<c:barChart><c:barDir val="${horizontal ? "bar" : "col"}"/><c:grouping val="${stacked ? "stacked" : "clustered"}"/><c:varyColors val="0"/>${categorySeriesXml(source)}${dataLabelsXml(source.showValues)}${stacked ? "<c:overlap val=\"100\"/>" : ""}<c:axId val="${catAxisId}"/><c:axId val="${valAxisId}"/></c:barChart>${axesXml(catAxisId, valAxisId, source)}`;
   }
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">

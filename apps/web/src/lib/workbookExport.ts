@@ -719,6 +719,67 @@ function measureExportLegendHeight(
   return rows * 34;
 }
 
+function estimateExportLegendHeight(
+  items: Array<ChartDatum | { label: string; value?: number; rawLabel?: string; rawSeries?: string; series?: string }>,
+  maxWidth: number,
+  showValues: boolean,
+  decimalPlaces: number
+) {
+  if (!items.length || maxWidth <= 0) return 0;
+  let x = 0;
+  let rows = 1;
+  items.forEach((item) => {
+    const valueText = showValues && typeof item.value === "number" ? ` · ${formatChartValue(item.value, decimalPlaces)}` : "";
+    const label = `${truncateLabel(String(item.label || "Unassigned"), 24)}${valueText}`;
+    const width = Math.min(maxWidth, Math.max(92, label.length * 8.5 + 42));
+    if (x > 0 && x + width > maxWidth) {
+      rows += 1;
+      x = 0;
+    }
+    x += width + 10;
+  });
+  return rows * 34;
+}
+
+function estimateExportChartHeight(
+  report: ReportDefinition,
+  data: ChartDatum[],
+  baseHeight: number,
+  targetWidth: number
+) {
+  const normalizedChartType = normalizeExportChartType(report.view.chartType, report.view.chartOrientation);
+  const decimalPlaces = report.view.decimalPlaces ?? 2;
+  const sortedData = sortPreviewItems(data, normalizedChartType, report.view.chartSort || "value-desc");
+  const primaryItems = collapseChartData(sortedData, "primary");
+  const primarySeries = deriveSeries(sortedData, "primary");
+  const secondarySeries = deriveSeries(sortedData, "secondary");
+  const horizontal = report.view.chartType === "horizontal-bar"
+    || report.view.chartType === "horizontal-stacked-bar"
+    || (normalizedChartType === "bar" && report.view.chartOrientation === "horizontal");
+  const legendItems = normalizedChartType === "pie" || normalizedChartType === "donut"
+    ? primaryItems
+    : [
+        ...(horizontal ? primaryItems : primarySeries.map((series) => ({ label: series.label, rawLabel: series.rawSeries, rawSeries: series.rawSeries, series: series.label }))),
+        ...secondarySeries.map((series) => ({ label: `${series.label} (secondary)`, rawLabel: series.rawSeries, rawSeries: series.rawSeries, series: `${series.label} (secondary)` }))
+      ];
+  const hasLegend = report.view.chartShowLegend !== false
+    && (normalizedChartType === "pie"
+      || normalizedChartType === "donut"
+      || primarySeries.length > 1
+      || secondarySeries.length > 0
+      || horizontal);
+  if (!hasLegend) return baseHeight;
+  const legendHeight = 28 + estimateExportLegendHeight(
+    legendItems,
+    Math.max(240, targetWidth - 64),
+    (normalizedChartType === "pie" || normalizedChartType === "donut") && report.view.chartShowValues !== false,
+    decimalPlaces
+  );
+  const categoryBottomRoom = sortedData.length > 12 ? 112 : sortedData.length > 7 ? 92 : 68;
+  const minimumPlotHeight = normalizedChartType === "pie" || normalizedChartType === "donut" ? 360 : 260;
+  return Math.max(baseHeight, 104 + legendHeight + categoryBottomRoom + minimumPlotHeight);
+}
+
 function drawExportAxes(
   ctx: CanvasRenderingContext2D,
   bounds: { left: number; top: number; width: number; height: number },
@@ -775,7 +836,7 @@ function drawPieExportChart(
   const width = ctx.canvas.width;
   const total = Math.max(items.reduce((sum, item) => sum + item.value, 0), 1);
   const legendAreaHeight = options.showLegend
-    ? Math.min(ctx.canvas.height * 0.34, 28 + measureExportLegendHeight(ctx, items, width - 64, options.showValues, options.decimalPlaces))
+    ? 28 + measureExportLegendHeight(ctx, items, width - 64, options.showValues, options.decimalPlaces)
     : 0;
   const availableHeight = ctx.canvas.height - options.top - legendAreaHeight - 32;
   const radius = Math.max(90, Math.min(width * 0.22, availableHeight * 0.42));
@@ -1011,7 +1072,7 @@ function drawCategoryExportChart(
   ];
   const showCategoryLegend = options.showLegend && (primarySeries.length > 1 || secondarySeries.length || horizontal);
   const legendRoom = showCategoryLegend
-    ? Math.min(ctx.canvas.height * 0.28, 24 + measureExportLegendHeight(ctx, legendItems, ctx.canvas.width - left - 36, false, options.decimalPlaces))
+    ? 24 + measureExportLegendHeight(ctx, legendItems, ctx.canvas.width - left - 36, false, options.decimalPlaces)
     : 0;
   const bounds = {
     left,
@@ -1917,7 +1978,8 @@ export async function exportDashboardWorkbook(
       }
       if (widgetShowsChart(widget.widget, widget.report)) {
         const imageWidth = Math.max(360, Math.min(1480, (endCol - startCol + 1) * 118));
-        const imageHeight = Math.max(260, Math.min(760, Math.max(280, (endRow - contentRow + 1) * 20)));
+        const baseImageHeight = Math.max(260, Math.min(760, Math.max(280, (endRow - contentRow + 1) * 20)));
+        const imageHeight = Math.min(1400, estimateExportChartHeight(widget.report, exportResult.chartData, baseImageHeight, imageWidth));
         const axisLabels = getWorkbookChartAxisLabels(widget.report, table);
         const image = renderChartImage(
           widget.widget.title || widget.report.name,
