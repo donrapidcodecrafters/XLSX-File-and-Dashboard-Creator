@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { buildDashboardFilters, formatReportCellValue, getDashboardWidgetLayoutStyle, getDashboardWidgetPlacements, getReportFieldLabel, resolveActiveDashboardTabId, type DashboardDefinition, type DashboardRunResult, type RefreshJobStatus, type ReportDefinition, type ReportRunResult, type TableDefinition } from "@studio/shared";
-import { createExportSaveTarget, fetchReportExportBundle, renderDashboard, runReportPage } from "../lib/api";
+import { createExportSaveTarget, fetchReportExportBundle, renderDashboard, runReportPage, type ExportSaveTarget } from "../lib/api";
 import { LinkToolbar } from "./LinkToolbar";
 import { ChartPreview } from "./ChartPreview";
 import { RefreshOverlay } from "./RefreshOverlay";
@@ -179,7 +179,7 @@ function buildExportFilename(name: string) {
   return `${safe || "dashboard"} ${timestamp}.xlsx`;
 }
 
-async function savePreparedWorkbook(blob: Blob, filename: string, target?: Awaited<ReturnType<typeof createExportSaveTarget>> | null) {
+async function savePreparedWorkbook(blob: Blob, filename: string, target?: ExportSaveTarget | null) {
   if (target) {
     const writable = await target.createWritable();
     await writable.write(blob);
@@ -552,20 +552,23 @@ export function DashboardView({
 
   async function beginNativeChartExport() {
     if (localExporting || nativeChartExporting) return;
-    const { buildNativeDashboardExportFilename, exportDashboardNativeChartWorkbook } = await import("../lib/nativeExcelDashboardExport");
-    const filename = buildNativeDashboardExportFilename(dashboard.name);
+    const filename = `${String(dashboard.name || "dashboard")
+      .replace(/[\\/:*?"<>|]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim() || "dashboard"} native charts dev ${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19).replace("T", "_")}.xlsx`;
+    const saveTarget = await createExportSaveTarget(filename);
+    if (!saveTarget && typeof (window as typeof window & { showSaveFilePicker?: unknown }).showSaveFilePicker === "function") return;
     setNativeChartExporting(true);
     setExportError("");
     setPreparedExport(null);
     setExportSaved(false);
     try {
+      const { exportDashboardNativeChartWorkbook } = await import("../lib/nativeExcelDashboardExport");
       const exportPayload = await buildDashboardExportResult();
       const blob = await exportDashboardNativeChartWorkbook(dashboard, exportPayload.result, exportPayload.exportResultsByWidgetId, {
         filename,
         tablesById: Object.fromEntries((tables || []).map((table) => [table.id, table]))
       });
-      const saveTarget = await createExportSaveTarget(filename);
-      if (!saveTarget && typeof (window as typeof window & { showSaveFilePicker?: unknown }).showSaveFilePicker === "function") return;
       await savePreparedWorkbook(blob, filename, saveTarget);
       setExportSaved(true);
     } catch (error) {
