@@ -48,6 +48,12 @@ const WORKSPACE_REFRESH_EVENT = "studio:workspace-updated";
 const SHARED_WORKSPACE_SNAPSHOT_KEY = "studio-shared-workspace-snapshot-v1";
 const SHARED_WORKSPACE_DIRTY_KEY = "studio-shared-workspace-dirty-v1";
 
+type TerminalRefreshJob = RefreshJobStatus & { status: "complete" | "failed" | "cancelled" };
+
+function isRefreshJobTerminal(job: RefreshJobStatus | null): job is null | TerminalRefreshJob {
+  return !job || job.status === "complete" || job.status === "failed" || job.status === "cancelled";
+}
+
 function loadCachedStudioDocument() {
   try {
     const raw = window.localStorage.getItem(CACHED_STUDIO_DOCUMENT_KEY);
@@ -439,7 +445,7 @@ function ObjectPage({
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [refreshNonce, setRefreshNonce] = useState(0);
-  const [refreshJob, setRefreshJob] = useState<any>(null);
+  const [refreshJob, setRefreshJob] = useState<RefreshJobStatus | null>(null);
   const [startingRefresh, setStartingRefresh] = useState(false);
   const [refreshNotice, setRefreshNotice] = useState("");
   const pageSize = 100;
@@ -591,7 +597,7 @@ function ObjectPage({
   }, [liveModeEnabled, object?.id, object?.type, page, refreshNonce]);
 
   useEffect(() => {
-    if (!refreshJob || refreshJob.status === "complete" || refreshJob.status === "failed" || refreshJob.status === "cancelled") return;
+    if (isRefreshJobTerminal(refreshJob)) return;
     const handle = window.setInterval(() => {
       fetchStudioRefreshJob(refreshJob.id)
         .then(async (response) => {
@@ -612,7 +618,16 @@ function ObjectPage({
             setLoading(false);
           }
         })
-        .catch(() => undefined);
+        .catch((error) => {
+          setRefreshJob((current) => current && current.id === refreshJob.id && !isRefreshJobTerminal(current)
+            ? {
+                ...current,
+                message: error instanceof Error
+                  ? `Refresh is still running, but status polling failed: ${error.message}`
+                  : "Refresh is still running, but status polling failed."
+              }
+            : current);
+        });
     }, 1000);
     return () => window.clearInterval(handle);
   }, [onRefreshComplete, refreshJob]);
@@ -1005,7 +1020,7 @@ export function App() {
   }, [studioDocument, updateUserSettings]);
 
   useEffect(() => {
-    if (!topbarRefreshJob || topbarRefreshJob.status === "complete" || topbarRefreshJob.status === "failed" || topbarRefreshJob.status === "cancelled") return;
+    if (isRefreshJobTerminal(topbarRefreshJob)) return;
     const handle = window.setInterval(() => {
       fetchStudioRefreshJob(topbarRefreshJob.id)
         .then((response) => {
@@ -1025,7 +1040,20 @@ export function App() {
             });
           }
         })
-        .catch(() => undefined);
+        .catch((error) => {
+          setTopbarRefreshJob((current) => current && current.id === topbarRefreshJob.id && !isRefreshJobTerminal(current)
+            ? {
+                ...current,
+                message: error instanceof Error
+                  ? `Refresh is still running, but status polling failed: ${error.message}`
+                  : "Refresh is still running, but status polling failed."
+              }
+            : current);
+          setTopbarRefreshFeedback({
+            tone: "warn",
+            message: error instanceof Error ? error.message : "Unable to fetch refresh status. Retrying..."
+          });
+        });
     }, 1000);
     return () => window.clearInterval(handle);
   }, [reloadCatalog, topbarRefreshJob]);
@@ -1036,6 +1064,20 @@ export function App() {
     try {
       const response = await startStudioRefresh();
       setTopbarRefreshJob(response.job);
+      if (response.job.status === "complete") {
+        setTopbarRefreshFeedback(null);
+        void reloadCatalog({ skipWhenLocalDirty: true });
+      } else if (response.job.status === "failed") {
+        setTopbarRefreshFeedback({
+          tone: "danger",
+          message: response.job.error || response.job.message || "Refresh failed."
+        });
+      } else if (response.job.status === "cancelled") {
+        setTopbarRefreshFeedback({
+          tone: "warn",
+          message: response.job.message || "Refresh cancelled."
+        });
+      }
     } catch (error) {
       setTopbarRefreshFeedback({
         tone: "danger",

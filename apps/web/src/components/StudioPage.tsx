@@ -131,6 +131,13 @@ const WORKSPACE_REFRESH_SIGNAL_KEY = "hosted-reporting-workspace-refresh-v1";
 const WORKSPACE_REFRESH_EVENT = "studio:workspace-updated";
 const SHARED_WORKSPACE_SNAPSHOT_KEY = "studio-shared-workspace-snapshot-v1";
 const SHARED_WORKSPACE_DIRTY_KEY = "studio-shared-workspace-dirty-v1";
+
+type TerminalRefreshJob = RefreshJobStatus & { status: "complete" | "failed" | "cancelled" };
+
+function isRefreshJobTerminal(job: RefreshJobStatus | null): job is null | TerminalRefreshJob {
+  return !job || job.status === "complete" || job.status === "failed" || job.status === "cancelled";
+}
+
 const WIDGET_LAYOUT_PRESETS = [
   { id: "quarter", label: "Quarter", w: 3, h: 3 },
   { id: "third", label: "Third", w: 4, h: 3 },
@@ -3667,7 +3674,7 @@ export function StudioPage({
   }
 
   useEffect(() => {
-    if (!refreshJob || refreshJob.status === "complete" || refreshJob.status === "failed" || refreshJob.status === "cancelled") return;
+    if (isRefreshJobTerminal(refreshJob)) return;
     const handle = window.setInterval(() => {
       fetchStudioRefreshJob(refreshJob.id)
         .then((response) => {
@@ -3684,7 +3691,16 @@ export function StudioPage({
             pushToast(response.job.error || response.job.message, "danger");
           }
         })
-        .catch(() => undefined);
+        .catch((error) => {
+          setRefreshJob((current) => current && current.id === refreshJob.id && !isRefreshJobTerminal(current)
+            ? {
+                ...current,
+                message: error instanceof Error
+                  ? `Refresh is still running, but status polling failed: ${error.message}`
+                  : "Refresh is still running, but status polling failed."
+              }
+            : current);
+        });
     }, 1000);
     return () => window.clearInterval(handle);
   }, [refreshJob]);
@@ -3746,6 +3762,17 @@ export function StudioPage({
         setLastQuickbaseSync(saved.sync || null);
         const response = await startStudioRefresh();
         setRefreshJob(response.job);
+        if (response.job.status === "complete") {
+          setRefreshingCache(false);
+          pushToast(`Refreshed ${response.job.tableCount || 0} tables and cached ${(response.job.rowCount || 0).toLocaleString()} rows.`, "ok");
+          void reloadRemote();
+        } else if (response.job.status === "cancelled") {
+          setRefreshingCache(false);
+          pushToast(response.job.message || "Refresh cancelled.", "warn");
+        } else if (response.job.status === "failed") {
+          setRefreshingCache(false);
+          pushToast(response.job.error || response.job.message || "Refresh failed.", "danger");
+        }
       });
     } catch (error) {
       pushToast(error instanceof Error ? error.message : "Refresh failed.", "danger");

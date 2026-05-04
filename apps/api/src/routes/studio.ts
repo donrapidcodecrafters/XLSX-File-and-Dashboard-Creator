@@ -259,7 +259,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
         };
       });
       await primeRefreshJob(job.id, { message: "Preparing refresh" });
-      return { job };
+      return { job: getTrackedRefreshJob(job.id) || job };
     } catch (error) {
       reply.code(500);
       return {
@@ -290,7 +290,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
         };
       });
       await primeRefreshJob(job.id, { objectId: id, message: "Preparing object refresh" });
-      return { job };
+      return { job: getTrackedRefreshJob(job.id) || job };
     } catch (error) {
       reply.code(500);
       return {

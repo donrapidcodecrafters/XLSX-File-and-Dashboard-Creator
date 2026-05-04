@@ -584,11 +584,12 @@ function assertRefreshNotCancelled(jobId: string, profileIds: string[] = []) {
 
 export async function primeRefreshJob(jobId: string, options: { objectId?: string; profileId?: string; message?: string } = {}) {
   const document = studioStore.getLiveDocument();
-  await ensureQuickbaseTablesLoaded(document, options.profileId ? [options.profileId] : []);
   const tableIds = options.objectId ? getObjectTableIds(document, options.objectId) : (
     options.profileId ? getRefreshTableIdsForProfile(document, options.profileId) : getUsedTableIds(document)
   );
-  const profileIds = options.profileId ? [options.profileId] : getProfilesForTableIds(document, tableIds);
+  const profileIds = options.profileId
+    ? [options.profileId]
+    : (getProfilesForTableIds(document, tableIds).length ? getProfilesForTableIds(document, tableIds) : document.quickbaseProfiles.map((profile) => profile.id));
   markRefreshAsRunning(
     document,
     jobId,
@@ -936,37 +937,42 @@ export async function refreshAllCachedDataWithProgress(
   profileId = "",
   activeJobId = ""
 ) {
-  await studioStore.hydrateFromQuickbase(true);
-  const startDocument = studioStore.getLiveDocument();
-  await ensureQuickbaseTablesLoaded(startDocument, profileId ? [profileId] : []);
-  updateRefreshScheduleMetadata(startDocument);
-  updateLegacyActiveQuickbase(startDocument);
-  startDocument.sync.refreshStatus.running = true;
-  startDocument.sync.refreshStatus.activeJobId = activeJobId || startDocument.sync.refreshStatus.activeJobId || "";
-  startDocument.sync.refreshStatus.cancelRequested = false;
-  startDocument.sync.refreshStatus.progress = 1;
-  startDocument.sync.refreshStatus.message = "Preparing refresh";
-  startDocument.sync.refreshStatus.estimatedSecondsRemaining = undefined;
-  startDocument.sync.refreshStatus.lastStartedAt = new Date().toISOString();
-  startDocument.sync.refreshStatus.lastCancelledAt = "";
-  startDocument.sync.refreshStatus.lastError = "";
-  const startupProfiles = profileId
-    ? startDocument.quickbaseProfiles.filter((profile) => profile.id === profileId)
-    : startDocument.quickbaseProfiles;
-  startupProfiles.forEach((profile) => {
-    profile.refreshStatus.running = true;
-    profile.refreshStatus.activeJobId = activeJobId || profile.refreshStatus.activeJobId || "";
-    profile.refreshStatus.cancelRequested = false;
-    profile.refreshStatus.progress = 1;
-    profile.refreshStatus.message = "Preparing refresh";
-    profile.refreshStatus.estimatedSecondsRemaining = undefined;
-    profile.refreshStatus.lastStartedAt = startDocument.sync.refreshStatus.lastStartedAt;
-    profile.refreshStatus.lastCancelledAt = "";
-    profile.refreshStatus.lastError = "";
-  });
-  studioStore.flushDocument(startDocument, { markSavedAt: false });
-
+  const initialDocument = studioStore.getLiveDocument();
+  const initialProfileIds = profileId ? [profileId] : initialDocument.quickbaseProfiles.map((profile) => profile.id);
+  markRefreshAsRunning(initialDocument, activeJobId || initialDocument.sync.refreshStatus.activeJobId || "", "Preparing refresh", initialProfileIds);
+  studioStore.flushDocument(initialDocument, { markSavedAt: false });
+  onProgress?.(1, "Preparing refresh", { tableCount: 0, rowCount: 0 });
   try {
+    await studioStore.hydrateFromQuickbase(true);
+    const startDocument = studioStore.getLiveDocument();
+    await ensureQuickbaseTablesLoaded(startDocument, profileId ? [profileId] : []);
+    updateRefreshScheduleMetadata(startDocument);
+    updateLegacyActiveQuickbase(startDocument);
+    startDocument.sync.refreshStatus.running = true;
+    startDocument.sync.refreshStatus.activeJobId = activeJobId || startDocument.sync.refreshStatus.activeJobId || "";
+    startDocument.sync.refreshStatus.cancelRequested = false;
+    startDocument.sync.refreshStatus.progress = 1;
+    startDocument.sync.refreshStatus.message = "Preparing refresh";
+    startDocument.sync.refreshStatus.estimatedSecondsRemaining = undefined;
+    startDocument.sync.refreshStatus.lastStartedAt = new Date().toISOString();
+    startDocument.sync.refreshStatus.lastCancelledAt = "";
+    startDocument.sync.refreshStatus.lastError = "";
+    const startupProfiles = profileId
+      ? startDocument.quickbaseProfiles.filter((profile) => profile.id === profileId)
+      : startDocument.quickbaseProfiles;
+    startupProfiles.forEach((profile) => {
+      profile.refreshStatus.running = true;
+      profile.refreshStatus.activeJobId = activeJobId || profile.refreshStatus.activeJobId || "";
+      profile.refreshStatus.cancelRequested = false;
+      profile.refreshStatus.progress = 1;
+      profile.refreshStatus.message = "Preparing refresh";
+      profile.refreshStatus.estimatedSecondsRemaining = undefined;
+      profile.refreshStatus.lastStartedAt = startDocument.sync.refreshStatus.lastStartedAt;
+      profile.refreshStatus.lastCancelledAt = "";
+      profile.refreshStatus.lastError = "";
+    });
+    studioStore.flushDocument(startDocument, { markSavedAt: false });
+
     const latest = studioStore.getLiveDocument();
     const profileTableIds = profileId
       ? getRefreshTableIdsForProfile(latest, profileId)
@@ -1120,38 +1126,43 @@ export async function refreshObjectCachedDataWithProgress(
   onProgress?: (progress: number, message: string, extras?: { tableCount?: number; rowCount?: number; estimatedSecondsRemaining?: number }) => void,
   activeJobId = ""
 ) {
-  await studioStore.hydrateFromQuickbase(true);
-  const startDocument = studioStore.getLiveDocument();
-  await ensureQuickbaseTablesLoaded(startDocument);
-  updateRefreshScheduleMetadata(startDocument);
-  updateLegacyActiveQuickbase(startDocument);
-  startDocument.sync.refreshStatus.running = true;
-  startDocument.sync.refreshStatus.activeJobId = activeJobId || startDocument.sync.refreshStatus.activeJobId || "";
-  startDocument.sync.refreshStatus.cancelRequested = false;
-  startDocument.sync.refreshStatus.progress = 1;
-  startDocument.sync.refreshStatus.message = "Preparing object refresh";
-  startDocument.sync.refreshStatus.estimatedSecondsRemaining = undefined;
-  startDocument.sync.refreshStatus.lastStartedAt = new Date().toISOString();
-  startDocument.sync.refreshStatus.lastCancelledAt = "";
-  startDocument.sync.refreshStatus.lastError = "";
-  const startupTableIds = getObjectTableIds(startDocument, objectId);
-  const startupProfiles = getProfilesForTableIds(startDocument, startupTableIds);
-  startupProfiles.forEach((profileId) => {
-    syncProfileRefreshStatus(startDocument, profileId, (status) => {
-      status.running = true;
-      status.activeJobId = activeJobId || status.activeJobId || "";
-      status.cancelRequested = false;
-      status.progress = 1;
-      status.message = "Preparing object refresh";
-      status.estimatedSecondsRemaining = undefined;
-      status.lastStartedAt = startDocument.sync.refreshStatus.lastStartedAt;
-      status.lastCancelledAt = "";
-      status.lastError = "";
-    });
-  });
-  studioStore.flushDocument(startDocument, { markSavedAt: false });
-
+  const initialDocument = studioStore.getLiveDocument();
+  const initialProfiles = getProfilesForTableIds(initialDocument, getObjectTableIds(initialDocument, objectId));
+  markRefreshAsRunning(initialDocument, activeJobId || initialDocument.sync.refreshStatus.activeJobId || "", "Preparing object refresh", initialProfiles);
+  studioStore.flushDocument(initialDocument, { markSavedAt: false });
+  onProgress?.(1, "Preparing object refresh", { tableCount: 0, rowCount: 0 });
   try {
+    await studioStore.hydrateFromQuickbase(true);
+    const startDocument = studioStore.getLiveDocument();
+    await ensureQuickbaseTablesLoaded(startDocument);
+    updateRefreshScheduleMetadata(startDocument);
+    updateLegacyActiveQuickbase(startDocument);
+    startDocument.sync.refreshStatus.running = true;
+    startDocument.sync.refreshStatus.activeJobId = activeJobId || startDocument.sync.refreshStatus.activeJobId || "";
+    startDocument.sync.refreshStatus.cancelRequested = false;
+    startDocument.sync.refreshStatus.progress = 1;
+    startDocument.sync.refreshStatus.message = "Preparing object refresh";
+    startDocument.sync.refreshStatus.estimatedSecondsRemaining = undefined;
+    startDocument.sync.refreshStatus.lastStartedAt = new Date().toISOString();
+    startDocument.sync.refreshStatus.lastCancelledAt = "";
+    startDocument.sync.refreshStatus.lastError = "";
+    const startupTableIds = getObjectTableIds(startDocument, objectId);
+    const startupProfiles = getProfilesForTableIds(startDocument, startupTableIds);
+    startupProfiles.forEach((profileId) => {
+      syncProfileRefreshStatus(startDocument, profileId, (status) => {
+        status.running = true;
+        status.activeJobId = activeJobId || status.activeJobId || "";
+        status.cancelRequested = false;
+        status.progress = 1;
+        status.message = "Preparing object refresh";
+        status.estimatedSecondsRemaining = undefined;
+        status.lastStartedAt = startDocument.sync.refreshStatus.lastStartedAt;
+        status.lastCancelledAt = "";
+        status.lastError = "";
+      });
+    });
+    studioStore.flushDocument(startDocument, { markSavedAt: false });
+
     const latest = studioStore.getLiveDocument();
     const tableIds = getObjectTableIds(latest, objectId);
     if (!tableIds.length) {
