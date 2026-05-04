@@ -6,7 +6,12 @@ export interface QuickbaseTableLinkContext {
 }
 
 function normalizeHostname(hostname: string) {
-  return String(hostname || "").trim().replace(/^https?:\/\//i, "").replace(/\/$/, "");
+  return String(hostname || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//i, "")
+    .replace(/\.ui\.quickbase\.com$/, ".quickbase.com")
+    .replace(/\/+$/, "");
 }
 
 function escapeQuickbaseQueryValue(value: string) {

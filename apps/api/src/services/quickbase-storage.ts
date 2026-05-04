@@ -125,7 +125,22 @@ function parseRetryAfterMs(value: string | null) {
 }
 
 function normalizeHostname(value: string) {
-  return String(value || "").trim().replace(/^https?:\/\//i, "").replace(/\/$/, "");
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//i, "")
+    .replace(/\.ui\.quickbase\.com$/, ".quickbase.com")
+    .replace(/\/+$/, "");
+}
+
+function quickbaseStorageScope(config: Pick<StudioDocument["quickbase"], "realmHostname" | "appId">) {
+  return `${normalizeHostname(config.realmHostname)}::${String(config.appId || "").trim().toLowerCase()}`;
+}
+
+function normalizeStorageScope(value: string | undefined) {
+  const [hostname = "", appId = ""] = String(value || "").split("::");
+  if (!hostname && !appId) return "";
+  return `${normalizeHostname(hostname)}::${String(appId || "").trim().toLowerCase()}`;
 }
 
 function normalizeQuickbaseLabel(value: string) {
@@ -1032,12 +1047,12 @@ async function resolveStoredQuickbaseConfig(
     }
   }
   const bootstrapRows = await loadQuickbaseBootstrapRows(bootstrapConfig).catch(() => []);
-  const scope = `${normalizeHostname(bootstrapConfig.realmHostname)}::${bootstrapConfig.appId}`;
+  const scope = quickbaseStorageScope(bootstrapConfig);
   const storagePayload = selectLatestPayload(
     bootstrapRows
       .map((row) => uniqueFieldIds(["8", bootstrapConfig.settingsJsonFieldId, "7"]).map((fid) => parseJsonValue(qbFieldValue(row, fid))).find(Boolean))
       .filter((payload): payload is { storage?: Partial<StudioDocument["quickbase"]>; type?: string; scope?: string } => Boolean(payload && typeof payload === "object")),
-    (payload) => payload.type === "storageConfig" && (!payload.scope || payload.scope === scope)
+    (payload) => payload.type === "storageConfig" && (!payload.scope || normalizeStorageScope(payload.scope) === scope)
   );
 
   return {
@@ -1745,7 +1760,7 @@ async function syncSettingsRecords(document: StudioDocument, user: QuickbaseUser
     qbSetField(storageConfigRecord, config.settingsObjectKeyFieldId, STORAGE_CONFIG_KEY);
     qbSetField(storageConfigRecord, config.settingsJsonFieldId, JSON.stringify({
       type: "storageConfig",
-      scope: `${normalizeHostname(config.realmHostname)}::${config.appId}`,
+      scope: quickbaseStorageScope(config),
       storage: {
         helpdeskAppDbid: config.helpdeskAppDbid,
         helpdeskTicketsTableDbid: config.helpdeskTicketsTableDbid,
