@@ -764,7 +764,14 @@ export async function fetchQuickbaseSavedReportPage(
   }
   const fetchSavedReport = async () => {
     if (usingDirectQuickbaseApi(config)) {
-      return quickbaseRunReportRest(config, tableId, reportId, {
+      const restResponse = await quickbaseRunReportRest(config, tableId, reportId, {
+        top: Math.max(1, Math.min(Number(options.top) || 1000, 1000)),
+        skip: Math.max(0, Number(options.skip) || 0)
+      });
+      if (restResponse.data.length || Number(options.skip) > 0) {
+        return restResponse;
+      }
+      return quickbaseQueryRecordsBySavedReportXml(config, tableId, reportId, {
         top: Math.max(1, Math.min(Number(options.top) || 1000, 1000)),
         skip: Math.max(0, Number(options.skip) || 0)
       });

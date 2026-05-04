@@ -160,6 +160,45 @@ function getRefreshTableIdsForProfile(document: StudioDocument, profileId: strin
   });
 }
 
+function hasRosterConfig(profile: StudioDocument["quickbaseProfiles"][number]) {
+  const config = profile.quickbase;
+  return Boolean(
+    String(config.rosterTableId || "").trim()
+    && String(config.rosterUserIdFieldId || "").trim()
+    && String(config.rosterEmployeeNameFieldId || "").trim()
+    && String(config.rosterEmployeeEmailFieldId || "").trim()
+  );
+}
+
+async function loadRosterRowsForProfiles(
+  profiles: StudioDocument["quickbaseProfiles"],
+  onProgress?: (message: string, rowCount: number) => void
+) {
+  let totalRows = 0;
+  for (const profile of profiles) {
+    if (!hasRosterConfig(profile)) continue;
+    const config = profile.quickbase;
+    const fieldIds = [
+      config.rosterUserIdFieldId,
+      config.rosterEmployeeNameFieldId,
+      config.rosterEmployeeEmailFieldId,
+      config.rosterEmployeeRecordIdFieldId
+    ].filter(Boolean);
+    let skip = 0;
+    while (true) {
+      const page = await fetchQuickbaseTablePage(config, config.rosterTableId, fieldIds, {
+        top: 1000,
+        skip
+      });
+      totalRows += page.rows.length;
+      onProgress?.(`Loaded roster: ${totalRows.toLocaleString()} users`, totalRows);
+      if (page.rows.length < 1000) break;
+      skip += page.rows.length;
+    }
+  }
+  return totalRows;
+}
+
 function getSavedReportIdForTable(document: StudioDocument, table: TableDefinition) {
   const profileId = table.quickbaseProfileId || "";
   if (!profileId) return "";
@@ -969,6 +1008,13 @@ export async function refreshAllCachedDataWithProgress(
       profile.refreshStatus.lastError = "";
     });
     studioStore.flushDocument(startDocument, { markSavedAt: false });
+
+    const rosterProfiles = profileId
+      ? startDocument.quickbaseProfiles.filter((profile) => profile.id === profileId)
+      : startDocument.quickbaseProfiles;
+    await loadRosterRowsForProfiles(rosterProfiles, (message) => {
+      onProgress?.(3, message, { tableCount: 0, rowCount: 0 });
+    });
 
     const latest = studioStore.getLiveDocument();
     const profileTableIds = profileId
