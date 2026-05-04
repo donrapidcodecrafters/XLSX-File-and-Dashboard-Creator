@@ -7,7 +7,7 @@ const STORAGE_PATH = resolve(process.cwd(), ".data/studio-document.json");
 const CACHE_PATH = resolve(process.cwd(), ".data/studio-cache.json");
 const CACHE_META_PATH = resolve(process.cwd(), ".data/studio-cache-meta.json");
 const HYDRATE_TTL_MS = 24 * 60 * 60 * 1000;
-const HYDRATE_TIMEOUT_MS = 35_000;
+const HYDRATE_TIMEOUT_MS = 12_000;
 const DISK_RELOAD_TTL_MS = 250;
 export const CACHE_RETENTION_MS = 24 * 60 * 60 * 1000;
 

@@ -25,7 +25,7 @@ function isRefreshJobStale(job: { status?: string; updatedAt?: string; createdAt
 
 export async function registerStudioRoutes(app: FastifyInstance) {
   app.get("/api/studio/document", async () => {
-    await studioStore.hydrateFromQuickbase(true);
+    await studioStore.hydrateFromQuickbase();
     const hydrated = studioStore.getLiveDocument();
     updateRefreshScheduleMetadata(hydrated);
     const provisioned = await ensureQuickbaseStorageForProfiles(hydrated);
