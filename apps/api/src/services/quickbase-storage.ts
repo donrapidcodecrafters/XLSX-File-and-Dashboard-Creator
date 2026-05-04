@@ -1376,6 +1376,35 @@ function mergeProfileRefreshSource(
   };
 }
 
+function findLegacyUserProfilePlatformSettings(
+  storedUserSettings: any,
+  profile: StudioDocument["quickbaseProfiles"][number]
+): {
+  refreshSource?: StudioDocument["quickbaseProfiles"][number]["refreshSource"];
+  refreshSchedule?: StudioDocument["quickbaseProfiles"][number]["refreshSchedule"];
+} {
+  const profiles = Array.isArray(storedUserSettings?.quickbaseProfiles)
+    ? storedUserSettings.quickbaseProfiles
+    : [];
+  if (!profiles.length) return {};
+  const profileScope = quickbaseStorageScope(profile.quickbase);
+  const activeProfileId = String(storedUserSettings?.activeQuickbaseProfileId || "");
+  const legacyProfile = profiles.find((item: any) => String(item?.id || "") === profile.id)
+    || profiles.find((item: any) => quickbaseStorageScope(item?.quickbase || {}) === profileScope)
+    || profiles.find((item: any) => activeProfileId && String(item?.id || "") === activeProfileId)
+    || (profiles.length === 1 ? profiles[0] : null);
+  if (!legacyProfile) return {};
+  return {
+    refreshSource: hasRefreshSourceConfig(legacyProfile) ? {
+      tableIds: [...(legacyProfile.refreshSource?.tableIds || [])],
+      reportIds: { ...(legacyProfile.refreshSource?.reportIds || {}) }
+    } : undefined,
+    refreshSchedule: legacyProfile.refreshSchedule && typeof legacyProfile.refreshSchedule === "object"
+      ? legacyProfile.refreshSchedule
+      : undefined
+  };
+}
+
 function normalizeStoredObjectOwnerUserId(
   object: StudioObject,
   currentSessionUserId: string,
@@ -1442,6 +1471,10 @@ export async function hydrateStudioDocumentFromQuickbase(document: StudioDocumen
       if (!hasQuickbaseConnection(profile.quickbase)) return profile;
       try {
         const { config, storagePayload } = await resolveStoredQuickbaseConfig(profile.quickbase);
+        const legacyPlatformSettings = findLegacyUserProfilePlatformSettings(storedUserSettings, profile);
+        const storageRefreshSource = hasRefreshSourceConfig({ refreshSource: storagePayload?.refreshSource })
+          ? storagePayload?.refreshSource
+          : undefined;
         return {
           ...profile,
           quickbase: mergeQuickbaseConfig(
@@ -1449,8 +1482,8 @@ export async function hydrateStudioDocumentFromQuickbase(document: StudioDocumen
             config,
             { allowEmpty: true }
           ),
-          refreshSource: storagePayload?.refreshSource || profile.refreshSource,
-          refreshSchedule: storagePayload?.refreshSchedule || profile.refreshSchedule
+          refreshSource: storageRefreshSource || legacyPlatformSettings.refreshSource || profile.refreshSource,
+          refreshSchedule: storagePayload?.refreshSchedule || legacyPlatformSettings.refreshSchedule || profile.refreshSchedule
         };
       } catch {
         return profile;

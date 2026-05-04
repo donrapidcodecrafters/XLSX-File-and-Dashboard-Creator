@@ -1,3 +1,5 @@
+import { createPortal } from "react-dom";
+
 export function RefreshOverlay({
   title,
   job,
@@ -15,7 +17,7 @@ export function RefreshOverlay({
   const progress = indeterminate ? 42 : (job.progress || 0);
   const terminal = status === "complete" || status === "failed" || status === "cancelled";
   const barColor = status === "failed" ? "#b42318" : status === "cancelled" ? "#946200" : "#0d7c66";
-  return (
+  const overlay = (
     <div style={{ position: "fixed", inset: 0, background: "rgba(12,22,18,0.58)", zIndex: 9999, display: "grid", placeItems: "center", padding: "24px" }}>
       <div style={{ width: "min(560px, 100%)", background: "#fff", borderRadius: "20px", padding: "24px", boxShadow: "0 24px 64px rgba(0,0,0,0.24)" }}>
         <strong style={{ display: "block", fontSize: "1.1rem", marginBottom: "8px" }}>{title}</strong>
@@ -35,4 +37,5 @@ export function RefreshOverlay({
       </div>
     </div>
   );
+  return typeof document === "undefined" ? overlay : createPortal(overlay, document.body);
 }
