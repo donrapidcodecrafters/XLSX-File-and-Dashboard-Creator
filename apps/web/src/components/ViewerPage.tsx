@@ -101,7 +101,16 @@ export function ViewerPage({
             });
           }
         })
-        .catch(() => undefined);
+        .catch((error) => {
+          setRefreshJob((current: any) => current && current.id === refreshJob.id && current.status !== "complete" && current.status !== "failed" && current.status !== "cancelled"
+            ? {
+                ...current,
+                message: error instanceof Error
+                  ? `Refresh is still running, but status polling failed: ${error.message}`
+                  : "Refresh is still running, but status polling failed."
+              }
+            : current);
+        });
     }, 1000);
     return () => window.clearInterval(handle);
   }, [onRefreshComplete, refreshJob]);
@@ -132,8 +141,8 @@ export function ViewerPage({
       {startingRefresh && !refreshJob ? (
         <RefreshOverlay title="Starting refresh" indeterminate job={{ message: "Starting a full platform refresh…" }} />
       ) : null}
-      {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" && refreshJob.status !== "cancelled" ? (
-        <RefreshOverlay title="Refreshing all reports and dashboards" job={refreshJob} />
+      {refreshJob ? (
+        <RefreshOverlay title={refreshJob.status === "complete" ? "Refresh complete" : refreshJob.status === "failed" ? "Refresh failed" : refreshJob.status === "cancelled" ? "Refresh cancelled" : "Refreshing all reports and dashboards"} job={refreshJob} status={refreshJob.status} onDismiss={() => setRefreshJob(null)} />
       ) : null}
       {refreshFeedback ? (
         <div className="sync-status sync-status-warn">

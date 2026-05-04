@@ -369,7 +369,9 @@ export function DashboardView({
       try {
         const next = await renderDashboard(dashboard.id, runtimeFilters, tabId, { forceLive, dashboard });
         if (!requestIsCurrent()) return;
-        onRefreshJobDetectedRef.current?.(next.refreshJob || null);
+        if (next.refreshJob) {
+          onRefreshJobDetectedRef.current?.(next.refreshJob);
+        }
         const renderedTab = next.tabs.find((tab) => tab.id === tabId) || next.tabs[0];
         if (renderedTab) {
           tabResultsRef.current = { ...tabResultsRef.current, [renderedTab.id]: renderedTab };
