@@ -301,12 +301,12 @@ function writeRowsSheet(
     cell.font = { bold: true };
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEAF5F1" } };
   });
-  result.rows.slice(0, 250).forEach((row: DataRow, rowIndex: number) => {
+  result.rows.forEach((row: DataRow, rowIndex: number) => {
     report.selectedFieldIds.forEach((fieldId, fieldIndex) => {
       sheet.getCell(startRow + rowIndex + 1, startCol + fieldIndex).value = formatCell(row[fieldId]);
     });
   });
-  return startRow + Math.min(result.rows.length, 250) + 2;
+  return startRow + result.rows.length + 2;
 }
 
 function writeSummarySheet(sheet: any, result: ReportRunResult, startRow: number, startCol: number, endCol: number) {
