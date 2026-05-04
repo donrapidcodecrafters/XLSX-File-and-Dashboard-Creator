@@ -1031,6 +1031,10 @@ async function resolveStoredQuickbaseConfig(
 ): Promise<{
   config: StudioDocument["quickbase"];
   bootstrapRows: Array<Record<string, { value: unknown }>>;
+  storagePayload: {
+    refreshSource?: StudioDocument["quickbaseProfiles"][number]["refreshSource"];
+    refreshSchedule?: StudioDocument["quickbaseProfiles"][number]["refreshSchedule"];
+  } | null;
 }> {
   let bootstrapConfig = config;
   let detectedConfig: Partial<StudioDocument["quickbase"]> | null = null;
@@ -1051,7 +1055,13 @@ async function resolveStoredQuickbaseConfig(
   const storagePayload = selectLatestPayload(
     bootstrapRows
       .map((row) => uniqueFieldIds(["8", bootstrapConfig.settingsJsonFieldId, "7"]).map((fid) => parseJsonValue(qbFieldValue(row, fid))).find(Boolean))
-      .filter((payload): payload is { storage?: Partial<StudioDocument["quickbase"]>; type?: string; scope?: string } => Boolean(payload && typeof payload === "object")),
+      .filter((payload): payload is {
+        storage?: Partial<StudioDocument["quickbase"]>;
+        refreshSource?: StudioDocument["quickbaseProfiles"][number]["refreshSource"];
+        refreshSchedule?: StudioDocument["quickbaseProfiles"][number]["refreshSchedule"];
+        type?: string;
+        scope?: string;
+      } => Boolean(payload && typeof payload === "object")),
     (payload) => payload.type === "storageConfig" && (!payload.scope || normalizeStorageScope(payload.scope) === scope)
   );
 
@@ -1061,7 +1071,8 @@ async function resolveStoredQuickbaseConfig(
       storagePayload?.storage || null,
       { allowEmpty: true }
     ),
-    bootstrapRows
+    bootstrapRows,
+    storagePayload: storagePayload || null
   };
 }
 
@@ -1408,10 +1419,8 @@ export async function hydrateStudioDocumentFromQuickbase(document: StudioDocumen
   const { config: resolvedConfig, bootstrapRows } = await resolveStoredQuickbaseConfig(bootstrapConfig);
   const user = await quickbaseFetchCurrentUser(resolvedConfig);
   const storedUserSettings = loadUserSettingsFromRows(bootstrapRows, resolvedConfig, user);
-  const profileSeed = Array.isArray(storedUserSettings?.quickbaseProfiles) && storedUserSettings.quickbaseProfiles.length
-    ? storedUserSettings.quickbaseProfiles
-    : base.quickbaseProfiles;
-  const activeQuickbaseProfileId = String(storedUserSettings?.activeQuickbaseProfileId || base.activeQuickbaseProfileId || "");
+  const profileSeed = base.quickbaseProfiles;
+  const activeQuickbaseProfileId = String(base.activeQuickbaseProfileId || "");
   let normalizedProfiles = normalizeStudioDocument({
     ...base,
     quickbaseProfiles: profileSeed,
@@ -1432,14 +1441,16 @@ export async function hydrateStudioDocumentFromQuickbase(document: StudioDocumen
     normalizedProfiles.map(async (profile) => {
       if (!hasQuickbaseConnection(profile.quickbase)) return profile;
       try {
-        const { config } = await resolveStoredQuickbaseConfig(profile.quickbase);
+        const { config, storagePayload } = await resolveStoredQuickbaseConfig(profile.quickbase);
         return {
           ...profile,
           quickbase: mergeQuickbaseConfig(
             mergeQuickbaseConfig(baseProfilesById.get(profile.id)?.quickbase || profile.quickbase, profile.quickbase),
             config,
             { allowEmpty: true }
-          )
+          ),
+          refreshSource: storagePayload?.refreshSource || profile.refreshSource,
+          refreshSchedule: storagePayload?.refreshSchedule || profile.refreshSchedule
         };
       } catch {
         return profile;
@@ -1530,11 +1541,7 @@ export async function hydrateStudioDocumentFromQuickbase(document: StudioDocumen
     personalOverrides: storedUserSettings?.personalOverrides || base.personalOverrides,
     sync: {
       ...base.sync,
-      ...(storedUserSettings?.sync || {}),
-      refreshSchedule: {
-        ...base.sync.refreshSchedule,
-        ...(storedUserSettings?.sync?.refreshSchedule || {})
-      },
+      refreshSchedule: base.sync.refreshSchedule,
       refreshStatus: base.sync.refreshStatus,
       lastLoadedAt: new Date().toISOString()
     },
@@ -1748,6 +1755,9 @@ async function syncSettingsRecords(document: StudioDocument, user: QuickbaseUser
   if (!hasSettingsStorage(config)) return { count: 0, storageConfigCount: 0 };
   try {
     const userValue = quickbaseUserValue(user);
+    const activeProfile = document.quickbaseProfiles.find((profile) => profile.id === document.activeQuickbaseProfileId)
+      || document.quickbaseProfiles.find((profile) => quickbaseStorageScope(profile.quickbase) === quickbaseStorageScope(config))
+      || document.quickbaseProfiles[0];
     const where = buildWhere([{ fid: config.settingsUserFieldId, value: userValue }]);
     const existing = await quickbaseFetchRecordIdMap(config, config.settingsTableId, [config.settingsUserFieldId, config.settingsObjectKeyFieldId], { where });
     const rows: QuickbaseRecord[] = [];
@@ -1794,6 +1804,8 @@ async function syncSettingsRecords(document: StudioDocument, user: QuickbaseUser
         versionChangedByFieldId: config.versionChangedByFieldId,
         versionUpdatedByFieldId: config.versionUpdatedByFieldId
       },
+      refreshSource: activeProfile?.refreshSource || { tableIds: [], reportIds: {} },
+      refreshSchedule: activeProfile?.refreshSchedule || document.sync.refreshSchedule,
       updatedAt: new Date().toISOString(),
       updatedBy: userValue
     }));
@@ -1812,11 +1824,6 @@ async function syncSettingsRecords(document: StudioDocument, user: QuickbaseUser
       favorites: document.favorites,
       recent: document.recent,
       personalOverrides: document.personalOverrides,
-      quickbaseProfiles: document.quickbaseProfiles,
-      activeQuickbaseProfileId: document.activeQuickbaseProfileId,
-      sync: {
-        refreshSchedule: document.sync.refreshSchedule
-      },
       updatedAt: new Date().toISOString(),
       updatedBy: userValue
     }));
