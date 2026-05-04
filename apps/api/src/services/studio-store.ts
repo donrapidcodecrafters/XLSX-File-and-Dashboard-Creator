@@ -73,9 +73,7 @@ function loadPersistedCacheMeta(): Record<string, PersistedCacheMetaEntry> {
 function loadPersistedDocument(): StudioDocument | null {
   try {
     const raw = readFileSync(STORAGE_PATH, "utf8");
-    const document = normalizeStudioDocument(JSON.parse(raw) as StudioDocument);
-    document.bundle.data = loadPersistedCache();
-    return document;
+    return normalizeStudioDocument(JSON.parse(raw) as StudioDocument);
   } catch {
     return null;
   }
@@ -89,7 +87,7 @@ function resolveCachedTableEntry(
   const candidateKeys = [table.id, table.quickbaseTableId].filter((key): key is string => Boolean(key));
   for (const key of candidateKeys) {
     const rows = document.bundle.data[key];
-    const rowCount = Array.isArray(rows) ? rows.length : Number(cacheMeta[key]?.rowCount || 0);
+    const rowCount = Number(cacheMeta[key]?.rowCount || 0) || (Array.isArray(rows) ? rows.length : 0);
     if (rowCount > 0) {
       return {
         cacheKey: key,
@@ -170,7 +168,9 @@ export class StudioStore {
     mkdirSync(dirname(STORAGE_PATH), { recursive: true });
     reconcileRefreshStatusWithCache(document, this.cacheMeta);
     writeFileSync(STORAGE_PATH, JSON.stringify(stripCachedRows(document), null, 2));
-    writeFileSync(CACHE_PATH, JSON.stringify(document.bundle.data || {}, null, 2));
+    if (Object.keys(document.bundle.data || {}).length) {
+      writeFileSync(CACHE_PATH, JSON.stringify(document.bundle.data || {}, null, 2));
+    }
     writeFileSync(CACHE_META_PATH, JSON.stringify(this.cacheMeta || {}, null, 2));
     this.lastReloadedFromDiskAt = Date.now();
   }
@@ -240,6 +240,25 @@ export class StudioStore {
   getBundle() {
     this.reloadFromDisk();
     return this.document.bundle;
+  }
+
+  getCachedRows(tableIds: string[], limit = 1000): StudioDocument["bundle"]["data"][string] {
+    const keys = tableIds.map((value) => String(value || "").trim()).filter(Boolean);
+    if (!keys.length) return [];
+    for (const key of keys) {
+      const inMemoryRows = this.document.bundle.data[key];
+      if (Array.isArray(inMemoryRows) && inMemoryRows.length) {
+        return clone(inMemoryRows.slice(0, Math.max(1, limit)));
+      }
+    }
+    const cache = loadPersistedCache();
+    for (const key of keys) {
+      const rows = cache[key];
+      if (Array.isArray(rows) && rows.length) {
+        return clone(rows.slice(0, Math.max(1, limit)));
+      }
+    }
+    return [];
   }
 
   getCacheMeta(tableId: string): PersistedCacheMetaEntry | null {

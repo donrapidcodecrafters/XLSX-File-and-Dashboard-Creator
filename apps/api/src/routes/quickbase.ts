@@ -17,11 +17,7 @@ function getCachedRowsForTable(tableId: string, limit = 1000) {
   if (!target) return [];
   const document = studioStore.getLiveDocument();
   const table = document.bundle.tables.find((item) => item.id === target || item.quickbaseTableId === target);
-  const rows = document.bundle.data[target]
-    || (table?.id ? document.bundle.data[table.id] : undefined)
-    || (table?.quickbaseTableId ? document.bundle.data[table.quickbaseTableId] : undefined)
-    || [];
-  return Array.isArray(rows) ? rows.slice(0, Math.max(1, limit)) : [];
+  return studioStore.getCachedRows([target, table?.id || "", table?.quickbaseTableId || ""], limit);
 }
 
 function escapeXml(value: string) {

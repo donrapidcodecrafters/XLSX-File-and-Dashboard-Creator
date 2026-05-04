@@ -25,6 +25,8 @@ export class ObjectStore {
     const bundle = studioStore.getBundle();
     const table = this.getTable(tableId);
     const keys = Array.from(new Set([tableId, table?.id || "", table?.quickbaseTableId || ""].filter(Boolean)));
+    const cachedRows = studioStore.getCachedRows(keys, Number.MAX_SAFE_INTEGER);
+    if (cachedRows.length) return cachedRows;
     for (const key of keys) {
       if (bundle.data[key] && studioStore.isCacheFresh(key)) {
         return bundle.data[key];
