@@ -604,16 +604,13 @@ function ObjectPage({
           setRefreshJob(response.job);
           if (response.job.status === "complete") {
             await onRefreshComplete({ skipWhenLocalDirty: true }).catch(() => undefined);
-            setRefreshJob(null);
             setRefreshNotice("");
             setRefreshNonce((current) => current + 1);
             setLoading(true);
           } else if (response.job.status === "cancelled") {
-            setRefreshJob(null);
             setRefreshNotice(response.job.message || "Refresh cancelled.");
             setLoading(false);
           } else if (response.job.status === "failed") {
-            setRefreshJob(null);
             setRefreshNotice(response.job.error || response.job.message || "Refresh failed.");
             setLoading(false);
           }
@@ -678,8 +675,8 @@ function ObjectPage({
             <span>{refreshNotice}</span>
           </div>
         ) : null}
-        {refreshJob && refreshJob.status !== "complete" ? (
-          <RefreshOverlay title={refreshJob.status === "failed" ? "Report refresh failed" : refreshJob.status === "cancelled" ? "Report refresh cancelled" : "Refreshing this report"} job={refreshJob} status={refreshJob.status === "failed" || refreshJob.status === "cancelled" ? refreshJob.status : "running"} onDismiss={() => setRefreshJob(null)} />
+        {refreshJob ? (
+          <RefreshOverlay title={refreshJob.status === "complete" ? "Report refresh complete" : refreshJob.status === "failed" ? "Report refresh failed" : refreshJob.status === "cancelled" ? "Report refresh cancelled" : "Refreshing this report"} job={refreshJob} status={refreshJob.status} onDismiss={() => setRefreshJob(null)} />
         ) : null}
         <ReportView
           report={object as ReportDefinition}
@@ -780,8 +777,8 @@ function ObjectPage({
           <span>{refreshNotice}</span>
         </div>
       ) : null}
-      {refreshJob && refreshJob.status !== "complete" ? (
-        <RefreshOverlay title={refreshJob.status === "failed" ? "Dashboard refresh failed" : refreshJob.status === "cancelled" ? "Dashboard refresh cancelled" : "Refreshing this dashboard"} job={refreshJob} status={refreshJob.status === "failed" || refreshJob.status === "cancelled" ? refreshJob.status : "running"} onDismiss={() => setRefreshJob(null)} />
+      {refreshJob ? (
+        <RefreshOverlay title={refreshJob.status === "complete" ? "Dashboard refresh complete" : refreshJob.status === "failed" ? "Dashboard refresh failed" : refreshJob.status === "cancelled" ? "Dashboard refresh cancelled" : "Refreshing this dashboard"} job={refreshJob} status={refreshJob.status} onDismiss={() => setRefreshJob(null)} />
       ) : null}
       <DashboardView
         dashboard={object}
@@ -1248,8 +1245,8 @@ export function App() {
       {topbarStartingRefresh && !topbarRefreshJob ? (
         <RefreshOverlay title="Starting refresh" indeterminate job={{ message: "Starting a full platform refresh…" }} />
       ) : null}
-      {topbarRefreshJob && topbarRefreshJob.status !== "complete" ? (
-        <RefreshOverlay title={topbarRefreshJob.status === "failed" ? "Refresh failed" : topbarRefreshJob.status === "cancelled" ? "Refresh cancelled" : "Refreshing all reports and dashboards"} job={topbarRefreshJob} status={topbarRefreshJob.status === "failed" || topbarRefreshJob.status === "cancelled" ? topbarRefreshJob.status : "running"} onDismiss={() => setTopbarRefreshJob(null)} />
+      {topbarRefreshJob ? (
+        <RefreshOverlay title={topbarRefreshJob.status === "complete" ? "Refresh complete" : topbarRefreshJob.status === "failed" ? "Refresh failed" : topbarRefreshJob.status === "cancelled" ? "Refresh cancelled" : "Refreshing all reports and dashboards"} job={topbarRefreshJob} status={topbarRefreshJob.status} onDismiss={() => setTopbarRefreshJob(null)} />
       ) : null}
       {topbarRefreshFeedback ? (
         <section className="sync-status sync-status-warn">

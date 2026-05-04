@@ -4890,8 +4890,8 @@ export function StudioPage({
   if (!activeObject && !visibleObjects.length) {
     return (
       <>
-        {refreshJob && refreshJob.status !== "complete" ? (
-          <RefreshOverlay title={refreshJob.status === "failed" ? "Refresh failed" : refreshJob.status === "cancelled" ? "Refresh cancelled" : "Refreshing all reports and dashboards"} job={refreshJob} status={refreshJob.status === "failed" || refreshJob.status === "cancelled" ? refreshJob.status : "running"} onDismiss={() => setRefreshJob(null)} />
+        {refreshJob ? (
+          <RefreshOverlay title={refreshJob.status === "complete" ? "Refresh complete" : refreshJob.status === "failed" ? "Refresh failed" : refreshJob.status === "cancelled" ? "Refresh cancelled" : "Refreshing all reports and dashboards"} job={refreshJob} status={refreshJob.status} onDismiss={() => setRefreshJob(null)} />
         ) : null}
         <section className="studio-page studio-page-empty">
           <StudioWorkspaceEmptyState
@@ -4914,8 +4914,8 @@ export function StudioPage({
   if (!activeObject) {
     return (
       <>
-        {refreshJob && refreshJob.status !== "complete" ? (
-          <RefreshOverlay title={refreshJob.status === "failed" ? "Refresh failed" : refreshJob.status === "cancelled" ? "Refresh cancelled" : "Refreshing all reports and dashboards"} job={refreshJob} status={refreshJob.status === "failed" || refreshJob.status === "cancelled" ? refreshJob.status : "running"} onDismiss={() => setRefreshJob(null)} />
+        {refreshJob ? (
+          <RefreshOverlay title={refreshJob.status === "complete" ? "Refresh complete" : refreshJob.status === "failed" ? "Refresh failed" : refreshJob.status === "cancelled" ? "Refresh cancelled" : "Refreshing all reports and dashboards"} job={refreshJob} status={refreshJob.status} onDismiss={() => setRefreshJob(null)} />
         ) : null}
         <section className="studio-page studio-page-home">
           <StudioWorkspaceHome
@@ -5001,8 +5001,8 @@ export function StudioPage({
 
   return (
     <>
-      {refreshJob && refreshJob.status !== "complete" ? (
-        <RefreshOverlay title={refreshJob.status === "failed" ? "Refresh failed" : refreshJob.status === "cancelled" ? "Refresh cancelled" : "Refreshing all reports and dashboards"} job={refreshJob} status={refreshJob.status === "failed" || refreshJob.status === "cancelled" ? refreshJob.status : "running"} onDismiss={() => setRefreshJob(null)} />
+      {refreshJob ? (
+        <RefreshOverlay title={refreshJob.status === "complete" ? "Refresh complete" : refreshJob.status === "failed" ? "Refresh failed" : refreshJob.status === "cancelled" ? "Refresh cancelled" : "Refreshing all reports and dashboards"} job={refreshJob} status={refreshJob.status} onDismiss={() => setRefreshJob(null)} />
       ) : null}
       <section className={`studio-page ${activeDashboard ? "studio-page-dashboard" : "studio-page-report"}`}>
       <div className={`studio-canvas ${hasActiveObject ? "studio-canvas-active" : ""}`}>
