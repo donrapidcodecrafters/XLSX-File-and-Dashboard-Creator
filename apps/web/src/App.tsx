@@ -678,8 +678,8 @@ function ObjectPage({
             <span>{refreshNotice}</span>
           </div>
         ) : null}
-        {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" && refreshJob.status !== "cancelled" ? (
-          <RefreshOverlay title="Refreshing this report" job={refreshJob} />
+        {refreshJob && refreshJob.status !== "complete" ? (
+          <RefreshOverlay title={refreshJob.status === "failed" ? "Report refresh failed" : refreshJob.status === "cancelled" ? "Report refresh cancelled" : "Refreshing this report"} job={refreshJob} status={refreshJob.status === "failed" || refreshJob.status === "cancelled" ? refreshJob.status : "running"} onDismiss={() => setRefreshJob(null)} />
         ) : null}
         <ReportView
           report={object as ReportDefinition}
@@ -780,8 +780,8 @@ function ObjectPage({
           <span>{refreshNotice}</span>
         </div>
       ) : null}
-      {refreshJob && refreshJob.status !== "complete" && refreshJob.status !== "failed" && refreshJob.status !== "cancelled" ? (
-        <RefreshOverlay title="Refreshing this dashboard" job={refreshJob} />
+      {refreshJob && refreshJob.status !== "complete" ? (
+        <RefreshOverlay title={refreshJob.status === "failed" ? "Dashboard refresh failed" : refreshJob.status === "cancelled" ? "Dashboard refresh cancelled" : "Refreshing this dashboard"} job={refreshJob} status={refreshJob.status === "failed" || refreshJob.status === "cancelled" ? refreshJob.status : "running"} onDismiss={() => setRefreshJob(null)} />
       ) : null}
       <DashboardView
         dashboard={object}
@@ -1248,8 +1248,8 @@ export function App() {
       {topbarStartingRefresh && !topbarRefreshJob ? (
         <RefreshOverlay title="Starting refresh" indeterminate job={{ message: "Starting a full platform refresh…" }} />
       ) : null}
-      {topbarRefreshJob && topbarRefreshJob.status !== "complete" && topbarRefreshJob.status !== "failed" && topbarRefreshJob.status !== "cancelled" ? (
-        <RefreshOverlay title="Refreshing all reports and dashboards" job={topbarRefreshJob} />
+      {topbarRefreshJob && topbarRefreshJob.status !== "complete" ? (
+        <RefreshOverlay title={topbarRefreshJob.status === "failed" ? "Refresh failed" : topbarRefreshJob.status === "cancelled" ? "Refresh cancelled" : "Refreshing all reports and dashboards"} job={topbarRefreshJob} status={topbarRefreshJob.status === "failed" || topbarRefreshJob.status === "cancelled" ? topbarRefreshJob.status : "running"} onDismiss={() => setTopbarRefreshJob(null)} />
       ) : null}
       {topbarRefreshFeedback ? (
         <section className="sync-status sync-status-warn">

@@ -991,29 +991,24 @@ function mergeQuickbaseConfig(
 
 async function loadQuickbaseBootstrapRows(config: StudioDocument["quickbase"]) {
   if (!hasQuickbaseConnection(config) || !config.settingsTableId) return [];
-  return getOrCreateCacheValue(
-    bootstrapRowsCache,
-    `${quickbaseConfigCacheKey(config)}::bootstrap`,
-    async () => {
-      const availableFieldIds: string[] = await quickbaseListFieldIds(config, config.settingsTableId).catch(() => []);
-      const candidateFieldIds = uniqueFieldIds([
-        "3",
-        config.settingsUserFieldId,
-        config.settingsObjectFieldId,
-        config.settingsObjectKeyFieldId,
-        config.settingsJsonFieldId,
-        config.settingsUpdatedByFieldId,
-        "6",
-        "7",
-        "8",
-        "9",
-        "10"
-      ]).filter((fieldId) => !availableFieldIds.length || availableFieldIds.includes(fieldId));
-      if (!candidateFieldIds.length) return [];
-      const response = await quickbaseQueryRecords(config, config.settingsTableId, candidateFieldIds, "", { top: 100 });
-      return response.data;
-    }
-  );
+  bootstrapRowsCache.delete(`${quickbaseConfigCacheKey(config)}::bootstrap`);
+  const availableFieldIds: string[] = await quickbaseListFieldIds(config, config.settingsTableId).catch(() => []);
+  const candidateFieldIds = uniqueFieldIds([
+    "3",
+    config.settingsUserFieldId,
+    config.settingsObjectFieldId,
+    config.settingsObjectKeyFieldId,
+    config.settingsJsonFieldId,
+    config.settingsUpdatedByFieldId,
+    "6",
+    "7",
+    "8",
+    "9",
+    "10"
+  ]).filter((fieldId) => !availableFieldIds.length || availableFieldIds.includes(fieldId));
+  if (!candidateFieldIds.length) return [];
+  const response = await quickbaseQueryRecords(config, config.settingsTableId, candidateFieldIds, "", { top: 100 });
+  return response.data;
 }
 
 async function resolveStoredQuickbaseConfig(
@@ -1427,7 +1422,8 @@ export async function hydrateStudioDocumentFromQuickbase(document: StudioDocumen
           ...profile,
           quickbase: mergeQuickbaseConfig(
             mergeQuickbaseConfig(baseProfilesById.get(profile.id)?.quickbase || profile.quickbase, profile.quickbase),
-            config
+            config,
+            { allowEmpty: true }
           )
         };
       } catch {
@@ -1496,7 +1492,7 @@ export async function hydrateStudioDocumentFromQuickbase(document: StudioDocumen
 
   const next = normalizeStudioDocument({
     ...base,
-    quickbase: mergeQuickbaseConfig(base.quickbase, resolvedConfig),
+    quickbase: mergeQuickbaseConfig(base.quickbase, resolvedConfig, { allowEmpty: true }),
     quickbaseProfiles: normalizedProfiles,
     activeQuickbaseProfileId,
     bundle: {
