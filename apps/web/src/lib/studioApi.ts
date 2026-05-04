@@ -133,8 +133,26 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
-export function fetchStudioDocument() {
-  return request<{ document: StudioDocument }>("/api/studio/document");
+let studioDocumentRequest: Promise<{ document: StudioDocument }> | null = null;
+
+export function fetchStudioDocument(options: { dedupe?: boolean } = {}) {
+  if (options.dedupe !== false && studioDocumentRequest) {
+    return studioDocumentRequest;
+  }
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 18_000);
+  const requestPromise = request<{ document: StudioDocument }>("/api/studio/document", {
+    signal: controller.signal
+  }).finally(() => {
+    window.clearTimeout(timeout);
+    if (studioDocumentRequest === requestPromise) {
+      studioDocumentRequest = null;
+    }
+  });
+  if (options.dedupe !== false) {
+    studioDocumentRequest = requestPromise;
+  }
+  return requestPromise;
 }
 
 export function saveStudioDocument(document: StudioDocument, options?: { removedObjectIds?: string[] }) {

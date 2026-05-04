@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { collectFilterFieldIds, createFilterGroup, runReport, type ReportDefinition, type TableDefinition } from "@studio/shared";
 import { loadQuickbaseSchema } from "../services/quickbase-schema.js";
 import { fetchQuickbaseTableRows } from "../services/quickbase-storage.js";
+import { studioStore } from "../services/studio-store.js";
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -10,6 +11,18 @@ const parser = new XMLParser({
   textNodeName: "value",
   trimValues: true
 });
+
+function getCachedRowsForTable(tableId: string, limit = 1000) {
+  const target = String(tableId || "").trim();
+  if (!target) return [];
+  const document = studioStore.getLiveDocument();
+  const table = document.bundle.tables.find((item) => item.id === target || item.quickbaseTableId === target);
+  const rows = document.bundle.data[target]
+    || (table?.id ? document.bundle.data[table.id] : undefined)
+    || (table?.quickbaseTableId ? document.bundle.data[table.quickbaseTableId] : undefined)
+    || [];
+  return Array.isArray(rows) ? rows.slice(0, Math.max(1, limit)) : [];
+}
 
 function escapeXml(value: string) {
   return String(value ?? "")
@@ -133,6 +146,10 @@ export async function registerQuickbaseRoutes(app: FastifyInstance) {
     } | undefined) || {};
 
     try {
+      const cachedRows = getCachedRowsForTable(body.tableId || "", body.top || 250);
+      if (cachedRows.length) {
+        return { rows: cachedRows };
+      }
       const rows = await fetchQuickbaseTableRows({
         realmHostname: body.realmHostname || "",
         userToken: body.userToken || "",
@@ -170,7 +187,7 @@ export async function registerQuickbaseRoutes(app: FastifyInstance) {
         versionChangedAtFieldId: "",
         versionChangedByFieldId: "",
         versionUpdatedByFieldId: ""
-      }, body.tableId || "", body.fieldIds || [], { top: body.top || 250 });
+      }, body.tableId || "", body.fieldIds || [], { top: Math.min(body.top || 250, 250) });
       return { rows };
     } catch (error) {
       request.log.warn({
@@ -227,7 +244,8 @@ export async function registerQuickbaseRoutes(app: FastifyInstance) {
         ].filter(Boolean).map(String)
       ));
 
-      const rows = await fetchQuickbaseTableRows({
+      const cachedRows = getCachedRowsForTable(table.quickbaseTableId || table.id, 1000);
+      const rows = cachedRows.length ? cachedRows : await fetchQuickbaseTableRows({
         realmHostname: body.quickbase?.realmHostname || "",
         userToken: body.quickbase?.userToken || "",
         appToken: body.quickbase?.appToken || "",
@@ -264,7 +282,7 @@ export async function registerQuickbaseRoutes(app: FastifyInstance) {
         versionChangedAtFieldId: "",
         versionChangedByFieldId: "",
         versionUpdatedByFieldId: ""
-      }, table.quickbaseTableId || table.id, fieldIds, { top: 1000 });
+      }, table.quickbaseTableId || table.id, fieldIds, { top: 250 });
 
       return { result: runReport(report, table, rows) };
     } catch (error) {

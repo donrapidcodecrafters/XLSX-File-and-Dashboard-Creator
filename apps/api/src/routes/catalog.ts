@@ -10,7 +10,6 @@ export async function registerCatalogRoutes(app: FastifyInstance) {
   }));
 
   app.get("/api/catalog", async () => {
-    await studioStore.hydrateFromQuickbase();
     return {
       app: objectStore.getAppInfo(),
       objects: objectStore.listCatalog()
@@ -18,7 +17,6 @@ export async function registerCatalogRoutes(app: FastifyInstance) {
   });
 
   app.get("/api/tables", async () => {
-    await studioStore.hydrateFromQuickbase();
     return {
       app: objectStore.getAppInfo(),
       tables: objectStore.listTables()
@@ -26,7 +24,6 @@ export async function registerCatalogRoutes(app: FastifyInstance) {
   });
 
   app.get("/api/objects/:id", async (request, reply) => {
-    await studioStore.hydrateFromQuickbase();
     const { id } = request.params as { id: string };
     let object = objectStore.getObject(id);
     if (!object) {
