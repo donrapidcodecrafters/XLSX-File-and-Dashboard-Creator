@@ -3677,12 +3677,14 @@ export function StudioPage({
     if (isRefreshJobTerminal(refreshJob)) return;
     const handle = window.setInterval(() => {
       fetchStudioRefreshJob(refreshJob.id)
-        .then((response) => {
+        .then(async (response) => {
           setRefreshJob(response.job);
           if (response.job.status === "complete") {
             setRefreshingCache(false);
             pushToast(`Refreshed ${response.job.tableCount || 0} tables and cached ${(response.job.rowCount || 0).toLocaleString()} rows.`, "ok");
-            void reloadRemote();
+            setRefreshJob({ ...response.job, status: "running", progress: 99, message: "Loading refreshed data…" });
+            await reloadRemote();
+            setRefreshJob(null);
           } else if (response.job.status === "cancelled") {
             setRefreshingCache(false);
             pushToast("Refresh cancelled.", "warn");
@@ -3709,7 +3711,8 @@ export function StudioPage({
     if (!refreshJob) return;
     if (refreshJob.status === "complete") {
       setRefreshingCache(false);
-      void reloadRemote();
+      setRefreshJob({ ...refreshJob, status: "running", progress: 99, message: "Loading refreshed data…" });
+      void reloadRemote().finally(() => setRefreshJob(null));
     } else if (refreshJob.status === "cancelled") {
       setRefreshingCache(false);
     } else if (refreshJob.status === "failed") {
@@ -3765,7 +3768,9 @@ export function StudioPage({
         if (response.job.status === "complete") {
           setRefreshingCache(false);
           pushToast(`Refreshed ${response.job.tableCount || 0} tables and cached ${(response.job.rowCount || 0).toLocaleString()} rows.`, "ok");
-          void reloadRemote();
+          setRefreshJob({ ...response.job, status: "running", progress: 99, message: "Loading refreshed data…" });
+          await reloadRemote();
+          setRefreshJob(null);
         } else if (response.job.status === "cancelled") {
           setRefreshingCache(false);
           pushToast(response.job.message || "Refresh cancelled.", "warn");

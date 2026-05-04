@@ -29,7 +29,7 @@ export function RefreshOverlay({
           <span>{terminal ? (status === "complete" ? "Refresh complete" : status === "failed" ? "Refresh failed" : "Refresh cancelled") : indeterminate ? "Loading in progress" : `${progress}% complete`}</span>
           <span>{terminal ? (status === "complete" ? "Done" : "Review the message above") : indeterminate ? "Preparing results…" : (typeof job.estimatedSecondsRemaining === "number" ? `~${job.estimatedSecondsRemaining}s remaining` : "Estimating time…")}</span>
         </div>
-        {terminal && onDismiss ? (
+        {terminal && status !== "complete" && onDismiss ? (
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "18px" }}>
             <button type="button" onClick={onDismiss}>Close</button>
           </div>

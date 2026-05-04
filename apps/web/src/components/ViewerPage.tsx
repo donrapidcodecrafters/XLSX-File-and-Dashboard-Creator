@@ -85,11 +85,13 @@ export function ViewerPage({
     if (!refreshJob || refreshJob.status === "complete" || refreshJob.status === "failed" || refreshJob.status === "cancelled") return;
     const handle = window.setInterval(() => {
       fetchStudioRefreshJob(refreshJob.id)
-        .then((response) => {
+        .then(async (response) => {
           setRefreshJob(response.job);
           if (response.job.status === "complete") {
             setRefreshFeedback(null);
-            void onRefreshComplete({ skipWhenLocalDirty: true });
+            setRefreshJob({ ...response.job, status: "running", progress: 99, message: "Loading refreshed data…" });
+            await onRefreshComplete({ skipWhenLocalDirty: true });
+            setRefreshJob(null);
           } else if (response.job.status === "failed") {
             setRefreshFeedback({
               tone: "danger",
@@ -127,6 +129,12 @@ export function ViewerPage({
     try {
       const response = await startStudioRefresh(activeQuickbaseProfileId);
       setRefreshJob(response.job);
+      if (response.job.status === "complete") {
+        setRefreshFeedback(null);
+        setRefreshJob({ ...response.job, status: "running", progress: 99, message: "Loading refreshed data…" });
+        await onRefreshComplete({ skipWhenLocalDirty: true });
+        setRefreshJob(null);
+      }
     } catch (error) {
       setRefreshFeedback({
         tone: "danger",

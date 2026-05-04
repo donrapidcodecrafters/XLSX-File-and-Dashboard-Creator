@@ -603,10 +603,12 @@ function ObjectPage({
         .then(async (response) => {
           setRefreshJob(response.job);
           if (response.job.status === "complete") {
+            setRefreshJob({ ...response.job, status: "running", progress: 99, message: "Loading refreshed data…" });
             await onRefreshComplete({ skipWhenLocalDirty: true }).catch(() => undefined);
             setRefreshNotice("");
             setRefreshNonce((current) => current + 1);
             setLoading(true);
+            setRefreshJob(null);
           } else if (response.job.status === "cancelled") {
             setRefreshNotice(response.job.message || "Refresh cancelled.");
             setLoading(false);
@@ -636,7 +638,14 @@ function ObjectPage({
     try {
       const response = await startStudioObjectRefresh(object.id);
       setRefreshJob(response.job);
-      if (response.job.status === "failed" || response.job.status === "cancelled") {
+      if (response.job.status === "complete") {
+        setRefreshJob({ ...response.job, status: "running", progress: 99, message: "Loading refreshed data…" });
+        await onRefreshComplete({ skipWhenLocalDirty: true }).catch(() => undefined);
+        setRefreshNotice("");
+        setRefreshNonce((current) => current + 1);
+        setLoading(true);
+        setRefreshJob(null);
+      } else if (response.job.status === "failed" || response.job.status === "cancelled") {
         setRefreshNotice(response.job.error || response.job.message || "Refresh did not start.");
       }
     } finally {
@@ -1020,11 +1029,13 @@ export function App() {
     if (isRefreshJobTerminal(topbarRefreshJob)) return;
     const handle = window.setInterval(() => {
       fetchStudioRefreshJob(topbarRefreshJob.id)
-        .then((response) => {
+        .then(async (response) => {
           setTopbarRefreshJob(response.job);
           if (response.job.status === "complete") {
             setTopbarRefreshFeedback(null);
-            void reloadCatalog({ skipWhenLocalDirty: true });
+            setTopbarRefreshJob({ ...response.job, status: "running", progress: 99, message: "Loading refreshed data…" });
+            await reloadCatalog({ skipWhenLocalDirty: true });
+            setTopbarRefreshJob(null);
           } else if (response.job.status === "failed") {
             setTopbarRefreshFeedback({
               tone: "danger",
@@ -1063,7 +1074,9 @@ export function App() {
       setTopbarRefreshJob(response.job);
       if (response.job.status === "complete") {
         setTopbarRefreshFeedback(null);
-        void reloadCatalog({ skipWhenLocalDirty: true });
+        setTopbarRefreshJob({ ...response.job, status: "running", progress: 99, message: "Loading refreshed data…" });
+        await reloadCatalog({ skipWhenLocalDirty: true });
+        setTopbarRefreshJob(null);
       } else if (response.job.status === "failed") {
         setTopbarRefreshFeedback({
           tone: "danger",

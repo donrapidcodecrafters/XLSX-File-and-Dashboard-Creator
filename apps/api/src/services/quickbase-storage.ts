@@ -137,6 +137,10 @@ function quickbaseStorageScope(config: Pick<StudioDocument["quickbase"], "realmH
   return `${normalizeHostname(config.realmHostname)}::${String(config.appId || "").trim().toLowerCase()}`;
 }
 
+function scopedStorageConfigKey(config: Pick<StudioDocument["quickbase"], "realmHostname" | "appId">) {
+  return `${STORAGE_CONFIG_KEY}::${quickbaseStorageScope(config)}`;
+}
+
 function normalizeStorageScope(value: string | undefined) {
   const [hostname = "", appId = ""] = String(value || "").split("::");
   if (!hostname && !appId) return "";
@@ -1831,11 +1835,13 @@ async function syncSettingsRecords(document: StudioDocument, user: QuickbaseUser
     const rows: QuickbaseRecord[] = [];
 
     const storageConfigRecord: QuickbaseRecord = {};
-    const storageRecordId = existing.get(makeCompositeKey([userValue, STORAGE_CONFIG_KEY]));
+    const storageKey = scopedStorageConfigKey(config);
+    const storageRecordId = existing.get(makeCompositeKey([userValue, storageKey]))
+      || (existingStoragePayload ? existing.get(makeCompositeKey([userValue, STORAGE_CONFIG_KEY])) : "");
     if (storageRecordId) qbSetField(storageConfigRecord, "3", storageRecordId);
     qbSetField(storageConfigRecord, config.settingsUserFieldId, userValue);
     qbSetField(storageConfigRecord, config.settingsObjectFieldId, "");
-    qbSetField(storageConfigRecord, config.settingsObjectKeyFieldId, STORAGE_CONFIG_KEY);
+    qbSetField(storageConfigRecord, config.settingsObjectKeyFieldId, storageKey);
     qbSetField(storageConfigRecord, config.settingsJsonFieldId, JSON.stringify({
       type: "storageConfig",
       scope: quickbaseStorageScope(config),
@@ -1900,7 +1906,7 @@ async function syncSettingsRecords(document: StudioDocument, user: QuickbaseUser
 
     await quickbaseWriteRecords(config, config.settingsTableId, rows);
     const verified = await quickbaseFetchRecordIdMap(config, config.settingsTableId, [config.settingsUserFieldId, config.settingsObjectKeyFieldId], { where });
-    const verifiedStorage = verified.get(makeCompositeKey([userValue, STORAGE_CONFIG_KEY])) ? 1 : 0;
+    const verifiedStorage = verified.get(makeCompositeKey([userValue, storageKey])) ? 1 : 0;
     const verifiedUserSettings = verified.get(makeCompositeKey([userValue, USER_SETTINGS_KEY])) ? 1 : 0;
     const verifiedCount = verifiedStorage + verifiedUserSettings;
     if (!verifiedCount) {
