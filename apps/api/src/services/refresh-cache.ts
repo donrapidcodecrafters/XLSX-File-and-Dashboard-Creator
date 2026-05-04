@@ -712,6 +712,9 @@ async function fetchAllTableRows(
         top: pageSize,
         skip
       });
+      if (!page.rows.length && skip === 0) {
+        throw new Error(`Quickbase source report ${savedReportId} returned 0 rows for ${table.name}. Check that QID ${savedReportId} belongs to table ${getQuickbaseTableId(table)} and that the report has records for this user.`);
+      }
       if (!page.rows.length) break;
       fetchedPages += 1;
       const beforeSize = merged.size;

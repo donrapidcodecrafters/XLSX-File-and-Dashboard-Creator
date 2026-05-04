@@ -36,6 +36,7 @@ export function ViewerPage({
   const [refreshFeedback, setRefreshFeedback] = useState<{ tone: "warn" | "danger"; message: string } | null>(null);
   const favorites = studioDocument?.favorites || [];
   const currentUserId = String(studioDocument?.session.currentUserId || "").trim();
+  const activeQuickbaseProfileId = studioDocument?.activeQuickbaseProfileId || studioDocument?.quickbaseProfiles[0]?.id || "";
   const sourceObjects = useMemo(
     () => studioDocument
       ? (studioDocument.bundle.order || [])
@@ -124,7 +125,7 @@ export function ViewerPage({
     setStartingRefresh(true);
     setRefreshFeedback(null);
     try {
-      const response = await startStudioRefresh();
+      const response = await startStudioRefresh(activeQuickbaseProfileId);
       setRefreshJob(response.job);
     } catch (error) {
       setRefreshFeedback({

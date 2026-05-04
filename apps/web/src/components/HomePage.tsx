@@ -41,6 +41,7 @@ export function HomePage({
   const [startingRefresh, setStartingRefresh] = useState(false);
   const [refreshFeedback, setRefreshFeedback] = useState<{ tone: "warn" | "danger"; message: string } | null>(null);
   const currentUserId = String(studioDocument?.session.currentUserId || "").trim();
+  const activeQuickbaseProfileId = studioDocument?.activeQuickbaseProfileId || studioDocument?.quickbaseProfiles[0]?.id || "";
   const catalogLookup = useMemo(
     () => buildStudioCatalogItemLookup(objects, studioDocument?.bundle.objects),
     [objects, studioDocument]
@@ -150,7 +151,7 @@ export function HomePage({
     setStartingRefresh(true);
     setRefreshFeedback(null);
     try {
-      const response = await startStudioRefresh();
+      const response = await startStudioRefresh(activeQuickbaseProfileId);
       setRefreshJob(response.job);
     } catch (error) {
       setRefreshFeedback({

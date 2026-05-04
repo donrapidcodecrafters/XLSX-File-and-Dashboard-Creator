@@ -194,10 +194,10 @@ export function restoreStudioVersion(objectId: string, versionId: string) {
   });
 }
 
-export function startStudioRefresh() {
+export function startStudioRefresh(profileId = "") {
   return request<{ job: RefreshJobStatus }>("/api/studio/refresh/start", {
     method: "POST",
-    body: JSON.stringify({})
+    body: JSON.stringify({ profileId })
   });
 }
 

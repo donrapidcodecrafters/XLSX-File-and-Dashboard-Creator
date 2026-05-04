@@ -3740,7 +3740,7 @@ export function StudioPage({
     const sourceTableId = pendingWorkbookImport?.sourceTableId || "";
     if (!sourceTableId || sourceTableId === lastImportPreloadTableIdRef.current) return;
     lastImportPreloadTableIdRef.current = sourceTableId;
-    void startStudioRefresh()
+    void startStudioRefresh(activeQuickbaseProfile?.id || "")
       .then(() => undefined)
       .catch(() => undefined);
   }, [pendingWorkbookImport?.sourceTableId]);
@@ -3760,7 +3760,7 @@ export function StudioPage({
         setSharedWorkspaceDirtyState(false);
         setDocumentState(next);
         setLastQuickbaseSync(saved.sync || null);
-        const response = await startStudioRefresh();
+        const response = await startStudioRefresh(activeQuickbaseProfile?.id || "");
         setRefreshJob(response.job);
         if (response.job.status === "complete") {
           setRefreshingCache(false);

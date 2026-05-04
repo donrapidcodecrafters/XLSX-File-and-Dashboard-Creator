@@ -241,6 +241,8 @@ export async function registerStudioRoutes(app: FastifyInstance) {
 
   app.post("/api/studio/refresh/start", async (request, reply) => {
     try {
+      const body = (request.body as { profileId?: string } | undefined) || {};
+      const profileId = String(body.profileId || "").trim();
       let activeJob = getActiveRefreshJob();
       if (isRefreshJobStale(activeJob)) {
         await cancelRefreshJob(activeJob!.id, "Previous refresh stalled.");
@@ -252,13 +254,13 @@ export async function registerStudioRoutes(app: FastifyInstance) {
       const job = refreshJobStore.createJob("manual", async ({ jobId, update }) => {
         const result = await refreshAllCachedDataWithProgress("manual", (progress, message, extras) => {
           update(progress, message, extras);
-        }, "", jobId);
+        }, profileId, jobId);
         return {
           tableCount: result.tableCount,
           rowCount: result.rowCount
         };
       });
-      await primeRefreshJob(job.id, { message: "Preparing refresh" });
+      await primeRefreshJob(job.id, { profileId, message: "Preparing refresh" });
       return { job: getTrackedRefreshJob(job.id) || job };
     } catch (error) {
       reply.code(500);

@@ -1059,7 +1059,7 @@ export function App() {
     setTopbarStartingRefresh(true);
     setTopbarRefreshFeedback(null);
     try {
-      const response = await startStudioRefresh();
+      const response = await startStudioRefresh(activeQuickbaseProfile?.id || "");
       setTopbarRefreshJob(response.job);
       if (response.job.status === "complete") {
         setTopbarRefreshFeedback(null);
