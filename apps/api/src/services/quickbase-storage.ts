@@ -1800,6 +1800,34 @@ async function syncSettingsRecords(document: StudioDocument, user: QuickbaseUser
       || document.quickbaseProfiles[0];
     const where = buildWhere([{ fid: config.settingsUserFieldId, value: userValue }]);
     const existing = await quickbaseFetchRecordIdMap(config, config.settingsTableId, [config.settingsUserFieldId, config.settingsObjectKeyFieldId], { where });
+    const existingRows = await quickbaseQueryRecords(
+      config,
+      config.settingsTableId,
+      uniqueFieldIds([config.settingsUserFieldId, config.settingsObjectKeyFieldId, config.settingsJsonFieldId, "7", "8"]),
+      where,
+      { top: 100 }
+    ).catch(() => ({ data: [] as Array<Record<string, { value: unknown }>> }));
+    const existingStoragePayload = selectLatestPayload(
+      existingRows.data
+        .map((row) => uniqueFieldIds([config.settingsJsonFieldId, "8", "7"]).map((fid) => parseJsonValue(qbFieldValue(row, fid))).find(Boolean))
+        .filter((payload): payload is {
+          storage?: Partial<StudioDocument["quickbase"]>;
+          refreshSource?: StudioDocument["quickbaseProfiles"][number]["refreshSource"];
+          refreshSchedule?: StudioDocument["quickbaseProfiles"][number]["refreshSchedule"];
+          type?: string;
+          scope?: string;
+        } => Boolean(payload && typeof payload === "object")),
+      (payload) => payload.type === "storageConfig" && (!payload.scope || normalizeStorageScope(payload.scope) === quickbaseStorageScope(config))
+    );
+    const storageConfig = mergeQuickbaseConfig(
+      mergeQuickbaseConfig(config, existingStoragePayload?.storage || null),
+      config
+    );
+    const refreshSource = hasRefreshSourceConfig(activeProfile)
+      ? activeProfile?.refreshSource
+      : (hasRefreshSourceConfig({ refreshSource: existingStoragePayload?.refreshSource })
+        ? existingStoragePayload?.refreshSource
+        : { tableIds: [], reportIds: {} });
     const rows: QuickbaseRecord[] = [];
 
     const storageConfigRecord: QuickbaseRecord = {};
@@ -1812,39 +1840,39 @@ async function syncSettingsRecords(document: StudioDocument, user: QuickbaseUser
       type: "storageConfig",
       scope: quickbaseStorageScope(config),
       storage: {
-        helpdeskAppDbid: config.helpdeskAppDbid,
-        helpdeskTicketsTableDbid: config.helpdeskTicketsTableDbid,
-        helpdeskParentTableDbid: config.helpdeskParentTableDbid,
-        helpdeskParentAppIdFid: config.helpdeskParentAppIdFid,
-        objectTableId: config.objectTableId,
-        objectKeyFieldId: config.objectKeyFieldId,
-        objectTypeFieldId: config.objectTypeFieldId,
-        objectNameFieldId: config.objectNameFieldId,
-        objectConfigFieldId: config.objectConfigFieldId,
-        objectOwnerFieldId: config.objectOwnerFieldId,
-        objectPersonalOwnerFieldId: config.objectPersonalOwnerFieldId,
-        objectUpdatedAtFieldId: config.objectUpdatedAtFieldId,
-        objectUpdatedByFieldId: config.objectUpdatedByFieldId,
-        rosterTableId: config.rosterTableId,
-        rosterUserIdFieldId: config.rosterUserIdFieldId,
-        rosterEmployeeNameFieldId: config.rosterEmployeeNameFieldId,
-        rosterEmployeeEmailFieldId: config.rosterEmployeeEmailFieldId,
-        rosterEmployeeRecordIdFieldId: config.rosterEmployeeRecordIdFieldId,
-        settingsTableId: config.settingsTableId,
-        settingsUserFieldId: config.settingsUserFieldId,
-        settingsObjectFieldId: config.settingsObjectFieldId,
-        settingsObjectKeyFieldId: config.settingsObjectKeyFieldId,
-        settingsJsonFieldId: config.settingsJsonFieldId,
-        settingsUpdatedByFieldId: config.settingsUpdatedByFieldId,
-        versionTableId: config.versionTableId,
-        versionObjectFieldId: config.versionObjectFieldId,
-        versionObjectKeyFieldId: config.versionObjectKeyFieldId,
-        versionSnapshotFieldId: config.versionSnapshotFieldId,
-        versionChangedAtFieldId: config.versionChangedAtFieldId,
-        versionChangedByFieldId: config.versionChangedByFieldId,
-        versionUpdatedByFieldId: config.versionUpdatedByFieldId
+        helpdeskAppDbid: storageConfig.helpdeskAppDbid,
+        helpdeskTicketsTableDbid: storageConfig.helpdeskTicketsTableDbid,
+        helpdeskParentTableDbid: storageConfig.helpdeskParentTableDbid,
+        helpdeskParentAppIdFid: storageConfig.helpdeskParentAppIdFid,
+        objectTableId: storageConfig.objectTableId,
+        objectKeyFieldId: storageConfig.objectKeyFieldId,
+        objectTypeFieldId: storageConfig.objectTypeFieldId,
+        objectNameFieldId: storageConfig.objectNameFieldId,
+        objectConfigFieldId: storageConfig.objectConfigFieldId,
+        objectOwnerFieldId: storageConfig.objectOwnerFieldId,
+        objectPersonalOwnerFieldId: storageConfig.objectPersonalOwnerFieldId,
+        objectUpdatedAtFieldId: storageConfig.objectUpdatedAtFieldId,
+        objectUpdatedByFieldId: storageConfig.objectUpdatedByFieldId,
+        rosterTableId: storageConfig.rosterTableId,
+        rosterUserIdFieldId: storageConfig.rosterUserIdFieldId,
+        rosterEmployeeNameFieldId: storageConfig.rosterEmployeeNameFieldId,
+        rosterEmployeeEmailFieldId: storageConfig.rosterEmployeeEmailFieldId,
+        rosterEmployeeRecordIdFieldId: storageConfig.rosterEmployeeRecordIdFieldId,
+        settingsTableId: storageConfig.settingsTableId,
+        settingsUserFieldId: storageConfig.settingsUserFieldId,
+        settingsObjectFieldId: storageConfig.settingsObjectFieldId,
+        settingsObjectKeyFieldId: storageConfig.settingsObjectKeyFieldId,
+        settingsJsonFieldId: storageConfig.settingsJsonFieldId,
+        settingsUpdatedByFieldId: storageConfig.settingsUpdatedByFieldId,
+        versionTableId: storageConfig.versionTableId,
+        versionObjectFieldId: storageConfig.versionObjectFieldId,
+        versionObjectKeyFieldId: storageConfig.versionObjectKeyFieldId,
+        versionSnapshotFieldId: storageConfig.versionSnapshotFieldId,
+        versionChangedAtFieldId: storageConfig.versionChangedAtFieldId,
+        versionChangedByFieldId: storageConfig.versionChangedByFieldId,
+        versionUpdatedByFieldId: storageConfig.versionUpdatedByFieldId
       },
-      refreshSource: activeProfile?.refreshSource || { tableIds: [], reportIds: {} },
+      refreshSource,
       refreshSchedule: activeProfile?.refreshSchedule || document.sync.refreshSchedule,
       updatedAt: new Date().toISOString(),
       updatedBy: userValue
