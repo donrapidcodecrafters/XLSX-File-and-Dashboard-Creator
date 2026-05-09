@@ -81,7 +81,8 @@ function hasQuickbaseSource(tableId: string) {
     ? document.quickbaseProfiles.find((item) => item.id === table.quickbaseProfileId)
     : null;
   const quickbase = profile?.quickbase || document.quickbase;
-  return Boolean((table.quickbaseTableId || table.id) && quickbase.realmHostname && quickbase.userToken && quickbase.appId);
+  const quickbaseTableId = String(table.quickbaseTableId || "").trim();
+  return Boolean(quickbaseTableId && quickbase.realmHostname && quickbase.userToken && quickbase.appId);
 }
 
 async function startAutoRefreshForObject(objectId: string) {

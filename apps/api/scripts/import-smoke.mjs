@@ -20,6 +20,14 @@ async function injectNativeChart(workbookBuffer) {
   return zip.generateAsync({ type: "nodebuffer" });
 }
 
+async function injectStackedComboChart(workbookBuffer) {
+  const zip = await JSZip.loadAsync(await injectNativeChart(workbookBuffer));
+  const drawingXml = await zip.file("xl/drawings/drawing1.xml").async("string");
+  zip.file("xl/drawings/drawing1.xml", drawingXml.replace("Native Sales Chart", "Stacked Combo Chart"));
+  zip.file("xl/charts/chart1.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><c:chart><c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>Stacked Cash</a:t></a:r></a:p></c:rich></c:tx></c:title><c:plotArea><c:layout/><c:barChart><c:barDir val="col"/><c:grouping val="stacked"/><c:ser><c:idx val="0"/><c:order val="0"/><c:tx><c:strRef><c:f>Source!$B$1</c:f><c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>Palmetto</c:v></c:pt></c:strCache></c:strRef></c:tx><c:spPr><a:solidFill><a:srgbClr val="4472C4"/></a:solidFill></c:spPr><c:cat><c:strRef><c:f>Source!$A$2:$A$4</c:f><c:strCache><c:ptCount val="3"/><c:pt idx="0"><c:v>Sep</c:v></c:pt><c:pt idx="1"><c:v>Oct</c:v></c:pt><c:pt idx="2"><c:v>Nov</c:v></c:pt></c:strCache></c:strRef></c:cat><c:val><c:numRef><c:f>Source!$B$2:$B$4</c:f><c:numCache><c:ptCount val="3"/><c:pt idx="0"><c:v>70</c:v></c:pt><c:pt idx="1"><c:v>80</c:v></c:pt><c:pt idx="2"><c:v>90</c:v></c:pt></c:numCache></c:numRef></c:val></c:ser><c:ser><c:idx val="1"/><c:order val="1"/><c:tx><c:strRef><c:f>Source!$C$1</c:f><c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>Advantage</c:v></c:pt></c:strCache></c:strRef></c:tx><c:spPr><a:solidFill><a:srgbClr val="ED7D31"/></a:solidFill></c:spPr><c:cat><c:strRef><c:f>Source!$A$2:$A$4</c:f><c:strCache><c:ptCount val="3"/><c:pt idx="0"><c:v>Sep</c:v></c:pt><c:pt idx="1"><c:v>Oct</c:v></c:pt><c:pt idx="2"><c:v>Nov</c:v></c:pt></c:strCache></c:strRef></c:cat><c:val><c:numRef><c:f>Source!$C$2:$C$4</c:f><c:numCache><c:ptCount val="3"/><c:pt idx="0"><c:v>20</c:v></c:pt><c:pt idx="1"><c:v>30</c:v></c:pt><c:pt idx="2"><c:v>25</c:v></c:pt></c:numCache></c:numRef></c:val></c:ser><c:ser><c:idx val="2"/><c:order val="2"/><c:tx><c:strRef><c:f>Source!$D$1</c:f><c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>Other</c:v></c:pt></c:strCache></c:strRef></c:tx><c:spPr><a:solidFill><a:srgbClr val="A5A5A5"/></a:solidFill></c:spPr><c:cat><c:strRef><c:f>Source!$A$2:$A$4</c:f><c:strCache><c:ptCount val="3"/><c:pt idx="0"><c:v>Sep</c:v></c:pt><c:pt idx="1"><c:v>Oct</c:v></c:pt><c:pt idx="2"><c:v>Nov</c:v></c:pt></c:strCache></c:strRef></c:cat><c:val><c:numRef><c:f>Source!$D$2:$D$4</c:f><c:numCache><c:ptCount val="3"/><c:pt idx="0"><c:v>10</c:v></c:pt><c:pt idx="1"><c:v>10</c:v></c:pt><c:pt idx="2"><c:v>15</c:v></c:pt></c:numCache></c:numRef></c:val></c:ser><c:axId val="1"/><c:axId val="2"/></c:barChart><c:lineChart><c:grouping val="standard"/><c:ser><c:idx val="3"/><c:order val="3"/><c:tx><c:strRef><c:f>Source!$E$1</c:f><c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>Target</c:v></c:pt></c:strCache></c:strRef></c:tx><c:cat><c:strRef><c:f>Source!$A$2:$A$4</c:f><c:strCache><c:ptCount val="3"/><c:pt idx="0"><c:v>Sep</c:v></c:pt><c:pt idx="1"><c:v>Oct</c:v></c:pt><c:pt idx="2"><c:v>Nov</c:v></c:pt></c:strCache></c:strRef></c:cat><c:val><c:numRef><c:f>Source!$E$2:$E$4</c:f><c:numCache><c:ptCount val="3"/><c:pt idx="0"><c:v>100</c:v></c:pt><c:pt idx="1"><c:v>120</c:v></c:pt><c:pt idx="2"><c:v>130</c:v></c:pt></c:numCache></c:numRef></c:val></c:ser><c:axId val="1"/><c:axId val="2"/></c:lineChart></c:plotArea></c:chart></c:chartSpace>');
+  return zip.generateAsync({ type: "nodebuffer" });
+}
+
 function pngChunk(type, data) {
   const length = Buffer.alloc(4);
   length.writeUInt32BE(data.length, 0);
@@ -241,6 +249,49 @@ async function buildNoDataWorkbookBuffer() {
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
 
+async function buildSummaryBlocksWorkbookBuffer() {
+  const workbook = new ExcelJS.Workbook();
+  const cashSheet = workbook.addWorksheet("Cash Collected");
+  cashSheet.addRow([]);
+  cashSheet.addRow([]);
+  cashSheet.addRow([null, "Sep", "Oct", "Nov", "Dec"]);
+  cashSheet.addRow(["All", 100, 120, 130, 140]);
+  cashSheet.addRow(["Palmetto", 70, 80, 90, 95]);
+  cashSheet.addRow(["Advantage", 20, 30, 25, 35]);
+  cashSheet.addRow(["Other", 10, 10, 15, 10]);
+  cashSheet.addRow([]);
+  cashSheet.addRow([]);
+  cashSheet.addRow([]);
+  cashSheet.addRow([]);
+  cashSheet.addRow([]);
+  cashSheet.addRow([null, "2025-01-01", "2025-02-01", "2025-03-01"]);
+  cashSheet.addRow(["All", 10, 11, 12]);
+  cashSheet.addRow(["Palmetto", 7, 8, 9]);
+  cashSheet.addRow(["Advantage", 2, 2, 2]);
+  cashSheet.addRow(["Other", 1, 1, 1]);
+
+  const agingSheet = workbook.addWorksheet("AR Aging");
+  agingSheet.addRow([]);
+  agingSheet.addRow([]);
+  agingSheet.addRow([]);
+  agingSheet.addRow([null, "0-30", "31-60", "61-90", "Total"]);
+  agingSheet.addRow(["Unbilled", 9, 3, 1, 13]);
+  agingSheet.addRow([]);
+  agingSheet.addRow([]);
+  agingSheet.addRow([null, "0-30", "31-60", "61-90", "Total"]);
+  agingSheet.addRow(["Billed", 1, 4, 1, 6]);
+  agingSheet.addRow([null, 0.16, 0.66, 0.18, null]);
+  agingSheet.addRow([]);
+  agingSheet.addRow([null, "0-30", "31-60", "61-90", "Total"]);
+  agingSheet.addRow(["Combined", 10, 7, 2, 19]);
+
+  const rowSheet = workbook.addWorksheet("Rows");
+  rowSheet.addRow(["Task", "Status", "Owner"]);
+  rowSheet.addRow(["Atlas", "Planned", "Dana"]);
+  rowSheet.addRow(["Nova", "In Progress", "Sam"]);
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
 async function buildNativeChartWorkbookBuffer() {
   const workbook = new ExcelJS.Workbook();
   const sourceSheet = workbook.addWorksheet("Source");
@@ -250,6 +301,17 @@ async function buildNativeChartWorkbookBuffer() {
   sourceSheet.addRow(["Central", 15]);
   workbook.addWorksheet("Dashboard");
   return injectNativeChart(Buffer.from(await workbook.xlsx.writeBuffer()));
+}
+
+async function buildStackedComboChartWorkbookBuffer() {
+  const workbook = new ExcelJS.Workbook();
+  const sourceSheet = workbook.addWorksheet("Source");
+  sourceSheet.addRow(["Month", "Palmetto", "Advantage", "Other", "Target"]);
+  sourceSheet.addRow(["Sep", 70, 20, 10, 100]);
+  sourceSheet.addRow(["Oct", 80, 30, 10, 120]);
+  sourceSheet.addRow(["Nov", 90, 25, 15, 130]);
+  workbook.addWorksheet("Dashboard");
+  return injectStackedComboChart(Buffer.from(await workbook.xlsx.writeBuffer()));
 }
 
 async function buildPictureChartWorkbookBuffer() {
@@ -550,6 +612,44 @@ async function main() {
     "expected no-Data workbook warnings to explain that field inference was skipped"
   );
 
+  const summaryImported = await importWorkbookIntoStudioDocument(buildStudioDocument(), "Summary Blocks Workbook.xlsx", await buildSummaryBlocksWorkbookBuffer());
+  const summaryReports = summaryImported.importedObjectIds
+    .map((id) => summaryImported.document.bundle.objects[id])
+    .filter((object) => object?.type === "report");
+  const cashSummaryOne = summaryReports.find((report) => report.name === "Cash Collected · Summary 1");
+  const cashSummaryTwo = summaryReports.find((report) => report.name === "Cash Collected · Summary 2");
+  const arUnbilledSummary = summaryReports.find((report) => report.name === "AR Aging · Unbilled");
+  const arBilledSummary = summaryReports.find((report) => report.name === "AR Aging · Billed");
+  const arCombinedSummary = summaryReports.find((report) => report.name === "AR Aging · Combined");
+  const rowReport = summaryReports.find((report) => report.name === "Rows");
+  [cashSummaryOne, cashSummaryTwo, arUnbilledSummary, arBilledSummary, arCombinedSummary].forEach((report) => {
+    assert.equal(report?.view.mode, "summary", "expected compact workbook matrices to import as summary reports");
+    assert.equal(report?.view.showDetails, false, "expected imported summary matrices not to render as detail tables");
+    assert.equal(report?.selectedFieldIds.length, 0, "expected imported summary matrices not to preselect detail fields");
+  });
+  assert.deepEqual(
+    cashSummaryOne?.summaryMetrics.map((metric) => metric.label),
+    ["Sep", "Oct", "Nov", "Dec"],
+    "expected cash summary matrices to keep month fields as summary values"
+  );
+  assert.deepEqual(
+    arBilledSummary?.summaryMetrics.map((metric) => metric.label),
+    ["0-30", "31-60", "61-90", "Total"],
+    "expected AR Aging summary matrices to keep aging buckets as summary values"
+  );
+  assert.equal(
+    summaryImported.document.bundle.data[arBilledSummary?.sourceTableId || ""]?.length,
+    1,
+    "expected unlabeled helper rows beneath a summary matrix not to be imported as summary detail rows"
+  );
+  assert.equal(rowReport?.view.mode, "table", "expected plain row-list sections to remain table reports");
+  const summaryDashboard = summaryImported.document.bundle.objects[summaryImported.primaryObjectId];
+  assert.equal(summaryDashboard?.type, "dashboard", "expected summary block workbook to create a dashboard");
+  assert.ok(
+    summaryDashboard.tabs.some((tab) => tab.name === "Cash Collected" && tab.widgets.filter((widget) => widget.displayMode === "summary" && !widget.showDetails).length >= 2),
+    "expected workbook summary sections to display as summary widgets on their source tab"
+  );
+
   const nativeImported = await importWorkbookIntoStudioDocument(buildStudioDocument(), "Native Chart Workbook.xlsx", await buildNativeChartWorkbookBuffer());
   const nativeReports = nativeImported.importedObjectIds
     .map((id) => nativeImported.document.bundle.objects[id])
@@ -575,6 +675,17 @@ async function main() {
     nativeDashboard.tabs.every((tab) => tab.widgets.every((widget) => widget.reportId !== nativeChartReport?.id || (!widget.showSummary && !widget.showDetails))),
     "expected imported chart widgets not to enable summary or details"
   );
+
+  const stackedComboImported = await importWorkbookIntoStudioDocument(buildStudioDocument(), "Stacked Combo Workbook.xlsx", await buildStackedComboChartWorkbookBuffer());
+  const stackedComboReports = stackedComboImported.importedObjectIds
+    .map((id) => stackedComboImported.document.bundle.objects[id])
+    .filter((object) => object?.type === "report");
+  const stackedComboChart = stackedComboReports.find((report) => report.name === "Stacked Cash");
+  assert.equal(stackedComboChart?.view.mode, "chart", "expected stacked combo native chart to import as a chart");
+  assert.equal(stackedComboChart?.view.chartType, "stacked-column", "expected stacked vertical Excel column combos to stay stacked-column instead of line-bar");
+  assert.equal(stackedComboChart?.view.chartOrientation, "vertical", "expected stacked column chart orientation to stay vertical");
+  assert.equal(stackedComboChart?.view.showSummary, false, "expected imported stacked charts to leave summary fields unset");
+  assert.equal(stackedComboChart?.view.showDetails, false, "expected imported stacked charts to leave detail fields unset");
 
   const pictureImported = await importWorkbookIntoStudioDocument(buildStudioDocument(), "Picture Chart Workbook.xlsx", await buildPictureChartWorkbookBuffer());
   const pictureReports = pictureImported.importedObjectIds

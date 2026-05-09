@@ -507,8 +507,60 @@ function buildSingleWorksheetRegion(candidateName: string, rows: WorksheetRowSna
   }];
 }
 
+function rowNonBlankEntries(row: WorksheetRowSnapshot) {
+  return row.values
+    .map((value, index) => ({ value, index }))
+    .filter((entry) => !isBlankCell(entry.value));
+}
+
+function isNumericSummaryValue(value: string | number | boolean | null) {
+  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value === "boolean" || value === null || value === undefined) return false;
+  return isNumericLikeString(String(value));
+}
+
+function looksLikeSummaryMatrixHeaderRow(row: WorksheetRowSnapshot) {
+  const entries = rowNonBlankEntries(row);
+  if (entries.length < 3) return false;
+  const numericCount = entries.filter((entry) => isNumericSummaryValue(entry.value)).length;
+  return numericCount <= Math.max(1, Math.floor(entries.length * 0.2));
+}
+
+function looksLikeSummaryMatrixDataRow(row: WorksheetRowSnapshot) {
+  const entries = rowNonBlankEntries(row);
+  if (entries.length < 3) return false;
+  const label = entries[0]?.value;
+  if (!isHeaderLabelValue(label)) return false;
+  const numericCount = entries.slice(1).filter((entry) => isNumericSummaryValue(entry.value)).length;
+  return numericCount >= Math.max(2, Math.ceil((entries.length - 1) * 0.6));
+}
+
+function splitSummaryMatrixRowBand(rows: WorksheetRowSnapshot[]) {
+  const regions: WorksheetRowSnapshot[][] = [];
+  let index = 0;
+  while (index < rows.length - 1) {
+    if (!looksLikeSummaryMatrixHeaderRow(rows[index]) || !looksLikeSummaryMatrixDataRow(rows[index + 1])) {
+      index += 1;
+      continue;
+    }
+    const regionRows = [rows[index]];
+    index += 1;
+    while (index < rows.length && looksLikeSummaryMatrixDataRow(rows[index])) {
+      regionRows.push(rows[index]);
+      index += 1;
+    }
+    if (regionRows.length >= 2) {
+      regions.push(regionRows);
+    }
+  }
+  return regions;
+}
+
 function deriveWorksheetRegionName(sheetName: string, rows: WorksheetRowSnapshot[], index: number, total: number) {
   if (total <= 1) return sheetName;
+  if (looksLikeSummaryMatrixHeaderRow(rows[0]) && rows.slice(1).filter((row) => looksLikeSummaryMatrixDataRow(row)).length > 1) {
+    return `${sheetName} · Summary ${index + 1}`;
+  }
   const ignoreValues = new Set(["all", "total", "grand total", "column labels", "row labels", "sum of ar"]);
   for (const row of rows.slice(0, 3)) {
     const nonBlankValues = row.values.map((value) => String(value ?? "").trim()).filter(Boolean);
@@ -655,6 +707,19 @@ function buildWorksheetRegions(
         }))
         .filter((row) => row.values.some((value) => !isBlankCell(value)));
       if (!bandRows.length) return;
+      const summaryMatrixRegions = splitSummaryMatrixRowBand(bandRows);
+      if (summaryMatrixRegions.length) {
+        summaryMatrixRegions.forEach((summaryRows) => {
+          regions.push({
+            candidateName: "",
+            rows: summaryRows,
+            columnNumbers: Array.from({ length: columnNumbers.length }, (_, offset) => offset + 1),
+            absoluteColumnNumbers: columnNumbers,
+            structuredTable: null
+          });
+        });
+        return;
+      }
       const maxNonBlankCells = bandRows.reduce((max, row) => Math.max(max, row.values.filter((value) => !isBlankCell(value)).length), 0);
       if (bandRows.length < 2 && maxNonBlankCells < 2) return;
       regions.push({
@@ -895,6 +960,39 @@ function buildDefaultReportView(overrides: Partial<ReportViewDefinition> = {}): 
   };
 }
 
+function isGeneratedColumnLabel(label: string) {
+  return /^Column\s+\d+$/i.test(String(label || "").trim());
+}
+
+function isSummaryAxisLabel(label: string) {
+  const normalized = String(label || "").trim();
+  const base = normalized.replace(/\s+\d+$/i, "").trim();
+  const lower = base.toLowerCase();
+  if (!base || isGeneratedColumnLabel(base)) return false;
+  if (lower === "total" || lower === "grand total" || lower === "all") return true;
+  if ([
+    "jan", "january", "feb", "february", "mar", "march", "apr", "april", "may", "jun", "june",
+    "jul", "july", "aug", "august", "sep", "sept", "september", "oct", "october", "nov", "november", "dec", "december",
+    "q1", "q2", "q3", "q4"
+  ].includes(lower)) return true;
+  if (/^\d{1,4}\s*-\s*\d{1,4}$/.test(lower) || /^\d{1,4}\+$/.test(lower)) return true;
+  if (/^20\d{2}[-/]/.test(lower) || !Number.isNaN(Date.parse(base))) return true;
+  return false;
+}
+
+function summaryMatrixMetricFields(rows: DataRow[], fields: FieldDefinition[], numericFields: FieldDefinition[], layoutHints: WorksheetLayoutHints) {
+  if (layoutHints.tableName || layoutHints.autoFilterRange) return [];
+  if (!rows.length || rows.length > 12 || fields.length < 3 || numericFields.length < 2) return [];
+  const rowLabelField = fields[0];
+  const labelledRows = rows.filter((row) => isHeaderLabelValue(row[rowLabelField.id] as string | number | boolean | null));
+  if (labelledRows.length < rows.length) return [];
+  const axisNumericFields = numericFields.filter((field) => isSummaryAxisLabel(field.label));
+  if (axisNumericFields.length < 2) return [];
+  if (axisNumericFields.length / Math.max(1, numericFields.length) < 0.6) return [];
+  if (numericFields.length / Math.max(1, fields.length - 1) < 0.55) return [];
+  return axisNumericFields;
+}
+
 function buildImportedReport(
   name: string,
   table: TableDefinition,
@@ -988,6 +1086,7 @@ function buildImportedReport(
   const textFields = preferredFields.filter((field) => field.type === "text" || field.type === "user");
   const dateFields = preferredFields.filter((field) => field.type === "date" || field.type === "datetime");
   const numericFields = preferredFields.filter((field) => field.type === "number" || field.type === "currency");
+  const allNumericFields = fields.filter((field) => field.type === "number" || field.type === "currency");
   const percentLikeNumericFields = numericFields.filter((field) => isPercentLikeField(field.id));
   const countField = preferredFields[0] || fields[0];
   const titleField = textFields.find((field) => /(name|title|task|project|customer|owner|item|summary)/i.test(field.label))
@@ -1031,7 +1130,7 @@ function buildImportedReport(
     ...preferredFields.map((field) => field.id)
   ].filter(Boolean))).slice(0, Math.min(10, preferredFields.length || fields.length || 8));
   const reportId = uniqueId("report", name, existingIds);
-  const summaryMetrics = [
+  let summaryMetrics = [
     {
       id: `${reportId}-rows`,
       fieldId: countField?.id || selectedFieldIds[0] || "rows",
@@ -1051,8 +1150,23 @@ function buildImportedReport(
     showDetails: true,
     titleFieldId: titleField?.id || selectedFieldIds[0] || ""
   });
+  const compactSummaryFields = summaryMatrixMetricFields(rows, fields, allNumericFields, layoutHints);
 
-  if (!allowVisualInference) {
+  if (compactSummaryFields.length) {
+    summaryMetrics = compactSummaryFields.map((field, index) => ({
+      id: `${reportId}-summary-${index + 1}`,
+      fieldId: field.id,
+      op: "sum" as const,
+      label: field.label
+    }));
+    view = buildDefaultReportView({
+      mode: "summary",
+      showSummary: true,
+      showDetails: false,
+      titleFieldId: titleField?.id || countField?.id || ""
+    });
+    notes.push(`Imported as a summary report from ${rows.length} compact workbook summary row${rows.length === 1 ? "" : "s"} across ${compactSummaryFields.length} summary value${compactSummaryFields.length === 1 ? "" : "s"}.`);
+  } else if (!allowVisualInference) {
     notes.push("Imported as a detail table because this workbook has no Data sheet to support field inference.");
   } else if (startDateField && endDateField && titleField) {
     view = buildDefaultReportView({
@@ -1349,7 +1463,7 @@ function buildImportedReport(
     updatedAt: importedAt,
     sourceTableId: table.id,
     sourceReportOverrides: {},
-    selectedFieldIds: view.mode === "chart" ? [] : selectedFieldIds,
+    selectedFieldIds: view.mode === "chart" || (view.mode === "summary" && !view.showDetails) ? [] : selectedFieldIds,
     filters: [],
     filterTree: createFilterGroup("and", []),
     groups: [],
@@ -1458,7 +1572,7 @@ function buildImportedDashboard(
       },
       mode: "linked" as const,
       displayMode: report.view.mode === "chart" ? "chart" as const : "inherit" as const,
-      showDetails: report.view.mode !== "chart",
+      showDetails: report.view.mode !== "chart" && report.view.showDetails,
       showSummary: report.view.showSummary,
       reportId: report.id
     }));
@@ -1503,7 +1617,7 @@ function buildImportedDashboard(
           layout,
           mode: "linked",
           displayMode,
-          showDetails: displayMode !== "chart",
+          showDetails: displayMode !== "chart" && report.view.showDetails,
           showSummary: report.view.showSummary,
           reportId: report.id
         });
@@ -1543,7 +1657,10 @@ function buildImportedDashboard(
         if (summaryFirst && wantsSummaryStrip) {
           addSummaryWidget(report, { w: 12, h: 3, x: 1, y: startY }, `${report.name} Highlights`);
         }
-        if (report.view.mode === "chart") {
+        if (report.view.mode === "summary") {
+          addMainWidget(report, { w: 12, h: 3, x: 1, y: startY }, "summary");
+          nextY = startY + 3;
+        } else if (report.view.mode === "chart") {
           const chartStartsAfterSummary = summaryFirst && wantsSummaryStrip ? startY + 3 : startY;
           addMainWidget(
             report,
@@ -1969,6 +2086,7 @@ function resolveNativeChartType(plotArea: Record<string, unknown>): { chartType:
     "bar3DChart",
     "lineChart",
     "areaChart",
+    "area3DChart",
     "pieChart",
     "pie3DChart",
     "doughnutChart",
@@ -1979,31 +2097,39 @@ function resolveNativeChartType(plotArea: Record<string, unknown>): { chartType:
   const chartBlocks = candidates.flatMap((key) =>
     asArray(plotArea[key] as Record<string, unknown> | Record<string, unknown>[]).map((block) => ({ key, block }))
   );
-  const hasBar = chartBlocks.some((entry) => entry.key === "barChart" || entry.key === "bar3DChart");
-  const hasLine = chartBlocks.some((entry) => entry.key === "lineChart");
-  if (hasBar && hasLine) {
-    return { chartType: "line-bar", chartOrientation: "vertical", chartBlocks };
-  }
   const primary = chartBlocks[0];
   if (!primary) return { chartType: "bar", chartOrientation: "vertical", chartBlocks };
+  const hasBar = chartBlocks.some((entry) => entry.key === "barChart" || entry.key === "bar3DChart");
+  const hasLine = chartBlocks.some((entry) => entry.key === "lineChart");
+  const primaryBarDir = String((primary.block.barDir as Record<string, unknown> | undefined)?.val || "col");
+  const primaryGrouping = String((primary.block.grouping as Record<string, unknown> | undefined)?.val || "");
+  const primaryStacked = primaryGrouping === "stacked" || primaryGrouping === "percentStacked";
+  if (hasBar && hasLine && (primary.key === "barChart" || primary.key === "bar3DChart")) {
+    if (primaryStacked) {
+      return {
+        chartType: primary.key === "bar3DChart" ? "3d-stacked-bar" : (primaryBarDir === "bar" ? "horizontal-stacked-bar" : "stacked-column"),
+        chartOrientation: primaryBarDir === "bar" ? "horizontal" : "vertical",
+        chartBlocks
+      };
+    }
+    return { chartType: "line-bar", chartOrientation: "vertical", chartBlocks };
+  }
   if (primary.key === "lineChart") return { chartType: "line", chartOrientation: "vertical", chartBlocks };
   if (primary.key === "areaChart") return { chartType: "area", chartOrientation: "vertical", chartBlocks };
+  if (primary.key === "area3DChart") return { chartType: "3d-area", chartOrientation: "vertical", chartBlocks };
   if (primary.key === "pieChart") return { chartType: "pie", chartOrientation: "vertical", chartBlocks };
   if (primary.key === "pie3DChart") return { chartType: "3d-pie", chartOrientation: "vertical", chartBlocks };
   if (primary.key === "doughnutChart") return { chartType: "donut", chartOrientation: "vertical", chartBlocks };
   if (primary.key === "scatterChart") return { chartType: "scatter", chartOrientation: "vertical", chartBlocks };
   if (primary.key === "bubbleChart") return { chartType: "bubble", chartOrientation: "vertical", chartBlocks };
   if (primary.key === "radarChart") return { chartType: "radar", chartOrientation: "vertical", chartBlocks };
-  const barDir = String((primary.block.barDir as Record<string, unknown> | undefined)?.val || "col");
-  const grouping = String((primary.block.grouping as Record<string, unknown> | undefined)?.val || "");
-  const stacked = grouping === "stacked" || grouping === "percentStacked";
   if (primary.key === "bar3DChart") {
-    return { chartType: barDir === "bar" ? "horizontal-bar" : "3d-bar", chartOrientation: barDir === "bar" ? "horizontal" : "vertical", chartBlocks };
+    return { chartType: primaryStacked ? "3d-stacked-bar" : "3d-bar", chartOrientation: primaryBarDir === "bar" ? "horizontal" : "vertical", chartBlocks };
   }
-  if (barDir === "bar") {
-    return { chartType: stacked ? "horizontal-stacked-bar" : "horizontal-bar", chartOrientation: "horizontal", chartBlocks };
+  if (primaryBarDir === "bar") {
+    return { chartType: primaryStacked ? "horizontal-stacked-bar" : "horizontal-bar", chartOrientation: "horizontal", chartBlocks };
   }
-  return { chartType: stacked ? "stacked-column" : "column", chartOrientation: "vertical", chartBlocks };
+  return { chartType: primaryStacked ? "stacked-column" : "column", chartOrientation: "vertical", chartBlocks };
 }
 
 function extractNativeChartSeries(

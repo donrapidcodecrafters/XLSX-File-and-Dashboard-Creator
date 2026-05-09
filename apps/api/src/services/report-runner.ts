@@ -103,8 +103,15 @@ function getCachedFreshness(tableId: string): DataFreshnessInfo | null {
   return null;
 }
 
+function looksLikeQuickbaseTableId(value: string) {
+  const trimmed = String(value || "").trim();
+  const [, quickbaseTableId = trimmed] = trimmed.split(":");
+  return /^[a-z0-9]{8,}$/i.test(quickbaseTableId || trimmed);
+}
+
 function shouldUseLiveQuickbase(tableId: string, forceLive = false) {
   if (!forceLive) return false;
+  if (!looksLikeQuickbaseTableId(tableId)) return false;
   const quickbase = studioStore.getDocument().quickbase;
   return Boolean(quickbase.realmHostname && quickbase.userToken && quickbase.appId && tableId);
 }
@@ -409,8 +416,23 @@ function buildReportExecutionShape(report: ReportDefinition) {
   };
 }
 
+function safeExecutionKey(value: unknown, fallback: Record<string, unknown>) {
+  try {
+    return JSON.stringify(value);
+  } catch (error) {
+    if (error instanceof RangeError) {
+      return JSON.stringify({
+        ...fallback,
+        cacheKeyFallback: true,
+        reason: error.message
+      });
+    }
+    throw error;
+  }
+}
+
 function cacheKey(report: ReportDefinition, table: TableDefinition, extraFilters: FilterDefinition[]): string {
-  return JSON.stringify({
+  return safeExecutionKey({
     reportId: report.id,
     updatedAt: report.updatedAt,
     reportShape: buildReportExecutionShape(report),
@@ -418,13 +440,26 @@ function cacheKey(report: ReportDefinition, table: TableDefinition, extraFilters
     filters: extraFilters
       .filter((filter) => Boolean(filter.value))
       .map((filter) => [filter.fieldId, filter.operator, filter.value])
+  }, {
+    reportId: report.id,
+    updatedAt: report.updatedAt,
+    tableId: table.id,
+    tableVersion: getTableCacheVersion(table),
+    filterCount: extraFilters.length
   });
 }
 
 function pageCacheKey(report: ReportDefinition, table: TableDefinition, extraFilters: FilterDefinition[], options: ExecuteReportOptions): string {
   const normalized = normalizePageOptions(options);
-  return JSON.stringify({
+  return safeExecutionKey({
     key: cacheKey(report, table, extraFilters),
+    page: normalized.page,
+    pageSize: normalized.pageSize,
+    includeRows: normalized.includeRows,
+    mode: "page-only"
+  }, {
+    reportId: report.id,
+    tableId: table.id,
     page: normalized.page,
     pageSize: normalized.pageSize,
     includeRows: normalized.includeRows,
@@ -1308,7 +1343,7 @@ function widgetNeedsRows(report: ReportDefinition, widget: DashboardRunResult["t
 }
 
 function buildDashboardExecutionKey(report: ReportDefinition, widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], extraFilters: FilterDefinition[]) {
-  return JSON.stringify({
+  return safeExecutionKey({
     reportId: report.id,
     updatedAt: report.updatedAt,
     reportShape: buildReportExecutionShape(report),
@@ -1316,6 +1351,12 @@ function buildDashboardExecutionKey(report: ReportDefinition, widget: DashboardR
     filters: extraFilters
       .filter((filter) => Boolean(filter.value))
       .map((filter) => [filter.fieldId, filter.operator, filter.value])
+  }, {
+    reportId: report.id,
+    updatedAt: report.updatedAt,
+    widgetId: widget.id,
+    heavy: widgetNeedsAggregates(report, widget),
+    filterCount: extraFilters.length
   });
 }
 
@@ -1324,7 +1365,7 @@ function buildDashboardCacheKey(
   tabsToRender: DashboardDefinition["tabs"],
   runtimeValues: Record<string, string>
 ) {
-  return JSON.stringify({
+  return safeExecutionKey({
     dashboardId: dashboard.id,
     updatedAt: dashboard.updatedAt,
     runtimeFilters: Object.entries(runtimeValues || {})
@@ -1349,6 +1390,12 @@ function buildDashboardCacheKey(
         };
       })
     )
+  }, {
+    dashboardId: dashboard.id,
+    updatedAt: dashboard.updatedAt,
+    tabCount: tabsToRender.length,
+    widgetCount: tabsToRender.reduce((sum, tab) => sum + tab.widgets.length, 0),
+    runtimeFilterCount: Object.keys(runtimeValues || {}).length
   });
 }
 

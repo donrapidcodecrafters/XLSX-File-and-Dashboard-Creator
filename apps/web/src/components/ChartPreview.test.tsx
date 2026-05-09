@@ -61,4 +61,21 @@ describe("ChartPreview", () => {
     expect(screen.getByText("84.00")).toBeInTheDocument();
     expect(screen.getByText("Adoption")).toBeInTheDocument();
   });
+
+  it("renders 3D chart depth with color-aware faces", () => {
+    const { container } = render(
+      <ChartPreview
+        chartType="3d-pie"
+        title="Excel Style 3D"
+        data={[
+          { label: "Palmetto", rawLabel: "Palmetto", value: 70, axis: "primary" },
+          { label: "Advantage", rawLabel: "Advantage", value: 30, axis: "primary" }
+        ]}
+      />
+    );
+
+    expect(screen.getByText("Excel Style 3D")).toBeInTheDocument();
+    expect(container.querySelectorAll(".chart-3d-depth").length).toBeGreaterThan(1);
+    expect(container.querySelector(".chart-3d-slice")).toBeInTheDocument();
+  });
 });

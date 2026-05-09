@@ -53,6 +53,34 @@ function getColorOverride(
   return /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(override) ? override : getColor(palette, index);
 }
 
+function expandHexColor(color: string) {
+  const trimmed = String(color || "").trim().replace(/^#/, "");
+  if (/^[0-9a-fA-F]{3}$/.test(trimmed)) {
+    return trimmed.split("").map((character) => character + character).join("");
+  }
+  return /^[0-9a-fA-F]{6}$/.test(trimmed) ? trimmed : "0d7c66";
+}
+
+function mixHexColor(color: string, target: string, amount: number) {
+  const source = expandHexColor(color);
+  const destination = expandHexColor(target);
+  const mixed = [0, 2, 4].map((offset) => {
+    const start = parseInt(source.slice(offset, offset + 2), 16);
+    const end = parseInt(destination.slice(offset, offset + 2), 16);
+    return Math.round(start + (end - start) * amount).toString(16).padStart(2, "0");
+  });
+  return `#${mixed.join("")}`;
+}
+
+function threeDColorFaces(color: string) {
+  return {
+    front: color,
+    top: mixHexColor(color, "#ffffff", 0.34),
+    side: mixHexColor(color, "#173126", 0.34),
+    base: mixHexColor(color, "#173126", 0.5)
+  };
+}
+
 function collapseChartData(data: ChartDatum[], axis: "primary" | "secondary" = "primary") {
   const grouped = new Map<string, ChartDatum>();
   data
@@ -502,10 +530,21 @@ export function ChartPreview({
             <svg viewBox="0 0 200 200" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
               {slices.map(({ item, index, path }) => {
                 const href = getDatumHref?.(item) || "";
+                const color = getColorOverride(palette, index, chartValueColors, item);
+                const faces = threeDColorFaces(color);
                 const content = (
-                  <g>
-                    {threeDimensional ? <path d={path} transform="translate(0 8)" fill="rgba(23,49,38,0.18)" /> : null}
-                    <path d={path} fill={getColorOverride(palette, index, chartValueColors, item)} className={href ? "chart-linkable" : undefined} />
+                  <g className={threeDimensional ? "chart-3d-slice" : undefined}>
+                    {threeDimensional ? [8, 6, 4, 2].map((depth) => (
+                      <path
+                        key={`depth-${depth}`}
+                        d={path}
+                        transform={`translate(0 ${depth})`}
+                        fill={mixHexColor(faces.base, color, depth / 14)}
+                        className="chart-3d-depth"
+                      />
+                    )) : null}
+                    <path d={path} fill={color} stroke={threeDimensional ? faces.top : undefined} strokeWidth={threeDimensional ? 1 : 0} className={href ? "chart-linkable" : undefined} />
+                    {threeDimensional ? <path d={path} fill="rgba(255,255,255,0.12)" transform="translate(-1 -1) scale(0.985)" transformOrigin="100 100" /> : null}
                   </g>
                 );
                 return href ? (
@@ -716,17 +755,35 @@ export function ChartPreview({
                       stackedHeight += height;
                     }
                     const href = datum ? (getDatumHref?.(datum) || "") : "";
+                    const color = getColorOverride(
+                      palette,
+                      seriesIndex,
+                      chartValueColors,
+                      datum || {
+                        label: category.label,
+                        rawLabel: category.rawLabel,
+                        series: series.label,
+                        rawSeries: series.rawSeries,
+                        value,
+                        axis: "primary"
+                      }
+                    );
+                    const faces = threeDColorFaces(color);
+                    const depthX = 8;
+                    const depthY = 6;
                     const content = (
                       <g key={`${category.rawLabel}-${series.rawSeries || "default"}-${seriesIndex}`} className={href ? "chart-linkable" : undefined}>
                         {threeDimensional ? (
                           <>
                             <polygon
-                              points={`${x + barWidth},${y} ${x + barWidth + 8},${y - 6} ${x + barWidth + 8},${topPad + plotHeight - 6} ${x + barWidth},${topPad + plotHeight}`}
-                              fill="rgba(23,49,38,0.16)"
+                              points={`${x + barWidth},${y} ${x + barWidth + depthX},${y - depthY} ${x + barWidth + depthX},${y + height - depthY} ${x + barWidth},${y + height}`}
+                              fill={faces.side}
+                              className="chart-3d-side"
                             />
                             <polygon
-                              points={`${x},${y} ${x + 8},${y - 6} ${x + barWidth + 8},${y - 6} ${x + barWidth},${y}`}
-                              fill="rgba(255,255,255,0.18)"
+                              points={`${x},${y} ${x + depthX},${y - depthY} ${x + barWidth + depthX},${y - depthY} ${x + barWidth},${y}`}
+                              fill={faces.top}
+                              className="chart-3d-top"
                             />
                           </>
                         ) : null}
@@ -735,21 +792,9 @@ export function ChartPreview({
                           y={y}
                           width={barWidth}
                           height={Math.max(height, 0)}
-                          rx="10"
-                          fill={getColorOverride(
-                            palette,
-                            seriesIndex,
-                            chartValueColors,
-                            datum || {
-                              label: category.label,
-                              rawLabel: category.rawLabel,
-                              series: series.label,
-                              rawSeries: series.rawSeries,
-                              value,
-                              axis: "primary"
-                            }
-                          )}
-                          fillOpacity="0.9"
+                          rx={threeDimensional ? "2" : "10"}
+                          fill={color}
+                          fillOpacity={threeDimensional ? "0.98" : "0.9"}
                         />
                         {showValues && value > 0 ? (
                           <text x={x + barWidth / 2} y={barValueLabelY(y)} textAnchor="middle" className="chart-svg-value">
@@ -872,17 +917,35 @@ export function ChartPreview({
                       stackedWidth += width;
                     }
                     const href = datum ? (getDatumHref?.(datum) || "") : "";
+                    const color = getColorOverride(
+                      palette,
+                      seriesIndex,
+                      chartValueColors,
+                      datum || {
+                        label: category.label,
+                        rawLabel: category.rawLabel,
+                        series: series.label,
+                        rawSeries: series.rawSeries,
+                        value,
+                        axis: "primary"
+                      }
+                    );
+                    const faces = threeDColorFaces(color);
+                    const depthX = 8;
+                    const depthY = 5;
                     const content = (
                       <g key={`${category.rawLabel}-${series.rawSeries || "default"}-${seriesIndex}`} className={href ? "chart-linkable" : undefined}>
                         {threeDimensional ? (
                           <>
                             <polygon
-                              points={`${x + width},${y} ${x + width + 8},${y - 5} ${x + width + 8},${y + barHeight - 5} ${x + width},${y + barHeight}`}
-                              fill="rgba(23,49,38,0.16)"
+                              points={`${x + width},${y} ${x + width + depthX},${y - depthY} ${x + width + depthX},${y + barHeight - depthY} ${x + width},${y + barHeight}`}
+                              fill={faces.side}
+                              className="chart-3d-side"
                             />
                             <polygon
-                              points={`${x},${y} ${x + 8},${y - 5} ${x + width + 8},${y - 5} ${x + width},${y}`}
-                              fill="rgba(255,255,255,0.16)"
+                              points={`${x},${y} ${x + depthX},${y - depthY} ${x + width + depthX},${y - depthY} ${x + width},${y}`}
+                              fill={faces.top}
+                              className="chart-3d-top"
                             />
                           </>
                         ) : null}
@@ -891,21 +954,9 @@ export function ChartPreview({
                           y={y}
                           width={width}
                           height={barHeight}
-                          rx="10"
-                          fill={getColorOverride(
-                            palette,
-                            seriesIndex,
-                            chartValueColors,
-                            datum || {
-                              label: category.label,
-                              rawLabel: category.rawLabel,
-                              series: series.label,
-                              rawSeries: series.rawSeries,
-                              value,
-                              axis: "primary"
-                            }
-                          )}
-                          fillOpacity="0.9"
+                          rx={threeDimensional ? "2" : "10"}
+                          fill={color}
+                          fillOpacity={threeDimensional ? "0.98" : "0.9"}
                         />
                         {showValues && value > 0 ? (
                           <text x={x + width + 10} y={y + barHeight / 2 + 4} textAnchor="start" className="chart-svg-value">
@@ -1418,6 +1469,8 @@ export function ChartPreview({
         {renderTitle(title)}
         {items.map((item, index) => {
           const href = getDatumHref?.(item) || "";
+          const color = getColorOverride(palette, index, chartValueColors, item);
+          const faces = threeDColorFaces(color);
           const content = (
             <div
               className={`funnel-step${href ? " chart-linkable" : ""}`}
@@ -1425,9 +1478,9 @@ export function ChartPreview({
               style={{
                 width: `${Math.max(34, (item.value / max) * 100)}%`,
                 background: threeDimensional
-                  ? `linear-gradient(135deg, ${getColorOverride(palette, index, chartValueColors, item)}, rgba(23,49,38,0.34))`
-                  : getColorOverride(palette, index, chartValueColors, item),
-                boxShadow: threeDimensional ? "0 10px 18px rgba(23,49,38,0.14)" : undefined
+                  ? `linear-gradient(145deg, ${faces.top} 0%, ${faces.front} 48%, ${faces.side} 100%)`
+                  : color,
+                boxShadow: threeDimensional ? `7px 8px 0 ${faces.base}, 0 14px 22px rgba(23,49,38,0.12)` : undefined
               }}
             >
               {cap(item.label, compact ? 12 : 18)}{showValues ? ` · ${formatAxisValue(item.value, decimalPlaces)}` : ""}
@@ -1585,6 +1638,8 @@ export function ChartPreview({
                 <line x1={plotLeft} y1={plotBottom} x2={plotRight} y2={plotBottom} className="chart-axis-svg-line" />
                 {points.map((point, index) => {
                   const href = getDatumHref?.(point.item) || "";
+                  const color = getColorOverride(palette, index, chartValueColors, point.item);
+                  const faces = threeDColorFaces(color);
                   const content = (
                     <g>
                       {threeDimensional ? (
@@ -1592,7 +1647,8 @@ export function ChartPreview({
                           cx={point.x + 4}
                           cy={point.y + 5}
                           r={point.r}
-                          fill="rgba(23,49,38,0.16)"
+                          fill={faces.base}
+                          opacity="0.32"
                         />
                       ) : null}
                       <circle
@@ -1600,10 +1656,19 @@ export function ChartPreview({
                         cx={point.x}
                         cy={point.y}
                         r={point.r}
-                        fill={getColorOverride(palette, index, chartValueColors, point.item)}
+                        fill={color}
                         fillOpacity={bubbleChart ? 0.68 : 1}
                         className={href ? "chart-linkable" : undefined}
                       />
+                      {threeDimensional ? (
+                        <circle
+                          cx={point.x - point.r * 0.28}
+                          cy={point.y - point.r * 0.32}
+                          r={Math.max(2, point.r * 0.28)}
+                          fill={faces.top}
+                          opacity="0.72"
+                        />
+                      ) : null}
                     </g>
                   );
                   return href ? (
