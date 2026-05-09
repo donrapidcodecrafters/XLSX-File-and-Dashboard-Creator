@@ -1,5 +1,8 @@
 import ExcelJS from "exceljs";
-import { balanceDashboardLayout, createFilterGroup, normalizeStudioDocument, type DashboardDefinition, type DataRow, type FieldDefinition, type FieldType, type ReportDefinition, type ReportViewDefinition, type RuntimeFilterDefinition, type StudioDocument, type StudioObjectScope, type TableDefinition, type WidgetDefinition } from "@studio/shared";
+import JSZip from "jszip";
+import { inflateSync } from "node:zlib";
+import { XMLParser } from "fast-xml-parser";
+import { balanceDashboardLayout, createFilterGroup, normalizeStudioDocument, type ChartOrientation, type ChartType, type DashboardDefinition, type DataRow, type FieldDefinition, type FieldType, type ReportDefinition, type ReportViewDefinition, type RuntimeFilterDefinition, type StudioDocument, type StudioObjectScope, type TableDefinition, type WidgetDefinition } from "@studio/shared";
 
 interface ImportedWorkbookResult {
   document: StudioDocument;
@@ -23,6 +26,8 @@ interface ImportedDashboardBuildResult {
 interface ImportedReportDraft {
   report: ReportDefinition;
   sheetName: string;
+  layout?: WidgetDefinition["layout"];
+  displayMode?: WidgetDefinition["displayMode"];
 }
 
 interface WorksheetRowSnapshot {
@@ -109,11 +114,76 @@ function debugImportStep(message: string) {
   console.error(`[xlsx-import] ${message}`);
 }
 
+const workbookXmlParser = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: "",
+  removeNSPrefix: true
+});
+
 interface WorksheetRegion {
   candidateName: string;
   rows: WorksheetRowSnapshot[];
   columnNumbers: number[];
+  absoluteColumnNumbers: number[];
   structuredTable: WorksheetStructuredTableHints | null;
+}
+
+interface NativeChartAnchor {
+  fromColumn: number;
+  fromRow: number;
+  toColumn: number;
+  toRow: number;
+}
+
+interface NativeChartSeries {
+  name: string;
+  categoryFormula: string;
+  valueFormula: string;
+  seriesFormula: string;
+  categories: Array<string | number | boolean | null>;
+  values: Array<string | number | boolean | null>;
+  colors: string[];
+  valueColors: Record<string, string>;
+}
+
+interface NativeWorkbookChart {
+  sourceKind: "excel-chart" | "image-chart";
+  path: string;
+  imagePath?: string;
+  displaySheetName: string;
+  displaySheetState: "visible" | "hidden" | "veryHidden";
+  chartName: string;
+  title: string;
+  chartType: ChartType;
+  chartOrientation: ChartOrientation;
+  formulas: string[];
+  sourceSheetNames: string[];
+  series: NativeChartSeries[];
+  chartColors: string[];
+  chartValueColors: Record<string, string>;
+  anchor?: NativeChartAnchor;
+  signature: string;
+}
+
+interface ImageChartAnalysis {
+  chartType: ChartType;
+  chartOrientation: ChartOrientation;
+  chartColors: string[];
+  chartValueColors: Record<string, string>;
+  rows: DataRow[];
+}
+
+interface WorkbookPackageSheet {
+  name: string;
+  state: "visible" | "hidden" | "veryHidden";
+  path: string;
+}
+
+interface ImportedTableEntry {
+  table: TableDefinition;
+  rows: DataRow[];
+  parsed: Extract<WorksheetReadResult, { status: "imported" }>;
+  worksheetName: string;
 }
 
 type WorksheetReadResult =
@@ -138,6 +208,7 @@ type WorksheetReadResult =
       fields: FieldDefinition[];
       rows: DataRow[];
       hiddenFieldIds: string[];
+      fieldColumnNumbers: number[];
       layout: WorksheetLayoutHints;
     });
 
@@ -277,7 +348,7 @@ function normalizeAutoFilterRange(autoFilter: ExcelJS.AutoFilter | undefined) {
 }
 
 function normalizeWorkbookColor(value: string) {
-  const normalized = String(value || "").trim();
+  const normalized = String(value || "").trim().replace(/^#/, "");
   if (!normalized) return "";
   if (/^[0-9a-f]{8}$/i.test(normalized)) {
     return `#${normalized.slice(2).toUpperCase()}`;
@@ -431,6 +502,7 @@ function buildSingleWorksheetRegion(candidateName: string, rows: WorksheetRowSna
     candidateName,
     rows: regionRows,
     columnNumbers: Array.from({ length: columnNumbers.length }, (_, offset) => offset + 1),
+    absoluteColumnNumbers: columnNumbers,
     structuredTable: null
   }];
 }
@@ -484,6 +556,7 @@ function buildWorksheetRegions(
           : deriveWorksheetRegionName(worksheet.name, tableRows, index, structuredTables.length),
         rows: tableRows,
         columnNumbers: Array.from({ length: absoluteColumnNumbers.length }, (_, offset) => offset + 1),
+        absoluteColumnNumbers,
         structuredTable
       };
     }).filter((region) => region.rows.length);
@@ -508,6 +581,7 @@ function buildWorksheetRegions(
         candidateName: worksheet.name,
         rows: regionRows,
         columnNumbers: Array.from({ length: absoluteColumnNumbers.length }, (_, offset) => offset + 1),
+        absoluteColumnNumbers,
         structuredTable: null
       }];
     }
@@ -587,6 +661,7 @@ function buildWorksheetRegions(
         candidateName: "",
         rows: bandRows,
         columnNumbers: Array.from({ length: columnNumbers.length }, (_, offset) => offset + 1),
+        absoluteColumnNumbers: columnNumbers,
         structuredTable: null
       });
     });
@@ -829,9 +904,11 @@ function buildImportedReport(
   scope: StudioObjectScope,
   ownerUserId: string,
   importedAt: string,
-  existingIds: Set<string>
+  existingIds: Set<string>,
+  options: { allowVisualInference?: boolean } = {}
 ) : ImportedReportBuildResult {
   const notes: string[] = [];
+  const allowVisualInference = options.allowVisualInference !== false;
   const fields = table.fields;
   const visibleFields = fields.filter((field) => !hiddenFieldIds.includes(field.id));
   const preferredFields = visibleFields.length ? visibleFields : fields;
@@ -975,7 +1052,9 @@ function buildImportedReport(
     titleFieldId: titleField?.id || selectedFieldIds[0] || ""
   });
 
-  if (startDateField && endDateField && titleField) {
+  if (!allowVisualInference) {
+    notes.push("Imported as a detail table because this workbook has no Data sheet to support field inference.");
+  } else if (startDateField && endDateField && titleField) {
     view = buildDefaultReportView({
       mode: "timeline",
       showSummary: true,
@@ -1240,6 +1319,14 @@ function buildImportedReport(
     };
     notes.push(`${normalizeWorkbookColor(layoutHints.tabColor) ? "Applied the worksheet tab color" : "Applied the recovered worksheet accent color"} ${workbookAccentColor} as the leading chart color.`);
   }
+  if (view.mode === "chart") {
+    view = {
+      ...view,
+      showSummary: false,
+      showDetails: false
+    };
+    notes.push("Left chart summary and detail fields unset for user review.");
+  }
 
   const report: ReportDefinition = {
     id: reportId,
@@ -1262,12 +1349,12 @@ function buildImportedReport(
     updatedAt: importedAt,
     sourceTableId: table.id,
     sourceReportOverrides: {},
-    selectedFieldIds,
+    selectedFieldIds: view.mode === "chart" ? [] : selectedFieldIds,
     filters: [],
     filterTree: createFilterGroup("and", []),
     groups: [],
     sorts: [],
-    summaryMetrics,
+    summaryMetrics: view.mode === "chart" ? [] : summaryMetrics,
     view,
     displayLabels: { fields: {}, chartValues: {} }
   };
@@ -1324,14 +1411,16 @@ function buildImportedDashboard(
   const MAX_OVERVIEW_SPOTLIGHTS = 2;
   const dashboardId = uniqueId("dashboard", workbookName, existingIds);
   const notes: string[] = [];
-  const reports = importedReportDrafts.map((entry) => entry.report);
+  const reports = Array.from(new Map(importedReportDrafts.map((entry) => [entry.report.id, entry.report])).values());
   const visibleReports = reports.filter((report) => {
     const state = layoutHintsByReportId[report.id]?.state || "visible";
     return state === "visible";
   });
   const supportReports = reports.filter((report) => !visibleReports.includes(report));
   const overviewReports = visibleReports.length ? visibleReports : reports;
-  const overviewSummaryReports = overviewReports.slice(0, MAX_OVERVIEW_SUMMARY_WIDGETS);
+  const overviewSummaryReports = overviewReports
+    .filter((report) => report.view.showSummary || report.summaryMetrics.length)
+    .slice(0, MAX_OVERVIEW_SUMMARY_WIDGETS);
   const overviewWidgets = overviewSummaryReports.map((report, index) => ({
     id: uniqueId("widget", `${report.name}-overview-${index + 1}`, existingIds),
     title: layoutHintsByReportId[report.id]?.title || report.name,
@@ -1370,7 +1459,7 @@ function buildImportedDashboard(
       mode: "linked" as const,
       displayMode: report.view.mode === "chart" ? "chart" as const : "inherit" as const,
       showDetails: report.view.mode !== "chart",
-      showSummary: true,
+      showSummary: report.view.showSummary,
       reportId: report.id
     }));
   const reportsBySheet = new Map<string, ImportedReportDraft[]>();
@@ -1415,7 +1504,7 @@ function buildImportedDashboard(
           mode: "linked",
           displayMode,
           showDetails: displayMode !== "chart",
-          showSummary: true,
+          showSummary: report.view.showSummary,
           reportId: report.id
         });
       };
@@ -1432,8 +1521,13 @@ function buildImportedDashboard(
         });
       };
 
-      drafts.forEach(({ report }) => {
+      drafts.forEach(({ report, layout: draftLayout, displayMode: draftDisplayMode }) => {
         const layoutHints = layoutHintsByReportId[report.id];
+        if (draftLayout) {
+          addMainWidget(report, draftLayout, draftDisplayMode || (report.view.mode === "chart" ? "chart" : "inherit"));
+          nextY = Math.max(nextY, Number(draftLayout.y || 1) + Number(draftLayout.h || 4) + 1);
+          return;
+        }
         const wideLayout = Boolean(layoutHints?.wideLayout);
         const tableFocused = Boolean(layoutHints?.tableFocused);
         const visualFirst = Boolean(layoutHints && (
@@ -1655,11 +1749,866 @@ function inferImportedRuntimeFilters(
     }));
 }
 
+function asArray<T>(value: T | T[] | null | undefined): T[] {
+  if (Array.isArray(value)) return value;
+  return value === null || value === undefined ? [] : [value];
+}
+
+async function readZipText(zip: JSZip, path: string) {
+  return zip.file(path)?.async("string") || Promise.resolve("");
+}
+
+function resolvePackageTarget(basePath: string, target: string) {
+  if (!target) return "";
+  if (target.startsWith("/")) return target.replace(/^\/+/, "");
+  const parts = basePath.split("/");
+  parts.pop();
+  target.split("/").forEach((part) => {
+    if (!part || part === ".") return;
+    if (part === "..") {
+      parts.pop();
+      return;
+    }
+    parts.push(part);
+  });
+  return parts.join("/").replace(/^\/+/, "");
+}
+
+function relationshipsPath(path: string) {
+  const slashIndex = path.lastIndexOf("/");
+  return `${path.slice(0, slashIndex + 1)}_rels/${path.slice(slashIndex + 1)}.rels`;
+}
+
+function parseXmlList<T = Record<string, unknown>>(value: unknown): T[] {
+  return asArray(value as T | T[]);
+}
+
+function relationshipList(xml: string): Array<{ Id: string; Type: string; Target: string }> {
+  if (!xml.trim()) return [];
+  const parsed = workbookXmlParser.parse(xml) as { Relationships?: { Relationship?: unknown } };
+  return parseXmlList<{ Id: string; Type: string; Target: string }>(parsed.Relationships?.Relationship);
+}
+
+function normalizeSheetNameForMatch(value: string) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function findFormulaBangIndex(formula: string) {
+  let quoted = false;
+  for (let index = 0; index < formula.length; index += 1) {
+    const character = formula[index];
+    if (character === "'") {
+      if (quoted && formula[index + 1] === "'") {
+        index += 1;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (character === "!" && !quoted) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function parseSheetRangeFormula(formula: string) {
+  const trimmed = String(formula || "").trim();
+  const bangIndex = findFormulaBangIndex(trimmed);
+  if (bangIndex <= 0) return null;
+  const rawSheetName = trimmed.slice(0, bangIndex);
+  const rawRange = trimmed.slice(bangIndex + 1).replace(/\$/g, "");
+  if (!rawRange || rawRange.includes("#REF") || rawSheetName.includes("[")) return null;
+  const sheetName = rawSheetName.startsWith("'") && rawSheetName.endsWith("'")
+    ? rawSheetName.slice(1, -1).replace(/''/g, "'")
+    : rawSheetName;
+  const parsedRange = parseRangeRef(rawRange);
+  if (!sheetName || !parsedRange) return null;
+  return { sheetName, range: rawRange, parsedRange };
+}
+
+function readWorkbookRangeValues(workbook: ExcelJS.Workbook, formula: string) {
+  const parsed = parseSheetRangeFormula(formula);
+  if (!parsed) return [] as Array<string | number | boolean | null>;
+  const worksheet = workbook.getWorksheet(parsed.sheetName);
+  if (!worksheet) return [];
+  const startColumn = Math.min(decodeColumnRef(parsed.parsedRange.start.columnRef), decodeColumnRef(parsed.parsedRange.end.columnRef));
+  const endColumn = Math.max(decodeColumnRef(parsed.parsedRange.start.columnRef), decodeColumnRef(parsed.parsedRange.end.columnRef));
+  const startRow = Math.min(parsed.parsedRange.start.rowNumber, parsed.parsedRange.end.rowNumber);
+  const endRow = Math.max(parsed.parsedRange.start.rowNumber, parsed.parsedRange.end.rowNumber);
+  const values: Array<string | number | boolean | null> = [];
+  for (let rowNumber = startRow; rowNumber <= endRow; rowNumber += 1) {
+    const row = worksheet.getRow(rowNumber);
+    for (let columnNumber = startColumn; columnNumber <= endColumn; columnNumber += 1) {
+      values.push(normalizeCellValue(row.getCell(columnNumber).value as ExcelJS.CellValue));
+    }
+  }
+  return values;
+}
+
+function readNativeChartCacheValues(cache: Record<string, unknown> | undefined) {
+  const points = parseXmlList<Record<string, unknown>>(cache?.pt);
+  return points
+    .sort((left, right) => Number(left.idx || 0) - Number(right.idx || 0))
+    .map((point) => normalizeCellValue(point.v as ExcelJS.CellValue));
+}
+
+function readNativeChartReference(source: Record<string, unknown> | undefined, workbook: ExcelJS.Workbook) {
+  if (!source) {
+    return { formula: "", values: [] as Array<string | number | boolean | null> };
+  }
+  const formula = String(source.f || "").trim();
+  const cache = (source.strCache || source.numCache) as Record<string, unknown> | undefined;
+  const workbookValues = formula ? readWorkbookRangeValues(workbook, formula) : [];
+  const cacheValues = readNativeChartCacheValues(cache);
+  return {
+    formula,
+    values: workbookValues.length ? workbookValues : cacheValues
+  };
+}
+
+function firstTextValue(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) return value.map((item) => firstTextValue(item)).filter(Boolean).join(" ");
+  if (typeof value === "object") {
+    const node = value as Record<string, unknown>;
+    if (node.t !== undefined) return firstTextValue(node.t);
+    if (node.v !== undefined) return firstTextValue(node.v);
+    return Object.entries(node)
+      .map(([key, item]) => {
+        if (key === "t" || key === "v") return firstTextValue(item);
+        return item && typeof item === "object" ? firstTextValue(item) : "";
+      })
+      .filter(Boolean)
+      .join(" ");
+  }
+  return "";
+}
+
+function readNativeSeriesName(series: Record<string, unknown>, workbook: ExcelJS.Workbook, index: number) {
+  const tx = series.tx as Record<string, unknown> | undefined;
+  const strRef = tx?.strRef as Record<string, unknown> | undefined;
+  const ref = readNativeChartReference(strRef, workbook);
+  const fromFormula = ref.values.map((value) => String(value ?? "").trim()).find(Boolean);
+  if (fromFormula) return { name: fromFormula, formula: ref.formula };
+  const inline = firstTextValue(tx);
+  return { name: inline.trim() || `Series ${index + 1}`, formula: ref.formula };
+}
+
+function extractThemeColor(themeXml: string, key: string) {
+  const match = themeXml.match(new RegExp(`<a:${key}>[\\s\\S]*?(?:<a:srgbClr[^>]*val="([0-9A-Fa-f]{6})"|<a:sysClr[^>]*lastClr="([0-9A-Fa-f]{6})")`));
+  return match ? `#${(match[1] || match[2] || "").toUpperCase()}` : "";
+}
+
+function buildThemeColorMap(themeXml: string) {
+  const fallback: Record<string, string> = {
+    dk1: "#000000",
+    lt1: "#FFFFFF",
+    dk2: "#1F4E79",
+    lt2: "#E7E6E6",
+    accent1: "#4472C4",
+    accent2: "#ED7D31",
+    accent3: "#A5A5A5",
+    accent4: "#FFC000",
+    accent5: "#5B9BD5",
+    accent6: "#70AD47",
+    hlink: "#0563C1",
+    folHlink: "#954F72"
+  };
+  Object.keys(fallback).forEach((key) => {
+    fallback[key] = extractThemeColor(themeXml, key) || fallback[key];
+  });
+  return fallback;
+}
+
+function applyLuminosity(color: string, lumMod = 100000, lumOff = 0) {
+  const normalized = normalizeWorkbookColor(color);
+  if (!normalized) return "";
+  const channels = [1, 3, 5].map((offset) => Number.parseInt(normalized.slice(offset, offset + 2), 16));
+  const transformed = channels.map((channel) => {
+    const value = Math.round((channel * lumMod / 100000) + (255 * lumOff / 100000));
+    return Math.max(0, Math.min(255, value)).toString(16).padStart(2, "0");
+  });
+  return `#${transformed.join("").toUpperCase()}`;
+}
+
+function collectNativeColors(node: unknown, themeColors: Record<string, string>): string[] {
+  const colors: string[] = [];
+  const visit = (value: unknown) => {
+    if (!value || typeof value !== "object") return;
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+    const current = value as Record<string, unknown>;
+    const srgb = typeof current.srgbClr === "object" && current.srgbClr
+      ? normalizeWorkbookColor(String((current.srgbClr as Record<string, unknown>).val || ""))
+      : "";
+    const sys = typeof current.sysClr === "object" && current.sysClr
+      ? normalizeWorkbookColor(String((current.sysClr as Record<string, unknown>).lastClr || ""))
+      : "";
+    if (srgb || sys) {
+      colors.push(srgb || sys);
+    }
+    const schemeClr = current.schemeClr;
+    asArray(schemeClr as Record<string, unknown> | Record<string, unknown>[]).forEach((scheme) => {
+      const base = themeColors[String(scheme.val || "")] || "";
+      if (!base) return;
+      const lumMod = Number((scheme.lumMod as Record<string, unknown> | undefined)?.val) || 100000;
+      const lumOff = Number((scheme.lumOff as Record<string, unknown> | undefined)?.val) || 0;
+      colors.push(applyLuminosity(base, lumMod, lumOff));
+    });
+    Object.values(current).forEach(visit);
+  };
+  visit(node);
+  return Array.from(new Set(colors.filter(Boolean)));
+}
+
+function resolveNativeChartType(plotArea: Record<string, unknown>): { chartType: ChartType; chartOrientation: ChartOrientation; chartBlocks: Array<{ key: string; block: Record<string, unknown> }> } {
+  const candidates = [
+    "barChart",
+    "bar3DChart",
+    "lineChart",
+    "areaChart",
+    "pieChart",
+    "pie3DChart",
+    "doughnutChart",
+    "scatterChart",
+    "bubbleChart",
+    "radarChart"
+  ];
+  const chartBlocks = candidates.flatMap((key) =>
+    asArray(plotArea[key] as Record<string, unknown> | Record<string, unknown>[]).map((block) => ({ key, block }))
+  );
+  const hasBar = chartBlocks.some((entry) => entry.key === "barChart" || entry.key === "bar3DChart");
+  const hasLine = chartBlocks.some((entry) => entry.key === "lineChart");
+  if (hasBar && hasLine) {
+    return { chartType: "line-bar", chartOrientation: "vertical", chartBlocks };
+  }
+  const primary = chartBlocks[0];
+  if (!primary) return { chartType: "bar", chartOrientation: "vertical", chartBlocks };
+  if (primary.key === "lineChart") return { chartType: "line", chartOrientation: "vertical", chartBlocks };
+  if (primary.key === "areaChart") return { chartType: "area", chartOrientation: "vertical", chartBlocks };
+  if (primary.key === "pieChart") return { chartType: "pie", chartOrientation: "vertical", chartBlocks };
+  if (primary.key === "pie3DChart") return { chartType: "3d-pie", chartOrientation: "vertical", chartBlocks };
+  if (primary.key === "doughnutChart") return { chartType: "donut", chartOrientation: "vertical", chartBlocks };
+  if (primary.key === "scatterChart") return { chartType: "scatter", chartOrientation: "vertical", chartBlocks };
+  if (primary.key === "bubbleChart") return { chartType: "bubble", chartOrientation: "vertical", chartBlocks };
+  if (primary.key === "radarChart") return { chartType: "radar", chartOrientation: "vertical", chartBlocks };
+  const barDir = String((primary.block.barDir as Record<string, unknown> | undefined)?.val || "col");
+  const grouping = String((primary.block.grouping as Record<string, unknown> | undefined)?.val || "");
+  const stacked = grouping === "stacked" || grouping === "percentStacked";
+  if (primary.key === "bar3DChart") {
+    return { chartType: barDir === "bar" ? "horizontal-bar" : "3d-bar", chartOrientation: barDir === "bar" ? "horizontal" : "vertical", chartBlocks };
+  }
+  if (barDir === "bar") {
+    return { chartType: stacked ? "horizontal-stacked-bar" : "horizontal-bar", chartOrientation: "horizontal", chartBlocks };
+  }
+  return { chartType: stacked ? "stacked-column" : "column", chartOrientation: "vertical", chartBlocks };
+}
+
+function extractNativeChartSeries(
+  chartBlocks: Array<{ key: string; block: Record<string, unknown> }>,
+  workbook: ExcelJS.Workbook,
+  themeColors: Record<string, string>
+): NativeChartSeries[] {
+  let seriesIndex = 0;
+  return chartBlocks.flatMap(({ block }) => parseXmlList<Record<string, unknown>>(block.ser).map((series) => {
+    const name = readNativeSeriesName(series, workbook, seriesIndex);
+    const categorySource = (series.cat || series.xVal) as Record<string, Record<string, unknown>> | undefined;
+    const valueSource = (series.val || series.yVal) as Record<string, Record<string, unknown>> | undefined;
+    const categoryRef = readNativeChartReference(categorySource?.strRef || categorySource?.numRef || categorySource?.strLit || categorySource?.numLit, workbook);
+    const valueRef = readNativeChartReference(valueSource?.numRef || valueSource?.numLit, workbook);
+    const colors = collectNativeColors(series.spPr, themeColors);
+    const valueColors: Record<string, string> = {};
+    parseXmlList<Record<string, unknown>>(series.dPt).forEach((point) => {
+      const index = Number((point.idx as Record<string, unknown> | undefined)?.val ?? point.idx ?? -1);
+      const label = String(categoryRef.values[index] ?? "").trim();
+      const color = collectNativeColors(point.spPr, themeColors)[0] || "";
+      if (label && color) valueColors[label] = color;
+    });
+    const nextIndex = seriesIndex;
+    seriesIndex += 1;
+    return {
+      name: name.name || `Series ${nextIndex + 1}`,
+      categoryFormula: categoryRef.formula,
+      valueFormula: valueRef.formula,
+      seriesFormula: name.formula,
+      categories: categoryRef.values,
+      values: valueRef.values,
+      colors,
+      valueColors
+    };
+  }));
+}
+
+function nativeChartSourceSheetNames(formulas: string[]) {
+  return Array.from(new Set(
+    formulas
+      .map((formula) => parseSheetRangeFormula(formula)?.sheetName || "")
+      .filter(Boolean)
+  ));
+}
+
+function buildNativeChartSignature(chartType: ChartType, formulas: string[], colors: string[], title: string) {
+  return [
+    chartType,
+    title.trim().toLowerCase(),
+    ...formulas.map((formula) => formula.replace(/\s+/g, "").toLowerCase()),
+    ...colors.map((color) => color.toUpperCase())
+  ].join("|");
+}
+
+function nativeChartLayoutFromAnchor(anchor: NativeChartAnchor | undefined, fallbackIndex: number): WidgetDefinition["layout"] {
+  if (!anchor) {
+    return { w: 12, h: 5, x: 1, y: (fallbackIndex * 5) + 1 };
+  }
+  const fromColumn = Math.max(0, anchor.fromColumn);
+  const fromRow = Math.max(0, anchor.fromRow);
+  const columnSpan = Math.max(4, anchor.toColumn - anchor.fromColumn);
+  const rowSpan = Math.max(12, anchor.toRow - anchor.fromRow);
+  return {
+    x: Math.max(1, Math.min(12, Math.floor(fromColumn / 2) + 1)),
+    y: Math.max(1, Math.floor(fromRow / 5) + 1),
+    w: Math.max(4, Math.min(12, Math.ceil(columnSpan / 2))),
+    h: Math.max(4, Math.min(10, Math.ceil(rowSpan / 5)))
+  };
+}
+
+function pngColorTypeBytesPerPixel(colorType: number) {
+  if (colorType === 0) return 1;
+  if (colorType === 2) return 3;
+  if (colorType === 3) return 1;
+  if (colorType === 4) return 2;
+  if (colorType === 6) return 4;
+  return 0;
+}
+
+function paethPredictor(left: number, up: number, upperLeft: number) {
+  const predictor = left + up - upperLeft;
+  const leftDistance = Math.abs(predictor - left);
+  const upDistance = Math.abs(predictor - up);
+  const upperLeftDistance = Math.abs(predictor - upperLeft);
+  if (leftDistance <= upDistance && leftDistance <= upperLeftDistance) return left;
+  if (upDistance <= upperLeftDistance) return up;
+  return upperLeft;
+}
+
+function decodePngPixels(buffer: Buffer) {
+  const signature = buffer.subarray(0, 8).toString("hex");
+  if (signature !== "89504e470d0a1a0a") return null;
+  let offset = 8;
+  let width = 0;
+  let height = 0;
+  let bitDepth = 0;
+  let colorType = 0;
+  let palette: Buffer | null = null;
+  const idatChunks: Buffer[] = [];
+  while (offset + 8 <= buffer.length) {
+    const length = buffer.readUInt32BE(offset);
+    const type = buffer.subarray(offset + 4, offset + 8).toString("ascii");
+    const data = buffer.subarray(offset + 8, offset + 8 + length);
+    if (type === "IHDR") {
+      width = data.readUInt32BE(0);
+      height = data.readUInt32BE(4);
+      bitDepth = data[8];
+      colorType = data[9];
+    } else if (type === "PLTE") {
+      palette = data;
+    } else if (type === "IDAT") {
+      idatChunks.push(Buffer.from(data));
+    } else if (type === "IEND") {
+      break;
+    }
+    offset += length + 12;
+  }
+  const bytesPerPixel = pngColorTypeBytesPerPixel(colorType);
+  if (!width || !height || bitDepth !== 8 || !bytesPerPixel || !idatChunks.length) return null;
+  const inflated = inflateSync(Buffer.concat(idatChunks));
+  const scanlineLength = width * bytesPerPixel;
+  const raw = Buffer.alloc(height * scanlineLength);
+  let inputOffset = 0;
+  for (let row = 0; row < height; row += 1) {
+    const filter = inflated[inputOffset];
+    inputOffset += 1;
+    const rowOffset = row * scanlineLength;
+    const previousRowOffset = rowOffset - scanlineLength;
+    for (let column = 0; column < scanlineLength; column += 1) {
+      const left = column >= bytesPerPixel ? raw[rowOffset + column - bytesPerPixel] : 0;
+      const up = row > 0 ? raw[previousRowOffset + column] : 0;
+      const upperLeft = row > 0 && column >= bytesPerPixel ? raw[previousRowOffset + column - bytesPerPixel] : 0;
+      const value = inflated[inputOffset + column];
+      if (filter === 1) raw[rowOffset + column] = (value + left) & 255;
+      else if (filter === 2) raw[rowOffset + column] = (value + up) & 255;
+      else if (filter === 3) raw[rowOffset + column] = (value + Math.floor((left + up) / 2)) & 255;
+      else if (filter === 4) raw[rowOffset + column] = (value + paethPredictor(left, up, upperLeft)) & 255;
+      else raw[rowOffset + column] = value;
+    }
+    inputOffset += scanlineLength;
+  }
+  const pixels = Buffer.alloc(width * height * 4);
+  for (let index = 0; index < width * height; index += 1) {
+    const sourceOffset = index * bytesPerPixel;
+    const targetOffset = index * 4;
+    if (colorType === 0) {
+      const gray = raw[sourceOffset];
+      pixels[targetOffset] = gray;
+      pixels[targetOffset + 1] = gray;
+      pixels[targetOffset + 2] = gray;
+      pixels[targetOffset + 3] = 255;
+    } else if (colorType === 2) {
+      pixels[targetOffset] = raw[sourceOffset];
+      pixels[targetOffset + 1] = raw[sourceOffset + 1];
+      pixels[targetOffset + 2] = raw[sourceOffset + 2];
+      pixels[targetOffset + 3] = 255;
+    } else if (colorType === 3) {
+      const paletteOffset = raw[sourceOffset] * 3;
+      pixels[targetOffset] = palette?.[paletteOffset] ?? 0;
+      pixels[targetOffset + 1] = palette?.[paletteOffset + 1] ?? 0;
+      pixels[targetOffset + 2] = palette?.[paletteOffset + 2] ?? 0;
+      pixels[targetOffset + 3] = 255;
+    } else if (colorType === 4) {
+      const gray = raw[sourceOffset];
+      pixels[targetOffset] = gray;
+      pixels[targetOffset + 1] = gray;
+      pixels[targetOffset + 2] = gray;
+      pixels[targetOffset + 3] = raw[sourceOffset + 1];
+    } else if (colorType === 6) {
+      pixels[targetOffset] = raw[sourceOffset];
+      pixels[targetOffset + 1] = raw[sourceOffset + 1];
+      pixels[targetOffset + 2] = raw[sourceOffset + 2];
+      pixels[targetOffset + 3] = raw[sourceOffset + 3];
+    }
+  }
+  return { width, height, pixels };
+}
+
+function imagePixelStats(red: number, green: number, blue: number) {
+  const max = Math.max(red, green, blue);
+  const min = Math.min(red, green, blue);
+  const saturation = max ? (max - min) / max : 0;
+  const brightness = max / 255;
+  return { saturation, brightness };
+}
+
+function quantizeImageColor(red: number, green: number, blue: number) {
+  const quantize = (value: number) => Math.max(0, Math.min(255, Math.round(value / 16) * 16));
+  return `#${[quantize(red), quantize(green), quantize(blue)].map((value) => value.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+}
+
+function buildImageColorRows(colorCounts: Array<{ color: string; count: number }>) {
+  const max = Math.max(...colorCounts.map((item) => item.count), 1);
+  return colorCounts.slice(0, 8).map((item, index) => ({
+    category: `Series ${index + 1}`,
+    value: Math.max(1, Math.round((item.count / max) * 100))
+  }));
+}
+
+type ImageAxisCluster = { start: number; end: number; peak: number; total: number };
+
+function clusterImageAxisCounts(counts: number[], threshold: number) {
+  const clusters: ImageAxisCluster[] = [];
+  let current: ImageAxisCluster | null = null;
+  for (let index = 0; index < counts.length; index += 1) {
+    const count = counts[index] || 0;
+    if (count >= threshold) {
+      if (!current) current = { start: index, end: index, peak: count, total: count };
+      else {
+        current.end = index;
+        current.peak = Math.max(current.peak, count);
+        current.total += count;
+      }
+      continue;
+    }
+    if (current && current.end - current.start >= 1) clusters.push(current);
+    current = null;
+  }
+  if (current && current.end - current.start >= 1) clusters.push(current);
+  return clusters;
+}
+
+function analyzePngChartImage(buffer: Buffer): ImageChartAnalysis | null {
+  const decoded = decodePngPixels(buffer);
+  if (!decoded || decoded.width < 80 || decoded.height < 60) return null;
+  const step = Math.max(1, Math.floor(Math.sqrt((decoded.width * decoded.height) / 70000)));
+  const columnCounts = new Array(decoded.width).fill(0);
+  const columnYTotals = new Array(decoded.width).fill(0);
+  const rowCounts = new Array(decoded.height).fill(0);
+  const colorCounts = new Map<string, number>();
+  let minX = decoded.width;
+  let maxX = -1;
+  let minY = decoded.height;
+  let maxY = -1;
+  let coloredCount = 0;
+  for (let y = 0; y < decoded.height; y += step) {
+    for (let x = 0; x < decoded.width; x += step) {
+      const offset = ((y * decoded.width) + x) * 4;
+      const alpha = decoded.pixels[offset + 3];
+      if (alpha < 40) continue;
+      const red = decoded.pixels[offset];
+      const green = decoded.pixels[offset + 1];
+      const blue = decoded.pixels[offset + 2];
+      const stats = imagePixelStats(red, green, blue);
+      if (stats.saturation < 0.18 || stats.brightness < 0.18 || stats.brightness > 0.96) continue;
+      const color = quantizeImageColor(red, green, blue);
+      colorCounts.set(color, (colorCounts.get(color) || 0) + 1);
+      columnCounts[x] += 1;
+      columnYTotals[x] += y;
+      rowCounts[y] += 1;
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y);
+      coloredCount += 1;
+    }
+  }
+  if (coloredCount < 120 || maxX <= minX || maxY <= minY) return null;
+  const boundsWidth = maxX - minX + 1;
+  const boundsHeight = maxY - minY + 1;
+  const boundsArea = boundsWidth * boundsHeight;
+  const density = coloredCount / Math.max(1, boundsArea / (step * step));
+  const imageCoverage = boundsArea / (decoded.width * decoded.height);
+  const dominantColors = Array.from(colorCounts.entries())
+    .map(([color, count]) => ({ color, count }))
+    .filter((item) => item.count >= Math.max(4, coloredCount * 0.015))
+    .sort((left, right) => right.count - left.count)
+    .slice(0, 8);
+  if (!dominantColors.length || imageCoverage < 0.05) return null;
+  const maxColumnCount = Math.max(...columnCounts);
+  const maxRowCount = Math.max(...rowCounts);
+  const columnClusters = clusterImageAxisCounts(columnCounts, Math.max(3, maxColumnCount * 0.22));
+  const rowClusters = clusterImageAxisCounts(rowCounts, Math.max(3, maxRowCount * 0.22));
+  const aspectRatio = boundsWidth / Math.max(1, boundsHeight);
+  let chartType: ChartType = "column";
+  let chartOrientation: ChartOrientation = "vertical";
+  if (rowClusters.length >= 2 && rowClusters.length > columnClusters.length * 1.35) {
+    chartType = "horizontal-bar";
+    chartOrientation = "horizontal";
+  } else if (columnClusters.length >= 2 && columnClusters.length >= rowClusters.length) {
+    chartType = "column";
+  } else if (density > 0.26 && aspectRatio >= 0.65 && aspectRatio <= 1.45 && dominantColors.length >= 2) {
+    chartType = "pie";
+  } else if (density < 0.18 || boundsWidth > boundsHeight * 1.4) {
+    chartType = "line";
+  }
+  const rows = chartType === "line"
+    ? Array.from({ length: 8 }, (_, index) => {
+      const start = minX + Math.floor((boundsWidth / 8) * index);
+      const end = minX + Math.floor((boundsWidth / 8) * (index + 1));
+      let weightedY = 0;
+      let hits = 0;
+      for (let x = start; x <= end; x += 1) {
+        const count = columnCounts[x] || 0;
+        if (!count) continue;
+        weightedY += columnYTotals[x] || 0;
+        hits += count;
+      }
+      return {
+        category: `${index + 1}`,
+        value: Math.max(1, Math.round((1 - ((hits ? weightedY / hits : minY) - minY) / Math.max(1, boundsHeight)) * 100))
+      };
+    })
+    : (chartOrientation === "horizontal"
+      ? rowClusters.slice(0, 12).map((cluster, index) => ({ category: `Series ${index + 1}`, value: Math.max(1, cluster.peak) }))
+      : (columnClusters.length >= 2
+        ? columnClusters.slice(0, 12).map((cluster, index) => ({ category: `Series ${index + 1}`, value: Math.max(1, cluster.peak) }))
+        : buildImageColorRows(dominantColors)));
+  const chartValueColors = Object.fromEntries(dominantColors.map((item, index) => [`Series ${index + 1}`, item.color]));
+  return {
+    chartType,
+    chartOrientation,
+    chartColors: dominantColors.map((item) => item.color),
+    chartValueColors,
+    rows
+  };
+}
+
+function buildNativeChartRows(chart: NativeWorkbookChart) {
+  const hasMultipleSeries = chart.series.length > 1;
+  const rows: DataRow[] = [];
+  chart.series.forEach((series) => {
+    const length = Math.max(series.categories.length, series.values.length);
+    for (let index = 0; index < length; index += 1) {
+      const rawValue = series.values[index];
+      const numericValue = Number(rawValue);
+      if (!Number.isFinite(numericValue)) continue;
+      const category = series.categories[index] ?? `${index + 1}`;
+      rows.push({
+        category,
+        ...(hasMultipleSeries ? { series: series.name } : {}),
+        value: numericValue
+      });
+    }
+  });
+  return rows;
+}
+
+function dataFieldIdForFormula(
+  formula: string,
+  dataSheetName: string,
+  fieldColumnNumbers: number[],
+  fields: FieldDefinition[]
+) {
+  const parsed = parseSheetRangeFormula(formula);
+  if (!parsed || normalizeSheetNameForMatch(parsed.sheetName) !== normalizeSheetNameForMatch(dataSheetName)) return "";
+  const columnNumber = decodeColumnRef(parsed.parsedRange.start.columnRef);
+  const index = fieldColumnNumbers.findIndex((candidate) => candidate === columnNumber);
+  return index >= 0 ? fields[index]?.id || "" : "";
+}
+
+function resolveNativeChartDataMapping(chart: NativeWorkbookChart, dataEntry: ImportedTableEntry | null) {
+  if (!dataEntry || !chart.series.length) return null;
+  const dataSheetName = dataEntry.worksheetName;
+  const firstSeries = chart.series[0];
+  const categoryFieldId = dataFieldIdForFormula(
+    firstSeries.categoryFormula,
+    dataSheetName,
+    dataEntry.parsed.fieldColumnNumbers,
+    dataEntry.table.fields
+  );
+  if (!categoryFieldId) return null;
+  const valueFieldIds = Array.from(new Set(chart.series.map((series) =>
+    dataFieldIdForFormula(series.valueFormula, dataSheetName, dataEntry.parsed.fieldColumnNumbers, dataEntry.table.fields)
+  ).filter(Boolean)));
+  if (valueFieldIds.length !== 1) return null;
+  const seriesFieldId = chart.series.length > 1
+    ? dataFieldIdForFormula(firstSeries.seriesFormula, dataSheetName, dataEntry.parsed.fieldColumnNumbers, dataEntry.table.fields)
+    : "";
+  if (chart.series.length > 1 && !seriesFieldId) return null;
+  return {
+    table: dataEntry.table,
+    rows: dataEntry.rows,
+    categoryFieldId,
+    valueFieldId: valueFieldIds[0],
+    seriesFieldId
+  };
+}
+
+function buildNativeChartReportView(
+  chart: NativeWorkbookChart,
+  fieldIds: { categoryFieldId: string; valueFieldId: string; seriesFieldId: string }
+) {
+  return buildDefaultReportView({
+    mode: "chart",
+    showSummary: false,
+    showDetails: false,
+    chartType: chart.chartType,
+    chartOrientation: chart.chartOrientation,
+    chartFieldId: fieldIds.categoryFieldId,
+    chartSeriesFieldId: fieldIds.seriesFieldId,
+    chartValueFieldId: fieldIds.valueFieldId,
+    chartAggregation: "sum",
+    titleFieldId: fieldIds.categoryFieldId,
+    chartTitle: chart.title,
+    chartTopN: 0,
+    chartSort: chart.chartType === "pie" || chart.chartType === "donut" || chart.chartType === "3d-pie" || chart.chartType === "3d-donut" ? "value-desc" : "label-asc",
+    ...(chart.chartColors.length ? { chartColors: chart.chartColors } : {}),
+    chartValueColors: chart.chartValueColors
+  });
+}
+
+function nativeChartReportName(chart: NativeWorkbookChart, index: number) {
+  const source = chart.sourceSheetNames[0] || chart.displaySheetName || "Workbook";
+  return chart.title.trim() || `${source} ${chart.chartName || `Chart ${index + 1}`}`.trim();
+}
+
+function buildNativeChartLayoutHints(
+  worksheet: ExcelJS.Worksheet | undefined,
+  chart: NativeWorkbookChart
+): WorksheetLayoutHints {
+  const state = worksheet?.state || chart.displaySheetState || "visible";
+  const tabColor = String(worksheet?.properties?.tabColor?.argb || worksheet?.properties?.tabColor?.theme || "").trim();
+  const anchor = chart.anchor;
+  return {
+    state,
+    tabColor,
+    accentColor: "",
+    title: chart.title,
+    titleRowNumber: 0,
+    headingRowCount: 0,
+    headerSource: "heuristic",
+    frozenRows: 0,
+    frozenColumns: 0,
+    hiddenRowCount: 0,
+    hiddenColumnCount: 0,
+    hiddenFieldLabels: [],
+    visibleColumnCount: 3,
+    autoFilterRange: "",
+    printArea: "",
+    tableName: "",
+    tableRange: "",
+    tableStyle: "",
+    totalsRow: false,
+    tableRowStripes: false,
+    tableColumnStripes: false,
+    viewStyle: "normal",
+    showGridLines: true,
+    zoomScale: 100,
+    centeredHorizontally: false,
+    centeredVertically: false,
+    fitToWidth: 0,
+    fitToHeight: 0,
+    headerFooterText: "",
+    imageCount: 0,
+    tableFocused: false,
+    wideLayout: Boolean(anchor && anchor.toColumn - anchor.fromColumn >= 10),
+    landscape: false,
+    mergedTitle: false
+  };
+}
+
+async function readWorkbookPackageSheets(zip: JSZip): Promise<WorkbookPackageSheet[]> {
+  const workbookXml = await readZipText(zip, "xl/workbook.xml");
+  const workbookRelationshipsXml = await readZipText(zip, "xl/_rels/workbook.xml.rels");
+  if (!workbookXml || !workbookRelationshipsXml) return [];
+  const workbookParsed = workbookXmlParser.parse(workbookXml) as { workbook?: { sheets?: { sheet?: unknown } } };
+  const relationships = new Map(relationshipList(workbookRelationshipsXml).map((relationship) => [relationship.Id, relationship]));
+  return parseXmlList<Record<string, unknown>>(workbookParsed.workbook?.sheets?.sheet).map((sheet) => {
+    const relationship = relationships.get(String(sheet.id || ""));
+    return {
+      name: String(sheet.name || ""),
+      state: (String(sheet.state || "visible") as WorkbookPackageSheet["state"]),
+      path: relationship ? resolvePackageTarget("xl/workbook.xml", relationship.Target) : ""
+    };
+  }).filter((sheet) => sheet.name && sheet.path);
+}
+
+function drawingAnchorNodes(wsDr: Record<string, unknown> | undefined) {
+  if (!wsDr) return [];
+  return [
+    ...parseXmlList<Record<string, unknown>>(wsDr.twoCellAnchor),
+    ...parseXmlList<Record<string, unknown>>(wsDr.oneCellAnchor),
+    ...parseXmlList<Record<string, unknown>>(wsDr.absoluteAnchor)
+  ];
+}
+
+function nativeDrawingAnchor(anchorNode: Record<string, unknown>): NativeChartAnchor | undefined {
+  const fromNode = anchorNode.from as Record<string, unknown> | undefined;
+  if (!fromNode) return undefined;
+  const toNode = anchorNode.to as Record<string, unknown> | undefined;
+  const fromColumn = Number(fromNode.col) || 0;
+  const fromRow = Number(fromNode.row) || 0;
+  return {
+    fromColumn,
+    fromRow,
+    toColumn: toNode ? Number(toNode.col) || 0 : fromColumn + 8,
+    toRow: toNode ? Number(toNode.row) || 0 : fromRow + 20
+  };
+}
+
+async function readNativeWorkbookCharts(buffer: Uint8Array, workbook: ExcelJS.Workbook): Promise<{ charts: NativeWorkbookChart[]; dataSheetName: string }> {
+  const zip = await JSZip.loadAsync(Buffer.from(buffer));
+  const sheets = await readWorkbookPackageSheets(zip);
+  const dataSheetName = sheets.find((sheet) => normalizeSheetNameForMatch(sheet.name) === "data")?.name || "";
+  const themeColors = buildThemeColorMap(await readZipText(zip, "xl/theme/theme1.xml"));
+  const charts: NativeWorkbookChart[] = [];
+  for (const sheet of sheets) {
+    const sheetRelationships = relationshipList(await readZipText(zip, relationshipsPath(sheet.path)));
+    const drawingRelationship = sheetRelationships.find((relationship) => relationship.Type.endsWith("/drawing"));
+    if (!drawingRelationship) continue;
+    const drawingPath = resolvePackageTarget(sheet.path, drawingRelationship.Target);
+    const drawingXml = await readZipText(zip, drawingPath);
+    if (!drawingXml) continue;
+    const drawingRelationships = new Map(
+      relationshipList(await readZipText(zip, relationshipsPath(drawingPath))).map((relationship) => [relationship.Id, relationship])
+    );
+    const drawingParsed = workbookXmlParser.parse(drawingXml) as { wsDr?: Record<string, unknown> };
+    const anchors = drawingAnchorNodes(drawingParsed.wsDr);
+    for (const anchorNode of anchors) {
+      const graphicFrame = anchorNode.graphicFrame as Record<string, unknown> | undefined;
+      const chartRef = (((graphicFrame?.graphic as Record<string, unknown> | undefined)?.graphicData as Record<string, unknown> | undefined)?.chart || {}) as Record<string, unknown>;
+      const relationshipId = String(chartRef.id || "");
+      const chartRelationship = relationshipId ? drawingRelationships.get(relationshipId) : undefined;
+      const anchor = nativeDrawingAnchor(anchorNode);
+      if (chartRelationship) {
+        const chartPath = resolvePackageTarget(drawingPath, chartRelationship.Target);
+        const chartXml = await readZipText(zip, chartPath);
+        if (!chartXml) continue;
+        const chartParsed = workbookXmlParser.parse(chartXml) as { chartSpace?: { chart?: { title?: unknown; plotArea?: Record<string, unknown> } } };
+        const plotArea = chartParsed.chartSpace?.chart?.plotArea || {};
+        const resolvedType = resolveNativeChartType(plotArea);
+        const series = extractNativeChartSeries(resolvedType.chartBlocks, workbook, themeColors);
+        if (!series.length) continue;
+        const formulas = Array.from(new Set(series.flatMap((entry) => [
+          entry.seriesFormula,
+          entry.categoryFormula,
+          entry.valueFormula
+        ]).filter(Boolean)));
+        const chartColors = Array.from(new Set([
+          ...series.flatMap((entry) => entry.colors),
+          ...collectNativeColors(chartParsed.chartSpace?.chart, themeColors).filter((color) => color !== "#000000" && color !== "#FFFFFF")
+        ])).slice(0, 12);
+        const chartValueColors = Object.assign({}, ...series.map((entry) => entry.valueColors));
+        const chartTitle = firstTextValue(chartParsed.chartSpace?.chart?.title).trim();
+        const chartName = String((((graphicFrame?.nvGraphicFramePr as Record<string, unknown> | undefined)?.cNvPr as Record<string, unknown> | undefined)?.name) || "");
+        const sourceSheetNames = nativeChartSourceSheetNames(formulas);
+        charts.push({
+          sourceKind: "excel-chart",
+          path: chartPath,
+          displaySheetName: sheet.name,
+          displaySheetState: sheet.state,
+          chartName,
+          title: chartTitle,
+          chartType: resolvedType.chartType,
+          chartOrientation: resolvedType.chartOrientation,
+          formulas,
+          sourceSheetNames,
+          series,
+          chartColors,
+          chartValueColors,
+          anchor,
+          signature: buildNativeChartSignature(resolvedType.chartType, formulas, chartColors, chartTitle)
+        });
+        continue;
+      }
+      const pic = anchorNode.pic as Record<string, unknown> | undefined;
+      const blip = ((pic?.blipFill as Record<string, unknown> | undefined)?.blip || {}) as Record<string, unknown>;
+      const imageRelationshipId = String(blip.embed || blip.link || "");
+      const imageRelationship = imageRelationshipId ? drawingRelationships.get(imageRelationshipId) : undefined;
+      if (!imageRelationship || !imageRelationship.Type.endsWith("/image")) continue;
+      const imagePath = resolvePackageTarget(drawingPath, imageRelationship.Target);
+      const imageBuffer = await zip.file(imagePath)?.async("nodebuffer");
+      if (!imageBuffer) continue;
+      const analysis = analyzePngChartImage(Buffer.from(imageBuffer));
+      if (!analysis) continue;
+      const chartName = String((((pic?.nvPicPr as Record<string, unknown> | undefined)?.cNvPr as Record<string, unknown> | undefined)?.name) || imagePath.split("/").pop() || "Picture Chart");
+      charts.push({
+        sourceKind: "image-chart",
+        path: drawingPath,
+        imagePath,
+        displaySheetName: sheet.name,
+        displaySheetState: sheet.state,
+        chartName,
+        title: chartName,
+        chartType: analysis.chartType,
+        chartOrientation: analysis.chartOrientation,
+        formulas: [],
+        sourceSheetNames: [],
+        series: [{
+          name: "Image analysis",
+          categoryFormula: "",
+          valueFormula: "",
+          seriesFormula: "",
+          categories: analysis.rows.map((row) => row.category as string | number | boolean | null),
+          values: analysis.rows.map((row) => row.value as string | number | boolean | null),
+          colors: analysis.chartColors,
+          valueColors: analysis.chartValueColors
+        }],
+        chartColors: analysis.chartColors,
+        chartValueColors: analysis.chartValueColors,
+        anchor,
+        signature: buildNativeChartSignature(analysis.chartType, [imagePath], analysis.chartColors, chartName)
+      });
+    }
+  }
+  return { charts, dataSheetName };
+}
+
 function readWorksheetRegion(
   worksheet: ExcelJS.Worksheet,
   candidateName: string,
   rows: WorksheetRowSnapshot[],
   fieldColumnNumbers: number[],
+  absoluteFieldColumnNumbers: number[],
   structuredTable: WorksheetStructuredTableHints | null
 ): WorksheetReadResult {
   const notes: string[] = [];
@@ -1697,15 +2646,16 @@ function readWorksheetRegion(
   let duplicateHeaderCount = 0;
   let nonTextHeaderCount = 0;
   const fields: FieldDefinition[] = Array.from({ length: structuredTable ? fieldColumnNumbers.length : maxColumns }, (_, index) => {
+    const sourceColumnNumber = absoluteFieldColumnNumbers[index] || fieldColumnNumbers[index] || index + 1;
     const originalValue = headerValues[index] ?? null;
     if (isBlankCell(originalValue)) {
       blankHeaderCount += 1;
-      substitutions.push(`Column ${fieldColumnNumbers[index] || index + 1} was blank and was renamed to "Column ${fieldColumnNumbers[index] || index + 1}".`);
+      substitutions.push(`Column ${sourceColumnNumber} was blank and was renamed to "Column ${sourceColumnNumber}".`);
     } else if (typeof originalValue !== "string") {
       nonTextHeaderCount += 1;
-      substitutions.push(`Column ${fieldColumnNumbers[index] || index + 1} header "${String(originalValue)}" was converted to text.`);
+      substitutions.push(`Column ${sourceColumnNumber} header "${String(originalValue)}" was converted to text.`);
     }
-    const rawHeader = String(originalValue ?? "").trim() || `Column ${fieldColumnNumbers[index] || index + 1}`;
+    const rawHeader = String(originalValue ?? "").trim() || `Column ${sourceColumnNumber}`;
     let label = rawHeader;
     let suffix = 2;
     while (seenHeaders.has(label.toLowerCase())) {
@@ -1725,7 +2675,7 @@ function readWorksheetRegion(
   });
   const layoutFieldColumnNumbers = structuredTable
     ? Array.from({ length: structuredTable.endColumnNumber - structuredTable.startColumnNumber + 1 }, (_, index) => structuredTable.startColumnNumber + index)
-    : fieldColumnNumbers;
+    : absoluteFieldColumnNumbers;
   const { layout, hiddenFieldIds } = buildWorksheetLayoutHints(worksheet, rows, headerRowIndex, fields, layoutFieldColumnNumbers, headerSource, structuredTable);
   const dataRows = relevantRows.slice(1)
     .map((row) => Object.fromEntries(
@@ -1826,6 +2776,7 @@ function readWorksheetRegion(
     fields,
     rows: dataRows,
     hiddenFieldIds,
+    fieldColumnNumbers: absoluteFieldColumnNumbers.slice(0, fields.length),
     layout
   };
 }
@@ -1878,6 +2829,7 @@ function readWorksheet(worksheet: ExcelJS.Worksheet): WorksheetReadResult[] {
       region.candidateName,
       region.rows,
       region.columnNumbers,
+      region.absoluteColumnNumbers,
       region.structuredTable
     );
     debugImportStep(`worksheet ${worksheet.name}: finished region ${region.candidateName}`);
@@ -1896,6 +2848,13 @@ export async function importWorkbookIntoStudioDocument(
   await workbook.xlsx.load(workbookPayload);
   debugImportStep(`loaded workbook ${filename} with ${workbook.worksheets.length} sheet(s)`);
   const warnings: string[] = [];
+  let nativeWorkbookCharts: { charts: NativeWorkbookChart[]; dataSheetName: string } = { charts: [], dataSheetName: "" };
+  try {
+    nativeWorkbookCharts = await readNativeWorkbookCharts(buffer, workbook);
+    debugImportStep(`recovered ${nativeWorkbookCharts.charts.length} native chart(s)${nativeWorkbookCharts.dataSheetName ? ` with Data sheet "${nativeWorkbookCharts.dataSheetName}"` : ""}`);
+  } catch (error) {
+    warnings.push(`Workbook charts: Could not inspect native Excel chart definitions (${error instanceof Error ? error.message : "unknown error"}).`);
+  }
   const existingIds = new Set<string>([
     ...document.bundle.order,
     ...document.bundle.tables.map((table) => table.id)
@@ -1910,6 +2869,9 @@ export async function importWorkbookIntoStudioDocument(
   const sheetReviews: ImportedWorkbookSheetReview[] = [];
   const importedRowsByTableId: Record<string, DataRow[]> = {};
   const layoutHintsByReportId: Record<string, WorksheetLayoutHints> = {};
+  const importedTableEntries: ImportedTableEntry[] = [];
+  const importedReportDrafts: ImportedReportDraft[] = [];
+  const allowWorksheetVisualInference = Boolean(nativeWorkbookCharts.dataSheetName);
 
   workbook.worksheets.forEach((worksheet, index) => {
     debugImportStep(`reading worksheet ${index + 1}/${workbook.worksheets.length}: ${worksheet.name}`);
@@ -1941,11 +2903,15 @@ export async function importWorkbookIntoStudioDocument(
       importedTables.push(table);
       importedRows[tableId] = parsed.rows;
       importedRowsByTableId[tableId] = parsed.rows;
-      const inferred = buildImportedReport(table.name, table, parsed.rows, parsed.layout, parsed.hiddenFieldIds, scope, ownerUserId, importedAt, existingIds);
+      importedTableEntries.push({ table, rows: parsed.rows, parsed, worksheetName: worksheet.name });
+      const inferred = buildImportedReport(table.name, table, parsed.rows, parsed.layout, parsed.hiddenFieldIds, scope, ownerUserId, importedAt, existingIds, {
+        allowVisualInference: allowWorksheetVisualInference
+      });
       debugImportStep(`built report ${inferred.report.name} from ${parsed.sheetName} (${parsed.rows.length} row(s))`);
       const report = inferred.report;
       importedReports.push(report);
       layoutHintsByReportId[report.id] = parsed.layout;
+      importedReportDrafts.push({ report, sheetName: worksheet.name });
       sheetReviews.push({
         sheetName: parsed.sheetName,
         worksheetName: worksheet.name,
@@ -1965,6 +2931,150 @@ export async function importWorkbookIntoStudioDocument(
         ...inferred.notes.map((note) => `${parsed.sheetName}: ${note}`)
       );
     });
+  });
+
+  const dataEntry = nativeWorkbookCharts.dataSheetName
+    ? importedTableEntries.find((entry) => normalizeSheetNameForMatch(entry.worksheetName) === normalizeSheetNameForMatch(nativeWorkbookCharts.dataSheetName))
+      || importedTableEntries.find((entry) => normalizeSheetNameForMatch(entry.table.name) === normalizeSheetNameForMatch(nativeWorkbookCharts.dataSheetName))
+      || null
+    : null;
+  const nativeReportBySignature = new Map<string, ReportDefinition>();
+  nativeWorkbookCharts.charts.forEach((chart, chartIndex) => {
+    const existingReport = nativeReportBySignature.get(chart.signature);
+    if (existingReport) {
+      importedReportDrafts.push({
+        report: existingReport,
+        sheetName: chart.displaySheetName,
+        layout: nativeChartLayoutFromAnchor(chart.anchor, chartIndex),
+        displayMode: "chart"
+      });
+      sheetReviews.push({
+        sheetName: chart.displaySheetName,
+        worksheetName: chart.displaySheetName,
+        status: "imported",
+        headerRowNumber: 0,
+        rowCount: 0,
+        columnCount: 0,
+        importedReportId: existingReport.id,
+        notes: [`Reused duplicate native Excel chart "${existingReport.name}" on this worksheet.`],
+        substitutions: [],
+        layout: layoutHintsByReportId[existingReport.id]
+      });
+      return;
+    }
+
+    const dataMapping = resolveNativeChartDataMapping(chart, dataEntry);
+    const syntheticRows = dataMapping ? [] : buildNativeChartRows(chart);
+    if (!dataMapping && !syntheticRows.length) {
+      warnings.push(`${chart.displaySheetName}: Skipped native Excel chart "${chart.chartName || chart.path}" because it had no readable cached chart data.`);
+      return;
+    }
+    const reportName = nativeChartReportName(chart, chartIndex);
+    let table = dataMapping?.table || null;
+    let rows = dataMapping?.rows || syntheticRows;
+    if (!table) {
+      const syntheticFields: FieldDefinition[] = [
+        {
+          id: "category",
+          label: "Category",
+          type: inferFieldType(rows.map((row) => row.category as string | number | boolean | null))
+        },
+        ...(chart.series.length > 1 ? [{
+          id: "series",
+          label: "Series",
+          type: "text" as const
+        }] : []),
+        {
+          id: "value",
+          label: "Value",
+          type: "number" as const
+        }
+      ];
+      const tableId = uniqueId("table", `${workbookName}-${reportName}-chart-data`, existingIds);
+      table = {
+        id: tableId,
+        name: `${reportName} Data`,
+        description: `Imported native Excel chart data from workbook "${filename}".`,
+        fields: syntheticFields
+      };
+      importedTables.push(table);
+      importedRows[table.id] = rows;
+      importedRowsByTableId[table.id] = rows;
+    }
+    const displayWorksheet = workbook.getWorksheet(chart.displaySheetName);
+    const layout = buildNativeChartLayoutHints(displayWorksheet, chart);
+    const fieldIds = dataMapping
+      ? {
+        categoryFieldId: dataMapping.categoryFieldId,
+        valueFieldId: dataMapping.valueFieldId,
+        seriesFieldId: dataMapping.seriesFieldId
+      }
+      : {
+        categoryFieldId: "category",
+        valueFieldId: "value",
+        seriesFieldId: chart.series.length > 1 ? "series" : ""
+      };
+    const reportId = uniqueId("report", reportName, existingIds);
+    const report: ReportDefinition = {
+      id: reportId,
+      type: "report",
+      schemaVersion: 1,
+      name: reportName,
+      description: chart.sourceKind === "image-chart"
+        ? `Imported from picture/screenshot chart "${chart.chartName || chart.imagePath || chart.path}" on worksheet "${chart.displaySheetName}".`
+        : `Imported from native Excel chart "${chart.chartName || chart.path}" on worksheet "${chart.displaySheetName}".`,
+      folder: "Imported Workbooks",
+      category: "Imported",
+      tags: ["xlsx-import", "native-chart"],
+      scope,
+      ownerUserId,
+      sharedUserIds: [],
+      updatedAt: importedAt,
+      sourceTableId: table.id,
+      sourceReportOverrides: {},
+      selectedFieldIds: [],
+      filters: [],
+      filterTree: createFilterGroup("and", []),
+      groups: [],
+      sorts: [],
+      summaryMetrics: [],
+      view: buildNativeChartReportView(chart, fieldIds),
+      displayLabels: { fields: {}, chartValues: {} }
+    };
+    importedReports.push(report);
+    layoutHintsByReportId[report.id] = layout;
+    nativeReportBySignature.set(chart.signature, report);
+    importedReportDrafts.push({
+      report,
+      sheetName: chart.displaySheetName,
+      layout: nativeChartLayoutFromAnchor(chart.anchor, chartIndex),
+      displayMode: "chart"
+    });
+    const notes = [
+      chart.sourceKind === "image-chart"
+        ? `Detected picture/screenshot chart "${chart.chartName || chart.imagePath || chart.path}" as ${chart.chartType}.`
+        : `Recovered native Excel ${chart.chartType} chart "${chart.chartName || chart.path}".`,
+      dataMapping
+        ? `Mapped chart fields to the workbook Data sheet "${nativeWorkbookCharts.dataSheetName}".`
+        : chart.sourceKind === "image-chart"
+          ? "Used screenshot image geometry and colors instead of guessing report fields."
+          : "Used native chart source ranges and cached values instead of guessing report fields.",
+      chart.chartColors.length ? `Recovered ${chart.chartColors.length} ${chart.sourceKind === "image-chart" ? "image" : "native chart"} color${chart.chartColors.length === 1 ? "" : "s"}.` : ""
+    ].filter(Boolean);
+    sheetReviews.push({
+      sheetName: chart.displaySheetName,
+      worksheetName: chart.displaySheetName,
+      status: "imported",
+      headerRowNumber: 0,
+      rowCount: rows.length,
+      columnCount: table.fields.length,
+      importedTableId: table.id,
+      importedReportId: report.id,
+      notes,
+      substitutions: [],
+      layout
+    });
+    warnings.push(...notes.map((note) => `${chart.displaySheetName}: ${note}`));
   });
 
   if (!importedTables.length || !importedReports.length) {
@@ -1990,14 +3100,8 @@ export async function importWorkbookIntoStudioDocument(
 
   let primaryObjectId = importedReports[0].id;
   let dashboardCreated = false;
-  if (importedReports.length > 1) {
+  if (importedReports.length > 1 || new Set(importedReportDrafts.map((draft) => draft.sheetName)).size > 1) {
     debugImportStep(`building dashboard from ${importedReports.length} imported report(s)`);
-    const importedReportDrafts = importedReports.map((report) => ({
-      report,
-      sheetName: sheetReviews.find((review) => review.importedReportId === report.id)?.worksheetName
-        || sheetReviews.find((review) => review.importedReportId === report.id)?.sheetName
-        || report.name
-    }));
     const builtDashboard = buildImportedDashboard(
       workbookName,
       importedReportDrafts,
