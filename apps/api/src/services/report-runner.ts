@@ -299,6 +299,20 @@ function rowHasField(row: DataRow, fieldId: string) {
   return Object.prototype.hasOwnProperty.call(row, fieldId);
 }
 
+function isInvalidStringLengthError(error: unknown) {
+  return error instanceof RangeError && error.message.includes("Invalid string length");
+}
+
+function flushExpandedRowsDocument(document: ReturnType<typeof studioStore.getDocument>) {
+  try {
+    studioStore.flushDocument(document, { markSavedAt: false });
+  } catch (error) {
+    if (!isInvalidStringLengthError(error)) {
+      throw error;
+    }
+  }
+}
+
 async function ensureRowsContainRequiredFields(
   table: TableDefinition,
   rows: DataRow[],
@@ -354,7 +368,7 @@ async function ensureRowsContainRequiredFields(
   if (table.quickbaseTableId) {
     document.bundle.data[table.quickbaseTableId] = rows;
   }
-  studioStore.flushDocument(document, { markSavedAt: false });
+  flushExpandedRowsDocument(document);
   return rows;
 }
 
