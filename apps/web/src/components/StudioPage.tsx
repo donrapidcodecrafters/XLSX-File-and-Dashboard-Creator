@@ -3207,11 +3207,13 @@ export function StudioPage({
 
   async function deleteObject(objectId: string) {
     const nextDocument = clone(documentState);
+    const removedObject = bundle.objects[objectId];
     delete nextDocument.bundle.objects[objectId];
     nextDocument.bundle.order = nextDocument.bundle.order.filter((item) => item !== objectId);
     nextDocument.favorites = nextDocument.favorites.filter((item) => item !== objectId);
     nextDocument.recent = nextDocument.recent.filter((item) => item !== objectId);
-    if (activeObject?.type === "report" || (bundle.objects[objectId]?.type === "report")) {
+    delete nextDocument.personalOverrides.dashboards[objectId];
+    if (removedObject?.type === "report") {
       removeDeletedReportsFromDashboards(nextDocument, [objectId]);
     }
 
@@ -3219,7 +3221,7 @@ export function StudioPage({
     setFuture([]);
     setDocumentState(nextDocument);
     navigate(buildHostedRoute(`/studio/${nextDocument.bundle.order[0] || ""}`));
-    pushToast("Object removed.", "warn");
+    pushToast(`${removedObject?.type === "dashboard" ? "Dashboard" : "Object"} removed.`, "warn");
     try {
       await persistRemote(nextDocument, { removedObjectIds: [objectId] });
     } catch (error) {
@@ -5180,6 +5182,7 @@ export function StudioPage({
                 <button type="button" onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save to server"}</button>
                 <button type="button" onClick={() => toggleFavorite(activeDashboard.id)}>{documentState.favorites.includes(activeDashboard.id) ? "Unfavorite" : "Favorite"}</button>
                 <button type="button" onClick={() => cloneObject(activeDashboard)}>Clone dashboard</button>
+                <button type="button" onClick={() => deleteObject(activeDashboard.id)}>Delete dashboard</button>
                 <button type="button" onClick={undo} disabled={!history.length}>Undo</button>
                 <button type="button" onClick={redo} disabled={!future.length}>Redo</button>
                 <button type="button" onClick={() => setDrawer("share")}>Share</button>
