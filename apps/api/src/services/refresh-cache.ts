@@ -2,6 +2,8 @@ import type { FastifyBaseLogger } from "fastify";
 import type { DataRow, RefreshJobStatus, RefreshScheduleConfig, ReportDefinition, StudioDocument, TableDefinition } from "@studio/shared";
 import { loadQuickbaseSchema } from "./quickbase-schema.js";
 import { convertQuickbaseSchemaToTables, fetchQuickbaseSavedReportPage, fetchQuickbaseTablePage } from "./quickbase-storage.js";
+import { replaceSourceRecords } from "./eav-record-store.js";
+import { invalidateSourceCaches } from "./report-runner.js";
 import { studioStore } from "./studio-store.js";
 import { RefreshCancelledError, refreshJobStore } from "./refresh-jobs.js";
 
@@ -13,6 +15,28 @@ function chunk<T>(items: T[], size: number) {
     groups.push(items.slice(index, index + size));
   }
   return groups;
+}
+
+async function persistQuickbaseRowsToEnterpriseStore(
+  document: StudioDocument,
+  table: TableDefinition,
+  rows: DataRow[],
+  metadata: Record<string, unknown> = {}
+) {
+  await replaceSourceRecords({
+    sourceId: table.id,
+    sourceName: table.name || table.quickbaseTableId || table.id,
+    sourceType: "quickbase",
+    fields: table.fields || [],
+    rows,
+    quickbaseProfileId: table.quickbaseProfileId || "",
+    quickbaseTableId: getQuickbaseTableId(table),
+    quickbaseReportId: getSavedReportIdForTable(document, table),
+    metadata: {
+      quickbaseAppId: table.quickbaseAppId || "",
+      ...metadata
+    }
+  });
 }
 
 function getUsedTableIds(document: StudioDocument) {
@@ -429,7 +453,9 @@ function persistRefreshProgress(
       }
     });
   });
-  studioStore.flushDocument(document, { markSavedAt: false });
+  // Skip rewriting the large row cache on every progress tick — rows are in Postgres.
+  // The cache file is written once at the end of a successful refresh.
+  studioStore.flushDocument(document, { markSavedAt: false, skipCacheWrite: true });
 }
 
 function getTrackedRefreshStatuses(document: StudioDocument, profileIds: string[] = []) {
@@ -739,13 +765,13 @@ async function fetchAllTableRows(
         currentBatchSize: page.rows.length,
         rowsPerSecond,
         message: totalRowsHint
-          ? `Loading ${table.name}: ${merged.size.toLocaleString()} / ${totalRowsHint.toLocaleString()} rows cached across ${fetchedPages.toLocaleString()} pages`
-          : `Loading ${table.name}: ${merged.size.toLocaleString()} rows cached across ${fetchedPages.toLocaleString()} pages`
+          ? `Syncing ${table.name}: ${merged.size.toLocaleString()} of ${totalRowsHint.toLocaleString()} rows`
+          : `Syncing ${table.name}: ${merged.size.toLocaleString()} rows`
       });
       const currentPageSignature = savedReportPageSignature(page.rows);
       if (page.rows.length < pageSize) break;
       if (merged.size === beforeSize || currentPageSignature === previousPageSignature) {
-        throw new Error(`Refresh could not move past the same saved report page for ${table.name}. Check Quickbase source report ${savedReportId} and make sure it returns all records in a stable order.`);
+        throw new Error(`Data sync stalled on the same page for ${table.name}. Check the saved report configuration in Settings and try again.`);
       }
       previousPageSignature = currentPageSignature;
       skip += page.rows.length;
@@ -756,8 +782,8 @@ async function fetchAllTableRows(
     const tableLabel = table.name || table.quickbaseTableId || table.id;
     throw new Error(
       options.objectId
-        ? `No Quickbase source report ID is configured for ${tableLabel} in this object refresh. Configure the saved report ID before refreshing.`
-        : `No Quickbase source report ID is configured for ${tableLabel}. Configure the saved report ID before refreshing.`
+        ? `No saved report ID is configured for "${tableLabel}". Go to Settings → Data Refresh to add one.`
+        : `No saved report ID is configured for "${tableLabel}". Go to Settings → Data Refresh to set it up.`
     );
   }
   const fieldIds = table.fields.map((field) => field.id).filter(Boolean);
@@ -794,8 +820,8 @@ async function fetchAllTableRows(
         currentBatchSize: page.rows.length,
         rowsPerSecond: merged.size / elapsedSeconds,
         message: totalRowsHint
-          ? `Loading ${table.name}: ${merged.size.toLocaleString()} / ${totalRowsHint.toLocaleString()} rows cached`
-          : `Loading ${table.name}: ${merged.size.toLocaleString()} rows cached`
+          ? `Syncing ${table.name}: ${merged.size.toLocaleString()} of ${totalRowsHint.toLocaleString()} rows`
+          : `Syncing ${table.name}: ${merged.size.toLocaleString()} rows`
       });
       if (page.rows.length < 1000) break;
       skip += page.rows.length;
@@ -830,6 +856,10 @@ export async function ensureTableRowsAvailable(tableId: string, options: { objec
     document.bundle.data[table.quickbaseTableId] = rows;
     studioStore.touchCacheEntry(table.quickbaseTableId, rows.length);
   }
+  await persistQuickbaseRowsToEnterpriseStore(document, table, rows, {
+    trigger: "ensure-table-rows-available",
+    objectId: options.objectId || ""
+  });
   studioStore.touchCacheEntry(table.id, rows.length);
   studioStore.flushDocument(document, { markSavedAt: false });
   return rows;
@@ -893,8 +923,8 @@ export async function refreshAllCachedData(reason: "manual" | "scheduled" = "man
     const tableIds = Array.from(new Set((profileTableIds.length ? profileTableIds : getUsedTableIds(latest)).filter(Boolean)));
     if (!tableIds.length) {
       throw new Error(profileId
-        ? "No Quickbase refresh source tables are configured for this app profile."
-        : "No Quickbase refresh source tables are configured for this platform.");
+        ? "No data tables are selected for this connection. Go to Settings → Data Refresh to choose which tables to sync."
+        : "No data sources are configured yet. Go to Settings → Connect Quickbase to set up a data connection.");
     }
     const nextDocument = latest;
     let totalRows = 0;
@@ -903,6 +933,11 @@ export async function refreshAllCachedData(reason: "manual" | "scheduled" = "man
       if (!table) continue;
       const rows = await fetchAllTableRows(nextDocument, table);
       nextDocument.bundle.data[tableId] = rows;
+      await persistQuickbaseRowsToEnterpriseStore(nextDocument, table, rows, {
+        trigger: "refresh-all",
+        reason,
+        profileId
+      });
       totalRows += rows.length;
     }
     nextDocument.sync.refreshStatus.running = false;
@@ -1026,8 +1061,8 @@ export async function refreshAllCachedDataWithProgress(
     const tableIds = Array.from(new Set((profileTableIds.length ? profileTableIds : getUsedTableIds(latest)).filter(Boolean)));
     if (!tableIds.length) {
       throw new Error(profileId
-        ? "No Quickbase refresh source tables are configured for this app profile."
-        : "No Quickbase refresh source tables are configured for this platform.");
+        ? "No data tables are selected for this connection. Go to Settings → Data Refresh to choose which tables to sync."
+        : "No data sources are configured yet. Go to Settings → Connect Quickbase to set up a data connection.");
     }
     const nextDocument = latest;
     let totalRows = 0;
@@ -1071,6 +1106,12 @@ export async function refreshAllCachedDataWithProgress(
         });
       }, { activeJobId });
       nextDocument.bundle.data[tableId] = rows;
+      await persistQuickbaseRowsToEnterpriseStore(nextDocument, table, rows, {
+        trigger: "refresh-all-progress",
+        reason,
+        profileId,
+        activeJobId
+      });
       studioStore.touchCacheEntry(tableId, rows.length);
       totalRows += rows.length;
       const completedTables = index + 1;
@@ -1120,6 +1161,8 @@ export async function refreshAllCachedDataWithProgress(
     updateRefreshScheduleMetadata(nextDocument);
     updateLegacyActiveQuickbase(nextDocument);
     studioStore.flushDocument(nextDocument, { markSavedAt: false });
+    // Evict stale report/dashboard cache entries so the new data is served immediately.
+    invalidateSourceCaches(...tableIds);
     onProgress?.(100, "Refresh complete", { tableCount: tableIds.length, rowCount: totalRows });
     return {
       ok: true,
@@ -1212,7 +1255,7 @@ export async function refreshObjectCachedDataWithProgress(
     const latest = studioStore.getLiveDocument();
     const tableIds = getObjectTableIds(latest, objectId);
     if (!tableIds.length) {
-      throw new Error("No Quickbase refresh source tables are configured for this object.");
+      throw new Error("No data tables are configured for this item. Go to Settings → Data Refresh to add them.");
     }
     const affectedProfiles = getProfilesForTableIds(latest, tableIds);
     const nextDocument = latest;
@@ -1261,6 +1304,11 @@ export async function refreshObjectCachedDataWithProgress(
         });
       }, { objectId, activeJobId });
       nextDocument.bundle.data[tableId] = rows;
+      await persistQuickbaseRowsToEnterpriseStore(nextDocument, table, rows, {
+        trigger: "refresh-object-progress",
+        objectId,
+        activeJobId
+      });
       studioStore.touchCacheEntry(tableId, rows.length);
       totalRows += rows.length;
       const completedTables = index + 1;
@@ -1348,35 +1396,61 @@ export async function refreshObjectCachedDataWithProgress(
 
 let schedulerStarted = false;
 
-export function startRefreshScheduler(logger?: FastifyBaseLogger) {
+// Exported so pg-boss workers can call it directly.
+export async function checkAndTriggerScheduledRefreshes(logger?: FastifyBaseLogger) {
+  await studioStore.hydrateFromQuickbase();
+  const document = studioStore.getLiveDocument();
+  updateRefreshScheduleMetadata(document);
+  updateLegacyActiveQuickbase(document);
+  studioStore.flushDocument(document, { markSavedAt: false });
+  const now = new Date();
+  for (const profile of document.quickbaseProfiles || []) {
+    const schedule = profile.refreshSchedule;
+    if (
+      !schedule.enabled ||
+      document.sync.refreshStatus.running ||
+      profile.refreshStatus.running ||
+      !isScheduleDue(schedule, profile.refreshStatus.nextRunAt, now)
+    ) {
+      continue;
+    }
+    const lastSuccessAt = profile.refreshStatus.lastSuccessAt
+      ? new Date(profile.refreshStatus.lastSuccessAt)
+      : null;
+    if (lastSuccessAt && scheduleWindowKey(schedule, lastSuccessAt) === scheduleWindowKey(schedule, now)) {
+      continue;
+    }
+    try {
+      logger?.info({ profileId: profile.id }, "Starting scheduled data sync");
+      refreshJobStore.createJob("scheduled", async ({ jobId, update }) => {
+        await refreshAllCachedDataWithProgress(
+          "scheduled",
+          (progress, message, extras) => update(progress, message, extras),
+          profile.id,
+          jobId
+        );
+      });
+      logger?.info({ profileId: profile.id }, "Scheduled data sync queued");
+    } catch (error) {
+      logger?.error(error, "Scheduled data sync failed");
+    }
+    break;
+  }
+}
+
+export function startRefreshScheduler(logger?: FastifyBaseLogger, pgBossRunning = false) {
   if (schedulerStarted) return;
   schedulerStarted = true;
-  setInterval(async () => {
-    await studioStore.hydrateFromQuickbase();
-    const document = studioStore.getLiveDocument();
-    updateRefreshScheduleMetadata(document);
-    updateLegacyActiveQuickbase(document);
-    studioStore.flushDocument(document, { markSavedAt: false });
-    const now = new Date();
-    for (const profile of document.quickbaseProfiles || []) {
-      const schedule = profile.refreshSchedule;
-      if (!schedule.enabled || document.sync.refreshStatus.running || profile.refreshStatus.running || !isScheduleDue(schedule, profile.refreshStatus.nextRunAt, now)) {
-        continue;
-      }
-      const lastSuccessAt = profile.refreshStatus.lastSuccessAt ? new Date(profile.refreshStatus.lastSuccessAt) : null;
-      if (lastSuccessAt && scheduleWindowKey(schedule, lastSuccessAt) === scheduleWindowKey(schedule, now)) {
-        continue;
-      }
-      try {
-        logger?.info({ profileId: profile.id }, "Starting scheduled app refresh");
-        const job = refreshJobStore.createJob("scheduled", async ({ jobId, update }) => {
-          await refreshAllCachedDataWithProgress("scheduled", (progress, message, extras) => update(progress, message, extras), profile.id, jobId);
-        });
-        logger?.info({ profileId: profile.id }, "Scheduled app refresh queued");
-      } catch (error) {
-        logger?.error(error, "Scheduled refresh failed");
-      }
-      break;
-    }
+  if (pgBossRunning) {
+    // Cron scheduling is handled by pg-boss — no in-process fallback needed.
+    logger?.info("refresh-scheduler: pg-boss is active, cron scheduling delegated to Postgres");
+    return;
+  }
+  // Fallback for environments without Postgres/pg-boss.
+  setInterval(() => {
+    checkAndTriggerScheduledRefreshes(logger).catch((err) => {
+      logger?.error(err, "refresh-scheduler: schedule check failed");
+    });
   }, REFRESH_CHECK_INTERVAL_MS).unref();
+  logger?.info({ intervalMs: REFRESH_CHECK_INTERVAL_MS }, "refresh-scheduler: started (in-process fallback)");
 }

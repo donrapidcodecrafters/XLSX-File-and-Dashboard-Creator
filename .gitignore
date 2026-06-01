@@ -1,5 +1,6 @@
 node_modules
 dist
+.env
 .DS_Store
 apps/web/.vite
 *.tsbuildinfo
@@ -7,5 +8,6 @@ apps/web/.vite
 apps/api/.data/
 apps/web/test-results/
 test-results/
+logs/
 *.docx
 Screenshot *.png

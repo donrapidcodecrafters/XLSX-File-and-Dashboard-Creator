@@ -1,5 +1,6 @@
 import type { RefreshJobStatus } from "@studio/shared";
 import { randomUUID } from "node:crypto";
+import { getJobQueue } from "./job-queue.js";
 
 class RefreshCancelledError extends Error {
   constructor(message = "Refresh cancelled.") {
@@ -12,6 +13,10 @@ type RefreshJobRunner = (helpers: {
   jobId: string;
   update: (progress: number, message: string, extras?: Partial<RefreshJobStatus>) => void;
 }) => Promise<Partial<RefreshJobStatus> | void>;
+
+// pg-boss queue name for refresh jobs.
+// Using 'exclusive' policy: only one job (queued OR active) allowed at a time.
+const REFRESH_QUEUE = "quickbase-refresh";
 
 export class RefreshJobStore {
   private jobs = new Map<string, RefreshJobStatus>();
@@ -27,9 +32,10 @@ export class RefreshJobStore {
     if (active && (active.status === "queued" || active.status === "running")) {
       return active;
     }
+    const id = randomUUID();
     const now = new Date().toISOString();
     const job: RefreshJobStatus = {
-      id: randomUUID(),
+      id,
       status: "queued",
       progress: 0,
       message: "Queued",
@@ -37,8 +43,22 @@ export class RefreshJobStore {
       createdAt: now,
       updatedAt: now
     };
-    this.jobs.set(job.id, job);
-    this.runningJobId = job.id;
+    this.jobs.set(id, job);
+    this.runningJobId = id;
+
+    // Also track in pg-boss for singleton enforcement across restarts.
+    // If pg-boss is running and an exclusive-policy job is already active,
+    // send() returns null — the in-memory job will still run (already started),
+    // and the pg-boss record gives us durability on the next boot.
+    const boss = getJobQueue();
+    if (boss) {
+      boss.send(REFRESH_QUEUE, { jobId: id, reason }, {
+        id  // use our jobId as the pg-boss job ID for correlation
+      }).catch(() => {
+        // pg-boss send is best-effort; in-memory job continues regardless
+      });
+    }
+
     void this.runJob(job, runner);
     return job;
   }
@@ -58,6 +78,11 @@ export class RefreshJobStore {
     if (this.runningJobId === id) {
       this.runningJobId = null;
     }
+    // Complete the pg-boss record so it doesn't stall
+    const boss = getJobQueue();
+    if (boss) {
+      boss.cancel(REFRESH_QUEUE, id).catch(() => {});
+    }
     return this.jobs.get(id) || null;
   }
 
@@ -66,7 +91,8 @@ export class RefreshJobStore {
     try {
       const extras = await runner({
         jobId: job.id,
-        update: (progress, message, partial) => this.update(job.id, progress, message, { status: "running", ...(partial || {}) })
+        update: (progress, message, partial) =>
+          this.update(job.id, progress, message, { status: "running", ...(partial || {}) })
       });
       this.update(job.id, 100, "Refresh complete", {
         status: "complete",
@@ -75,18 +101,24 @@ export class RefreshJobStore {
       });
     } catch (error) {
       if (error instanceof RefreshCancelledError) {
-        this.update(job.id, Math.max(this.jobs.get(job.id)?.progress || 0, 1), error.message || "Refresh cancelled.", {
-          status: "cancelled",
-          completedAt: new Date().toISOString(),
-          estimatedSecondsRemaining: 0
-        });
+        this.update(
+          job.id,
+          Math.max(this.jobs.get(job.id)?.progress || 0, 1),
+          error.message || "Refresh cancelled.",
+          { status: "cancelled", completedAt: new Date().toISOString(), estimatedSecondsRemaining: 0 }
+        );
         return;
       }
-      this.update(job.id, Math.max(this.jobs.get(job.id)?.progress || 0, 1), error instanceof Error ? error.message : "Refresh failed.", {
-        status: "failed",
-        error: error instanceof Error ? error.message : "Refresh failed.",
-        completedAt: new Date().toISOString()
-      });
+      this.update(
+        job.id,
+        Math.max(this.jobs.get(job.id)?.progress || 0, 1),
+        error instanceof Error ? error.message : "Refresh failed.",
+        {
+          status: "failed",
+          error: error instanceof Error ? error.message : "Refresh failed.",
+          completedAt: new Date().toISOString()
+        }
+      );
     } finally {
       if (this.runningJobId === job.id) {
         this.runningJobId = null;

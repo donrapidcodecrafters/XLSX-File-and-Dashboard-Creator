@@ -24,11 +24,11 @@ export function LinkToolbar({ type, id }: LinkToolbarProps) {
 
   return (
     <div className="link-toolbar">
-      <button className="ghost-button" onClick={() => copyText(hosted)}>Copy link</button>
+      <button className="ghost-button btn-system" onClick={() => copyText(hosted)}>Copy link</button>
       {alreadyFullScreen ? null : (
-        <button className="ghost-button" onClick={() => window.open(viewer, "_blank", "noopener,noreferrer")}>Open full-screen</button>
+        <button className="ghost-button btn-system" onClick={() => window.open(viewer, "_blank", "noopener,noreferrer")}>Open full-screen</button>
       )}
-      <button className="ghost-button" onClick={() => copyText(embed)}>Copy embed link</button>
+      <button className="ghost-button btn-system" onClick={() => copyText(embed)}>Copy embed link</button>
     </div>
   );
 }

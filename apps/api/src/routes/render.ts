@@ -379,7 +379,7 @@ export async function registerRenderRoutes(app: FastifyInstance) {
 
   app.get("/api/exports/jobs/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const job = exportJobStore.getJob(id);
+    const job = await exportJobStore.getJob(id);
     if (!job) {
       reply.code(404);
       return { message: "Export job not found." };
@@ -393,7 +393,7 @@ export async function registerRenderRoutes(app: FastifyInstance) {
 
   app.get("/api/exports/jobs/:id/download", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const job = exportJobStore.getJob(id);
+    const job = await exportJobStore.getJob(id);
     if (!job) {
       reply.code(404);
       return { message: "Export job not found." };

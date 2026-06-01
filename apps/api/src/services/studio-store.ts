@@ -18,7 +18,7 @@ type PersistedCacheMetaEntry = {
 };
 
 function clone<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
+  return structuredClone(value);
 }
 
 function stripCachedRows(document: StudioDocument): StudioDocument {
@@ -164,11 +164,11 @@ export class StudioStore {
     return seed;
   }
 
-  private persist(document: StudioDocument) {
+  private persist(document: StudioDocument, options: { skipCacheWrite?: boolean } = {}) {
     mkdirSync(dirname(STORAGE_PATH), { recursive: true });
     reconcileRefreshStatusWithCache(document, this.cacheMeta);
     writeFileSync(STORAGE_PATH, JSON.stringify(stripCachedRows(document), null, 2));
-    if (Object.keys(document.bundle.data || {}).length) {
+    if (!options.skipCacheWrite && Object.keys(document.bundle.data || {}).length) {
       writeFileSync(CACHE_PATH, JSON.stringify(document.bundle.data || {}, null, 2));
     }
     writeFileSync(CACHE_META_PATH, JSON.stringify(this.cacheMeta || {}, null, 2));
@@ -323,13 +323,13 @@ export class StudioStore {
     return this.getDocument();
   }
 
-  flushDocument(document: StudioDocument, options: { markSavedAt?: boolean } = {}) {
+  flushDocument(document: StudioDocument, options: { markSavedAt?: boolean; skipCacheWrite?: boolean } = {}) {
     this.document = document;
     if (options.markSavedAt !== false) {
       this.document.sync.lastSavedAt = new Date().toISOString();
     }
     this.lastHydratedAt = Date.now();
-    this.persist(this.document);
+    this.persist(this.document, { skipCacheWrite: options.skipCacheWrite });
     return this.getDocument();
   }
 

@@ -35,4 +35,18 @@ export class ExecutionCache<T> {
     });
     return value;
   }
+
+  /** Remove all entries whose key contains any of the provided substrings. */
+  invalidateMatching(...substrings: string[]) {
+    for (const key of this.cache.keys()) {
+      if (substrings.some((s) => key.includes(s))) {
+        this.cache.delete(key);
+      }
+    }
+  }
+
+  /** Remove all entries. */
+  clear() {
+    this.cache.clear();
+  }
 }

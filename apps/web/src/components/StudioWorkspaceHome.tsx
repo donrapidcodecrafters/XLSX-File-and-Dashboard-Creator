@@ -6,6 +6,7 @@ import { ClearableInputField } from "./ClearableInputField";
 
 type LibraryFilter = "all" | "report" | "dashboard";
 type LibraryScopeFilter = "all" | "global" | "selected" | "personal";
+type LibrarySort = "name-asc" | "name-desc" | "updated-desc" | "updated-asc";
 
 export function StudioWorkspaceHome({
   loadingRemote,
@@ -37,7 +38,11 @@ export function StudioWorkspaceHome({
   onToggleReportSelection,
   onSelectAllVisibleReports,
   onClearReportSelection,
-  onDeleteSelectedReports
+  onDeleteSelectedReports,
+  librarySort,
+  onLibrarySortChange,
+  canCreate,
+  canImport,
 }: {
   loadingRemote: boolean;
   lastSavedAt?: string;
@@ -64,51 +69,58 @@ export function StudioWorkspaceHome({
   onCreateDashboard: () => void;
   onImportXlsx: () => void;
   onUseTemplate: () => void;
+  canCreate?: boolean;
+  canImport?: boolean;
   onApplyTemplate: (template: StudioTemplateRecord) => void;
   onToggleReportSelection: (reportId: string, selected: boolean) => void;
   onSelectAllVisibleReports: () => void;
   onClearReportSelection: () => void;
   onDeleteSelectedReports: () => void;
+  librarySort?: LibrarySort;
+  onLibrarySortChange?: (value: LibrarySort) => void;
 }) {
   const visibleReports = filteredObjects.filter((object) => object.type === "report");
   const quickStartActions = [
-    {
+    ...(canCreate !== false ? [{
       id: "new-report",
-      title: "Add new report",
-      description: "Choose a table, fields, filters, and a report or chart view.",
-      action: onCreateReport
-    },
-    {
+      title: "Create a new report",
+      description: "Pick a data source, choose your fields and filters, and display results as a table or chart.",
+      action: onCreateReport,
+      semanticClass: "btn-create"
+    }] : []),
+    ...(canCreate !== false ? [{
       id: "new-dashboard",
-      title: "Add new dashboard",
-      description: "Start a dashboard canvas and add reports, charts, and summary cards.",
-      action: onCreateDashboard
-    },
-    {
+      title: "Create a new dashboard",
+      description: "Build a canvas that combines multiple reports, charts, and summary numbers in one view.",
+      action: onCreateDashboard,
+      semanticClass: "btn-create"
+    }] : []),
+    ...(canCreate !== false ? [{
       id: "template",
-      title: "Use a template",
-      description: "Apply an existing dashboard or report structure.",
-      action: onUseTemplate
-    },
-    {
+      title: "Start from a template",
+      description: "Use a saved report or dashboard layout as your starting point instead of building from scratch.",
+      action: onUseTemplate,
+      semanticClass: ""
+    }] : []),
+    ...(canImport !== false ? [{
       id: "import-xlsx",
-      title: xlsxImporting ? "Importing xlsx" : "Import xlsx",
-      description: "Reconstruct workbook sheets into reports and dashboards.",
+      title: xlsxImporting ? "Importing Excel file…" : "Import Excel file",
+      description: "Upload an Excel workbook and convert its sheets into reports and dashboards automatically.",
       action: onImportXlsx,
-      disabled: xlsxImporting
-    }
+      disabled: xlsxImporting,
+      semanticClass: "btn-create"
+    }] : []),
   ];
 
   return (
     <div className="studio-canvas studio-workspace-home">
-      <div className="hero studio-hero">
+      <div className="hero studio-hero" style={{ background: "var(--surface)", border: "1px solid var(--border)", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
         <div>
           <span className="badge brand">Building</span>
-          <h1>Reports, charts, graphs, and dashboards</h1>
-          <p>Start by choosing an existing item, a template, or a new report or dashboard. Setup only appears after you pick what you want to build.</p>
+          <h1>Your Reporting Workspace</h1>
+          <p>Create and edit reports, dashboards, and data connections. Choose an existing item below to edit it, or use the quick-start buttons to create something new.</p>
           <div className="micro-row">
-            <span>{loadingRemote ? "Loading saved workspace…" : "Workspace ready"}</span>
-            <span>{lastSavedAt ? `Last saved ${new Date(lastSavedAt).toLocaleString()}` : "Not saved yet"}</span>
+            {lastSavedAt ? <span>Last saved {new Date(lastSavedAt).toLocaleString()}</span> : null}
           </div>
         </div>
         <div className="link-toolbar">
@@ -119,15 +131,15 @@ export function StudioWorkspaceHome({
 
       <section className="surface stack">
         <div className="card-head">
-          <strong>Quick start</strong>
-          <span className="micro">Use this row when you want to begin something new.</span>
+          <strong>What would you like to do?</strong>
+          <span className="micro">Choose an option to get started. You can edit or delete anything you create later.</span>
         </div>
         <div className="studio-quickstart-grid">
           {quickStartActions.map((item) => (
             <button
               key={item.id}
               type="button"
-              className="template-card-button studio-quickstart-button"
+              className={`template-card-button studio-quickstart-button${item.semanticClass ? ` ${item.semanticClass}` : ""}`}
               onClick={item.action}
               disabled={item.disabled}
             >
@@ -141,15 +153,15 @@ export function StudioWorkspaceHome({
       <section className="surface stack">
         <div className="card-head">
           <div>
-            <strong>Browse workspace items</strong>
-            <div className="micro">Pick an existing report or dashboard before entering the builder.</div>
+            <strong>Your reports and dashboards</strong>
+            <div className="micro">Click any item to open and edit it.</div>
           </div>
           {visibleReports.length ? (
             <div className="studio-actions">
               <span className="micro">{selectedReportIds.length} selected</span>
               <button type="button" className="ghost-button" onClick={onSelectAllVisibleReports}>Select visible reports</button>
               <button type="button" className="ghost-button" onClick={onClearReportSelection} disabled={!selectedReportIds.length}>Clear</button>
-              <button type="button" onClick={onDeleteSelectedReports} disabled={!selectedReportIds.length}>Delete selected reports</button>
+              <button type="button" className="btn-danger" onClick={onDeleteSelectedReports} disabled={!selectedReportIds.length}>Delete selected reports</button>
             </div>
           ) : null}
         </div>
@@ -170,9 +182,9 @@ export function StudioWorkspaceHome({
               value={libraryFilter}
               onChange={(event) => onLibraryFilterChange(event.target.value as LibraryFilter)}
             >
-              <option value="all">All</option>
-              <option value="report">Reports</option>
-              <option value="dashboard">Dashboards</option>
+              <option value="all">All types</option>
+              <option value="report">Reports only</option>
+              <option value="dashboard">Dashboards only</option>
             </select>
           </label>
           <label className="field">
@@ -191,6 +203,17 @@ export function StudioWorkspaceHome({
           </label>
           <label className="toggle-row"><input type="checkbox" checked={favoritesOnly} onChange={(event) => onFavoritesOnlyChange(event.target.checked)} /> Favorites</label>
           <label className="toggle-row"><input type="checkbox" checked={recentOnly} onChange={(event) => onRecentOnlyChange(event.target.checked)} /> Recent</label>
+          {onLibrarySortChange ? (
+            <label className="field">
+              <span>Sort</span>
+              <select value={librarySort || "updated-desc"} onChange={(e) => onLibrarySortChange(e.target.value as LibrarySort)}>
+                <option value="updated-desc">Last updated</option>
+                <option value="updated-asc">Oldest first</option>
+                <option value="name-asc">Name A–Z</option>
+                <option value="name-desc">Name Z–A</option>
+              </select>
+            </label>
+          ) : null}
         </div>
         {libraryScopeFilter === "global" && hasPersonalObjects ? (
           <div className="sync-status sync-status-ok">
@@ -226,7 +249,7 @@ export function StudioWorkspaceHome({
                 <span className="micro">{object.folder || "Workspace"} · {object.category || (object.type === "report" ? "Reporting" : "Dashboard")}</span>
                 <div className="studio-home-object-card-actions">
                   <Link
-                    className="ghost-button"
+                    className="ghost-button btn-system"
                     to={buildHostedRoute(`/studio/${object.id}`)}
                     target={openLinksInNewTab ? "_blank" : undefined}
                     rel={openLinksInNewTab ? "noreferrer" : undefined}
@@ -238,7 +261,21 @@ export function StudioWorkspaceHome({
             ))}
           </div>
         ) : (
-          <div className="empty-hint">No reports or dashboards match this filter. Create a new one or widen the search.</div>
+          <div className="empty-hint" style={{ textAlign: "center", padding: "2rem" }}>
+            {libraryQuery ? (
+              <>
+                <p>No results match your search — try different keywords or clear the search.</p>
+              </>
+            ) : (
+              <>
+                <p>Nothing here yet.</p>
+                <div className="micro-row" style={{ justifyContent: "center", marginTop: "0.75rem", gap: "0.5rem" }}>
+                  <button type="button" onClick={onCreateReport}>Create a report</button>
+                  <button type="button" onClick={onCreateDashboard}>Create a dashboard</button>
+                </div>
+              </>
+            )}
+          </div>
         )}
       </section>
 

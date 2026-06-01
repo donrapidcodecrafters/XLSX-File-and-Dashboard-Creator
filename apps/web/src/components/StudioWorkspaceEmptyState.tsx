@@ -7,7 +7,9 @@ export function StudioWorkspaceEmptyState({
   onCreateReport,
   onCreateDashboard,
   onImportXlsx,
-  onUseTemplate
+  onUseTemplate,
+  canCreate,
+  canImport,
 }: {
   loadingRemote: boolean;
   lastSavedAt?: string;
@@ -18,6 +20,8 @@ export function StudioWorkspaceEmptyState({
   onCreateDashboard: () => void;
   onImportXlsx: () => void;
   onUseTemplate: () => void;
+  canCreate?: boolean;
+  canImport?: boolean;
 }) {
   return (
     <div className="studio-canvas">
@@ -33,10 +37,10 @@ export function StudioWorkspaceEmptyState({
         </div>
         <div className="link-toolbar">
           <button onClick={onSave} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save"}</button>
-          <button onClick={onCreateReport}>Create report</button>
-          <button onClick={onCreateDashboard}>Create dashboard</button>
-          <button onClick={onImportXlsx} disabled={xlsxImporting}>{xlsxImporting ? "Importing xlsx…" : "Import xlsx"}</button>
-          <button onClick={onUseTemplate}>Use template</button>
+          {canCreate !== false && <button onClick={onCreateReport}>Create report</button>}
+          {canCreate !== false && <button onClick={onCreateDashboard}>Create dashboard</button>}
+          {canImport !== false && <button onClick={onImportXlsx} disabled={xlsxImporting}>{xlsxImporting ? "Importing xlsx…" : "Import xlsx"}</button>}
+          {canCreate !== false && <button onClick={onUseTemplate}>Use template</button>}
         </div>
       </div>
 
@@ -46,22 +50,22 @@ export function StudioWorkspaceEmptyState({
           <span className="micro">Nothing is blocked just because the workspace is empty.</span>
         </div>
         <div className="summary-grid">
-          <button className="template-card-button" onClick={onCreateReport}>
+          {canCreate !== false && <button className="template-card-button" onClick={onCreateReport}>
             <strong>Create a report</strong>
             <span>Choose a table, fields, filters, and view.</span>
-          </button>
-          <button className="template-card-button" onClick={onCreateDashboard}>
+          </button>}
+          {canCreate !== false && <button className="template-card-button" onClick={onCreateDashboard}>
             <strong>Create a dashboard</strong>
             <span>Start a blank dashboard and add report widgets.</span>
-          </button>
-          <button className="template-card-button" onClick={onUseTemplate}>
+          </button>}
+          {canCreate !== false && <button className="template-card-button" onClick={onUseTemplate}>
             <strong>Use a template</strong>
             <span>Apply a saved layout or report template.</span>
-          </button>
-          <button className="template-card-button" onClick={onImportXlsx} disabled={xlsxImporting}>
+          </button>}
+          {canImport !== false && <button className="template-card-button" onClick={onImportXlsx} disabled={xlsxImporting}>
             <strong>{xlsxImporting ? "Importing xlsx" : "Import xlsx"}</strong>
             <span>Reconstruct sheets as local reports and dashboards.</span>
-          </button>
+          </button>}
         </div>
       </section>
     </div>

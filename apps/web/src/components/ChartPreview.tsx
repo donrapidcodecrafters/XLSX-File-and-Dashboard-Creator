@@ -1,3 +1,4 @@
+import { useCallback, useState } from "react";
 import type { ChartDatum, ChartOrientation, ChartSeriesType, ChartSortMode, ChartType } from "@studio/shared";
 
 const CHART_COLORS = [
@@ -34,6 +35,70 @@ interface ChartPreviewProps {
 
 function cap(value: string, max = 16) {
   return value.length > max ? `${value.slice(0, max - 1)}…` : value;
+}
+
+// ── Tooltip ───────────────────────────────────────────────────────────────────
+
+interface TooltipState {
+  label: string;
+  series?: string;
+  value: number;
+  x: number;
+  y: number;
+}
+
+function ChartTooltip({ tip, decimalPlaces }: { tip: TooltipState | null; decimalPlaces: number }) {
+  if (!tip) return null;
+  return (
+    <div
+      style={{
+        position: "fixed",
+        left: tip.x + 14,
+        top: tip.y - 8,
+        zIndex: 1500,
+        background: "rgba(23, 49, 38, 0.92)",
+        color: "#fff",
+        borderRadius: 8,
+        padding: "6px 10px",
+        fontSize: "0.78rem",
+        fontWeight: 600,
+        pointerEvents: "none",
+        whiteSpace: "nowrap",
+        boxShadow: "0 8px 24px rgba(0,0,0,0.24)",
+        backdropFilter: "blur(4px)",
+        maxWidth: 280,
+        overflow: "hidden",
+        textOverflow: "ellipsis"
+      }}
+    >
+      {tip.series ? <div style={{ opacity: 0.75, fontWeight: 400, marginBottom: 2 }}>{tip.series}</div> : null}
+      <div>{tip.label}</div>
+      <div style={{ color: "rgba(255,255,255,0.82)", fontWeight: 400, marginTop: 2 }}>
+        {new Intl.NumberFormat("en-US", {
+          minimumFractionDigits: decimalPlaces,
+          maximumFractionDigits: decimalPlaces
+        }).format(tip.value)}
+      </div>
+    </div>
+  );
+}
+
+function useChartTooltip() {
+  const [tip, setTip] = useState<TooltipState | null>(null);
+  const show = useCallback((datum: ChartDatum, e: React.MouseEvent) => {
+    setTip({
+      label: datum.label || datum.rawLabel || "",
+      series: datum.series || datum.rawSeries || undefined,
+      value: datum.value,
+      x: e.clientX,
+      y: e.clientY
+    });
+  }, []);
+  const hide = useCallback(() => setTip(null), []);
+  const move = useCallback((e: React.MouseEvent) => {
+    setTip((prev) => prev ? { ...prev, x: e.clientX, y: e.clientY } : null);
+  }, []);
+  return { tip, show, hide, move };
 }
 
 function getColor(palette: string[], index: number) {
@@ -474,6 +539,8 @@ export function ChartPreview({
   getDatumHref,
   openLinksInNewTab = false
 }: ChartPreviewProps) {
+  const { tip, show, hide, move } = useChartTooltip();
+
   if (!data.length) {
     return <div className="chart-empty">No chart data available.</div>;
   }
@@ -523,7 +590,8 @@ export function ChartPreview({
     });
 
     return (
-      <div className="chart-shell">
+      <div className="chart-shell" onMouseLeave={hide} onMouseMove={move}>
+        <ChartTooltip tip={tip} decimalPlaces={decimalPlaces} />
         {renderTitle(title)}
         <div className="donut-shell">
           <div className={`donut ${normalizedChartType === "pie" ? "pie-chart" : ""}`}>
@@ -533,7 +601,11 @@ export function ChartPreview({
                 const color = getColorOverride(palette, index, chartValueColors, item);
                 const faces = threeDColorFaces(color);
                 const content = (
-                  <g className={threeDimensional ? "chart-3d-slice" : undefined}>
+                  <g
+                    className={threeDimensional ? "chart-3d-slice" : undefined}
+                    onMouseEnter={(e) => show(item, e)}
+                    style={{ cursor: "crosshair" }}
+                  >
                     {threeDimensional ? [8, 6, 4, 2].map((depth) => (
                       <path
                         key={`depth-${depth}`}
@@ -599,7 +671,8 @@ export function ChartPreview({
     const totalWidthWeight = primaryItems.reduce((sum, item) => sum + Math.max(item.value, 1), 0) || 1;
     let currentX = leftPad;
     return (
-      <div className="axis-chart-shell">
+      <div className="axis-chart-shell" onMouseLeave={hide} onMouseMove={move}>
+        <ChartTooltip tip={tip} decimalPlaces={decimalPlaces} />
         {renderTitle(title)}
         <div className="axis-svg-shell">
           <svg
@@ -703,7 +776,8 @@ export function ChartPreview({
       ? groupWidth
       : Math.max(12, Math.min(36, (groupWidth - Math.max(0, seriesCount - 1) * 6) / seriesCount));
     return (
-      <div className="axis-chart-shell">
+      <div className="axis-chart-shell" onMouseLeave={hide} onMouseMove={move}>
+        <ChartTooltip tip={tip} decimalPlaces={decimalPlaces} />
         {renderTitle(title)}
         <div className="axis-svg-shell">
           <svg
@@ -771,8 +845,14 @@ export function ChartPreview({
                     const faces = threeDColorFaces(color);
                     const depthX = 8;
                     const depthY = 6;
+                    const tooltipDatum = datum || { label: category.label, rawLabel: category.rawLabel, series: series.label, rawSeries: series.rawSeries, value, axis: "primary" as const };
                     const content = (
-                      <g key={`${category.rawLabel}-${series.rawSeries || "default"}-${seriesIndex}`} className={href ? "chart-linkable" : undefined}>
+                      <g
+                        key={`${category.rawLabel}-${series.rawSeries || "default"}-${seriesIndex}`}
+                        className={href ? "chart-linkable" : undefined}
+                        onMouseEnter={(e) => show(tooltipDatum, e)}
+                        style={{ cursor: "crosshair" }}
+                      >
                         {threeDimensional ? (
                           <>
                             <polygon
@@ -866,7 +946,8 @@ export function ChartPreview({
       ? groupHeight
       : Math.max(10, Math.min(24, (groupHeight - Math.max(0, seriesCount - 1) * 4) / seriesCount));
     return (
-      <div className="axis-chart-shell">
+      <div className="axis-chart-shell" onMouseLeave={hide} onMouseMove={move}>
+        <ChartTooltip tip={tip} decimalPlaces={decimalPlaces} />
         {renderTitle(title)}
         <div className="axis-svg-shell">
           <svg
@@ -1036,7 +1117,8 @@ export function ChartPreview({
     };
 
     return (
-      <div className="axis-chart-shell">
+      <div className="axis-chart-shell" onMouseLeave={hide} onMouseMove={move}>
+        <ChartTooltip tip={tip} decimalPlaces={decimalPlaces} />
         {renderTitle(title)}
         <div className="axis-chart-layout" style={{ gridTemplateColumns: axisLayoutColumns }}>
           {yAxisLabel ? <div className="chart-axis-title chart-axis-title-vertical">{yAxisLabel}</div> : null}
@@ -1140,7 +1222,16 @@ export function ChartPreview({
                       )}
                       {points.map((point, index) => {
                         const href = getDatumHref?.(point.item) || "";
-                        const content = <circle key={`${series.rawSeries}-${point.item.label}-${index}`} cx={point.x} cy={point.y} r="5" fill={getColorOverride(palette, seriesIndex, chartValueColors, point.item)} className={href ? "chart-linkable" : undefined} />;
+                        const content = (
+                          <circle
+                            key={`${series.rawSeries}-${point.item.label}-${index}`}
+                            cx={point.x} cy={point.y} r="6"
+                            fill={getColorOverride(palette, seriesIndex, chartValueColors, point.item)}
+                            className={href ? "chart-linkable" : undefined}
+                            onMouseEnter={(e) => show(point.item, e)}
+                            style={{ cursor: "crosshair" }}
+                          />
+                        );
                         return href ? (
                           <a key={`${series.rawSeries}-${point.item.label}-${index}`} href={href} target={anchorTarget} rel={anchorRel}>
                             {content}

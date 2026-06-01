@@ -1,7 +1,9 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { QuickbaseAppProfile, QuickbaseConnectionConfig, StudioDocument, TableDefinition } from "@studio/shared";
+import { getAdminConfig, type PlatformConfig } from "../lib/studioApi";
 import type { QuickbaseAppSchema, QuickbaseRealmApp, QuickbaseSyncResult } from "../lib/studioApi";
 import { buildQuickbaseSavedReportUrl } from "../lib/quickbaseLinks";
+import { ScheduledEmailsPanel } from "./ScheduledEmailsPanel";
 
 export function StudioSettingsPanel({
   documentState,
@@ -73,15 +75,29 @@ export function StudioSettingsPanel({
   reloadRemote: () => void;
 }) {
   const settingsSteps = useMemo(() => ([
-    { id: "overview", label: "Overview", description: "Branding, session, and current connection status." },
-    { id: "profiles", label: "Profiles", description: "Quickbase app profiles and active app connection details." },
-    { id: "refresh", label: "Refresh", description: "Scheduled refresh settings and source report mappings." },
-    { id: "storage", label: "Storage", description: "Saved objects, settings, sharing roster, and version table mappings." },
-    { id: "review", label: "Review", description: "Save, reload, and confirm the current app sync state." }
+    { id: "overview", label: "Branding", description: "Set your platform name, navigation labels, and session timeout settings." },
+    { id: "profiles", label: "Connect Quickbase", description: "Connect to your Quickbase apps and configure your access credentials." },
+    { id: "refresh", label: "Data Refresh", description: "Choose which tables to keep up to date and set a refresh schedule." },
+    { id: "automation", label: "Email Reports", description: "Send reports and dashboards automatically to people's inboxes on a schedule." },
+    { id: "storage", label: "Storage & Sharing", description: "How data is stored and who can access each report and dashboard." },
+    { id: "review", label: "Save & Apply", description: "Review and save all your settings changes." }
   ]), []);
   const [activeStep, setActiveStep] = useState<(typeof settingsSteps)[number]["id"]>("overview");
   const activeStepIndex = settingsSteps.findIndex((step) => step.id === activeStep);
   const activeStepMeta = settingsSteps[activeStepIndex] || settingsSteps[0];
+  const [platformConfig, setPlatformConfig] = useState<PlatformConfig | null>(null);
+  const [platformConfigLoading, setPlatformConfigLoading] = useState(false);
+
+  useEffect(() => {
+    if (activeStep !== "storage") return;
+    if (platformConfig) return;
+    setPlatformConfigLoading(true);
+    getAdminConfig()
+      .then((cfg) => setPlatformConfig(cfg))
+      .catch(() => {})
+      .finally(() => setPlatformConfigLoading(false));
+  }, [activeStep, platformConfig]);
+
   function renderStep(id: (typeof settingsSteps)[number]["id"], content: ReactNode) {
     if (activeStep !== id) return null;
     return content;
@@ -98,6 +114,7 @@ export function StudioSettingsPanel({
           >
             <span className="badge">{index + 1}</span>
             <strong>{step.label}</strong>
+            <span className="step-description">{step.description}</span>
           </button>
         ))}
       </div>
@@ -110,12 +127,12 @@ export function StudioSettingsPanel({
       {renderStep("overview", (
         <>
           <div className="summary-grid">
-            <div className="summary-card"><strong>{documentState.sync.providerMode === "api" ? "Connected" : "Local draft"}</strong><span>Connection</span></div>
-            <div className="summary-card"><strong>{documentState.sync.lastLoadedAt ? new Date(documentState.sync.lastLoadedAt).toLocaleTimeString() : "n/a"}</strong><span>Last load</span></div>
-            <div className="summary-card"><strong>{documentState.sync.lastSavedAt ? new Date(documentState.sync.lastSavedAt).toLocaleTimeString() : "n/a"}</strong><span>Last save</span></div>
-            <div className="summary-card"><strong>{activeQuickbaseProfile?.refreshStatus.lastSuccessAt ? new Date(activeQuickbaseProfile.refreshStatus.lastSuccessAt).toLocaleString() : "Not refreshed"}</strong><span>Last app refresh</span></div>
-            <div className="summary-card"><strong>{activeQuickbaseProfile?.refreshStatus.nextRunAt ? new Date(activeQuickbaseProfile.refreshStatus.nextRunAt).toLocaleString() : "Not scheduled"}</strong><span>Next app refresh</span></div>
-            <div className="summary-card"><strong>{savedRowsForApp.toLocaleString()}</strong><span>Rows saved for faster loading</span></div>
+            <div className="summary-card"><strong>{documentState.sync.providerMode === "api" ? "Active" : "Local only"}</strong><span>Workspace mode</span></div>
+            <div className="summary-card"><strong>{documentState.sync.lastLoadedAt ? new Date(documentState.sync.lastLoadedAt).toLocaleTimeString() : "Not yet"}</strong><span>Last loaded</span></div>
+            <div className="summary-card"><strong>{documentState.sync.lastSavedAt ? new Date(documentState.sync.lastSavedAt).toLocaleTimeString() : "Not yet"}</strong><span>Last saved</span></div>
+            <div className="summary-card"><strong>{activeQuickbaseProfile?.refreshStatus.lastSuccessAt ? new Date(activeQuickbaseProfile.refreshStatus.lastSuccessAt).toLocaleString() : "Never synced"}</strong><span>Last data sync</span></div>
+            <div className="summary-card"><strong>{activeQuickbaseProfile?.refreshStatus.nextRunAt ? new Date(activeQuickbaseProfile.refreshStatus.nextRunAt).toLocaleString() : "Not scheduled"}</strong><span>Next scheduled sync</span></div>
+            <div className="summary-card"><strong>{savedRowsForApp.toLocaleString()}</strong><span>Rows in database</span></div>
           </div>
           <label className="field">
             <span>Platform name</span>
@@ -173,8 +190,8 @@ export function StudioSettingsPanel({
         <>
           <div className="card">
         <div className="card-head">
-          <strong>Quickbase app profiles</strong>
-          <span className="micro">Connect several Quickbase apps in the same realm and keep their DBIDs, FIDs, schedules, and refresh source reports separate.</span>
+          <strong>Quickbase app connections</strong>
+          <span className="micro">Connect one or more Quickbase apps. Each app has its own credentials, refresh schedule, and table selections.</span>
         </div>
         <label className="field">
           <span>Active app profile</span>
@@ -208,50 +225,44 @@ export function StudioSettingsPanel({
       </div>
       <div className="card">
         <div className="card-head">
-          <strong>Quickbase connection for this app</strong>
-          <span className="micro">Load the app schema first, then choose the refresh-source tables and report IDs for this app.</span>
+          <strong>Quickbase connection credentials</strong>
+          <span className="micro">Enter your Quickbase credentials below, then click "Load my apps" to find and select your app automatically.</span>
         </div>
         <label className="field">
-          <span>Realm hostname</span>
-          <input value={activeQuickbaseConfig.realmHostname} onChange={(event) => updateQuickbaseField("realmHostname", event.target.value)} placeholder="yourrealm.quickbase.com" />
+          <span>Your Quickbase website address</span>
+          <input value={activeQuickbaseConfig.realmHostname} onChange={(event) => updateQuickbaseField("realmHostname", event.target.value)} placeholder="yourcompany.quickbase.com" />
+          <span className="micro">The web address you use to log in to Quickbase — for example, acme.quickbase.com</span>
         </label>
         <label className="field">
-          <span>User token</span>
-          <input value={activeQuickbaseConfig.userToken} onChange={(event) => updateQuickbaseField("userToken", event.target.value)} placeholder="QB-USER-TOKEN ..." />
+          <span>Your personal access token</span>
+          <input type="password" value={activeQuickbaseConfig.userToken} onChange={(event) => updateQuickbaseField("userToken", event.target.value)} placeholder="QB-USER-TOKEN-…" />
+          <span className="micro">Found in Quickbase under My Profile → Manage User Tokens. Keep this private.</span>
         </label>
         <label className="field">
-          <span>App token</span>
-          <input value={activeQuickbaseConfig.appToken} onChange={(event) => updateQuickbaseField("appToken", event.target.value)} placeholder="Optional app token" />
+          <span>App token <span style={{ fontWeight: 400 }}>(optional)</span></span>
+          <input value={activeQuickbaseConfig.appToken} onChange={(event) => updateQuickbaseField("appToken", event.target.value)} placeholder="Leave blank unless required by your Quickbase admin" />
         </label>
         <label className="field">
-          <span>App ID</span>
-          <input value={activeQuickbaseConfig.appId} onChange={(event) => updateQuickbaseField("appId", event.target.value)} placeholder="App DBID" />
-        </label>
-        <label className="field">
-          <span>Choose from your Quickbase apps</span>
+          <span>Select your Quickbase app</span>
           <div className="inline-actions">
             <select value={activeQuickbaseConfig.appId} onChange={(event) => applyQuickbaseAppSelection(event.target.value)}>
-              <option value="">Select an app from this realm</option>
+              <option value="">{realmApps.length ? "Choose an app from the list…" : "Click 'Load my apps' first"}</option>
               {realmApps.map((item) => (
-                <option key={item.id} value={item.id}>{item.name} ({item.id})</option>
+                <option key={item.id} value={item.id}>{item.name}</option>
               ))}
             </select>
             <button onClick={() => { void loadRealmApps(); }} disabled={realmAppsLoading}>
-              {realmAppsLoading ? "Finding apps…" : "Find apps"}
+              {realmAppsLoading ? "Loading…" : "Load my apps"}
             </button>
           </div>
-        </label>
-        <label className="field">
-          <span>API base URL</span>
-          <input value={activeQuickbaseConfig.apiBaseUrl} onChange={(event) => updateQuickbaseField("apiBaseUrl", event.target.value)} placeholder="https://api.quickbase.com/v1" />
+          <span className="micro">Click "Load my apps" to see all apps available in your Quickbase account, then select the one you want to connect.</span>
         </label>
         <div className="studio-actions">
           <button onClick={() => { void loadQuickbaseMetadata(); }} disabled={quickbaseSchemaLoading}>
-            {quickbaseSchemaLoading ? "Loading tables and fields…" : "Load tables and fields"}
+            {quickbaseSchemaLoading ? "Loading table list…" : "Connect and load tables"}
           </button>
-          {quickbaseSchema ? <button onClick={autoDetectQuickbaseMappings}>Auto-detect storage fields</button> : null}
+          {quickbaseSchema ? <button onClick={autoDetectQuickbaseMappings}>Auto-configure settings</button> : null}
         </div>
-        <div className="micro">Use Find apps to choose an app from this realm.</div>
         {quickbaseSchema ? (
           <div className="card">
             <div className="card-head">
@@ -268,8 +279,8 @@ export function StudioSettingsPanel({
       {renderStep("refresh", (
         <div className="card">
         <div className="card-head">
-          <strong>Schedule refresh for this app</strong>
-          <span className="micro">This schedule refreshes the selected source tables for the active app profile.</span>
+          <strong>Automatic data refresh schedule</strong>
+          <span className="micro">Set a recurring schedule to pull fresh data from Quickbase automatically. Reports and dashboards will always show current information.</span>
         </div>
         <label className="field">
           <span>Enable scheduled refresh</span>
@@ -318,8 +329,8 @@ export function StudioSettingsPanel({
         </label>
         <div className="card">
           <div className="card-head">
-            <strong>Refresh source reports</strong>
-            <span className="micro">Choose the tables and report IDs used for refresh.</span>
+            <strong>Which tables should be refreshed?</strong>
+            <span className="micro">Select the tables you want to keep up to date. Each selected table needs a saved report number from Quickbase.</span>
           </div>
           <div className="field">
             <span>Tables to refresh</span>
@@ -347,10 +358,10 @@ export function StudioSettingsPanel({
                   </label>
                 );
               })}
-              {!activeProfileTables.length ? <div className="empty-hint">Load tables and fields for this app first.</div> : null}
+              {!activeProfileTables.length ? <div className="empty-hint">Go to the "Connect Quickbase" step first and click "Connect and load tables" to see your available tables.</div> : null}
             </div>
           </div>
-          <div className="micro">Enter the saved report ID for each selected table.</div>
+          <div className="micro">For each table you selected, enter the saved report number from Quickbase. This tells the platform which report to pull data from.</div>
           {activeQuickbaseProfile?.refreshSource.tableIds.length ? (
             <div className="stack-compact">
               {activeQuickbaseProfile.refreshSource.tableIds.map((tableId) => {
@@ -362,26 +373,23 @@ export function StudioSettingsPanel({
                 }, reportId);
                 return (
                   <label className="field" key={tableId}>
-                    <span>{table?.name || tableId} report ID</span>
+                    <span>{table?.name || tableId} — saved report number</span>
                     <div className="inline-actions">
                       <input
                         value={reportId}
                         onChange={(event) => updateRefreshSourceReportId(tableId, event.target.value)}
-                        placeholder="Quickbase report ID"
+                        placeholder="e.g. 7 — find this in Quickbase under Reports"
                       />
                       <a
-                        className="ghost-button"
+                        className="ghost-button btn-help"
                         href={reportHref || undefined}
                         target="_blank"
                         rel="noreferrer"
                         aria-disabled={!reportHref}
-                        onClick={(event) => {
-                          if (!reportHref) {
-                            event.preventDefault();
-                          }
-                        }}
+                        onClick={(event) => { if (!reportHref) event.preventDefault(); }}
+                        title="Open this table in Quickbase to find the report number"
                       >
-                        Open in QB
+                        Open in Quickbase
                       </a>
                     </div>
                   </label>
@@ -389,7 +397,7 @@ export function StudioSettingsPanel({
               })}
             </div>
           ) : null}
-          <div className="micro">Every selected table needs a report ID.</div>
+          <div className="micro">Every selected table needs a saved report number so the platform knows which data to pull during a refresh.</div>
         </div>
         <div className="studio-actions">
           <button type="button" onClick={() => { void reloadRemote(); }} disabled={savingRemote || refreshingCache}>
@@ -410,104 +418,153 @@ export function StudioSettingsPanel({
         </div>
       ))}
 
+      {renderStep("automation", (
+        <div className="card">
+          <ScheduledEmailsPanel documentState={documentState} />
+        </div>
+      ))}
+
       {renderStep("storage", (
         <>
+          {/* Postgres connection — read-only, auto-populated from env */}
           <div className="card">
-        <div className="card-head">
-          <strong>Saved reports and dashboards</strong>
-          <span className="micro">Enter the DBID and field FIDs for the saved reports table.</span>
-        </div>
-        <label className="field"><span>Table DBID</span><input value={activeQuickbaseConfig.objectTableId} onChange={(event) => updateQuickbaseField("objectTableId", event.target.value)} placeholder="Table DBID" /></label>
-        <div className="filter-grid compact-grid">
-          <label className="field"><span>Item key field FID</span><input value={activeQuickbaseConfig.objectKeyFieldId} onChange={(event) => updateQuickbaseField("objectKeyFieldId", event.target.value)} placeholder="FID" /></label>
-          <label className="field"><span>Type field FID</span><input value={activeQuickbaseConfig.objectTypeFieldId} onChange={(event) => updateQuickbaseField("objectTypeFieldId", event.target.value)} placeholder="FID" /></label>
-        </div>
-        <div className="filter-grid compact-grid">
-          <label className="field"><span>Name field FID</span><input value={activeQuickbaseConfig.objectNameFieldId} onChange={(event) => updateQuickbaseField("objectNameFieldId", event.target.value)} placeholder="FID" /></label>
-          <label className="field"><span>JSON field FID</span><input value={activeQuickbaseConfig.objectConfigFieldId} onChange={(event) => updateQuickbaseField("objectConfigFieldId", event.target.value)} placeholder="FID" /></label>
-        </div>
-        <div className="filter-grid compact-grid">
-          <label className="field"><span>Report creator field FID</span><input value={activeQuickbaseConfig.objectOwnerFieldId} onChange={(event) => updateQuickbaseField("objectOwnerFieldId", event.target.value)} placeholder="Optional FID" /></label>
-          <label className="field"><span>Personal report owner field FID</span><input value={activeQuickbaseConfig.objectPersonalOwnerFieldId} onChange={(event) => updateQuickbaseField("objectPersonalOwnerFieldId", event.target.value)} placeholder="Optional FID" /></label>
-        </div>
-        <div className="filter-grid compact-grid">
-          <label className="field"><span>Updated at field FID</span><input value={activeQuickbaseConfig.objectUpdatedAtFieldId} onChange={(event) => updateQuickbaseField("objectUpdatedAtFieldId", event.target.value)} placeholder="Optional FID" /></label>
-          <label className="field"><span>Updated by field FID</span><input value={activeQuickbaseConfig.objectUpdatedByFieldId} onChange={(event) => updateQuickbaseField("objectUpdatedByFieldId", event.target.value)} placeholder="Optional FID" /></label>
-        </div>
-        <div className="micro">Report creator stores who created the item. Personal report owner is only used for personal visibility.</div>
-      </div>
-      <div className="card">
-        <div className="card-head">
-          <strong>Helpdesk tickets</strong>
-          <span className="micro">Configure the popup ticket form shown in the top bar for this app profile.</span>
-        </div>
-        <div className="filter-grid compact-grid">
-          <label className="field"><span>Helpdesk App DBID</span><input value={activeQuickbaseConfig.helpdeskAppDbid} onChange={(event) => updateQuickbaseField("helpdeskAppDbid", event.target.value)} placeholder="App DBID" /></label>
-          <label className="field"><span>Tickets Table DBID</span><input value={activeQuickbaseConfig.helpdeskTicketsTableDbid} onChange={(event) => updateQuickbaseField("helpdeskTicketsTableDbid", event.target.value)} placeholder="Table DBID" /></label>
-        </div>
-        <div className="filter-grid compact-grid">
-          <label className="field"><span>Parent Table DBID</span><input value={activeQuickbaseConfig.helpdeskParentTableDbid} onChange={(event) => updateQuickbaseField("helpdeskParentTableDbid", event.target.value)} placeholder="Table DBID" /></label>
-          <label className="field"><span>Parent App ID FID</span><input value={activeQuickbaseConfig.helpdeskParentAppIdFid} onChange={(event) => updateQuickbaseField("helpdeskParentAppIdFid", event.target.value)} placeholder="FID" /></label>
-        </div>
-      </div>
-      <div className="card">
-        <div className="card-head">
-          <strong>User settings</strong>
-          <span className="micro">Enter the DBID and field FIDs for user settings.</span>
-        </div>
-        <label className="field"><span>Table DBID</span><input value={activeQuickbaseConfig.settingsTableId} onChange={(event) => updateQuickbaseField("settingsTableId", event.target.value)} placeholder="Table DBID" /></label>
-        <div className="filter-grid compact-grid">
-          <label className="field"><span>User field FID</span><input value={activeQuickbaseConfig.settingsUserFieldId} onChange={(event) => updateQuickbaseField("settingsUserFieldId", event.target.value)} placeholder="FID" /></label>
-          <label className="field"><span>Object record field FID</span><input value={activeQuickbaseConfig.settingsObjectFieldId} onChange={(event) => updateQuickbaseField("settingsObjectFieldId", event.target.value)} placeholder="Optional FID" /></label>
-        </div>
-        <div className="filter-grid compact-grid">
-          <label className="field"><span>Object key field FID</span><input value={activeQuickbaseConfig.settingsObjectKeyFieldId} onChange={(event) => updateQuickbaseField("settingsObjectKeyFieldId", event.target.value)} placeholder="FID" /></label>
-          <label className="field"><span>Updated by field FID</span><input value={activeQuickbaseConfig.settingsUpdatedByFieldId} onChange={(event) => updateQuickbaseField("settingsUpdatedByFieldId", event.target.value)} placeholder="Optional FID" /></label>
-        </div>
-        <label className="field"><span>Settings JSON field FID</span><input value={activeQuickbaseConfig.settingsJsonFieldId} onChange={(event) => updateQuickbaseField("settingsJsonFieldId", event.target.value)} placeholder="FID" /></label>
-      </div>
-      <div className="card">
-        <div className="card-head">
-          <strong>Sharing roster</strong>
-          <span className="micro">Use a roster table for selected-user sharing.</span>
-        </div>
-        <label className="field"><span>Roster table DBID</span><input value={activeQuickbaseConfig.rosterTableId} onChange={(event) => updateQuickbaseField("rosterTableId", event.target.value)} placeholder="Optional DBID" /></label>
-        <div className="filter-grid compact-grid">
-          <label className="field"><span>User ID field FID</span><input value={activeQuickbaseConfig.rosterUserIdFieldId} onChange={(event) => updateQuickbaseField("rosterUserIdFieldId", event.target.value)} placeholder="FID" /></label>
-          <label className="field"><span>Employee name field FID</span><input value={activeQuickbaseConfig.rosterEmployeeNameFieldId} onChange={(event) => updateQuickbaseField("rosterEmployeeNameFieldId", event.target.value)} placeholder="FID" /></label>
-        </div>
-        <div className="filter-grid compact-grid">
-          <label className="field"><span>Employee email field FID</span><input value={activeQuickbaseConfig.rosterEmployeeEmailFieldId} onChange={(event) => updateQuickbaseField("rosterEmployeeEmailFieldId", event.target.value)} placeholder="FID" /></label>
-          <label className="field"><span>Employee record ID field FID</span><input value={activeQuickbaseConfig.rosterEmployeeRecordIdFieldId} onChange={(event) => updateQuickbaseField("rosterEmployeeRecordIdFieldId", event.target.value)} placeholder="Optional FID" /></label>
-        </div>
-        <div className="micro">Selected-user sharing stores Quickbase user IDs from this roster.</div>
-      </div>
-      <div className="card">
-        <div className="card-head">
-          <strong>Version history</strong>
-          <span className="micro">Enter the DBID and field FIDs for version history.</span>
-        </div>
-        <label className="field"><span>Table DBID</span><input value={activeQuickbaseConfig.versionTableId} onChange={(event) => updateQuickbaseField("versionTableId", event.target.value)} placeholder="Table DBID" /></label>
-        <div className="filter-grid compact-grid">
-          <label className="field"><span>Object record field FID</span><input value={activeQuickbaseConfig.versionObjectFieldId} onChange={(event) => updateQuickbaseField("versionObjectFieldId", event.target.value)} placeholder="Optional FID" /></label>
-          <label className="field"><span>Object key field FID</span><input value={activeQuickbaseConfig.versionObjectKeyFieldId} onChange={(event) => updateQuickbaseField("versionObjectKeyFieldId", event.target.value)} placeholder="FID" /></label>
-        </div>
-        <div className="filter-grid compact-grid">
-          <label className="field"><span>Snapshot JSON field FID</span><input value={activeQuickbaseConfig.versionSnapshotFieldId} onChange={(event) => updateQuickbaseField("versionSnapshotFieldId", event.target.value)} placeholder="FID" /></label>
-          <label className="field"><span>Changed at field FID</span><input value={activeQuickbaseConfig.versionChangedAtFieldId} onChange={(event) => updateQuickbaseField("versionChangedAtFieldId", event.target.value)} placeholder="FID" /></label>
-        </div>
-        <div className="filter-grid compact-grid">
-          <label className="field"><span>Changed by field FID</span><input value={activeQuickbaseConfig.versionChangedByFieldId} onChange={(event) => updateQuickbaseField("versionChangedByFieldId", event.target.value)} placeholder="Optional FID" /></label>
-          <label className="field"><span>Updated by field FID</span><input value={activeQuickbaseConfig.versionUpdatedByFieldId} onChange={(event) => updateQuickbaseField("versionUpdatedByFieldId", event.target.value)} placeholder="Optional FID" /></label>
-        </div>
-      </div>
+            <div className="card-head">
+              <strong>Database connection</strong>
+              <span className="micro">Read-only — configured via environment variables on the server.</span>
+            </div>
+            {platformConfigLoading ? (
+              <div className="empty-hint">Loading configuration…</div>
+            ) : platformConfig ? (
+              <>
+                <div className={`sync-status ${platformConfig.postgres.connected ? "sync-status-ok" : "sync-status-warn"}`} style={{ margin: 0 }}>
+                  <strong>{platformConfig.postgres.connected ? "Connected to Postgres" : "Postgres not configured"}</strong>
+                  <span>{platformConfig.postgres.connected ? "All platform data is stored in your Postgres 16 database." : "Set DATABASE_URL in your .env file to enable Postgres."}</span>
+                </div>
+                <div className="filter-grid compact-grid" style={{ marginTop: 8 }}>
+                  <label className="field">
+                    <span>Connection URL</span>
+                    <input readOnly value={platformConfig.postgres.urlSanitized} style={{ fontFamily: "monospace", fontSize: 12 }} />
+                  </label>
+                  <label className="field">
+                    <span>SSL</span>
+                    <input readOnly value={platformConfig.postgres.ssl ? "Enabled" : "Disabled"} />
+                  </label>
+                </div>
+                <div className="filter-grid compact-grid">
+                  <label className="field">
+                    <span>Connection pool size</span>
+                    <input readOnly value={platformConfig.postgres.poolMax} />
+                  </label>
+                  <label className="field">
+                    <span>Auto-migrate schema</span>
+                    <input readOnly value={platformConfig.postgres.autoMigrate ? "Yes" : "No"} />
+                  </label>
+                </div>
+                <div className="filter-grid compact-grid">
+                  <label className="field">
+                    <span>Idle timeout</span>
+                    <input readOnly value={`${platformConfig.postgres.idleTimeoutMs / 1000}s`} />
+                  </label>
+                  <label className="field">
+                    <span>Statement timeout</span>
+                    <input readOnly value={`${platformConfig.postgres.statementTimeoutMs / 1000}s`} />
+                  </label>
+                </div>
+                <div className="summary-grid" style={{ marginTop: 4 }}>
+                  <div className="summary-card"><strong>{savedRowsForApp.toLocaleString()}</strong><span>Rows in database</span></div>
+                  <div className="summary-card"><strong>{platformConfig.postgres.legacyRowLoadLimit.toLocaleString()}</strong><span>Max in-memory rows</span></div>
+                </div>
+              </>
+            ) : (
+              <div className="empty-hint">Configuration unavailable — admin access required.</div>
+            )}
+          </div>
+
+          {/* Auth / session */}
+          {platformConfig && (
+            <div className="card">
+              <div className="card-head">
+                <strong>Authentication</strong>
+                <span className="micro">Read-only — configured via environment variables.</span>
+              </div>
+              <div className="filter-grid compact-grid">
+                <label className="field">
+                  <span>Auth required</span>
+                  <input readOnly value={platformConfig.auth.enabled ? "Yes — login required" : "No — open access (dev mode)"} />
+                </label>
+                <label className="field">
+                  <span>Session timeout</span>
+                  <input readOnly value={`${platformConfig.auth.sessionTtlHours} hours`} />
+                </label>
+              </div>
+              <div className="filter-grid compact-grid">
+                <label className="field">
+                  <span>Whitelist users configured</span>
+                  <input readOnly value={platformConfig.auth.userCount} />
+                </label>
+                <label className="field">
+                  <span>Public URL</span>
+                  <input readOnly value={platformConfig.server.publicUrl} style={{ fontFamily: "monospace", fontSize: 12 }} />
+                </label>
+              </div>
+              <div className="micro">To change these settings, edit the <code>.env</code> file on the server and restart the API.</div>
+            </div>
+          )}
+
+          {/* Sharing model */}
+          <div className="card">
+            <div className="card-head">
+              <strong>Sharing</strong>
+              <span className="micro">Control who can see each report and dashboard.</span>
+            </div>
+            <div className="stack" style={{ gap: 10 }}>
+              <div className="builder-subsection">
+                <div className="builder-subsection-head">
+                  <strong>Shared with everyone</strong>
+                  <span className="micro">Any user who can sign in can see these items. Use for company-wide reports.</span>
+                </div>
+              </div>
+              <div className="builder-subsection">
+                <div className="builder-subsection-head">
+                  <strong>Shared with specific users or roles</strong>
+                  <span className="micro">Only the users or roles you choose can see these items. Set this per-item in the report or dashboard editor.</span>
+                </div>
+              </div>
+              <div className="builder-subsection">
+                <div className="builder-subsection-head">
+                  <strong>Personal</strong>
+                  <span className="micro">Only the creator can see these items. Good for drafts and work-in-progress.</span>
+                </div>
+              </div>
+            </div>
+            <div className="micro" style={{ marginTop: 8 }}>
+              To change who a report or dashboard is shared with, open it in the Builder and use the Share option.
+            </div>
+          </div>
+
+          {/* Helpdesk (still Quickbase-connected) */}
+          <div className="card">
+            <div className="card-head">
+              <strong>Helpdesk tickets</strong>
+              <span className="micro">Configure the ticket form shown in the top bar (optional — uses your Quickbase app).</span>
+            </div>
+            <div className="filter-grid compact-grid">
+              <label className="field"><span>Helpdesk App DBID</span><input value={activeQuickbaseConfig.helpdeskAppDbid} onChange={(event) => updateQuickbaseField("helpdeskAppDbid", event.target.value)} placeholder="App DBID" /></label>
+              <label className="field"><span>Tickets Table DBID</span><input value={activeQuickbaseConfig.helpdeskTicketsTableDbid} onChange={(event) => updateQuickbaseField("helpdeskTicketsTableDbid", event.target.value)} placeholder="Table DBID" /></label>
+            </div>
+            <div className="filter-grid compact-grid">
+              <label className="field"><span>Parent Table DBID</span><input value={activeQuickbaseConfig.helpdeskParentTableDbid} onChange={(event) => updateQuickbaseField("helpdeskParentTableDbid", event.target.value)} placeholder="Table DBID" /></label>
+              <label className="field"><span>Parent App ID FID</span><input value={activeQuickbaseConfig.helpdeskParentAppIdFid} onChange={(event) => updateQuickbaseField("helpdeskParentAppIdFid", event.target.value)} placeholder="FID" /></label>
+            </div>
+            <div className="micro">Leave these blank if you do not use Quickbase for helpdesk tickets.</div>
+          </div>
         </>
       ))}
 
       {renderStep("review", (
         <>
           <div className="summary-grid">
-            <div className="summary-card"><strong>{documentState.sync.providerMode === "api" ? "Connected" : "Local draft"}</strong><span>Connection</span></div>
+            <div className="summary-card"><strong>{documentState.sync.providerMode === "api" ? "Active" : "Local only"}</strong><span>Workspace mode</span></div>
             <div className="summary-card"><strong>{activeQuickbaseConfig.appId || "Not set"}</strong><span>Active app ID</span></div>
             <div className="summary-card"><strong>{activeQuickbaseProfile?.refreshSource.tableIds.length || 0}</strong><span>Tables selected for refresh</span></div>
             <div className="summary-card"><strong>{savedRowsForApp.toLocaleString()}</strong><span>Rows cached for this app</span></div>
@@ -530,7 +587,7 @@ export function StudioSettingsPanel({
       ))}
 
       <div className="studio-actions">
-        <button type="button" className="ghost-button" onClick={() => setActiveStep(settingsSteps[Math.max(0, activeStepIndex - 1)].id)} disabled={activeStepIndex <= 0}>Back</button>
+        <button type="button" className="ghost-button btn-neutral" onClick={() => setActiveStep(settingsSteps[Math.max(0, activeStepIndex - 1)].id)} disabled={activeStepIndex <= 0}>Back</button>
         <button type="button" onClick={() => setActiveStep(settingsSteps[Math.min(settingsSteps.length - 1, activeStepIndex + 1)].id)} disabled={activeStepIndex >= settingsSteps.length - 1}>Next</button>
       </div>
       <div className="studio-actions">

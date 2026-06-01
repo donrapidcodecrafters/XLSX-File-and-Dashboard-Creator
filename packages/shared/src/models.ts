@@ -93,6 +93,20 @@ export type DashboardRuntimeFilterScope = "dashboard" | "tab" | "widgets";
 export type DashboardWidgetFilterBehavior = "use-dashboard-filters" | "ignore-dashboard-filters" | "custom-mappings";
 export type RefreshCadence = "daily" | "weekly" | "monthly";
 export type FilterValueSource = "literal" | "field";
+export type SourceJoinType = "left" | "inner";
+
+export interface SourceJoinCondition {
+  id: string;
+  parentFieldId: string;
+  childFieldId: string;
+}
+
+export interface SourceJoin {
+  id: string;
+  sourceTableId: string;
+  joinType: SourceJoinType;
+  conditions: SourceJoinCondition[];
+}
 
 export type DataValue = string | number | boolean | null | string[];
 export type DataRow = Record<string, DataValue>;
@@ -208,6 +222,7 @@ export interface BaseStudioObject {
 export interface ReportDefinition extends BaseStudioObject {
   type: "report";
   sourceTableId: string;
+  sourceJoins?: SourceJoin[];
   sourceReportOverrides?: Record<string, string>;
   selectedFieldIds: string[];
   filters: FilterDefinition[];

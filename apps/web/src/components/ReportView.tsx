@@ -509,13 +509,13 @@ export function ReportView({
                   <strong>Navigation</strong>
                   <div className="reader-sidebar-actions">
                     {hosted.embed ? (
-                      <button className="ghost-button" onClick={() => window.open(fullScreenUrl, "_blank", "noopener,noreferrer")}>Open full-screen</button>
+                      <button className="ghost-button btn-system" onClick={() => window.open(fullScreenUrl, "_blank", "noopener,noreferrer")}>Open full-screen</button>
                     ) : (
                       <>
-                        <button className="ghost-button" onClick={() => window.history.back()}>Back</button>
-                        <Link className="ghost-button" to={buildHostedRoute("/")}>Home</Link>
-                        <Link className="ghost-button" to={buildHostedRoute("/help")}>Open manual</Link>
-                        <Link className="ghost-button" to={buildHostedRoute(`/studio/${report.id}`)} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>Open in building area</Link>
+                        <button className="ghost-button btn-neutral" onClick={() => window.history.back()}>Back</button>
+                        <Link className="ghost-button btn-neutral" to={buildHostedRoute("/")}>Home</Link>
+                        <Link className="ghost-button btn-help" to={buildHostedRoute("/help")}>Open manual</Link>
+                        <Link className="ghost-button btn-system" to={buildHostedRoute(`/studio/${report.id}`)} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>Open in building area</Link>
                       </>
                     )}
                   </div>
@@ -529,16 +529,16 @@ export function ReportView({
                         {isFavorite ? "Unfavorite" : "Favorite"}
                       </button>
                     ) : null}
-                    <button className="ghost-button" onClick={() => { void beginExport(); }} disabled={!result || localExporting || nativeChartExporting}>
+                    <button className="ghost-button btn-export" onClick={() => { void beginExport(); }} disabled={!result || localExporting || nativeChartExporting}>
                       {localExporting ? "Generating xlsx…" : preparedExport ? (exportSaved ? "Save again" : "Save xlsx") : "Download xlsx"}
                     </button>
-                    <button className="ghost-button" onClick={() => { void beginNativeChartExport(); }} disabled={!result || localExporting || nativeChartExporting}>
+                    <button className="ghost-button btn-export" onClick={() => { void beginNativeChartExport(); }} disabled={!result || localExporting || nativeChartExporting}>
                       {nativeChartExporting ? "Generating native xlsx..." : "Dev native chart xlsx"}
                     </button>
-                    <button className="ghost-button" onClick={onRefresh} disabled={loading}>
+                    <button className="ghost-button btn-system" onClick={onRefresh} disabled={loading}>
                       {loading ? "Refreshing…" : "Refresh now"}
                     </button>
-                    <button className="ghost-button" onClick={resetView}>Reset view</button>
+                    <button className="ghost-button btn-neutral" onClick={resetView}>Reset view</button>
                     {onSaveView ? <button className="ghost-button" onClick={saveCurrentView}>Save view</button> : null}
                   </div>
                 </div>
@@ -581,7 +581,7 @@ export function ReportView({
             {savedViews.map((view) => (
               <div className="saved-view-chip" key={view.id}>
                 <button className="ghost-button" onClick={() => applySavedView(view)}>{view.name}</button>
-                {onDeleteView ? <button className="ghost-button" onClick={() => onDeleteView(view.id)}>Remove</button> : null}
+                {onDeleteView ? <button className="ghost-button btn-danger" onClick={() => onDeleteView(view.id)}>Remove</button> : null}
               </div>
             ))}
           </div>
@@ -620,7 +620,7 @@ export function ReportView({
           <strong>Export ready</strong>
           <span>The workbook is ready. Save it to your machine.</span>
           <div className="card-actions">
-            <button className="ghost-button" onClick={() => { void beginExport(); }}>
+            <button className="ghost-button btn-export" onClick={() => { void beginExport(); }}>
               {exportSaved ? "Save again" : "Save xlsx"}
             </button>
           </div>

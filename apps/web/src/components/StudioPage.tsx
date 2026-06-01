@@ -82,6 +82,8 @@ import {
   fetchQuickbaseTablePreview,
   fetchStudioDocument,
   importStudioWorkbook,
+  listUsers,
+  type PlatformUser,
   type QuickbaseRealmApp,
   type QuickbaseAppSchema,
   type QuickbaseSyncResult,
@@ -98,6 +100,7 @@ import { buildDashboardExportDefinition } from "../lib/dashboardExport";
 import { buildHostedHashUrl, buildHostedRoute } from "../lib/embed";
 import { ChartPreview } from "./ChartPreview";
 import { RefreshOverlay } from "./RefreshOverlay";
+import { WorkbookUploadModal, type WorkbookUploadResult } from "./WorkbookUploadModal";
 import { StudioDraftReviewStep } from "./StudioDraftReviewStep";
 import { StudioDashboardPreview } from "./StudioDashboardPreview";
 import { StudioReportDraftDataStep } from "./StudioReportDraftDataStep";
@@ -218,7 +221,7 @@ interface ToastItem {
 }
 
 interface SharingRosterUser {
-  userId: string;
+  userId: string;   // stores platform user email as the stable ID
   name: string;
   email: string;
   recordId: string;
@@ -270,6 +273,7 @@ function buildDraftFromReport(report: ReportDefinition, table?: TableDefinition 
     ownerUserId: report.ownerUserId || "",
     sharedUserIds: clone(report.sharedUserIds || []),
     tableId: sourceTableId,
+    sourceJoins: clone(report.sourceJoins || []),
     sourceReportOverrides: clone(report.sourceReportOverrides || {}),
     selectedFieldIds: clone(report.selectedFieldIds || []),
     filterTree: clone(report.filterTree || createFilterGroup("and", clone(report.filters || []))),
@@ -301,22 +305,16 @@ function normalizeSharedUserIds(userIds: string[]) {
   return Array.from(new Set((userIds || []).map((value) => String(value || "").trim()).filter(Boolean)));
 }
 
-function hasSharingRosterConfig(config: QuickbaseConnectionConfig) {
-  return Boolean(
-    config.rosterTableId
-    && config.rosterUserIdFieldId
-    && config.rosterEmployeeNameFieldId
-    && config.rosterEmployeeEmailFieldId
-  );
+// Platform users are always the source for sharing — no Quickbase roster needed
+function hasSharingRosterConfig(_config: QuickbaseConnectionConfig) {
+  return true; // sharing is always based on platform users
 }
 
-function buildSharingRosterLabel(name: string, email: string, userId: string) {
-  const normalizedName = String(name || "").trim();
-  const normalizedEmail = String(email || "").trim();
-  if (normalizedName && normalizedEmail) return `${normalizedName} (${normalizedEmail})`;
-  if (normalizedName) return normalizedName;
-  if (normalizedEmail) return normalizedEmail;
-  return userId;
+function buildSharingUserLabel(user: PlatformUser): string {
+  const name = (user.displayName || "").trim();
+  const email = (user.email || "").trim();
+  if (name && email) return `${name} (${email})`;
+  return email || name || user.id;
 }
 
 function SharingScopeEditor({
@@ -328,7 +326,6 @@ function SharingScopeEditor({
   rosterLookup,
   rosterLoading,
   rosterError,
-  rosterConfigured,
   rosterQuery,
   onRosterQueryChange,
   onScopeChange,
@@ -342,7 +339,7 @@ function SharingScopeEditor({
   rosterLookup: Map<string, SharingRosterUser>;
   rosterLoading: boolean;
   rosterError: string;
-  rosterConfigured: boolean;
+  rosterConfigured?: boolean; // kept for compat but unused
   rosterQuery: string;
   onRosterQueryChange: (value: string) => void;
   onScopeChange: (scope: StudioObjectScope) => void;
@@ -352,66 +349,68 @@ function SharingScopeEditor({
     .map((userId) => rosterLookup.get(userId) || {
       userId,
       name: "",
-      email: "",
+      email: userId,
       recordId: "",
       label: userId,
       keywords: []
     });
+
   return (
     <div className="card">
       <div className="card-head">
         <strong>Sharing</strong>
-        <span className="micro">Choose whether this object is shared with everyone, only selected users, or only the active user.</span>
+        <span className="micro">Control who can access this report or dashboard.</span>
       </div>
       <label className="field">
-        <span>Scope</span>
+        <span>Access</span>
         <select value={scope} onChange={(event) => onScopeChange(event.target.value as StudioObjectScope)}>
-          <option value="global">Shared with everyone</option>
-          <option value="selected">Share with selected users</option>
-          <option value="personal">Personal</option>
+          <option value="global">Shared with everyone — any user who can sign in</option>
+          <option value="selected">Specific users or roles only</option>
+          <option value="personal">Personal — only me</option>
         </select>
       </label>
-      <label className="field">
-        <span>Owner</span>
-        <input
-          readOnly
-          value={scope === "personal" ? (ownerUserId || currentUserId || "No active user") : "Not used unless this object is personal"}
-        />
-      </label>
+      {scope === "personal" && (
+        <div className="micro">Only <strong>{ownerUserId || currentUserId || "you"}</strong> can see this item.</div>
+      )}
       {scope === "selected" ? (
         <div className="stack-compact">
-          {!rosterConfigured ? (
+          {rosterError ? (
             <div className="sync-status sync-status-warn">
-              <strong>Roster setup required</strong>
-              <span>Set the roster table DBID plus the user, name, and email field FIDs in Settings before sharing with selected users.</span>
-            </div>
-          ) : rosterError ? (
-            <div className="sync-status sync-status-warn">
-              <strong>Roster lookup failed</strong>
+              <strong>Could not load platform users</strong>
               <span>{rosterError}</span>
             </div>
           ) : null}
-          <div className="micro">
-            {selectedUsers.length
-              ? `${selectedUsers.length} selected user${selectedUsers.length === 1 ? "" : "s"} will be able to open this object from the Quickbase launch button.`
-              : "Choose at least one user who should be able to see this report or dashboard."}
-          </div>
-          {selectedUsers.length ? (
-            <div className="badge-row">
-              {selectedUsers.slice(0, 8).map((user) => <span className="badge" key={user.userId}>{user.label}</span>)}
+          {selectedUsers.length > 0 && (
+            <div>
+              <div className="micro" style={{ marginBottom: 4 }}>
+                <strong>{selectedUsers.length}</strong> user{selectedUsers.length === 1 ? "" : "s"} selected:
+              </div>
+              <div className="badge-row">
+                {selectedUsers.map((user) => (
+                  <span
+                    className="badge"
+                    key={user.userId}
+                    style={{ cursor: "pointer" }}
+                    title="Click to remove"
+                    onClick={() => onSharedUsersChange(sharedUserIds.filter((id) => id !== user.userId))}
+                  >
+                    {user.label} ✕
+                  </span>
+                ))}
+              </div>
             </div>
-          ) : null}
+          )}
           <ClearableInputField
-            label="Find people"
+            label="Search platform users"
             id="sharing-roster-search"
             name="sharingRosterSearch"
             value={rosterQuery}
             onChange={onRosterQueryChange}
-            placeholder="Type part of a name, email, or user ID"
+            placeholder="Type a name or email to find users…"
           />
           <div className="card surface stack-compact">
             {rosterLoading ? (
-              <div className="empty-hint">Loading roster…</div>
+              <div className="empty-hint">Loading platform users…</div>
             ) : rosterUsers.length ? (
               <div className="stack-compact">
                 {rosterUsers.map((user) => {
@@ -434,7 +433,7 @@ function SharingScopeEditor({
                 })}
               </div>
             ) : (
-              <div className="empty-hint">No roster matches that search.</div>
+              <div className="empty-hint">{rosterQuery ? "No users match that search." : "No platform users found."}</div>
             )}
           </div>
         </div>
@@ -1302,6 +1301,7 @@ function FilterGroupEditor({
           </label>
           <button
             type="button"
+            className="btn-create"
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
@@ -1312,6 +1312,7 @@ function FilterGroupEditor({
           </button>
           <button
             type="button"
+            className="btn-create"
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
@@ -1320,7 +1321,7 @@ function FilterGroupEditor({
           >
             Add group
           </button>
-          {canRemove && onRemove ? <button type="button" onClick={onRemove}>Remove group</button> : null}
+          {canRemove && onRemove ? <button type="button" className="btn-danger" onClick={onRemove}>Remove group</button> : null}
         </div>
       </div>
 
@@ -1385,7 +1386,7 @@ function FilterGroupEditor({
                 {operatorOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
               {renderFilterValueEditor(rule, field, valueOptions)}
-              <button type="button" onClick={() => onChange(removeFilterNodeFromGroup(group, rule.id))}>Remove</button>
+              <button type="button" className="btn-danger" onClick={() => onChange(removeFilterNodeFromGroup(group, rule.id))}>Remove</button>
             </div>
           );
         }) : <div className="empty-hint">No conditions yet. Add rules or nested groups.</div>}
@@ -1420,6 +1421,7 @@ function ReportFiltersAndSortsEditor({
           <strong>Sorting</strong>
           <button
             type="button"
+            className="btn-create"
               onClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
@@ -1459,15 +1461,21 @@ function ReportFiltersAndSortsEditor({
 export function StudioPage({
   openSettingsSignal = 0,
   refreshAllSignal = 0,
+  settingsMode = false,
+  userPermissions = {},
   launchContext
 }: {
   openSettingsSignal?: number;
   refreshAllSignal?: number;
+  settingsMode?: boolean;
+  userPermissions?: Record<string, boolean>;
   launchContext: { launchSource: "quickbase-button" | "local-dev" | null; userId: string; realmHostname: string; appId: string };
 }) {
   const navigate = useNavigate();
   const location = useLocation();
   const params = useParams();
+  // Permission helper — when no permissions provided (auth off / admin), everything is allowed
+  const canDo = (key: string) => Object.keys(userPermissions).length === 0 || userPermissions[key] === true;
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const importXlsxInputRef = useRef<HTMLInputElement | null>(null);
   const schemaAutoloadedRef = useRef(false);
@@ -1496,6 +1504,7 @@ export function StudioPage({
   const [libraryQuery, setLibraryQuery] = useState("");
   const [libraryFilter, setLibraryFilter] = useState<LibraryFilter>("all");
   const [libraryScopeFilter, setLibraryScopeFilter] = useState<LibraryScopeFilter>("all");
+  const [librarySort, setLibrarySort] = useState<"name-asc" | "name-desc" | "updated-desc" | "updated-asc">("updated-desc");
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [recentOnly, setRecentOnly] = useState(false);
   const [selectedHomeReportIds, setSelectedHomeReportIds] = useState<string[]>([]);
@@ -1551,62 +1560,43 @@ export function StudioPage({
     );
   }, [sharingRosterQuery, sharingRosterUsers]);
 
+  // Load platform users once for sharing — no Quickbase roster needed
   useEffect(() => {
-    if (!hasSharingRosterConfig(activeQuickbaseConfig)) {
-      setSharingRosterUsers([]);
-      setSharingRosterError("");
-      setSharingRosterLoading(false);
-      return;
-    }
     let cancelled = false;
     setSharingRosterLoading(true);
     setSharingRosterError("");
-    void fetchQuickbaseTablePreview(
-      activeQuickbaseConfig,
-      activeQuickbaseConfig.rosterTableId,
-      [
-        activeQuickbaseConfig.rosterUserIdFieldId,
-        activeQuickbaseConfig.rosterEmployeeNameFieldId,
-        activeQuickbaseConfig.rosterEmployeeEmailFieldId,
-        activeQuickbaseConfig.rosterEmployeeRecordIdFieldId
-      ].filter(Boolean),
-      1000
-    )
+    void listUsers()
       .then((response) => {
         if (cancelled) return;
-        const nextUsers = response.rows
-          .map((row) => {
-            const userId = String(row[activeQuickbaseConfig.rosterUserIdFieldId] || "").trim();
-            if (!userId) return null;
-            const name = String(row[activeQuickbaseConfig.rosterEmployeeNameFieldId] || "").trim();
-            const email = String(row[activeQuickbaseConfig.rosterEmployeeEmailFieldId] || "").trim();
-            const recordId = String(row[activeQuickbaseConfig.rosterEmployeeRecordIdFieldId] || "").trim();
+        const platformUsers: SharingRosterUser[] = [
+          ...(response.users || []),
+        ]
+          .filter((u) => u.email)
+          .map((u): SharingRosterUser => {
+            const label = buildSharingUserLabel(u);
             return {
-              userId,
-              name,
-              email,
-              recordId,
-              label: buildSharingRosterLabel(name, email, userId),
-              keywords: [name, email, recordId]
-            } satisfies SharingRosterUser;
+              userId: u.email, // use email as stable ID
+              name: u.displayName || "",
+              email: u.email,
+              recordId: u.id || "",
+              label,
+              keywords: [u.displayName || "", u.email, u.role || ""]
+            };
           })
-          .filter((user): user is SharingRosterUser => Boolean(user))
-          .sort((left, right) => left.label.localeCompare(right.label, undefined, { sensitivity: "base", numeric: true }));
-        setSharingRosterUsers(nextUsers);
+          .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
+        setSharingRosterUsers(platformUsers);
       })
       .catch((error) => {
         if (cancelled) return;
         setSharingRosterUsers([]);
-        setSharingRosterError(error instanceof Error ? error.message : "Roster lookup failed.");
+        setSharingRosterError(error instanceof Error ? error.message : "Could not load platform users.");
       })
       .finally(() => {
         if (cancelled) return;
         setSharingRosterLoading(false);
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [activeQuickbaseConfig]);
+    return () => { cancelled = true; };
+  }, []); // load once
 
   const activeProfileRefreshValidation = getActiveProfileRefreshValidation(documentState, false);
   const staleMissingReportIdError = Boolean(
@@ -1643,6 +1633,7 @@ export function StudioPage({
   });
   const [draggingWidget, setDraggingWidget] = useState<{ tabId: string; widgetId: string } | null>(null);
   const [xlsxImporting, setXlsxImporting] = useState(false);
+  const [xlsxUploadModalOpen, setXlsxUploadModalOpen] = useState(false);
   const [resizeSession, setResizeSession] = useState<{
     tabId: string;
     widgetId: string;
@@ -1941,10 +1932,10 @@ export function StudioPage({
       "Preparing the import review…"
     ];
     let phaseIndex = 0;
-    setActivityOverlay({ title: "Importing xlsx", message: phases[phaseIndex] });
+    setActivityOverlay({ title: "Importing Excel file", message: phases[phaseIndex] });
     const phaseTimer = window.setInterval(() => {
       phaseIndex = Math.min(phaseIndex + 1, phases.length - 1);
-      setActivityOverlay({ title: "Importing xlsx", message: phases[phaseIndex] });
+      setActivityOverlay({ title: "Importing Excel file", message: phases[phaseIndex] });
     }, 4000);
     const startedAt = Date.now();
     try {
@@ -2407,7 +2398,7 @@ export function StudioPage({
   }, [resizeSession, activeDashboard?.id]);
 
   const filteredObjects = useMemo(() => {
-    return filterStudioLibraryItems(visibleObjects, {
+    const items = filterStudioLibraryItems(visibleObjects, {
       currentUserId,
       favorites: documentState.favorites,
       recentIds: documentState.recent,
@@ -2417,7 +2408,13 @@ export function StudioPage({
       favoritesOnly,
       recentOnly
     });
-  }, [currentUserId, visibleObjects, libraryQuery, libraryFilter, libraryScopeFilter, favoritesOnly, recentOnly, documentState.favorites, documentState.recent]);
+    return [...items].sort((a, b) => {
+      if (librarySort === "name-asc") return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+      if (librarySort === "name-desc") return b.name.localeCompare(a.name, undefined, { sensitivity: "base" });
+      if (librarySort === "updated-asc") return new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
+      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(); // updated-desc default
+    });
+  }, [currentUserId, visibleObjects, libraryQuery, libraryFilter, libraryScopeFilter, librarySort, favoritesOnly, recentOnly, documentState.favorites, documentState.recent]);
   const filteredHomeReportIds = useMemo(
     () => filteredObjects.filter((object): object is ReportDefinition => object.type === "report").map((object) => object.id),
     [filteredObjects]
@@ -3061,6 +3058,7 @@ export function StudioPage({
       sharedUserIds: sharing.sharedUserIds,
       updatedAt: new Date().toISOString(),
       sourceTableId: table.id,
+      sourceJoins: clone(createDraft.sourceJoins || []),
       sourceReportOverrides: clone(createDraft.sourceReportOverrides),
       selectedFieldIds: createDraft.selectedFieldIds,
       filters: flattenFilterTree(createDraft.filterTree),
@@ -3363,7 +3361,7 @@ export function StudioPage({
   }
 
   async function saveRemote() {
-    await runWithActivityOverlay("Saving to Quickbase and server", "Saving all platform settings and workspace changes…", async () => {
+    await runWithActivityOverlay("Saving settings", "Saving all platform settings and workspace changes…", async () => {
       await persistRemote(documentState);
       try {
         await loadHostedDocumentIntoState();
@@ -3399,7 +3397,7 @@ export function StudioPage({
     }
     setQuickbaseSchemaLoading(true);
     try {
-      return await runWithActivityOverlay("Loading tables and fields", `Loading the Quickbase schema for ${profile.label}…`, async () => {
+      return await runWithActivityOverlay("Loading tables and fields", `Loading the data schema for ${profile.label}…`, async () => {
         try {
           const response = await fetchQuickbaseSchema(profile.quickbase);
           setQuickbaseSchema(response.schema);
@@ -3450,7 +3448,7 @@ export function StudioPage({
     }
     setRealmAppsLoading(true);
     try {
-      await runWithActivityOverlay("Finding Quickbase apps", `Looking up apps you can access in ${profile.quickbase.realmHostname}…`, async () => {
+      await runWithActivityOverlay("Finding apps", `Looking up apps you can access in ${profile.quickbase.realmHostname}…`, async () => {
         try {
           const response = await fetchQuickbaseApps(profile.quickbase);
           setRealmApps(response.apps);
@@ -3694,7 +3692,7 @@ export function StudioPage({
             setRefreshJob(null);
           } else if (response.job.status === "cancelled") {
             setRefreshingCache(false);
-            pushToast("Refresh cancelled.", "warn");
+            pushToast("Data sync cancelled.", "warn");
           } else if (response.job.status === "failed") {
             setRefreshingCache(false);
             pushToast(response.job.error || response.job.message, "danger");
@@ -3705,8 +3703,8 @@ export function StudioPage({
             ? {
                 ...current,
                 message: error instanceof Error
-                  ? `Refresh is still running, but status polling failed: ${error.message}`
-                  : "Refresh is still running, but status polling failed."
+                  ? `Data sync is running — status check failed momentarily. Still syncing… (${error.message})`
+                  : "Data sync is running — status check failed momentarily. Still syncing…"
               }
             : current);
         });
@@ -3780,14 +3778,14 @@ export function StudioPage({
           setRefreshJob(null);
         } else if (response.job.status === "cancelled") {
           setRefreshingCache(false);
-          pushToast(response.job.message || "Refresh cancelled.", "warn");
+          pushToast(response.job.message || "Data sync cancelled.", "warn");
         } else if (response.job.status === "failed") {
           setRefreshingCache(false);
-          pushToast(response.job.error || response.job.message || "Refresh failed.", "danger");
+          pushToast(response.job.error || response.job.message || "Data sync failed.", "danger");
         }
       });
     } catch (error) {
-      pushToast(error instanceof Error ? error.message : "Refresh failed.", "danger");
+      pushToast(error instanceof Error ? error.message : "Data sync failed.", "danger");
       setRefreshingCache(false);
     }
   }
@@ -3909,6 +3907,47 @@ export function StudioPage({
     } finally {
       setXlsxImporting(false);
       if (event.target) event.target.value = "";
+    }
+  }
+
+  async function handleWorkbookUploadSuccess(result: WorkbookUploadResult) {
+    if (result.mode === "template" && result.workbookImport) {
+      // Follow the same review-modal flow as handleImportXlsx
+      const response = result.workbookImport;
+      const baseObjects = Object.fromEntries(
+        response.importedObjectIds
+          .map((objectId) => response.document.bundle.objects[objectId])
+          .filter((object): object is StudioObject => Boolean(object))
+          .map((object) => [object.id, clone(object)])
+      );
+      const importedTablesById = Object.fromEntries(
+        response.importedTableIds
+          .map((tableId) => response.document.bundle.tables.find((table) => table.id === tableId))
+          .filter((table): table is TableDefinition => Boolean(table))
+          .map((table) => [table.id, clone(table)])
+      );
+      setPendingWorkbookImport({
+        review: response.review,
+        warnings: response.warnings,
+        primaryObjectId: response.primaryObjectId,
+        importedObjectIds: response.importedObjectIds,
+        sourceTableId: "",
+        skippedReportIds: [],
+        baseObjects,
+        currentObjects: rebuildPendingWorkbookImportObjects(baseObjects, importedTablesById, null, []),
+        importedTablesById
+      });
+      setImportReviewModalOpen(true);
+      const importedType = response.review.dashboardCreated ? "dashboard workbook" : response.importedObjectIds.length > 1 ? "workbook" : "sheet";
+      pushToast(`Parsed ${importedType} from workbook. Choose the real source table before creating anything.`);
+    } else if (result.mode === "data-source" && result.sourceImport) {
+      // Reload the document from the server (the API already saved the updated document)
+      await loadHostedDocumentIntoState({ resetHistory: false });
+      const { sources, reports = [], dashboard } = result.sourceImport as typeof result.sourceImport & { reports?: unknown[]; dashboard?: unknown };
+      const sourcePart = sources.length === 1 ? `"${sources[0].sourceName}"` : `${sources.length} data sources`;
+      const reportPart = reports.length ? ` Created ${reports.length} report${reports.length === 1 ? "" : "s"}.` : "";
+      const dashboardPart = dashboard ? " Created dashboard." : "";
+      pushToast(`Imported ${sourcePart}.${reportPart}${dashboardPart}`);
     }
   }
 
@@ -4067,9 +4106,14 @@ export function StudioPage({
             job={{ message: activityOverlay.message }}
           />
         ) : null}
+        <WorkbookUploadModal
+          open={xlsxUploadModalOpen}
+          onClose={() => setXlsxUploadModalOpen(false)}
+          onSuccess={(result) => { void handleWorkbookUploadSuccess(result); }}
+        />
         {importReviewModalOpen && (pendingWorkbookImport || lastWorkbookImportReview) ? (
-          <div className="studio-modal-backdrop" onClick={closeImportReviewModal}>
-            <section className="studio-modal studio-import-review-modal" onClick={(event) => event.stopPropagation()}>
+          <div className="studio-modal-backdrop">
+            <section className="studio-modal studio-import-review-modal">
               <div className="card-head">
                 <div>
                   <strong>Imported workbook review</strong>
@@ -4078,7 +4122,7 @@ export function StudioPage({
                     {importedReviewDashboardCount ? ` · ${importedReviewDashboardCount} dashboard candidate${importedReviewDashboardCount === 1 ? "" : "s"}` : ""}
                   </div>
                 </div>
-                <button type="button" onClick={closeImportReviewModal}>{pendingWorkbookImport ? "Cancel import" : "Close"}</button>
+                <button type="button" className="btn-neutral" onClick={closeImportReviewModal}>{pendingWorkbookImport ? "Cancel import" : "Close"}</button>
               </div>
 
               {pendingWorkbookImport ? (
@@ -4145,7 +4189,7 @@ export function StudioPage({
 
               {pendingWorkbookImport ? (
                 <div className="studio-actions import-review-actions-top">
-                  <button type="button" className="ghost-button" onClick={closeImportReviewModal}>Cancel</button>
+                  <button type="button" className="ghost-button btn-neutral" onClick={closeImportReviewModal}>Cancel</button>
                   <button
                     type="button"
                     onClick={() => void applyPendingWorkbookImport()}
@@ -4227,7 +4271,7 @@ export function StudioPage({
               </div>
               {pendingWorkbookImport ? (
                 <div className="studio-actions">
-                  <button type="button" className="ghost-button" onClick={closeImportReviewModal}>Cancel</button>
+                  <button type="button" className="ghost-button btn-neutral" onClick={closeImportReviewModal}>Cancel</button>
                   <button
                     type="button"
                     onClick={() => void applyPendingWorkbookImport()}
@@ -4241,14 +4285,14 @@ export function StudioPage({
           </div>
         ) : null}
         {dashboardAddModalOpen && activeDashboard ? (
-          <div className="studio-modal-backdrop" onClick={() => setDashboardAddModalOpen(false)}>
-            <section className="studio-modal studio-dashboard-builder-modal" onClick={(event) => event.stopPropagation()}>
+          <div className="studio-modal-backdrop">
+            <section className="studio-modal studio-dashboard-builder-modal">
               <div className="card-head">
                 <div>
                   <strong>Add report/graph</strong>
                   <div className="micro">Create a new report/graph or place an existing one on this dashboard.</div>
                 </div>
-                <button type="button" onClick={() => setDashboardAddModalOpen(false)}>Close</button>
+                <button type="button" className="btn-neutral" onClick={() => setDashboardAddModalOpen(false)}>Close</button>
               </div>
               <div className="builder-stepper">
                 <button type="button" className={dashboardAddMode === "chooser" ? "active-tab" : ""} onClick={() => setDashboardAddMode("chooser")}>Choose action</button>
@@ -4307,8 +4351,8 @@ export function StudioPage({
                     ) : null}
                   </div>
                   <div className="studio-actions modal-actions">
-                    <button type="button" className="ghost-button" onClick={() => setDashboardAddModalOpen(false)}>Cancel</button>
-                    <button type="button" disabled={!dashboardWidgetDraft.reportId} onClick={() => {
+                    <button type="button" className="ghost-button btn-neutral" onClick={() => setDashboardAddModalOpen(false)}>Cancel</button>
+                    <button type="button" className="btn-create" disabled={!dashboardWidgetDraft.reportId} onClick={() => {
                       const added = addDashboardWidgetWithDraft(dashboardWidgetDraft);
                       if (!added) return;
                       setDashboardAddModalOpen(false);
@@ -4323,20 +4367,20 @@ export function StudioPage({
           </div>
         ) : null}
         {dashboardSettingsModalOpen && activeDashboard ? (
-          <div className="studio-modal-backdrop" onClick={() => setDashboardSettingsModalOpen(false)}>
-            <section className="studio-modal studio-dashboard-builder-modal" onClick={(event) => event.stopPropagation()}>
+          <div className="studio-modal-backdrop">
+            <section className="studio-modal studio-dashboard-builder-modal">
               <div className="card-head">
                 <div>
                   <strong>Dashboard settings</strong>
                   <div className="micro">{activeDashboard.name} · tabs, runtime filters, and dashboard-level overrides.</div>
                 </div>
-                <button type="button" onClick={() => setDashboardSettingsModalOpen(false)}>Close</button>
+                <button type="button" className="btn-neutral" onClick={() => setDashboardSettingsModalOpen(false)}>Close</button>
               </div>
               <div className="stack">
                 <div className="card">
                   <div className="card-head">
                     <strong>Tabs</strong>
-                    <button type="button" onClick={() => {
+                    <button type="button" className="btn-create" onClick={() => {
                       const created = createDashboardTabInDefinition(activeDashboard, { color: "#0d7c66" });
                       writeObject(created.dashboard);
                       setActiveTabId(created.tabId);
@@ -4361,7 +4405,7 @@ export function StudioPage({
                             [nextTabs[index + 1], nextTabs[index]] = [nextTabs[index], nextTabs[index + 1]];
                             updateObject({ ...activeDashboard, tabs: nextTabs });
                           }}>Down</button>
-                          <button type="button" className="ghost-button" onClick={() => removeDashboardTabWithFallback(tab.id)}>Delete tab</button>
+                          <button type="button" className="ghost-button btn-danger" onClick={() => removeDashboardTabWithFallback(tab.id)}>Delete tab</button>
                         </div>
                       </div>
                     ))}
@@ -4373,6 +4417,7 @@ export function StudioPage({
                     <strong>Runtime filters</strong>
                     <button
                       type="button"
+                      className="btn-create"
                       onClick={() => updateObject({
                         ...activeDashboard,
                         runtimeFilters: [
@@ -4418,7 +4463,7 @@ export function StudioPage({
                           <div className="card" key={filter.id}>
                             <div className="card-head">
                               <strong>{filter.label || "Runtime filter"}</strong>
-                              <button type="button" className="ghost-button" onClick={() => updateObject({ ...activeDashboard, runtimeFilters: activeDashboard.runtimeFilters.filter((item) => item.id !== filter.id) })}>Remove</button>
+                              <button type="button" className="ghost-button btn-danger" onClick={() => updateObject({ ...activeDashboard, runtimeFilters: activeDashboard.runtimeFilters.filter((item) => item.id !== filter.id) })}>Remove</button>
                             </div>
                             <div className="filter-grid compact-grid">
                               <label className="field"><span>Label</span><input value={filter.label} onChange={(event) => updateRuntimeFilter(filter.id, (current) => ({ ...current, label: event.target.value }))} /></label>
@@ -4566,14 +4611,14 @@ export function StudioPage({
           </div>
         ) : null}
         {createModalOpen ? (
-          <div className="studio-modal-backdrop" onClick={handleCloseCreateModal}>
-            <section className="studio-modal" onClick={(event) => event.stopPropagation()}>
+          <div className="studio-modal-backdrop">
+            <section className="studio-modal">
               <div className="card-head">
                 <div>
                   <strong>{importEditingReportId ? "Edit Imported Report Setup" : editingReportId ? "Edit Report" : `Create ${createDraft.type === "report" ? "Report" : "Dashboard"}`}</strong>
                   <div className="micro">{importEditingReportId ? "Use the same builder workflow as a normal report: fields, filters, sorts, and chart setup all stay together here before the workbook import is applied." : editingReportId ? "Update the report configuration here. Changes stay in the modal instead of moving into a side setup column." : "Start fresh with the same field, filter, and sorting controls from the legacy builder."}</div>
                 </div>
-                <button onClick={handleCloseCreateModal}>Close</button>
+                <button className="btn-neutral" onClick={handleCloseCreateModal}>Close</button>
               </div>
               {importBuilderIdentity}
 
@@ -4736,20 +4781,21 @@ export function StudioPage({
 
                 <div className="studio-actions modal-actions">
                   {createSteps.indexOf(activeCreateStep) > 0 ? (
-                    <button type="button" className="ghost-button" onClick={() => setCreateStep(createSteps[Math.max(0, createSteps.indexOf(activeCreateStep) - 1)])}>
+                    <button type="button" className="ghost-button btn-neutral" onClick={() => setCreateStep(createSteps[Math.max(0, createSteps.indexOf(activeCreateStep) - 1)])}>
                       Back
                     </button>
                   ) : null}
                   {activeCreateStep !== "review" ? (
                     <button
                       type="button"
+                      className="btn-system"
                       onClick={() => setCreateStep(createSteps[Math.min(createSteps.length - 1, createSteps.indexOf(activeCreateStep) + 1)])}
                       disabled={createStepIssues.length > 0}
                     >
                       Next
                     </button>
                   ) : (
-                    <button onClick={createFromDraft} disabled={createDraftIssues.length > 0}>
+                    <button className="btn-create" onClick={createFromDraft} disabled={createDraftIssues.length > 0}>
                       {importEditingReportId ? "Save imported report setup" : editingReportId ? "Save report" : createDraft.type === "report" ? "Create report" : "Create dashboard"}
                     </button>
                   )}
@@ -4760,11 +4806,11 @@ export function StudioPage({
         ) : null}
 
         {drawer ? (
-          <div className={drawer === "settings" ? "studio-modal-backdrop" : "studio-drawer-backdrop"} onClick={() => setDrawer(null)}>
-            <section className={drawer === "settings" ? "studio-modal studio-settings-modal" : "studio-drawer"} onClick={(event) => event.stopPropagation()}>
+          <div className={drawer === "settings" ? "studio-modal-backdrop" : "studio-drawer-backdrop"}>
+            <section className={drawer === "settings" ? "studio-modal studio-settings-modal" : "studio-drawer"}>
               <div className="card-head">
                 <strong>{drawer === "settings" ? "System Settings" : drawer === "share" ? "Share" : drawer === "templates" ? "Templates" : drawer === "export" ? "Export" : "History"}</strong>
-                <button onClick={() => setDrawer(null)}>Close</button>
+                <button className="btn-neutral" onClick={() => setDrawer(null)}>Close</button>
               </div>
 
               {drawer === "settings" ? (
@@ -4836,9 +4882,9 @@ export function StudioPage({
               {drawer === "export" ? (
                 <div className="stack">
                   <div className="studio-actions">
-                    <button onClick={exportWorkbook}>Download Excel file</button>
-                    <button onClick={exportJson}>Download JSON file</button>
-                    <button onClick={() => { void refreshExportJobs(); }}>Refresh status</button>
+                    <button className="btn-export" onClick={exportWorkbook}>Download Excel file</button>
+                    <button className="btn-export" onClick={exportJson}>Download JSON file</button>
+                    <button className="btn-system" onClick={() => { void refreshExportJobs(); }}>Refresh status</button>
                   </div>
                   <div className="stack-compact">
                     {mergedExportJobs.map((job) => {
@@ -4859,14 +4905,14 @@ export function StudioPage({
                           ) : null}
                           <div className="studio-actions">
                             {job.format === "xlsx" && matchingLiveJob?.status === "complete" && job.sourceJobId ? (
-                              <button onClick={() => { void saveExportJobToMachine(job); }}>Save to machine</button>
+                              <button className="btn-export" onClick={() => { void saveExportJobToMachine(job); }}>Save to machine</button>
                             ) : null}
                             {job.format === "xlsx" ? (
-                              <button onClick={() => { void retryExportJob(job); }}>
+                              <button className="btn-system" onClick={() => { void retryExportJob(job); }}>
                                 {job.status === "failed" ? "Retry" : "Run again"}
                               </button>
                             ) : null}
-                            {job.format === "json" ? <button onClick={exportJson}>Download again</button> : null}
+                            {job.format === "json" ? <button className="btn-export" onClick={exportJson}>Download again</button> : null}
                           </div>
                         </div>
                       );
@@ -4899,11 +4945,63 @@ export function StudioPage({
     );
   }
 
+  // ── Settings page mode: renders ONLY the settings panel, no builder UI ──────
+  if (settingsMode) {
+    return (
+      <section className="settings-full-page">
+        <div className="settings-full-page-header">
+          <div>
+            <span className="badge brand">Platform</span>
+            <h1 style={{ margin: "6px 0 0", fontSize: "1.4rem", fontWeight: 800, letterSpacing: "-0.02em" }}>System Settings</h1>
+          </div>
+          <button className="ghost-button btn-neutral" onClick={() => navigate(-1)}>← Back</button>
+        </div>
+        <div style={{ padding: "24px 28px" }}>
+          <StudioSettingsPanel
+            documentState={documentState}
+            activeQuickbaseProfile={activeQuickbaseProfile}
+            activeQuickbaseConfig={activeQuickbaseConfig}
+            activeProfileTables={activeProfileTables}
+            savedRowsForApp={savedRowsForApp}
+            refreshStatusTitle={refreshStatusTitle}
+            refreshStatusDetail={refreshStatusDetail}
+            realmApps={realmApps}
+            realmAppsLoading={realmAppsLoading}
+            quickbaseSchema={quickbaseSchema}
+            quickbaseSchemaLoading={quickbaseSchemaLoading}
+            savingRemote={savingRemote}
+            refreshingCache={refreshingCache}
+            lastQuickbaseSync={lastQuickbaseSync}
+            weekdayOptions={WEEKDAY_OPTIONS}
+            timezoneOptions={TIMEZONE_OPTIONS}
+            applyDocumentUpdate={applyDocumentUpdate}
+            setActiveQuickbaseProfile={setActiveQuickbaseProfile}
+            updateQuickbaseProfileLabel={updateQuickbaseProfileLabel}
+            updateQuickbaseProfileLiveMode={updateQuickbaseProfileLiveMode}
+            addQuickbaseProfile={addQuickbaseProfile}
+            removeQuickbaseProfile={removeQuickbaseProfile}
+            updateQuickbaseField={updateQuickbaseField}
+            applyQuickbaseAppSelection={applyQuickbaseAppSelection}
+            loadRealmApps={loadRealmApps}
+            loadQuickbaseMetadata={() => loadQuickbaseMetadata()}
+            autoDetectQuickbaseMappings={autoDetectQuickbaseMappings}
+            updateRefreshScheduleField={updateRefreshScheduleField}
+            updateRefreshSourceTables={updateRefreshSourceTables}
+            updateRefreshSourceReportId={updateRefreshSourceReportId}
+            saveRemote={saveRemote}
+            refreshAllNow={refreshAllNow}
+            reloadRemote={reloadRemote}
+          />
+        </div>
+      </section>
+    );
+  }
+
   if (!activeObject && !visibleObjects.length) {
     return (
       <>
         {refreshJob ? (
-          <RefreshOverlay title={refreshJob.status === "complete" ? "Refresh complete" : refreshJob.status === "failed" ? "Refresh failed" : refreshJob.status === "cancelled" ? "Refresh cancelled" : "Refreshing all reports and dashboards"} job={refreshJob} status={refreshJob.status} onDismiss={() => setRefreshJob(null)} />
+          <RefreshOverlay title={refreshJob.status === "complete" ? "Data sync complete" : refreshJob.status === "failed" ? "Data sync failed" : refreshJob.status === "cancelled" ? "Data sync cancelled" : "Syncing all reports and dashboards"} job={refreshJob} status={refreshJob.status} onDismiss={() => setRefreshJob(null)} />
         ) : null}
         <section className="studio-page studio-page-empty">
           <StudioWorkspaceEmptyState
@@ -4912,10 +5010,10 @@ export function StudioPage({
             savingRemote={savingRemote}
             xlsxImporting={xlsxImporting}
             onSave={saveRemote}
-            onCreateReport={() => openCreateModal("report")}
-            onCreateDashboard={() => openCreateModal("dashboard")}
-            onImportXlsx={() => importXlsxInputRef.current?.click()}
-            onUseTemplate={() => setDrawer("templates")}
+            onCreateReport={() => { void openCreateModal("report"); }}
+            onCreateDashboard={() => { void openCreateModal("dashboard"); }}
+            onImportXlsx={() => setXlsxUploadModalOpen(true)}
+            onUseTemplate={() => setDrawer("templates")} canCreate={canDo("building.create")} canImport={canDo("data.import")}
           />
         </section>
         {renderStudioOverlays()}
@@ -4927,7 +5025,7 @@ export function StudioPage({
     return (
       <>
         {refreshJob ? (
-          <RefreshOverlay title={refreshJob.status === "complete" ? "Refresh complete" : refreshJob.status === "failed" ? "Refresh failed" : refreshJob.status === "cancelled" ? "Refresh cancelled" : "Refreshing all reports and dashboards"} job={refreshJob} status={refreshJob.status} onDismiss={() => setRefreshJob(null)} />
+          <RefreshOverlay title={refreshJob.status === "complete" ? "Data sync complete" : refreshJob.status === "failed" ? "Data sync failed" : refreshJob.status === "cancelled" ? "Data sync cancelled" : "Syncing all reports and dashboards"} job={refreshJob} status={refreshJob.status} onDismiss={() => setRefreshJob(null)} />
         ) : null}
         <section className="studio-page studio-page-home">
           <StudioWorkspaceHome
@@ -4945,6 +5043,8 @@ export function StudioPage({
             onFavoritesOnlyChange={setFavoritesOnly}
             recentOnly={recentOnly}
             onRecentOnlyChange={setRecentOnly}
+            librarySort={librarySort}
+            onLibrarySortChange={setLibrarySort}
             hasPersonalObjects={visibleObjects.some((object) => object.scope === "personal")}
             filteredObjects={filteredObjects}
             selectedReportIds={selectedHomeReportIds}
@@ -4952,10 +5052,10 @@ export function StudioPage({
             openLinksInNewTab={openLinksInNewTab}
             onSave={saveRemote}
             onOpenSettings={() => setDrawer("settings")}
-            onCreateReport={() => openCreateModal("report")}
-            onCreateDashboard={() => openCreateModal("dashboard")}
-            onImportXlsx={() => importXlsxInputRef.current?.click()}
-            onUseTemplate={() => setDrawer("templates")}
+            onCreateReport={() => { void openCreateModal("report"); }}
+            onCreateDashboard={() => { void openCreateModal("dashboard"); }}
+            onImportXlsx={() => setXlsxUploadModalOpen(true)}
+            onUseTemplate={() => setDrawer("templates")} canCreate={canDo("building.create")} canImport={canDo("data.import")}
             onApplyTemplate={applyTemplate}
             onToggleReportSelection={toggleHomeReportSelection}
             onSelectAllVisibleReports={selectAllVisibleHomeReports}
@@ -4989,23 +5089,23 @@ export function StudioPage({
     </div>
   ) : null;
 
-  const overlayOpen = importReviewModalOpen || dashboardAddModalOpen || dashboardSettingsModalOpen || createModalOpen || Boolean(drawer);
+  const overlayOpen = xlsxUploadModalOpen || importReviewModalOpen || dashboardAddModalOpen || dashboardSettingsModalOpen || createModalOpen || Boolean(drawer);
 
   const objectActionDock = hasActiveObject && !activeDashboard && !overlayOpen ? (
     <div className="studio-builder-dock" role="region" aria-label="Building actions">
       <div className="studio-builder-dock-inner">
-        <Link className="ghost-button" to={buildHostedRoute("/studio")}>Back to Building home</Link>
+        <Link className="ghost-button btn-neutral" to={buildHostedRoute("/studio")}>Back to Building home</Link>
         <button onClick={() => addTemplate(activeObject.type === "dashboard" ? "layout" : "yaml")}>Save as template</button>
         <button onClick={snapshotCurrentObject}>Save version</button>
         <button onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save to server"}</button>
-        {activeReport ? <button onClick={() => openEditReportModal(activeReport)}>Edit report</button> : null}
-        {activeReport ? <button onClick={() => deleteObject(activeReport.id)}>Delete report</button> : null}
+        {activeReport && canDo("building.edit") ? <button onClick={() => openEditReportModal(activeReport)}>Edit report</button> : null}
+        {activeReport && canDo("building.delete") ? <button className="btn-danger" onClick={() => deleteObject(activeReport.id)}>Delete report</button> : null}
         <button onClick={() => toggleFavorite(activeObject.id)}>{documentState.favorites.includes(activeObject.id) ? "Unfavorite" : "Favorite"}</button>
         <button onClick={() => cloneObject(activeObject)}>Clone</button>
         <button onClick={undo} disabled={!history.length}>Undo</button>
         <button onClick={redo} disabled={!future.length}>Redo</button>
         <button onClick={() => setDrawer("share")}>Share</button>
-        <button onClick={() => setDrawer("export")}>Export</button>
+        {canDo("reports.export") && <button className="btn-export" onClick={() => setDrawer("export")}>Export</button>}
         <button onClick={openVersions}>History</button>
       </div>
     </div>
@@ -5014,7 +5114,7 @@ export function StudioPage({
   return (
     <>
       {refreshJob ? (
-        <RefreshOverlay title={refreshJob.status === "complete" ? "Refresh complete" : refreshJob.status === "failed" ? "Refresh failed" : refreshJob.status === "cancelled" ? "Refresh cancelled" : "Refreshing all reports and dashboards"} job={refreshJob} status={refreshJob.status} onDismiss={() => setRefreshJob(null)} />
+        <RefreshOverlay title={refreshJob.status === "complete" ? "Data sync complete" : refreshJob.status === "failed" ? "Data sync failed" : refreshJob.status === "cancelled" ? "Data sync cancelled" : "Syncing all reports and dashboards"} job={refreshJob} status={refreshJob.status} onDismiss={() => setRefreshJob(null)} />
       ) : null}
       <section className={`studio-page ${activeDashboard ? "studio-page-dashboard" : "studio-page-report"}`}>
       <div className={`studio-canvas ${hasActiveObject ? "studio-canvas-active" : ""}`}>
@@ -5025,25 +5125,25 @@ export function StudioPage({
             <h1>{activeObject.name}</h1>
             <p>{activeObject.description || "Build, save, share, and export reports and dashboards from one workspace."}</p>
             <div className="micro-row">
-              <span>{loadingRemote ? "Loading saved workspace…" : hasActiveObject ? "Saved workspace loaded" : "Workspace ready"}</span>
-              <span>{documentState.sync.lastSavedAt ? `Last saved ${new Date(documentState.sync.lastSavedAt).toLocaleString()}` : "Not saved yet"}</span>
+              {loadingRemote ? <span>Loading…</span> : null}
+              {documentState.sync.lastSavedAt ? <span>Last saved {new Date(documentState.sync.lastSavedAt).toLocaleString()}</span> : null}
             </div>
           </div>
           {!hasActiveObject ? (
           <div className="link-toolbar">
-            <Link className="ghost-button" to={buildHostedRoute("/studio")}>Back to Building home</Link>
+            <Link className="ghost-button btn-neutral" to={buildHostedRoute("/studio")}>Back to Building home</Link>
             <button onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save"}</button>
-            {!hasActiveObject ? <button onClick={() => openCreateModal("report")}>Create report</button> : null}
-            {!hasActiveObject ? <button onClick={() => openCreateModal("dashboard")}>Create dashboard</button> : null}
-            {!hasActiveObject ? <button onClick={() => importXlsxInputRef.current?.click()} disabled={xlsxImporting}>{xlsxImporting ? "Importing xlsx…" : "Import xlsx"}</button> : null}
+            {canDo("building.create") && !hasActiveObject ? <button className="btn-create" onClick={() => openCreateModal("report")}>Create report</button> : null}
+            {canDo("building.create") && !hasActiveObject ? <button className="btn-create" onClick={() => openCreateModal("dashboard")}>Create dashboard</button> : null}
+            {!hasActiveObject ? <button onClick={() => setXlsxUploadModalOpen(true)} disabled={xlsxImporting}>{xlsxImporting ? "Importing xlsx…" : "Import xlsx"}</button> : null}
             {activeReport ? <button onClick={() => openEditReportModal(activeReport)}>Edit report</button> : null}
-            {activeReport ? <button onClick={() => deleteObject(activeReport.id)}>Delete report</button> : null}
+            {activeReport ? <button className="btn-danger" onClick={() => deleteObject(activeReport.id)}>Delete report</button> : null}
             {hasActiveObject ? <button onClick={() => toggleFavorite(activeObject.id)}>{documentState.favorites.includes(activeObject.id) ? "Unfavorite" : "Favorite"}</button> : null}
             {hasActiveObject ? <button onClick={() => cloneObject(activeObject)}>Clone</button> : null}
             <button onClick={undo} disabled={!history.length}>Undo</button>
             <button onClick={redo} disabled={!future.length}>Redo</button>
             {hasActiveObject ? <button onClick={() => setDrawer("share")}>Share</button> : null}
-            {hasActiveObject ? <button onClick={() => setDrawer("export")}>Export</button> : null}
+            {hasActiveObject && canDo("reports.export") ? <button className="btn-export" onClick={() => setDrawer("export")}>Export</button> : null}
             {hasActiveObject ? <button onClick={openVersions}>History</button> : null}
           </div>
           ) : null}
@@ -5088,7 +5188,7 @@ export function StudioPage({
               </div>
               <div className="studio-actions">
                 <button type="button" onClick={() => setImportReviewModalOpen(true)}>Review imported reports</button>
-                <Link className="ghost-button" to={buildHostedRoute("/help")}>Open manual</Link>
+                <Link className="ghost-button btn-help" to={buildHostedRoute("/help")}>Open manual</Link>
                 <button type="button" onClick={() => {
                   setLastWorkbookImportReview(null);
                   setLastWorkbookImportObjectIds([]);
@@ -5166,8 +5266,8 @@ export function StudioPage({
           <section className="surface stack studio-dashboard-preview-panel dashboard-builder-shell">
             <div className="dashboard-builder-toolbar">
               <div className="dashboard-builder-toolbar-actions">
-                <button type="button" onClick={openDashboardAddModal}>Add report/graph</button>
-                <button type="button" className="ghost-button" onClick={() => setDashboardSettingsModalOpen(true)}>Dashboard settings</button>
+                {canDo("building.edit") && <button type="button" className="btn-create" onClick={openDashboardAddModal}>Add report/graph</button>}
+                {canDo("building.edit") && <button type="button" className="ghost-button btn-system" onClick={() => setDashboardSettingsModalOpen(true)}>Dashboard settings</button>}
               </div>
               <div className="dashboard-builder-toolbar-meta">
                 <span className="micro">{activeDashboard.tabs.length} tabs</span>
@@ -5176,17 +5276,17 @@ export function StudioPage({
             </div>
             <div className="dashboard-builder-toolbar dashboard-builder-toolbar-secondary">
               <div className="dashboard-builder-toolbar-actions">
-                <Link className="ghost-button" to={buildHostedRoute("/studio")}>Back to Building home</Link>
+                <Link className="ghost-button btn-neutral" to={buildHostedRoute("/studio")}>Back to Building home</Link>
                 <button type="button" onClick={() => addTemplate("layout")}>Save as template</button>
                 <button type="button" onClick={snapshotCurrentObject}>Save version</button>
                 <button type="button" onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save to server"}</button>
                 <button type="button" onClick={() => toggleFavorite(activeDashboard.id)}>{documentState.favorites.includes(activeDashboard.id) ? "Unfavorite" : "Favorite"}</button>
                 <button type="button" onClick={() => cloneObject(activeDashboard)}>Clone dashboard</button>
-                <button type="button" onClick={() => deleteObject(activeDashboard.id)}>Delete dashboard</button>
+                {canDo("building.delete") && <button type="button" className="btn-danger" onClick={() => deleteObject(activeDashboard.id)}>Delete dashboard</button>}
                 <button type="button" onClick={undo} disabled={!history.length}>Undo</button>
                 <button type="button" onClick={redo} disabled={!future.length}>Redo</button>
                 <button type="button" onClick={() => setDrawer("share")}>Share</button>
-                <button type="button" onClick={() => setDrawer("export")}>Export</button>
+                {canDo("reports.export") && <button type="button" className="btn-export" onClick={() => setDrawer("export")}>Export</button>}
                 <button type="button" onClick={openVersions}>History</button>
               </div>
             </div>
@@ -5224,7 +5324,7 @@ export function StudioPage({
               <div className="dashboard-empty-builder-state">
                 <strong>This tab is empty.</strong>
                 <span>Add a report or graph to start building the dashboard layout on this tab.</span>
-                <button type="button" onClick={openDashboardAddModal}>Add report/graph</button>
+                <button type="button" className="btn-create" onClick={openDashboardAddModal}>Add report/graph</button>
               </div>
             ) : null}
             {activeDashboardTab?.widgets.length ? (
@@ -5280,14 +5380,14 @@ export function StudioPage({
       </div>
 
       {activeDashboard && selectedDashboardWidget && activeDashboardTab ? (
-        <div className="studio-drawer-backdrop dashboard-builder-drawer-backdrop" onClick={() => setSelectedWidgetId("")}>
+        <div className="studio-drawer-backdrop dashboard-builder-drawer-backdrop">
           <aside className="studio-drawer dashboard-builder-widget-drawer" onClick={(event) => event.stopPropagation()}>
             <div className="studio-section-head dashboard-builder-drawer-head">
               <div>
                 <div className="eyebrow">Widget</div>
                 <h2>{selectedDashboardWidget.title || selectedDashboardWidgetReport?.name || "Selected widget"}</h2>
               </div>
-              <button type="button" className="ghost-button" onClick={() => setSelectedWidgetId("")}>Close</button>
+              <button type="button" className="ghost-button btn-neutral" onClick={() => setSelectedWidgetId("")}>Close</button>
             </div>
             <div className="card">
                   <div className="card-head">
@@ -5299,7 +5399,7 @@ export function StudioPage({
                       <button type="button" onClick={() => void beginEditDashboardWidgetReport(selectedDashboardWidget, selectedDashboardWidgetReport)}>Edit report</button>
                     ) : null}
                     {selectedDashboardWidgetReport ? <button type="button" onClick={cloneSelectedDashboardReport}>Clone report</button> : null}
-                    <button type="button" onClick={() => removeDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id)}>Remove from dashboard</button>
+                    <button type="button" className="btn-danger" onClick={() => removeDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id)}>Remove from dashboard</button>
                   </div>
             </div>
 

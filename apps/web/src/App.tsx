@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, NavLink, Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
+import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   filterStudioLibraryItems,
   getStudioObjectScopeLabel,
@@ -15,12 +15,21 @@ import {
   type StudioObject,
   type TableDefinition
 } from "@studio/shared";
+import { AcceptInvitationPage } from "./components/AcceptInvitationPage";
+import { DataManagementPage } from "./components/DataManagementPage";
+import { InactivityWarning } from "./components/InactivityWarning";
+import { ScheduledReportsPage } from "./components/ScheduledReportsPage";
 import { DashboardView } from "./components/DashboardView";
 import { HelpPage } from "./components/HelpPage";
 import { HomePage } from "./components/HomePage";
+import { LoginPage } from "./components/LoginPage";
+import { NavigationSidebar } from "./components/NavigationSidebar";
 import { RefreshOverlay } from "./components/RefreshOverlay";
 import { ReportView } from "./components/ReportView";
+import { RoleManagementPage } from "./components/RoleManagementPage";
 import { StudioPage } from "./components/StudioPage";
+import { UserManagementPage } from "./components/UserManagementPage";
+import { UserSettingsModal } from "./components/UserSettingsModal";
 import { ViewerPage } from "./components/ViewerPage";
 import { fetchCatalog, fetchObject, fetchTables, runReport, runReportPage } from "./lib/api";
 import {
@@ -35,7 +44,8 @@ import {
 } from "./lib/catalog";
 import { buildHostedRoute, getHostedContext } from "./lib/embed";
 import { buildQuickbaseHelpdeskTicketUrl, type QuickbaseTableLinkContext } from "./lib/quickbaseLinks";
-import { fetchStudioDocument, fetchStudioRefreshJob, saveStudioUserSettings, startStudioObjectRefresh, startStudioRefresh, updateStudioSession } from "./lib/studioApi";
+import { AuthRequiredError, checkAuth, fetchStudioDocument, fetchStudioRefreshJob, getMyPermissions, getMyProfile, getSessionTtlHours, logoutSession, saveStudioUserSettings, startStudioObjectRefresh, startStudioRefresh, stopImpersonating, updateStudioSession, type PlatformUser } from "./lib/studioApi";
+import { useInactivityLogout } from "./hooks/useInactivityLogout";
 
 const SESSION_RECENT_KEY = "studio-session-recent";
 const USER_SETTINGS_PERSIST_DELAY_MS = 500;
@@ -176,6 +186,8 @@ function useCatalog() {
   const sessionPersistPromise = useRef<Promise<void> | null>(null);
   const queuedSessionPayload = useRef<Partial<StudioDocument["session"]> | null>(null);
   const queuedSessionKey = useRef("");
+  const [authState, setAuthState] = useState<"loading" | "unauthenticated" | "authenticated">("loading");
+  const [authRequired, setAuthRequired] = useState(true);
   const [recentIds, setRecentIds] = useState<string[]>(() => {
     try {
       const raw = window.sessionStorage.getItem(SESSION_RECENT_KEY);
@@ -200,7 +212,13 @@ function useCatalog() {
         return;
       }
     }
-    const studioResponse = await fetchStudioDocument().catch(() => null);
+    const studioResponse = await fetchStudioDocument().catch((error: unknown) => {
+      if (error instanceof AuthRequiredError) {
+        setAuthState("unauthenticated");
+        setCatalogLoading(false);
+      }
+      return null;
+    });
     if (studioResponse?.document) {
       const normalized = normalizeStudioDocument(studioResponse.document);
       lastPersistedSessionKey.current = JSON.stringify(normalized.session || {});
@@ -326,7 +344,20 @@ function useCatalog() {
   }, [updateUserSettings]);
 
   useEffect(() => {
-    void reloadCatalog();
+    checkAuth().then((result) => {
+      setAuthRequired(result.required);
+      if (!result.authenticated) {
+        setAuthState("unauthenticated");
+        setCatalogLoading(false);
+      } else {
+        setAuthState("authenticated");
+        void reloadCatalog();
+      }
+    }).catch(() => {
+      setAuthRequired(false);
+      setAuthState("authenticated");
+      void reloadCatalog();
+    });
   }, []);
 
   useEffect(() => {
@@ -365,7 +396,7 @@ function useCatalog() {
     };
   }, [reloadCatalog]);
 
-  return { objects, tables, studioDocument, recentIds, reloadCatalog, markObjectAsRecent, updateUserSettings, persistSession, setStudioDocument, catalogLoading, catalogError };
+  return { objects, tables, studioDocument, recentIds, reloadCatalog, markObjectAsRecent, updateUserSettings, persistSession, setStudioDocument, catalogLoading, catalogError, authState, setAuthState, authRequired };
 }
 
 function formatTimestamp(value?: string) {
@@ -871,9 +902,69 @@ function ObjectPage({
   );
 }
 
+function useDarkMode() {
+  const [dark, setDark] = useState(() => {
+    try { return window.localStorage.getItem('theme') === 'dark'; } catch { return false; }
+  });
+  useEffect(() => {
+    const root = document.documentElement;
+    if (dark) { root.classList.add('dark'); } else { root.classList.remove('dark'); }
+    try { window.localStorage.setItem('theme', dark ? 'dark' : 'light'); } catch {}
+  }, [dark]);
+  return [dark, setDark] as const;
+}
+
 export function App() {
-  const { objects, tables, studioDocument, recentIds, reloadCatalog, markObjectAsRecent, updateUserSettings, persistSession, setStudioDocument, catalogLoading, catalogError } = useCatalog();
+  const { objects, tables, studioDocument, recentIds, reloadCatalog, markObjectAsRecent, updateUserSettings, persistSession, setStudioDocument, catalogLoading, catalogError, authState, setAuthState, authRequired } = useCatalog();
+  const [isDark, setIsDark] = useDarkMode();
+  const [currentUser, setCurrentUser] = useState<PlatformUser | null>(null);
+  const [showUserSettings, setShowUserSettings] = useState(false);
+  const [sidebarPinned, setSidebarPinned] = useState<boolean>(() => {
+    try { return window.localStorage.getItem("sidebar-pinned") === "true"; } catch { return false; }
+  });
+  // Effective permission map — all keys true for developer/admin/no-auth, granular for others
+  const [userPermissions, setUserPermissions] = useState<Record<string, boolean>>({});
+  // Session TTL (hours) for the inactivity auto-logout timer
+  const [sessionTtlHours, setSessionTtlHours] = useState(24);
   const location = useLocation();
+  const navigate = useNavigate();
+  const isDeveloperUser = currentUser?.email === "don@rapidcodecrafters.com";
+  const isAdminOrDev = !authRequired || currentUser?.role === "admin" || currentUser?.role === "developer" || isDeveloperUser;
+
+  // Helper: check a permission — when auth is off or user is admin/dev, everything is allowed
+  function hasPerm(key: string): boolean {
+    if (!authRequired || isAdminOrDev) return true;
+    return userPermissions[key] === true;
+  }
+
+  // Load current user profile + permissions + session TTL when authenticated
+  useEffect(() => {
+    if (authState !== "authenticated") return;
+    getMyProfile().then((r) => {
+      setCurrentUser(r.user);
+      const theme = r.user.theme || "system";
+      if (theme === "dark") document.documentElement.classList.add("dark");
+      else if (theme === "light") document.documentElement.classList.remove("dark");
+    }).catch(() => {});
+    getMyPermissions().then((r) => {
+      setUserPermissions(r.permissions || {});
+    }).catch(() => {});
+    getSessionTtlHours().then(setSessionTtlHours).catch(() => {});
+  }, [authState]);
+
+  // Inactivity auto-logout
+  const doLogout = useCallback(() => {
+    void logoutSession().finally(() => {
+      setAuthState("unauthenticated");
+      setCurrentUser(null);
+    });
+  }, [setAuthState]);
+
+  const { showWarning: showInactivityWarning, secondsLeft, staySignedIn } = useInactivityLogout({
+    ttlHours: sessionTtlHours,
+    onTimeout: doLogout,
+    enabled: authState === "authenticated" && authRequired,
+  });
   const hosted = useMemo(() => getHostedContext(), [location.key]);
   const lastSessionTouchAt = useRef(0);
   const sessionTouchTimeoutRef = useRef<number | null>(null);
@@ -1018,7 +1109,6 @@ export function App() {
   const openLinksInNewTab = studioDocument?.branding.openLinksInNewTab === true;
   const navLabel = studioDocument?.branding.navigationLabel || "Reports and Dashboards";
   const readerFullScreen = readerRoute || hosted.mode === "viewer" || hosted.embed;
-  const hideSidebar = hosted.embed || studioRoute || readerRoute || viewerRoute || homeRoute || helpRoute;
   const toggleFavorite = useCallback(async (objectId: string) => {
     if (!studioDocument) return;
     const next = toggleFavoriteIds(studioDocument.favorites || [], objectId);
@@ -1133,7 +1223,7 @@ export function App() {
   }, [hosted.appId, hosted.launchSource, hosted.realmHostname, hosted.userId, persistSession, setStudioDocument, studioDocument]);
 
   useEffect(() => {
-    if (!studioDocument || !sessionStatus?.valid) return;
+    if (!studioDocument || !sessionStatus?.valid || authState !== "authenticated") return;
     const touch = () => {
       const now = Date.now();
       if (now - lastSessionTouchAt.current < SESSION_ACTIVITY_TOUCH_INTERVAL_MS) return;
@@ -1221,6 +1311,34 @@ export function App() {
     document.title = platformName;
   }, [helpRoute, homeRoute, location.pathname, platformName, readerRoute, studioRoute, viewerRoute]);
 
+  // AcceptInvitationPage is public — render it before auth checks
+  if (location.pathname.startsWith("/accept-invitation/")) {
+    return <AcceptInvitationPage />;
+  }
+
+  if (authState === "loading") {
+    return (
+      <div className="app-shell">
+        <main className="content">
+          <div className="empty-page">Loading…</div>
+        </main>
+      </div>
+    );
+  }
+
+  if (authState === "unauthenticated") {
+    return (
+      <LoginPage
+        platformName={studioDocument?.branding.platformName || "Reporting Portal"}
+        onLoginSuccess={() => {
+          setAuthState("authenticated");
+          void reloadCatalog();
+        }}
+      />
+    );
+  }
+
+
   if (hostedLaunchRequiredMessage || (studioDocument && sessionStatus && !sessionStatus.valid)) {
     return (
       <div className="app-shell">
@@ -1255,6 +1373,14 @@ export function App() {
 
   return (
     <div className={`app-shell ${hosted.embed ? "embed-shell" : ""} ${readerFullScreen ? "reader-shell" : ""}`}>
+      {/* Inactivity warning — rendered above everything else */}
+      {showInactivityWarning && (
+        <InactivityWarning
+          secondsLeft={secondsLeft}
+          onStay={staySignedIn}
+          onLogout={doLogout}
+        />
+      )}
       {topbarStartingRefresh && !topbarRefreshJob ? (
         <RefreshOverlay title="Starting refresh" indeterminate job={{ message: "Starting a full platform refresh…" }} />
       ) : null}
@@ -1267,6 +1393,16 @@ export function App() {
           <span>{topbarRefreshFeedback.message}</span>
         </section>
       ) : null}
+      <NavigationSidebar
+        currentUser={currentUser}
+        onSignOut={() => { void logoutSession().finally(() => setAuthState("unauthenticated")); }}
+        onOpenSettings={() => navigate("/settings")}
+        onPinnedChange={setSidebarPinned}
+        objects={visibleObjects}
+        authRequired={authRequired}
+        permissions={userPermissions}
+      />
+      <div className={`app-content-with-sidebar${sidebarPinned ? " sidebar-pinned" : ""}`}>
       {hosted.embed || readerRoute ? null : (
         <header className="topbar">
           <div>
@@ -1281,57 +1417,111 @@ export function App() {
             </div>
             {studioRoute ? (
               <>
-                <button className="ghost-button topbar-action" onClick={() => { void startTopbarRefresh(); }}>Refresh all</button>
-                <button className="ghost-button topbar-action" onClick={() => setStudioSettingsSignal((value) => value + 1)}>Settings</button>
+                <button className="ghost-button topbar-action btn-system" onClick={() => { void startTopbarRefresh(); }}>Refresh all</button>
+                <button className="ghost-button topbar-action btn-system" onClick={() => navigate("/settings")}>Settings</button>
               </>
             ) : null}
             {homeRoute ? (
-              <button className="ghost-button topbar-action" onClick={() => { void startTopbarRefresh(); }}>Refresh all</button>
+              <button className="ghost-button topbar-action btn-system" onClick={() => { void startTopbarRefresh(); }}>Refresh all</button>
             ) : null}
             {viewerRoute ? (
-              <button className="ghost-button topbar-action" onClick={() => { void startTopbarRefresh(); }}>Refresh all</button>
+              <button className="ghost-button topbar-action btn-system" onClick={() => { void startTopbarRefresh(); }}>Refresh all</button>
             ) : null}
             <button
-              className="ghost-button topbar-action"
+              className="ghost-button topbar-action btn-help"
               onClick={openHelpdeskTicket}
               disabled={!helpdeskTicketUrl}
-              title={helpdeskTicketUrl ? "Open a new helpdesk ticket in Quickbase" : "Configure the helpdesk DBIDs and Parent App ID FID in Settings → Storage to enable this button."}
+              title={helpdeskTicketUrl ? "Open a new helpdesk ticket" : "Configure helpdesk settings to enable this."}
             >
-              Open Helpdesk Ticket
+              Help Ticket
             </button>
-            {!helpRoute ? <Link className="ghost-button topbar-action" to={buildHostedRoute("/help")}>Help</Link> : null}
+            {!helpRoute ? <Link className="ghost-button topbar-action btn-help" to={buildHostedRoute("/help")}>Help</Link> : null}
+            <button
+              className="dark-mode-toggle btn-neutral"
+              type="button"
+              onClick={() => setIsDark((d) => !d)}
+              title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+              aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+            >
+              {isDark ? "☀" : "🌙"}
+            </button>
+            {/* User avatar → opens settings */}
+            {currentUser ? (
+              <button
+                className="ghost-button topbar-action"
+                onClick={() => setShowUserSettings(true)}
+                title={`${currentUser.displayName || currentUser.email} — Account settings`}
+                style={{ gap: 6 }}
+              >
+                <span style={{
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  width: 22, height: 22, borderRadius: "50%",
+                  background: "var(--brand)", color: "#fff",
+                  fontSize: 10, fontWeight: 800, flexShrink: 0,
+                }}>
+                  {(currentUser.displayName || currentUser.email).charAt(0).toUpperCase()}
+                </span>
+                <span style={{ maxWidth: 96, overflow: "hidden", textOverflow: "ellipsis", fontSize: 13 }}>
+                  {currentUser.displayName || currentUser.email.split("@")[0]}
+                </span>
+              </button>
+            ) : null}
+            {/* Admin/dev: Users link */}
+            {(isAdminOrDev) ? (
+              <NavLink className={({ isActive }) => `ghost-button topbar-action btn-system${isActive ? " active" : ""}`} to={buildHostedRoute("/users")} title="Manage users">Users</NavLink>
+            ) : null}
+            <button
+              className="ghost-button topbar-action btn-danger"
+              onClick={() => {
+                void logoutSession().finally(() => setAuthState("unauthenticated"));
+              }}
+              title="Sign out"
+            >
+              Sign out
+            </button>
             <span className="badge">{hosted.mode === "viewer" ? "Full-screen view" : navLabel}</span>
-            <span className="badge brand">{visibleObjects.length} saved views</span>
           </div>
         </header>
       )}
 
+      {/* Impersonation banner */}
+      {currentUser && typeof (currentUser as unknown as { impersonating?: boolean }).impersonating === "boolean" && (currentUser as unknown as { impersonating?: boolean }).impersonating ? (
+        <div style={{ position: "fixed", top: 60, left: 0, right: 0, zIndex: 100, background: "#F59E0B", color: "#78350F", padding: "8px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 13, fontWeight: 600, fontFamily: "var(--sans)" }}>
+          <span>👁 Viewing as {currentUser.email} ({currentUser.role})</span>
+          <button onClick={() => { void stopImpersonating().finally(() => { void getMyProfile().then((r) => setCurrentUser(r.user)); window.location.reload(); }); }} style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid #78350F", background: "transparent", color: "#78350F", fontWeight: 700, cursor: "pointer", fontFamily: "var(--sans)" }}>
+            Exit — return to my account
+          </button>
+        </div>
+      ) : null}
+
+      {/* User settings drawer */}
+      {showUserSettings && currentUser ? (
+        <UserSettingsModal
+          user={currentUser}
+          onClose={() => setShowUserSettings(false)}
+          onThemeChange={(theme) => {
+            setCurrentUser((u) => u ? { ...u, theme } : u);
+            if (theme === "dark") document.documentElement.classList.add("dark");
+            else if (theme === "light") document.documentElement.classList.remove("dark");
+          }}
+        />
+      ) : null}
+
       <div className={`main-layout ${hosted.embed || studioRoute || readerRoute || viewerRoute || homeRoute || helpRoute ? "embed-layout" : ""} ${readerRoute ? "reader-layout" : ""}`}>
-        {hideSidebar ? null : (
-          <aside className="sidebar">
-            <div className="sidebar-head">
-              <strong>{navLabel}</strong>
-              <span className="micro">Open a report or dashboard directly.</span>
-            </div>
-            <nav className="nav-list">
-              {visibleObjects.map((object) => (
-                <Link key={object.id} className="nav-card" to={buildHostedRoute(`/${object.type}/${object.id}`)} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>
-                  <span className="badge">{typeLabel(object.type)}</span>
-                  <span className="badge">{getStudioObjectScopeLabel(object)}</span>
-                  <strong>{object.name}</strong>
-                  <span className="micro">{object.folder} · {object.category}</span>
-                </Link>
-              ))}
-            </nav>
-          </aside>
-        )}
 
         <main className={`content ${readerRoute ? "reader-content" : ""}`}>
           {catalogLoading && !objects.length && !tables.length && !studioDocument ? (
-            <section className="sync-status">
-              <strong>Loading platform content</strong>
-              <span>Connecting to saved reports, dashboards, and table definitions…</span>
-            </section>
+            <div style={{ padding: "20px 0", display: "grid", gap: 14 }}>
+              <div className="skeleton-grid">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} className="skeleton-row">
+                    <span className="skeleton skeleton-title" />
+                    <span className="skeleton skeleton-text-sm" />
+                    <span className="skeleton skeleton-text-sm" style={{ width: "40%" }} />
+                  </div>
+                ))}
+              </div>
+            </div>
           ) : null}
           {requiresHostedStudioDocument && !catalogLoading && !studioDocument ? (
             <section className="sync-status sync-status-warn">
@@ -1339,6 +1529,12 @@ export function App() {
               <span>The hosted app is waiting for the real saved platform document and is not falling back to seeded reports or dashboards.</span>
             </section>
           ) : null}
+          {!authRequired && (
+            <section className="sync-status" style={{ borderColor: "rgba(13,124,102,0.22)", background: "rgba(13,124,102,0.06)" }}>
+              <strong>Running without login (development mode)</strong>
+              <span>Login is currently disabled. Anyone with the URL can access this platform. To require login, set <code>AUTH_ENABLED=true</code> in your <code>.env</code> file and restart the server.</span>
+            </section>
+          )}
           {catalogError ? (
             <section className="sync-status sync-status-warn">
               <strong>Some content did not load cleanly</strong>
@@ -1372,14 +1568,20 @@ export function App() {
               <Route path="/" element={<HomePage objects={visibleObjects} studioDocument={displayDocument} recentIds={recentIds} openLinksInNewTab={openLinksInNewTab} onRefreshComplete={reloadCatalog} onToggleFavorite={toggleFavorite} />} />
               <Route path="/viewer" element={<ViewerPage objects={visibleObjects} studioDocument={displayDocument} recentIds={recentIds} openLinksInNewTab={openLinksInNewTab} onRefreshComplete={reloadCatalog} onToggleFavorite={toggleFavorite} />} />
               <Route path="/help" element={<HelpPage />} />
-              <Route path="/studio" element={<StudioPage openSettingsSignal={studioSettingsSignal} launchContext={hosted} />} />
-              <Route path="/studio/:objectId" element={<StudioPage openSettingsSignal={studioSettingsSignal} launchContext={hosted} />} />
+              <Route path="/studio" element={hasPerm("building.view") ? <StudioPage openSettingsSignal={studioSettingsSignal} userPermissions={userPermissions} launchContext={hosted} /> : <Navigate to={buildHostedRoute("/")} replace />} />
+              <Route path="/studio/:objectId" element={hasPerm("building.view") ? <StudioPage openSettingsSignal={studioSettingsSignal} userPermissions={userPermissions} launchContext={hosted} /> : <Navigate to={buildHostedRoute("/")} replace />} />
+              <Route path="/settings" element={hasPerm("settings.view") ? <StudioPage settingsMode userPermissions={userPermissions} launchContext={hosted} /> : <Navigate to={buildHostedRoute("/")} replace />} />
+              <Route path="/users" element={hasPerm("users.view") ? <UserManagementPage currentUser={currentUser ?? undefined} /> : <Navigate to={buildHostedRoute("/")} replace />} />
+              <Route path="/roles" element={hasPerm("roles.view") ? <RoleManagementPage /> : <Navigate to={buildHostedRoute("/")} replace />} />
+              <Route path="/data" element={hasPerm("data.view") ? <DataManagementPage canImport={hasPerm("data.import")} canDelete={hasPerm("data.delete")} /> : <Navigate to={buildHostedRoute("/")} replace />} />
+              <Route path="/reports" element={isAdminOrDev ? <ScheduledReportsPage studioDocument={displayDocument} /> : <Navigate to={buildHostedRoute("/")} replace />} />
               <Route path="/:type/:objectId" element={<ObjectPage tables={scopedTables} platformName={platformName} studioDocument={displayDocument} launchContext={hosted} openLinksInNewTab={openLinksInNewTab} onObjectViewed={markObjectAsRecent} onRefreshComplete={reloadCatalog} onUserSettingsChange={updateUserSettings} onToggleFavorite={toggleFavorite} />} />
               <Route path="*" element={<Navigate to={buildHostedRoute("/")} replace />} />
             </Routes>
           )}
         </main>
       </div>
+      </div>{/* end app-content-with-sidebar */}
     </div>
   );
 }

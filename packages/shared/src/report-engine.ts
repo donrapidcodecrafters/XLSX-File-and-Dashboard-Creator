@@ -14,12 +14,127 @@ import type {
   FilterOperator,
   ReportDefinition,
   ReportRunResult,
+  SourceJoin,
   SummaryDatum,
   SummaryMetric,
   TableDefinition,
   WidgetDefinition
 } from "./models.js";
 import { getDefaultPercentMode, normalizeChartAggregation } from "./chart-spec.js";
+
+// ── Multi-source join engine ──────────────────────────────────────────────────
+
+// Prefix used for secondary-source field IDs in merged rows/tables.
+// Stable: same table + same field always produces the same merged ID.
+export function joinedFieldId(sourceTableId: string, fieldId: string): string {
+  return `${sourceTableId}__${fieldId}`;
+}
+
+export function isJoinedFieldId(fieldId: string): boolean {
+  return fieldId.includes("__");
+}
+
+// Auto-detect join conditions by matching field labels (case-insensitive).
+export function autoDetectJoinConditions(
+  primaryTable: TableDefinition,
+  childTable: TableDefinition
+): Array<{ parentFieldId: string; childFieldId: string }> {
+  const childByLabel = new Map(
+    childTable.fields.map((f) => [f.label.toLowerCase().trim(), f.id])
+  );
+  const childById = new Map(childTable.fields.map((f) => [f.id.toLowerCase(), f.id]));
+  const results: Array<{ parentFieldId: string; childFieldId: string }> = [];
+  for (const parentField of primaryTable.fields) {
+    const matchById = childById.get(parentField.id.toLowerCase());
+    const matchByLabel = childByLabel.get(parentField.label.toLowerCase().trim());
+    const childFieldId = matchById || matchByLabel;
+    if (childFieldId) {
+      results.push({ parentFieldId: parentField.id, childFieldId });
+    }
+  }
+  return results;
+}
+
+// Build a merged TableDefinition that includes fields from all joined sources.
+// Primary source fields keep their original IDs; secondary fields use the
+// joinedFieldId() prefix so they never collide with primary fields.
+export function buildMergedTableForJoins(
+  primaryTable: TableDefinition,
+  joins: SourceJoin[],
+  joinTables: TableDefinition[]
+): TableDefinition {
+  const extraFields: FieldDefinition[] = [];
+  joinTables.forEach((childTable) => {
+    for (const field of childTable.fields) {
+      extraFields.push({
+        id: joinedFieldId(childTable.id, field.id),
+        label: `${field.label} (${childTable.name})`,
+        type: field.type,
+        options: field.options
+      });
+    }
+  });
+  return { ...primaryTable, fields: [...primaryTable.fields, ...extraFields] };
+}
+
+export interface JoinInput {
+  join: SourceJoin;
+  table: TableDefinition;
+  rows: DataRow[];
+}
+
+// Hash-join: for each join in order, expand parentRows by matching against
+// childRows on the configured conditions. Supports left (keep all) and inner
+// (only matching) semantics.
+export function mergeJoinedRows(parentRows: DataRow[], joins: JoinInput[]): DataRow[] {
+  let result = [...parentRows];
+
+  for (const { join, table: childTable, rows: childRows } of joins) {
+    const lookup = new Map<string, DataRow[]>();
+    for (const childRow of childRows) {
+      const key = join.conditions
+        .map((c) => String(childRow[c.childFieldId] ?? ""))
+        .join("\x00");
+      const bucket = lookup.get(key);
+      if (bucket) bucket.push(childRow);
+      else lookup.set(key, [childRow]);
+    }
+
+    const next: DataRow[] = [];
+    for (const parentRow of result) {
+      if (!join.conditions.length) {
+        next.push(parentRow);
+        continue;
+      }
+      const key = join.conditions
+        .map((c) => String(parentRow[c.parentFieldId] ?? ""))
+        .join("\x00");
+      const matches = lookup.get(key) || [];
+
+      if (!matches.length) {
+        if (join.joinType !== "inner") {
+          // Left join: keep parent row, fill child fields with null
+          const merged: DataRow = { ...parentRow };
+          for (const f of childTable.fields) {
+            merged[joinedFieldId(childTable.id, f.id)] = null;
+          }
+          next.push(merged);
+        }
+        continue;
+      }
+      for (const childRow of matches) {
+        const merged: DataRow = { ...parentRow };
+        for (const f of childTable.fields) {
+          merged[joinedFieldId(childTable.id, f.id)] = childRow[f.id] ?? null;
+        }
+        next.push(merged);
+      }
+    }
+    result = next;
+  }
+
+  return result;
+}
 
 const DATE_TOKENS = new Set(["CURRENT_MONTH", "LAST_30_DAYS", "CURRENT_YEAR"]);
 

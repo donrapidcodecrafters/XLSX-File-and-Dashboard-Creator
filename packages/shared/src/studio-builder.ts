@@ -3,6 +3,7 @@ import { getAllowedAggregations, getChartSpec, normalizeChartAggregation } from 
 import type {
   FilterGroupDefinition,
   ReportDefinition,
+  SourceJoin,
   StudioObjectScope,
   SummaryMetric,
   TableDefinition
@@ -19,6 +20,7 @@ export interface StudioBuilderDraft {
   ownerUserId: string;
   sharedUserIds: string[];
   tableId: string;
+  sourceJoins: SourceJoin[];
   sourceReportOverrides: Record<string, string>;
   selectedFieldIds: string[];
   filterTree: FilterGroupDefinition;
@@ -80,6 +82,7 @@ export function buildStudioBuilderDraft(
     description: "",
     ...normalizeStudioBuilderScopeOwner("global", currentUserId),
     tableId: table?.id || "",
+    sourceJoins: [],
     sourceReportOverrides: {},
     selectedFieldIds: [],
     filterTree: createFilterGroup("and", []),

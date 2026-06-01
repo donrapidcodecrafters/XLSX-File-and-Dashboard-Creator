@@ -14,9 +14,9 @@ function buildPager(page: number, totalPages: number, totalRows: number, pageSiz
   if (totalRows <= pageSize) return null;
   return (
     <div className="link-toolbar">
-      <button className="ghost-button" disabled={page <= 1} onClick={() => onPageChange(Math.max(1, page - 1))}>Previous</button>
+      <button className="ghost-button btn-neutral" disabled={page <= 1} onClick={() => onPageChange(Math.max(1, page - 1))}>Previous</button>
       <span className="micro">Page {page} of {totalPages}</span>
-      <button className="ghost-button" disabled={page >= totalPages} onClick={() => onPageChange(Math.min(totalPages, page + 1))}>Next</button>
+      <button className="ghost-button btn-neutral" disabled={page >= totalPages} onClick={() => onPageChange(Math.min(totalPages, page + 1))}>Next</button>
     </div>
   );
 }

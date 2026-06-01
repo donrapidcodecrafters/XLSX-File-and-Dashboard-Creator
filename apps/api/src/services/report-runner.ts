@@ -3,6 +3,7 @@ import {
   buildCombinedFilterTree,
   buildDashboardFilters,
   buildDashboardResult,
+  buildMergedTableForJoins,
   collectFilterFieldIds,
   createFilterGroup,
   filterHasValue,
@@ -11,6 +12,7 @@ import {
   getChartLabel,
   getReportDecimalPlaces,
   matchesFilterNode,
+  mergeJoinedRows,
   normalizeChartAggregation,
   runReport,
   type ChartAggregation,
@@ -21,13 +23,16 @@ import {
   type FilterDefinition,
   type FilterGroupDefinition,
   type DataFreshnessInfo,
+  type JoinInput,
   type ReportDefinition,
   type ReportRunResult,
   type SummaryDatum,
   type SummaryMetric,
   type TableDefinition
 } from "@studio/shared";
+import { apiConfig } from "../config/env.js";
 import { ExecutionCache } from "./execution-cache.js";
+import { forEachTableRowBatch, getSourceRecordSummary, loadTableRows, type SourceRecordSummary } from "./eav-record-store.js";
 import { objectStore } from "./object-store.js";
 import { fetchQuickbaseTablePage } from "./quickbase-storage.js";
 import { ensureTableRowsAvailable } from "./refresh-cache.js";
@@ -63,6 +68,19 @@ const DASHBOARD_WIDGET_CONCURRENCY = 2;
 const reportCache = new ExecutionCache<ReportRunResult>(EXECUTION_CACHE_TTL_MS, 500);
 const reportPageCache = new ExecutionCache<ReportRunResult>(EXECUTION_CACHE_TTL_MS, 1_500);
 const dashboardCache = new ExecutionCache<DashboardRunResult>(EXECUTION_CACHE_TTL_MS, 200);
+
+/**
+ * Evict all cached report/dashboard results that reference the given source table IDs.
+ * Call this immediately after any source is re-imported or refreshed so users
+ * see fresh data on the next page load instead of waiting up to 24 hours for TTL expiry.
+ */
+export function invalidateSourceCaches(...sourceTableIds: string[]) {
+  const ids = sourceTableIds.filter(Boolean);
+  if (!ids.length) return;
+  reportCache.invalidateMatching(...ids);
+  reportPageCache.invalidateMatching(...ids);
+  dashboardCache.invalidateMatching(...ids);
+}
 
 function freshness(source: DataFreshnessInfo["source"]): DataFreshnessInfo {
   return {
@@ -101,6 +119,30 @@ function getCachedFreshness(tableId: string): DataFreshnessInfo | null {
     };
   }
   return null;
+}
+
+function tableSourceIds(table: TableDefinition) {
+  return Array.from(new Set([table.id, table.quickbaseTableId || ""].filter(Boolean)));
+}
+
+async function getDurableCacheSummary(table: TableDefinition): Promise<SourceRecordSummary | null> {
+  return getSourceRecordSummary(tableSourceIds(table));
+}
+
+async function getDurableFreshness(table: TableDefinition): Promise<DataFreshnessInfo | null> {
+  const local = getCachedFreshness(table.id);
+  if (local) return local;
+  const summary = await getDurableCacheSummary(table);
+  if (!summary || summary.rowCount <= 0) return null;
+  return {
+    source: "scheduled-cache",
+    fetchedAt: summary.refreshedAt || summary.updatedAt || new Date().toISOString()
+  };
+}
+
+async function hasDurableRows(table: TableDefinition) {
+  const summary = await getDurableCacheSummary(table);
+  return Boolean(summary && summary.rowCount > 0);
 }
 
 function looksLikeQuickbaseTableId(value: string) {
@@ -194,7 +236,12 @@ function buildSyntheticTableForReport(report: ReportDefinition, requiredFieldIds
 }
 
 function resolveExecutionTableSync(report: ReportDefinition, requiredFieldIds: string[] = []): TableDefinition | null {
-  return objectStore.getTable(report.sourceTableId) || buildSyntheticTableForReport(report, requiredFieldIds);
+  const primary = objectStore.getTable(report.sourceTableId) || buildSyntheticTableForReport(report, requiredFieldIds);
+  if (!primary || !report.sourceJoins?.length) return primary;
+  const joinTables = report.sourceJoins
+    .map((join) => objectStore.getTable(join.sourceTableId))
+    .filter((t): t is TableDefinition => Boolean(t));
+  return joinTables.length ? buildMergedTableForJoins(primary, report.sourceJoins, joinTables) : primary;
 }
 
 async function resolveExecutionTable(report: ReportDefinition, extraFilters: FilterDefinition[] = []): Promise<TableDefinition | null> {
@@ -372,16 +419,49 @@ async function ensureRowsContainRequiredFields(
   return rows;
 }
 
-async function getExecutionRows(
+async function loadPrimaryRows(
   table: TableDefinition,
   options: { objectId?: string; requiredFieldIds?: string[] } = {}
-) {
+): Promise<DataRow[]> {
   const existingRows = objectStore.getRows(table.id);
   if (existingRows.length) {
     return ensureRowsContainRequiredFields(table, existingRows, options.requiredFieldIds || []);
   }
+  const durableRows = await loadTableRows(table, apiConfig.postgres.legacyRowLoadLimit);
+  if (durableRows.length) {
+    return ensureRowsContainRequiredFields(table, durableRows, options.requiredFieldIds || []);
+  }
   const rows = await ensureTableRowsAvailable(table.id, options);
   return ensureRowsContainRequiredFields(table, rows, options.requiredFieldIds || []);
+}
+
+async function getExecutionRows(
+  table: TableDefinition,
+  options: { objectId?: string; requiredFieldIds?: string[] } = {},
+  report?: Pick<ReportDefinition, "sourceTableId" | "sourceJoins">
+): Promise<DataRow[]> {
+  // Always load against the PRIMARY table ID (not the merged table's synthetic ID)
+  const primaryTableId = report?.sourceTableId || table.id;
+  const primaryTable = objectStore.getTable(primaryTableId) || table;
+  const primaryRows = await loadPrimaryRows(primaryTable, options);
+
+  if (!report?.sourceJoins?.length) return primaryRows;
+
+  // Load each secondary source and build join inputs
+  const joinInputs: JoinInput[] = [];
+  for (const join of report.sourceJoins) {
+    const joinTable = objectStore.getTable(join.sourceTableId);
+    if (!joinTable) continue;
+    const inMemory = objectStore.getRows(join.sourceTableId);
+    if (inMemory.length) {
+      joinInputs.push({ join, table: joinTable, rows: inMemory });
+      continue;
+    }
+    const durable = await loadTableRows(joinTable, apiConfig.postgres.legacyRowLoadLimit);
+    joinInputs.push({ join, table: joinTable, rows: durable });
+  }
+
+  return joinInputs.length ? mergeJoinedRows(primaryRows, joinInputs) : primaryRows;
 }
 
 function getTableCacheVersion(table: TableDefinition): string {
@@ -812,6 +892,96 @@ function executeLocalReportPageOnly(
   };
 }
 
+async function executeDurableReportPageOnly(
+  report: ReportDefinition,
+  table: TableDefinition,
+  extraFilters: FilterDefinition[],
+  options: ExecuteReportOptions
+): Promise<ReportRunResult | null> {
+  // Multi-source reports can't use the cursor path — they need all rows in memory to merge.
+  if (report.sourceJoins?.length) return null;
+  if (report.sorts.length) return null;
+  const { page, pageSize, includeRows, startIndex, endIndexExclusive } = normalizePageOptions(options);
+  const filterTree = getCombinedFilterTree(report, extraFilters);
+  const pageRows: DataRow[] = [];
+  const sampleRows: DataRow[] = [];
+  let totalRows = 0;
+  const summary = await forEachTableRowBatch(table, (rows) => {
+    rows.forEach((row) => {
+      if (sampleRows.length < 50) sampleRows.push(row);
+      if (filterTree && !matchesFilterNode(row, filterTree)) return;
+      if (includeRows && totalRows >= startIndex && totalRows < endIndexExclusive) {
+        pageRows.push(row);
+      }
+      totalRows += 1;
+    });
+  });
+  if (!summary) return null;
+  const durableFreshness = await getDurableFreshness(table);
+  return {
+    reportId: report.id,
+    tableId: table.id,
+    totalRows,
+    rows: includeRows ? projectRows(report, pageRows) : [],
+    summary: [],
+    chartData: [],
+    warnings: mergeWarnings(baseReportWarnings(report), collectMissingReportFieldWarnings(report, table, sampleRows)),
+    page,
+    pageSize,
+    totalPages: Math.max(1, Math.ceil(totalRows / pageSize)),
+    hasNextPage: includeRows ? page * pageSize < totalRows : false,
+    freshness: durableFreshness || freshness("local-fallback")
+  };
+}
+
+async function executeDurableReport(
+  report: ReportDefinition,
+  table: TableDefinition,
+  extraFilters: FilterDefinition[],
+  options: ExecuteReportOptions = {}
+): Promise<ReportRunResult | null> {
+  const { page, pageSize, includeRows, startIndex, endIndexExclusive } = normalizePageOptions(options);
+  if (report.sourceJoins?.length) return null;
+  if (includeRows && report.sorts.length) return null;
+  const filterTree = getCombinedFilterTree(report, extraFilters);
+  const metricSet = report.summaryMetrics.length
+    ? report.summaryMetrics
+    : [{ id: "default-count", fieldId: report.selectedFieldIds[0] || "recordId", op: "count" as const, label: "Rows" }];
+  const summaryAccumulator = createMetricAccumulator(metricSet);
+  const chartGroups = new Map<string, { primary: number[]; secondary: number[] }>();
+  const pageRows: DataRow[] = [];
+  const sampleRows: DataRow[] = [];
+  let totalRows = 0;
+  const summary = await forEachTableRowBatch(table, (rows) => {
+    rows.forEach((row) => {
+      if (sampleRows.length < 50) sampleRows.push(row);
+      if (filterTree && !matchesFilterNode(row, filterTree)) return;
+      addMetricRow(summaryAccumulator, row);
+      addChartRow(chartGroups, report, row);
+      if (includeRows && totalRows >= startIndex && totalRows < endIndexExclusive) {
+        pageRows.push(row);
+      }
+      totalRows += 1;
+    });
+  });
+  if (!summary) return null;
+  const durableFreshness = await getDurableFreshness(table);
+  return {
+    reportId: report.id,
+    tableId: table.id,
+    totalRows,
+    rows: includeRows ? projectRows(report, pageRows) : [],
+    summary: finalizeMetricAccumulator(summaryAccumulator, getReportDecimalPlaces(report)),
+    chartData: buildChartResult(chartGroups, report),
+    warnings: mergeWarnings(baseReportWarnings(report), collectMissingReportFieldWarnings(report, table, sampleRows)),
+    page,
+    pageSize,
+    totalPages: Math.max(1, Math.ceil(totalRows / pageSize)),
+    hasNextPage: includeRows ? page * pageSize < totalRows : false,
+    freshness: durableFreshness || freshness("local-fallback")
+  };
+}
+
 function aggregateChartValues(values: number[], aggregation: ChartAggregation) {
   const normalizedAggregation = normalizeChartAggregation(aggregation);
   if (normalizedAggregation === "count") return values.length;
@@ -1151,9 +1321,9 @@ export async function executeReportPage(report: ReportDefinition, extraFilters: 
       if (isMissingFieldExecutionError(error)) {
         return createMissingFieldWarningResult(report, table);
       }
-      const rows = objectStore.getRows(table.id);
+      const rows = await getExecutionRows(table, { objectId: report.id, requiredFieldIds: collectReportFieldIds(report, extraFilters) }, report);
       const full = runReport(report, table, rows, extraFilters);
-      const cachedFreshness = getCachedFreshness(table.id);
+      const cachedFreshness = await getDurableFreshness(table);
       return paginateReportResult({
         ...full,
         freshness: cachedFreshness || freshness("local-fallback")
@@ -1162,14 +1332,16 @@ export async function executeReportPage(report: ReportDefinition, extraFilters: 
   }
 
   const full = await reportCache.getOrCreate(cacheKey(report, table, extraFilters), async () => {
-    const rows = await getExecutionRows(table, { objectId: report.id, requiredFieldIds: collectReportFieldIds(report, extraFilters) });
+    const durable = await executeDurableReport(report, table, extraFilters, options);
+    if (durable) return durable;
+    const rows = await getExecutionRows(table, { objectId: report.id, requiredFieldIds: collectReportFieldIds(report, extraFilters) }, report);
     const result = rows.length <= 1500
       ? runReport(report, table, rows, extraFilters)
       : await runReportWorker({ report, table, rows, extraFilters });
     return {
       ...result,
       warnings: mergeWarnings(result.warnings, collectMissingReportFieldWarnings(report, table, rows)),
-      freshness: getCachedFreshness(table.id) || freshness("local-fallback")
+      freshness: await getDurableFreshness(table) || freshness("local-fallback")
     };
   });
   return paginateReportResult(full, options, "full");
@@ -1192,20 +1364,28 @@ export async function fetchReportPage(report: ReportDefinition, extraFilters: Fi
 
   if (!reportNeedsAggregates(report)) {
     return reportPageCache.getOrCreate(pageCacheKey(report, table, extraFilters, options), async () => {
-      const rows = await getExecutionRows(table, { objectId: report.id, requiredFieldIds: collectReportFieldIds(report, extraFilters) });
-      return executeLocalReportPageOnly(report, table, rows, extraFilters, options);
+      const durable = await executeDurableReportPageOnly(report, table, extraFilters, options);
+      if (durable) return durable;
+      const rows = await getExecutionRows(table, { objectId: report.id, requiredFieldIds: collectReportFieldIds(report, extraFilters) }, report);
+      const local = executeLocalReportPageOnly(report, table, rows, extraFilters, options);
+      return {
+        ...local,
+        freshness: await getDurableFreshness(table) || local.freshness
+      };
     });
   }
 
   const full = await reportCache.getOrCreate(cacheKey(report, table, extraFilters), async () => {
-    const rows = await getExecutionRows(table, { objectId: report.id, requiredFieldIds: collectReportFieldIds(report, extraFilters) });
+    const durable = await executeDurableReport(report, table, extraFilters, options);
+    if (durable) return durable;
+    const rows = await getExecutionRows(table, { objectId: report.id, requiredFieldIds: collectReportFieldIds(report, extraFilters) }, report);
     const result = rows.length <= 1500
       ? runReport(report, table, rows, extraFilters)
       : await runReportWorker({ report, table, rows, extraFilters });
     return {
       ...result,
       warnings: mergeWarnings(result.warnings, collectMissingReportFieldWarnings(report, table, rows)),
-      freshness: getCachedFreshness(table.id) || freshness("local-fallback")
+      freshness: await getDurableFreshness(table) || freshness("local-fallback")
     };
   });
   return paginateReportResult(full, options, "page-only");
@@ -1284,14 +1464,14 @@ export async function fetchReportExportBundle(
 
   onProgress?.(68, "Preparing export data");
   return reportCache.getOrCreate(cacheKey(report, table, extraFilters), async () => {
-    const rows = await getExecutionRows(table, { objectId: report.id, requiredFieldIds: collectReportFieldIds(report, extraFilters) });
+    const rows = await getExecutionRows(table, { objectId: report.id, requiredFieldIds: collectReportFieldIds(report, extraFilters) }, report);
     const result = rows.length <= 1500
       ? runReport(report, table, rows, extraFilters)
       : await runReportWorker({ report, table, rows, extraFilters });
     return {
       ...result,
       warnings: mergeWarnings(result.warnings, collectMissingReportFieldWarnings(report, table, rows)),
-      freshness: getCachedFreshness(table.id) || freshness("local-fallback")
+      freshness: await getDurableFreshness(table) || freshness("local-fallback")
     };
   });
 }
@@ -1325,14 +1505,16 @@ export async function executeReport(report: ReportDefinition, extraFilters: Filt
 
   const key = cacheKey(report, table, extraFilters);
   const full = await reportCache.getOrCreate(key, async () => {
-    const rows = await getExecutionRows(table, { objectId: report.id, requiredFieldIds: collectReportFieldIds(report, extraFilters) });
+    const durable = await executeDurableReport(report, table, extraFilters, options);
+    if (durable) return durable;
+    const rows = await getExecutionRows(table, { objectId: report.id, requiredFieldIds: collectReportFieldIds(report, extraFilters) }, report);
     const result = rows.length <= 1500
       ? runReport(report, table, rows, extraFilters)
       : await runReportWorker({ report, table, rows, extraFilters });
     return {
       ...result,
       warnings: mergeWarnings(result.warnings, collectMissingReportFieldWarnings(report, table, rows)),
-      freshness: getCachedFreshness(table.id) || freshness("local-fallback")
+      freshness: await getDurableFreshness(table) || freshness("local-fallback")
     };
   });
   return paginateReportResult(full, options, "full");
@@ -1448,7 +1630,10 @@ async function executeDashboardUncached(
           if (!pending) {
             pending = (async () => {
               if (!options.forceLive && !objectStore.getRows(report.sourceTableId).length) {
-                await ensureTableRowsAvailable(report.sourceTableId, { objectId: dashboard.id });
+                const table = await resolveExecutionTable(report, extraFilters);
+                if (!table || !(await hasDurableRows(table))) {
+                  await ensureTableRowsAvailable(report.sourceTableId, { objectId: dashboard.id });
+                }
               }
               return widgetNeedsAggregates(report, widget)
                 ? executeReport(report, extraFilters, { page: 1, pageSize: 100, includeRows: widgetNeedsRows(report, widget), forceLive: options.forceLive })

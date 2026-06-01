@@ -99,6 +99,39 @@ export interface StudioWorkbookImportResult {
   sync?: QuickbaseSyncResult;
 }
 
+export interface StudioSourceSummary {
+  sourceId: string;
+  sourceName: string;
+  sourceType: "quickbase" | "xlsx" | "manual";
+  rowCount: number;
+  fieldCount: number;
+  metadata: Record<string, unknown>;
+  refreshedAt: string;
+  updatedAt: string;
+  table: TableDefinition | null;
+}
+
+export interface StudioWorkbookSourceImportResult {
+  document: StudioDocument;
+  sources: Array<{
+    sourceId: string;
+    sourceName: string;
+    table: TableDefinition;
+    rowCount: number;
+    fieldCount: number;
+  }>;
+  warnings: string[];
+  review: StudioWorkbookImportResult["review"];
+}
+
+export class AuthRequiredError extends Error {
+  readonly status = 401;
+  constructor() {
+    super("Authentication required.");
+    this.name = "AuthRequiredError";
+  }
+}
+
 function buildSavePayload(document: StudioDocument): StudioDocument {
   return {
     ...document,
@@ -122,15 +155,344 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...(init?.headers || {})
   };
   const response = await fetch(API_BASE + path, {
+    credentials: "include",
     headers: mergedHeaders,
     ...init
   });
+  if (response.status === 401) throw new AuthRequiredError();
   const text = await response.text();
   const body = text ? JSON.parse(text) : {};
   if (!response.ok) {
     throw new Error(body?.message || `Request failed with status ${response.status}`);
   }
   return body as T;
+}
+
+// ── Scheduled email report configs ───────────────────────────────────────────
+
+export interface ReportConfig {
+  id: string;
+  object_id: string;
+  object_type: "report" | "dashboard";
+  enabled: boolean;
+  cron_expression: string;
+  time_zone: string;
+  send_to: string[];
+  sendgrid_template_id: string;
+  export_format: string;
+  config: Record<string, unknown>;
+  last_run_at: string | null;
+  next_run_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export function listReportConfigs() {
+  return request<{ configs: ReportConfig[] }>("/api/report-configs");
+}
+
+export function createReportConfig(payload: {
+  object_id: string;
+  object_type: "report" | "dashboard";
+  enabled?: boolean;
+  cron_expression?: string;
+  time_zone?: string;
+  send_to?: string[];
+  sendgrid_template_id?: string;
+}) {
+  return request<{ config: ReportConfig }>("/api/report-configs", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function updateReportConfig(id: string, payload: {
+  enabled?: boolean;
+  cron_expression?: string;
+  time_zone?: string;
+  send_to?: string[];
+  sendgrid_template_id?: string;
+}) {
+  return request<{ config: ReportConfig }>(`/api/report-configs/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function deleteReportConfig(id: string) {
+  return request<{ ok: boolean }>(`/api/report-configs/${encodeURIComponent(id)}`, {
+    method: "DELETE"
+  });
+}
+
+export function testReportConfig(id: string) {
+  return request<{ ok: boolean; message: string }>(`/api/report-configs/${encodeURIComponent(id)}/test`, {
+    method: "POST"
+  });
+}
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
+export async function checkAuth(): Promise<{ required: boolean; authenticated: boolean; email?: string }> {
+  try {
+    const response = await fetch(API_BASE + "/api/auth/me", { credentials: "include" });
+    if (response.status === 401) return { required: true, authenticated: false };
+    if (!response.ok) {
+      // 404 means the API is up but auth middleware not registered → treat as no-auth dev mode
+      // Any other error → assume auth required and unauthenticated (safe default)
+      if (response.status === 404) return { required: false, authenticated: true };
+      return { required: true, authenticated: false };
+    }
+    const body = await response.json() as { authenticated?: boolean; user?: { email?: string } };
+    // Explicit false from server = not authenticated
+    if (body?.authenticated === false) return { required: true, authenticated: false };
+    return { required: true, authenticated: Boolean(body?.authenticated), email: body?.user?.email };
+  } catch {
+    // Network error / API not running → show login so user can see the error
+    return { required: true, authenticated: false };
+  }
+}
+
+export type LoginStep = "2fa_required" | "2fa_setup_required";
+
+export interface LoginStepResponse {
+  step: LoginStep;
+  pendingToken: string;
+}
+
+/** Step 1: Validate email + password. Returns a pendingToken — no session yet. */
+export async function loginWithPassword(email: string, password: string): Promise<LoginStepResponse> {
+  const response = await fetch(API_BASE + "/api/auth/login", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password })
+  });
+  const body = await response.json() as { message?: string; step?: LoginStep; pendingToken?: string };
+  if (!response.ok) throw new Error(body?.message || "Invalid email or password.");
+  return { step: body.step!, pendingToken: body.pendingToken! };
+}
+
+/** Step 2a: Fetch the QR code for first-time 2FA setup. */
+export async function get2FASetup(pendingToken: string): Promise<{
+  pendingToken: string;
+  qrCodeDataUrl: string;
+  secret: string;
+  issuer: string;
+  email: string;
+}> {
+  const response = await fetch(
+    `${API_BASE}/api/auth/2fa/setup?pendingToken=${encodeURIComponent(pendingToken)}`,
+    { credentials: "include" }
+  );
+  const body = await response.json() as Record<string, unknown>;
+  if (!response.ok) throw new Error(String(body?.message || "Failed to load QR code."));
+  return body as ReturnType<typeof get2FASetup> extends Promise<infer T> ? T : never;
+}
+
+/** Step 2b: Confirm first-time setup — verify code and create session. */
+export async function complete2FASetup(pendingToken: string, code: string): Promise<{ user: { email: string; role: string } }> {
+  const response = await fetch(API_BASE + "/api/auth/2fa/setup/complete", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pendingToken, code })
+  });
+  const body = await response.json() as { message?: string; user?: { email: string; role: string } };
+  if (!response.ok) throw new Error(body?.message || "Incorrect code. Please try again.");
+  return { user: body.user! };
+}
+
+/** Step 2c: Verify 6-digit code for existing 2FA and create session. */
+export async function verify2FACode(pendingToken: string, code: string): Promise<{ user: { email: string; role: string } }> {
+  const response = await fetch(API_BASE + "/api/auth/2fa/verify", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pendingToken, code })
+  });
+  const body = await response.json() as { message?: string; user?: { email: string; role: string } };
+  if (!response.ok) throw new Error(body?.message || "Incorrect code. Please try again.");
+  return { user: body.user! };
+}
+
+export async function logoutSession(): Promise<void> {
+  await fetch(API_BASE + "/api/auth/logout", {
+    method: "POST",
+    credentials: "include"
+  }).catch(() => {});
+}
+
+// ── User management ───────────────────────────────────────────────────────────
+
+export interface PlatformUser {
+  id: string;
+  email: string;
+  displayName: string;
+  role: "admin" | "editor" | "viewer" | "developer" | string;
+  active: boolean;
+  theme?: string;
+  preferences?: Record<string, unknown>;
+  createdAt?: string;
+  lastLoginAt?: string | null;
+}
+
+export interface PendingInvitation {
+  id: string;
+  email: string;
+  role: string;
+  displayName: string;
+  expiresAt: string;
+  token?: string;
+}
+
+export function listUsers() {
+  return request<{ users: PlatformUser[] }>("/api/users");
+}
+
+export function inviteUser(payload: { email: string; role: string; displayName: string }) {
+  return request<{ invitation: PendingInvitation }>("/api/users/invite", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function updateUserRole(id: string, role: string) {
+  return request<{ user: PlatformUser }>(`/api/users/${encodeURIComponent(id)}/role`, {
+    method: "PUT",
+    body: JSON.stringify({ role })
+  });
+}
+
+export function updateUser(id: string, payload: { displayName?: string; active?: boolean }) {
+  return request<{ user: PlatformUser }>(`/api/users/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function deactivateUser(id: string) {
+  return request<{ ok: boolean }>(`/api/users/${encodeURIComponent(id)}`, {
+    method: "DELETE"
+  });
+}
+
+export function impersonateUser(id: string) {
+  return request<{ user: PlatformUser }>(`/api/users/${encodeURIComponent(id)}/impersonate`, {
+    method: "POST",
+    body: JSON.stringify({})
+  });
+}
+
+export function stopImpersonating() {
+  return request<{ ok: boolean }>("/api/users/impersonate", {
+    method: "DELETE"
+  });
+}
+
+// ── Current user / profile ────────────────────────────────────────────────────
+
+export function getMyProfile() {
+  return request<{ user: PlatformUser }>("/api/me");
+}
+
+export function updateMyPreferences(payload: { theme?: string; displayName?: string; preferences?: Record<string, unknown> }) {
+  return request<{ user: PlatformUser }>("/api/me/preferences", {
+    method: "PUT",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function changeMyPassword(currentPassword: string, newPassword: string) {
+  return request<{ ok: boolean }>("/api/me/password", {
+    method: "PUT",
+    body: JSON.stringify({ currentPassword, newPassword })
+  });
+}
+
+// ── Custom roles ──────────────────────────────────────────────────────────────
+
+export interface CustomRole {
+  id: string;
+  name: string;
+  description: string;
+  color: string;
+  permissions: Record<string, boolean>;
+  isSystem: boolean;
+  createdAt: string;
+}
+
+export interface BuiltInRole {
+  name: string;
+  description?: string;
+  permissions: Record<string, boolean>;
+  isBuiltIn: true;
+  [key: string]: unknown;
+}
+
+export function listRoles() {
+  return request<{ builtIn: BuiltInRole[]; custom: CustomRole[] }>("/api/roles");
+}
+
+export function createRole(payload: { name: string; description: string; color: string; permissions: Record<string, boolean> }) {
+  return request<{ role: CustomRole }>("/api/roles", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function updateRole(id: string, payload: { name?: string; description?: string; color?: string; permissions?: Record<string, boolean> }) {
+  return request<{ role: CustomRole }>(`/api/roles/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(payload) });
+}
+
+export function deleteRole(id: string) {
+  return request<{ ok: boolean }>(`/api/roles/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export function getMyPermissions() {
+  return request<{ permissions: Record<string, boolean>; role: string; isDeveloper: boolean }>("/api/me/permissions");
+}
+
+export interface PlatformConfig {
+  postgres: {
+    connected: boolean;
+    urlSanitized: string;
+    ssl: boolean;
+    poolMax: number;
+    idleTimeoutMs: number;
+    connectionTimeoutMs: number;
+    statementTimeoutMs: number;
+    legacyRowLoadLimit: number;
+    autoMigrate: boolean;
+  };
+  auth: { enabled: boolean; sessionTtlHours: number; userCount: number };
+  server: { publicUrl: string; host: string; port: number };
+  automation: { enabled: boolean; cronExpression: string; sendgridConfigured: boolean; fromEmail: string };
+  isDeveloper: boolean;
+}
+
+export function getAdminConfig() {
+  return request<PlatformConfig>("/api/admin/config");
+}
+
+/** Public endpoint — returns session TTL for the inactivity timer. No auth required. */
+export async function getSessionTtlHours(): Promise<number> {
+  try {
+    const cfg = await getAdminConfig();
+    return cfg.auth.sessionTtlHours ?? 24;
+  } catch {
+    return 24; // safe default
+  }
+}
+
+// ── Invitations ───────────────────────────────────────────────────────────────
+
+export function getInvitation(token: string) {
+  return request<{ invitation: PendingInvitation }>(`/api/invitations/${encodeURIComponent(token)}`);
+}
+
+export function acceptInvitation(token: string, payload: { displayName: string; password: string }) {
+  return request<{ user: PlatformUser }>(`/api/invitations/${encodeURIComponent(token)}/accept`, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
 }
 
 let studioDocumentRequest: Promise<{ document: StudioDocument }> | null = null;
@@ -180,11 +542,32 @@ export function updateStudioSession(session: Partial<StudioDocument["session"]>)
   });
 }
 
+export async function peekXlsxFile(file: File): Promise<{
+  filename: string;
+  sheetNames: string[];
+  headers: string[];
+  rows: Record<string, unknown>[];
+  rowCount: number;
+}> {
+  const formData = new FormData();
+  formData.append("file", file, file.name);
+  const response = await fetch(API_BASE + "/api/studio/sources/xlsx/peek", {
+    method: "POST",
+    credentials: "include",
+    body: formData
+  });
+  if (response.status === 401) throw new AuthRequiredError();
+  const body = await response.json() as Record<string, unknown>;
+  if (!response.ok) throw new Error(String(body?.message || "Preview failed."));
+  return body as { filename: string; sheetNames: string[]; headers: string[]; rows: Record<string, unknown>[]; rowCount: number; };
+}
+
 export async function importStudioWorkbook(file: File) {
   const formData = new FormData();
   formData.append("file", file, file.name);
   const response = await fetch(API_BASE + "/api/studio/import/xlsx", {
     method: "POST",
+    credentials: "include",
     body: formData
   });
   const text = await response.text();
@@ -193,6 +576,76 @@ export async function importStudioWorkbook(file: File) {
     throw new Error(body?.message || `Request failed with status ${response.status}`);
   }
   return body as StudioWorkbookImportResult;
+}
+
+export function fetchSourcePreview(sourceId: string, limit = 5) {
+  return request<{ summary: StudioSourceSummary; rows: Record<string, unknown>[] }>(
+    `/api/studio/sources/${encodeURIComponent(sourceId)}/preview?limit=${limit}`
+  );
+}
+
+export function fetchStudioSources() {
+  return request<{ sources: StudioSourceSummary[] }>("/api/studio/sources");
+}
+
+// ── Data management ───────────────────────────────────────────────────────────
+
+export function renameSource(sourceId: string, sourceName: string) {
+  return request<{ ok: boolean }>(`/api/studio/sources/${encodeURIComponent(sourceId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ sourceName })
+  });
+}
+
+export function deleteSource(sourceId: string) {
+  return request<{ ok: boolean }>(`/api/studio/sources/${encodeURIComponent(sourceId)}`, {
+    method: "DELETE"
+  });
+}
+
+export function clearSourceData(sourceId: string) {
+  return request<{ ok: boolean }>(`/api/studio/sources/${encodeURIComponent(sourceId)}/records`, {
+    method: "DELETE"
+  });
+}
+
+export async function importStudioWorkbookSource(file: File, options: { sourceId?: string; sourceName?: string } = {}) {
+  const params = new URLSearchParams();
+  if (options.sourceId) params.set("sourceId", options.sourceId);
+  if (options.sourceName) params.set("sourceName", options.sourceName);
+  const formData = new FormData();
+  formData.append("file", file, file.name);
+  const response = await fetch(API_BASE + `/api/studio/sources/xlsx${params.toString() ? `?${params.toString()}` : ""}`, {
+    method: "POST",
+    credentials: "include",
+    body: formData
+  });
+  const text = await response.text();
+  const body = text ? JSON.parse(text) : {};
+  if (!response.ok) {
+    throw new Error(body?.message || `Request failed with status ${response.status}`);
+  }
+  return body as StudioWorkbookSourceImportResult;
+}
+
+export async function recreateWorkbookFromDataSource(
+  file: File,
+  options: { sourceId?: string; sourceName?: string } = {}
+): Promise<StudioWorkbookSourceImportResult & { reports: unknown[]; dashboard: unknown | null }> {
+  const params = new URLSearchParams();
+  if (options.sourceId) params.set("sourceId", options.sourceId);
+  if (options.sourceName) params.set("sourceName", options.sourceName);
+  const formData = new FormData();
+  formData.append("file", file, file.name);
+  const response = await fetch(
+    API_BASE + `/api/studio/sources/xlsx/recreate${params.toString() ? `?${params.toString()}` : ""}`,
+    { method: "POST", credentials: "include", body: formData }
+  );
+  const text = await response.text();
+  const body = text ? JSON.parse(text) : {};
+  if (response.status === 401) throw new AuthRequiredError();
+  if (!response.ok) throw new Error(body?.message || `Request failed with status ${response.status}`);
+  return body as StudioWorkbookSourceImportResult & { reports: unknown[]; dashboard: unknown | null };
 }
 
 export function fetchStudioVersions(objectId: string) {
