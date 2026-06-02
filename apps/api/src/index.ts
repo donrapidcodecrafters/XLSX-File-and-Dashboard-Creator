@@ -78,6 +78,44 @@ await registerStudioRoutes(app);
 await registerUserRoutes(app);
 await registerRolesRoutes(app);
 
+// ── Password reset endpoints (public) ────────────────────────────────────────
+import { pgQuery } from "./db/postgres.js";
+import bcrypt from "bcryptjs";
+
+app.get("/api/auth/reset-password/:token", async (request, reply) => {
+  const { token } = request.params as { token: string };
+  const result = await pgQuery<{ user_id: string; email: string }>(
+    `SELECT r.user_id, u.email FROM password_reset_tokens r
+     JOIN users u ON u.id = r.user_id
+     WHERE r.token = $1 AND r.expires_at > now() AND r.used_at IS NULL`,
+    [token]
+  );
+  if (!result.rows[0]) { reply.code(404); return { valid: false }; }
+  return { valid: true, email: result.rows[0].email };
+});
+
+app.post("/api/auth/reset-password", async (request, reply) => {
+  const body = (request.body as { token?: string; password?: string }) || {};
+  const token = String(body.token || "");
+  const password = String(body.password || "");
+  if (!token || password.length < 8) {
+    reply.code(400);
+    return { message: "Valid token and password (min 8 chars) required." };
+  }
+  const result = await pgQuery<{ user_id: string }>(
+    "SELECT user_id FROM password_reset_tokens WHERE token = $1 AND expires_at > now() AND used_at IS NULL",
+    [token]
+  );
+  if (!result.rows[0]) { reply.code(400); return { message: "Reset link is invalid or has expired." }; }
+  const userId = result.rows[0].user_id;
+  const hash = await bcrypt.hash(password, 12);
+  await pgQuery("UPDATE users SET password_hash = $1, updated_at = now() WHERE id = $2", [hash, userId]);
+  await pgQuery("UPDATE password_reset_tokens SET used_at = now() WHERE token = $1", [token]);
+  // Clear 2FA so user must re-setup after reset (security best practice)
+  // await pgQuery("UPDATE users SET totp_secret = NULL, totp_enabled = false WHERE id = $1", [userId]);
+  return { ok: true };
+});
+
 // ── Read-only platform config endpoint (admin/developer only) ────────────────
 app.get("/api/admin/config", async (request, reply) => {
   const email = request.session?.userEmail;

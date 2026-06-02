@@ -70,7 +70,7 @@ function sourceTypeBadgeStyle(type: StudioSourceSummary["sourceType"]): React.CS
   if (type === "quickbase") {
     return { background: "#F5F3FF", color: "#6D28D9", border: "1px solid #DDD6FE" };
   }
-  return { background: "#F9FAFB", color: "#6B7280", border: "1px solid #E5E7EB" };
+  return { background: "var(--surface-alt, #F9FAFB)", color: "var(--text-soft, #6B7280)", border: "1px solid var(--border, #E5E7EB)" };
 }
 
 function sortSources(
@@ -220,14 +220,14 @@ function RenameCell({ source, canEdit, onRenamed, onError }: RenameCellProps) {
             boxShadow: `0 0 0 3px rgba(13,124,102,0.12)`,
             fontSize: 13,
             fontFamily: FONT,
-            color: "#111827",
+            color: "var(--text, #111827)",
             outline: "none",
             minWidth: 140,
             maxWidth: 260,
           }}
         />
         {saving && (
-          <span style={{ fontSize: 11, color: "#9CA3AF" }}>Saving…</span>
+          <span style={{ fontSize: 11, color: "var(--text-muted, #9CA3AF)" }}>Saving…</span>
         )}
       </div>
     );
@@ -235,7 +235,7 @@ function RenameCell({ source, canEdit, onRenamed, onError }: RenameCellProps) {
 
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-      <span style={{ fontWeight: 600, color: "#111827", fontSize: 13 }}>
+      <span style={{ fontWeight: 600, color: "var(--text, #111827)", fontSize: 13 }}>
         {source.sourceName}
       </span>
       {canEdit && (
@@ -247,7 +247,7 @@ function RenameCell({ source, canEdit, onRenamed, onError }: RenameCellProps) {
             background: "none",
             border: "none",
             cursor: "pointer",
-            color: "#9CA3AF",
+            color: "var(--text-muted, #9CA3AF)",
             fontSize: 12,
             padding: "1px 4px",
             borderRadius: 4,
@@ -300,19 +300,19 @@ function ConfirmDialogModal({
       background: "rgba(0,0,0,0.45)",
     }}>
       <div style={{
-        background: "#fff",
+        background: "var(--surface, #fff)",
         borderRadius: 14,
-        border: "1px solid #E5E7EB",
+        border: "1px solid var(--border, #E5E7EB)",
         boxShadow: "0 8px 40px rgba(0,0,0,0.18)",
         padding: "28px 32px",
         maxWidth: 440,
         width: "calc(100% - 40px)",
         fontFamily: FONT,
       }}>
-        <div style={{ fontSize: 16, fontWeight: 800, color: "#111827", marginBottom: 8 }}>
+        <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text, #111827)", marginBottom: 8 }}>
           {title}
         </div>
-        <div style={{ fontSize: 13, color: "#6B7280", marginBottom: 22, lineHeight: 1.6 }}>
+        <div style={{ fontSize: 13, color: "var(--text-soft, #6B7280)", marginBottom: 22, lineHeight: 1.6 }}>
           {description}
         </div>
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
@@ -323,9 +323,9 @@ function ConfirmDialogModal({
             style={{
               padding: "8px 18px",
               borderRadius: 8,
-              border: "1px solid #E5E7EB",
-              background: "#F9FAFB",
-              color: "#374151",
+              border: "1px solid var(--border, #E5E7EB)",
+              background: "var(--surface-alt, #F9FAFB)",
+              color: "var(--text-secondary, #374151)",
               fontSize: 13,
               fontWeight: 600,
               fontFamily: FONT,
@@ -526,7 +526,7 @@ export function DataManagementPage({ canDelete = false, canImport = true }: Data
     borderBottom: "1px solid #F3F4F6",
     verticalAlign: "middle",
     fontSize: 13,
-    color: "#374151",
+    color: "var(--text-secondary, #374151)",
     fontFamily: FONT,
   };
 
@@ -536,26 +536,26 @@ export function DataManagementPage({ canDelete = false, canImport = true }: Data
     fontSize: 11,
     fontWeight: 700,
     letterSpacing: "0.06em",
-    color: "#9CA3AF",
+    color: "var(--text-muted, #9CA3AF)",
     textTransform: "uppercase",
-    borderBottom: "1px solid #E5E7EB",
+    borderBottom: "1px solid var(--border, #E5E7EB)",
     whiteSpace: "nowrap",
-    background: "#F9FAFB",
+    background: "var(--surface-alt, #F9FAFB)",
   };
 
   // ── Render ────────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ fontFamily: FONT, minHeight: "100dvh", background: "#F8FAFC" }}>
+    <div className="data-mgmt-page" style={{ fontFamily: FONT, minHeight: "100dvh", background: "var(--bg, #F8FAFC)" }}>
       <div style={{ maxWidth: 1200, margin: "0 auto", padding: "32px 24px" }}>
 
         {/* Page header */}
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 24, gap: 16 }}>
           <div>
-            <h1 style={{ margin: "0 0 4px", fontSize: "1.5rem", fontWeight: 800, color: "#111827", letterSpacing: "-0.025em" }}>
+            <h1 style={{ margin: "0 0 4px", fontSize: "1.5rem", fontWeight: 800, color: "var(--text, #111827)", letterSpacing: "-0.025em" }}>
               Data Management
             </h1>
-            <p style={{ margin: 0, fontSize: 13, color: "#6B7280" }}>
+            <p style={{ margin: 0, fontSize: 13, color: "var(--text-soft, #6B7280)" }}>
               View, rename, and manage imported sources and their cached records.
             </p>
           </div>
@@ -588,9 +588,9 @@ export function DataManagementPage({ canDelete = false, canImport = true }: Data
               style={{
                 padding: "9px 18px",
                 borderRadius: 8,
-                border: "1px solid #E5E7EB",
-                background: "#fff",
-                color: "#374151",
+                border: "1px solid var(--border, #E5E7EB)",
+                background: "var(--surface, #fff)",
+                color: "var(--text-secondary, #374151)",
                 fontSize: 13,
                 fontWeight: 600,
                 fontFamily: FONT,
@@ -648,7 +648,7 @@ export function DataManagementPage({ canDelete = false, canImport = true }: Data
               left: 10,
               top: "50%",
               transform: "translateY(-50%)",
-              color: "#9CA3AF",
+              color: "var(--text-muted, #9CA3AF)",
               fontSize: 14,
               pointerEvents: "none",
             }}>
@@ -663,12 +663,12 @@ export function DataManagementPage({ canDelete = false, canImport = true }: Data
                 width: "100%",
                 padding: "8px 11px 8px 30px",
                 borderRadius: 8,
-                border: "1px solid #D1D5DB",
+                border: "1px solid var(--border-md, #D1D5DB)",
                 fontSize: 13,
                 fontFamily: FONT,
                 outline: "none",
-                background: "#fff",
-                color: "#111827",
+                background: "var(--surface, #fff)",
+                color: "var(--text, #111827)",
                 boxSizing: "border-box",
               }}
               onFocus={(e) => { e.currentTarget.style.borderColor = PRIMARY; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(13,124,102,0.12)"; }}
@@ -683,11 +683,11 @@ export function DataManagementPage({ canDelete = false, canImport = true }: Data
             style={{
               padding: "8px 11px",
               borderRadius: 8,
-              border: "1px solid #D1D5DB",
+              border: "1px solid var(--border-md, #D1D5DB)",
               fontSize: 13,
               fontFamily: FONT,
-              background: "#fff",
-              color: "#374151",
+              background: "var(--surface, #fff)",
+              color: "var(--text-secondary, #374151)",
               cursor: "pointer",
               outline: "none",
               minWidth: 130,
@@ -726,23 +726,23 @@ export function DataManagementPage({ canDelete = false, canImport = true }: Data
           )}
 
           {/* Result count */}
-          <span style={{ fontSize: 12, color: "#9CA3AF", marginLeft: "auto", whiteSpace: "nowrap" }}>
+          <span style={{ fontSize: 12, color: "var(--text-muted, #9CA3AF)", marginLeft: "auto", whiteSpace: "nowrap" }}>
             {filtered.length} {filtered.length === 1 ? "source" : "sources"}
           </span>
         </div>
 
         {/* Main card */}
         <div style={{
-          background: "#fff",
+          background: "var(--surface, #fff)",
           borderRadius: 16,
-          border: "1px solid #E5E7EB",
+          border: "1px solid var(--border, #E5E7EB)",
           boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 4px 8px rgba(0,0,0,0.03)",
           overflow: "hidden",
         }}>
 
           {/* Loading state */}
           {loading && (
-            <div style={{ padding: "56px 20px", textAlign: "center", color: "#9CA3AF", fontSize: 14 }}>
+            <div style={{ padding: "56px 20px", textAlign: "center", color: "var(--text-muted, #9CA3AF)", fontSize: 14 }}>
               Loading sources…
             </div>
           )}
@@ -775,10 +775,10 @@ export function DataManagementPage({ canDelete = false, canImport = true }: Data
           {!loading && !loadError && sources.length === 0 && (
             <div style={{ padding: "56px 20px", textAlign: "center" }}>
               <div style={{ fontSize: 32, marginBottom: 12 }}>📂</div>
-              <div style={{ fontSize: 14, fontWeight: 600, color: "#374151", marginBottom: 6 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-secondary, #374151)", marginBottom: 6 }}>
                 No data sources yet
               </div>
-              <div style={{ fontSize: 13, color: "#9CA3AF" }}>
+              <div style={{ fontSize: 13, color: "var(--text-muted, #9CA3AF)" }}>
                 Import an XLSX file or connect a Quickbase source to get started.
               </div>
             </div>
@@ -786,7 +786,7 @@ export function DataManagementPage({ canDelete = false, canImport = true }: Data
 
           {/* No results after filtering */}
           {!loading && !loadError && sources.length > 0 && filtered.length === 0 && (
-            <div style={{ padding: "40px 20px", textAlign: "center", color: "#9CA3AF", fontSize: 14 }}>
+            <div style={{ padding: "40px 20px", textAlign: "center", color: "var(--text-muted, #9CA3AF)", fontSize: 14 }}>
               No sources match your search or filter.
             </div>
           )}
@@ -856,10 +856,10 @@ export function DataManagementPage({ canDelete = false, canImport = true }: Data
                           background: isSelected ? "#F0FDF9" : undefined,
                         }}
                         onMouseEnter={(e) => {
-                          if (!isSelected) (e.currentTarget as HTMLTableRowElement).style.background = "#FAFAFA";
+                          if (!isSelected) (e.currentTarget as HTMLTableRowElement).style.background = "var(--surface-hover, #FAFAFA)";
                         }}
                         onMouseLeave={(e) => {
-                          (e.currentTarget as HTMLTableRowElement).style.background = isSelected ? "#F0FDF9" : "";
+                          (e.currentTarget as HTMLTableRowElement).style.background = isSelected ? "var(--brand-light, #F0FDF9)" : "";
                         }}
                       >
                         {/* Checkbox */}
@@ -884,7 +884,7 @@ export function DataManagementPage({ canDelete = false, canImport = true }: Data
                             onError={(msg) => showBanner("error", msg)}
                           />
                           {source.table?.name && (
-                            <div style={{ fontSize: 11, color: "#9CA3AF", marginTop: 2 }}>
+                            <div style={{ fontSize: 11, color: "var(--text-muted, #9CA3AF)", marginTop: 2 }}>
                               Table: {source.table.name}
                             </div>
                           )}
@@ -898,24 +898,24 @@ export function DataManagementPage({ canDelete = false, canImport = true }: Data
                         {/* Row count */}
                         <td style={{ ...cellStyle, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                           {source.rowCount === 0 ? (
-                            <span style={{ color: "#9CA3AF" }}>0</span>
+                            <span style={{ color: "var(--text-muted, #9CA3AF)" }}>0</span>
                           ) : (
                             formatNumber(source.rowCount)
                           )}
                         </td>
 
                         {/* Field count */}
-                        <td style={{ ...cellStyle, textAlign: "right", fontVariantNumeric: "tabular-nums", color: "#6B7280" }}>
+                        <td style={{ ...cellStyle, textAlign: "right", fontVariantNumeric: "tabular-nums", color: "var(--text-soft, #6B7280)" }}>
                           {formatNumber(source.fieldCount)}
                         </td>
 
                         {/* Last updated */}
-                        <td style={{ ...cellStyle, color: "#6B7280", fontSize: 12, whiteSpace: "nowrap" }}>
+                        <td style={{ ...cellStyle, color: "var(--text-soft, #6B7280)", fontSize: 12, whiteSpace: "nowrap" }}>
                           {formatDate(source.updatedAt || source.refreshedAt)}
                         </td>
 
                         {/* Size estimate */}
-                        <td style={{ ...cellStyle, textAlign: "right", color: "#6B7280", fontSize: 12, whiteSpace: "nowrap" }}>
+                        <td style={{ ...cellStyle, textAlign: "right", color: "var(--text-soft, #6B7280)", fontSize: 12, whiteSpace: "nowrap" }}>
                           {source.rowCount > 0 ? estimateSizeLabel(source) : "—"}
                         </td>
 
@@ -988,7 +988,7 @@ export function DataManagementPage({ canDelete = false, canImport = true }: Data
 
         {/* Footer hint */}
         {!loading && !loadError && (
-          <p style={{ margin: "16px 0 0", fontSize: 12, color: "#9CA3AF", textAlign: "center" }}>
+          <p style={{ margin: "16px 0 0", fontSize: 12, color: "var(--text-muted, #9CA3AF)", textAlign: "center" }}>
             {canDelete
               ? "Clear data removes cached records while keeping the source entity. Delete removes the source entirely."
               : "You have read-only access to data sources. Contact an admin to manage or delete sources."}
@@ -1018,19 +1018,19 @@ export function DataManagementPage({ canDelete = false, canImport = true }: Data
           background: "rgba(0,0,0,0.45)",
         }}>
           <div style={{
-            background: "#fff",
+            background: "var(--surface, #fff)",
             borderRadius: 14,
-            border: "1px solid #E5E7EB",
+            border: "1px solid var(--border, #E5E7EB)",
             boxShadow: "0 8px 40px rgba(0,0,0,0.18)",
             padding: "28px 32px",
             maxWidth: 440,
             width: "calc(100% - 40px)",
             fontFamily: FONT,
           }}>
-            <div style={{ fontSize: 16, fontWeight: 800, color: "#111827", marginBottom: 8 }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text, #111827)", marginBottom: 8 }}>
               Delete {selected.size} source{selected.size !== 1 ? "s" : ""}?
             </div>
-            <div style={{ fontSize: 13, color: "#6B7280", marginBottom: 22, lineHeight: 1.6 }}>
+            <div style={{ fontSize: 13, color: "var(--text-soft, #6B7280)", marginBottom: 22, lineHeight: 1.6 }}>
               This will permanently remove the selected sources and all their cached records.
               This action cannot be undone.
             </div>
@@ -1042,9 +1042,9 @@ export function DataManagementPage({ canDelete = false, canImport = true }: Data
                 style={{
                   padding: "8px 18px",
                   borderRadius: 8,
-                  border: "1px solid #E5E7EB",
-                  background: "#F9FAFB",
-                  color: "#374151",
+                  border: "1px solid var(--border, #E5E7EB)",
+                  background: "var(--surface-alt, #F9FAFB)",
+                  color: "var(--text-secondary, #374151)",
                   fontSize: 13,
                   fontWeight: 600,
                   fontFamily: FONT,

@@ -87,6 +87,23 @@ canvas {
   max-width: 100%;
 }
 
+/* ── Global text wrapping ──────────────────────────────────────────────────
+   Ensures user-facing content text wraps rather than overflowing as one line.
+   Navigation labels/badges that need nowrap have their own explicit rules.    */
+p, li, td, th, label, dd, dt, figcaption,
+.card-head strong, .card-head span,
+.sync-status strong, .sync-status span,
+.empty-page, .empty-hint,
+.hero h1, .hero p, .hero span,
+.summary-card strong, .summary-card span,
+.builder-subsection-head strong, .builder-subsection-head span,
+.field span, .field label,
+.help-section p, .help-section li {
+  overflow-wrap: break-word;
+  word-break: break-word;
+  min-width: 0;
+}
+
 button,
 input {
   font: inherit;
@@ -2533,6 +2550,7 @@ th {
   display: grid;
   gap: 4px;
   justify-items: start;
+  align-content: start;
   text-align: left;
   min-height: 90px;
   padding: 16px;
@@ -2540,6 +2558,7 @@ th {
   border: 1px solid var(--border);
   background: var(--surface);
   box-shadow: none;
+  overflow: hidden;
   transition: border-color 100ms, background 100ms, transform 80ms;
 }
 .studio-quickstart-button:hover,
@@ -2560,6 +2579,10 @@ th {
   font-size: 12px;
   color: var(--text-soft);
   line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .viewer-hero,
@@ -6582,13 +6605,18 @@ html.dark .sidebar {
 }
 
 html.dark .card,
-html.dark .surface,
-html.dark .home-section-card,
-html.dark .home-highlight-card,
 html.dark .studio-hero,
 html.dark .home-hero-panel {
   background: #1E293B;
   border-color: #334155;
+}
+
+/* Cards nested inside cards get a slightly darker background for separation */
+html.dark .card .card,
+html.dark .card .builder-subsection,
+html.dark .surface .card {
+  background: #142030;
+  border-color: #2A3F56;
 }
 
 html.dark .surface {
@@ -6740,6 +6768,24 @@ html.dark .toggle-row {
   color: #CBD5E1;
 }
 
+/* ── Dark mode: builder subsection cards ─────────────────────────────────── */
+html.dark .builder-subsection {
+  background: rgba(30, 41, 59, 0.7);
+  border-color: rgba(148, 163, 184, 0.12);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+}
+
+html.dark .builder-subsection-head strong,
+html.dark .builder-subsection-head > strong {
+  color: var(--text, #E2E8F0);
+}
+
+html.dark .builder-subsection-head .micro,
+html.dark .builder-subsection-head span,
+html.dark .builder-subsection-head p {
+  color: var(--text-soft, #94A3B8);
+}
+
 html.dark .builder-step-button {
   background: #1E293B;
   border-color: #334155;
@@ -6821,6 +6867,96 @@ html.dark .field-transfer-item:hover {
   border-color: rgba(13,124,102,0.35);
 }
 
+/* ── Dark mode: pages with inline styles (User, Role, Data Management) ────── */
+/* These pages use inline styles so we patch key structural containers.        */
+
+/* Override white card backgrounds inside pages that use var(--bg) root */
+html.dark [style*="background: var(--surface, #fff)"],
+html.dark [style*='background: "var(--surface, #fff)"'] {
+  background: var(--surface) !important;
+}
+
+html.dark [style*="background: var(--surface-alt, #F9FAFB)"] {
+  background: var(--surface-alt, #1E293B) !important;
+}
+
+html.dark [style*="color: var(--text, #111827)"] {
+  color: var(--text) !important;
+}
+
+html.dark [style*="color: var(--text-soft, #6B7280)"] {
+  color: var(--text-soft) !important;
+}
+
+html.dark [style*="border: 1px solid var(--border, #E5E7EB)"],
+html.dark [style*="border-bottom: 1px solid var(--border, #E5E7EB)"],
+html.dark [style*="border-top: 1px solid var(--border, #E5E7EB)"] {
+  border-color: var(--border) !important;
+}
+
+/* ── Dark mode: Data Management page ─────────────────────────────────────── */
+/* This page uses inline styles so we override key structural elements here. */
+html.dark .data-mgmt-page {
+  background: var(--bg) !important;
+  color: var(--text);
+}
+
+html.dark .data-mgmt-page table {
+  background: var(--surface);
+}
+
+html.dark .data-mgmt-page thead tr {
+  background: var(--surface-alt, #1E293B) !important;
+}
+
+html.dark .data-mgmt-page thead th {
+  color: var(--text-soft) !important;
+  border-bottom: 1px solid var(--border) !important;
+}
+
+html.dark .data-mgmt-page tbody tr:hover {
+  background: var(--surface-hover, rgba(255,255,255,0.04)) !important;
+}
+
+html.dark .data-mgmt-page tbody td {
+  border-bottom: 1px solid var(--border) !important;
+  color: var(--text) !important;
+}
+
+html.dark .data-mgmt-page input[type="text"],
+html.dark .data-mgmt-page select {
+  background: var(--surface) !important;
+  border-color: var(--border) !important;
+  color: var(--text) !important;
+}
+
+/* Wrapper cards/boxes inside data mgmt */
+html.dark .data-mgmt-page > div > div[style*="background"],
+html.dark .data-mgmt-page > div > div > div[style*="border-radius"][style*="background"] {
+  background: var(--surface) !important;
+  border-color: var(--border) !important;
+}
+
+/* ── Dark mode: home & catalog cards ─────────────────────────────────────── */
+html.dark .home-object-card {
+  background: linear-gradient(180deg, rgba(30,41,59,0.95), rgba(22,32,47,0.92));
+  border-color: rgba(148,163,184,0.12);
+}
+
+html.dark .home-object-card:hover,
+html.dark .home-object-card:focus-visible {
+  background: #1E293B;
+  border-color: rgba(13,124,102,0.35);
+  box-shadow: 0 16px 28px rgba(0,0,0,0.35);
+}
+
+/* ── Dark mode layering hierarchy ────────────────────────────────────────────
+   Level 1 (page bg):          #080D14   — set on html.dark --bg
+   Level 2 (section cards):    #1E293B   — .card, .home-section-card
+   Level 3 (inner groups):     #142030   — browse-card, status rows
+   Level 4 (individual items): #0D1A27   — browse-links, app-items
+   ─────────────────────────────────────────────────────────────────────────── */
+
 html.dark .studio-home-object-card {
   background: #1E293B;
   border-color: #334155;
@@ -6829,6 +6965,77 @@ html.dark .studio-home-object-card {
 html.dark .studio-home-object-card:hover {
   background: #273548;
   border-color: #475569;
+}
+
+/* Browse by app — group container: one level darker than section card */
+html.dark .home-app-browse-card {
+  background: #142030;
+  border-color: #2A3F56;
+}
+
+/* Individual item links inside the group: one step darker still */
+html.dark .home-app-browse-link {
+  background: #0D1A27;
+  border: 1px solid #2A3F56;
+  color: #CBD5E1;
+}
+
+html.dark .home-app-browse-link:hover {
+  background: #1A2F44;
+  border-color: rgba(13,124,102,0.5);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+
+/* Badges inside browse links need to stand out from the dark bg */
+html.dark .home-app-browse-link .badge {
+  background: #1E3048;
+  border-color: #3D5578;
+  color: #93C5FD;
+}
+
+/* Status / app items: darker than their section card */
+html.dark .home-status-item,
+html.dark .home-app-item {
+  background: #0D1A27;
+  border-color: #2A3F56;
+}
+
+/* Home object cards (Latest Content, Featured): clear border against section bg */
+html.dark .home-object-card {
+  background: #142030;
+  border: 1px solid #2A3F56;
+}
+
+html.dark .home-object-card:hover,
+html.dark .home-object-card:focus-visible {
+  background: #1A2F44;
+  border-color: rgba(13,124,102,0.5);
+  box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+}
+
+/* Section cards (the outer containers) */
+html.dark .home-section-card,
+html.dark .home-highlight-card {
+  background: #1E293B;
+  border: 1px solid #334155;
+}
+
+/* App browse section head label */
+html.dark .home-app-browse-head strong {
+  color: #E2E8F0;
+}
+
+html.dark .home-app-browse-head .micro {
+  color: #64748B;
+}
+
+/* Status items text */
+html.dark .home-status-item > strong {
+  color: #E2E8F0;
+}
+
+html.dark .home-status-item > span {
+  color: #94A3B8;
 }
 
 html.dark .searchable-select-menu {
@@ -6849,29 +7056,170 @@ html.dark .source-join-card {
   border-color: #334155;
 }
 
-/* Dark mode status items: slightly different from card bg so they show */
-html.dark .home-status-item,
-html.dark .home-app-item {
-  background: #152032;       /* darker than card so they contrast inside */
-  border-color: #2D3F52;
-}
-
-html.dark .home-app-browse-card {
-  background: #1E293B;
-  border-color: #334155;
-}
-
-html.dark .home-app-browse-link {
-  background: transparent;
-  border-color: #334155;
-}
-
-html.dark .home-app-browse-link:hover {
-  background: #273548;
-}
-
 html.dark .progress-meter {
   background: #334155;
+}
+
+/* ── Dark mode: --text-muted variable (missing from dark vars) ────────────── */
+html.dark {
+  --text-muted: #94A3B8;
+}
+
+/* ── Dark mode: management pages — force ALL text to readable colors ─────────
+   These pages use 100+ inline styles with hardcoded dark hex values.
+   Rather than replacing every instance, we blanket-override text color
+   for structural elements while preserving intentional badge/brand colors.  */
+
+html.dark .user-mgmt-page,
+html.dark .role-mgmt-page,
+html.dark .data-mgmt-page {
+  color: var(--text, #F1F5F9);
+}
+
+/* Table cells and headers */
+html.dark .user-mgmt-page td,
+html.dark .user-mgmt-page th,
+html.dark .role-mgmt-page td,
+html.dark .role-mgmt-page th,
+html.dark .data-mgmt-page td,
+html.dark .data-mgmt-page th {
+  color: var(--text, #F1F5F9) !important;
+  border-color: var(--border, #334155) !important;
+}
+
+/* Generic text elements inside mgmt pages */
+html.dark .user-mgmt-page strong,
+html.dark .user-mgmt-page p,
+html.dark .user-mgmt-page span:not([class*="badge"]):not([class*="brand"]),
+html.dark .user-mgmt-page label,
+html.dark .role-mgmt-page strong,
+html.dark .role-mgmt-page p,
+html.dark .role-mgmt-page label,
+html.dark .data-mgmt-page strong,
+html.dark .data-mgmt-page p,
+html.dark .data-mgmt-page label,
+html.dark .data-mgmt-page span:not([class*="badge"]) {
+  color: var(--text, #F1F5F9);
+}
+
+/* Soft/secondary text — slightly dimmed but still readable */
+html.dark .user-mgmt-page .micro,
+html.dark .role-mgmt-page .micro,
+html.dark .data-mgmt-page .micro {
+  color: var(--text-soft, #94A3B8) !important;
+}
+
+/* Input and select text */
+html.dark .user-mgmt-page input,
+html.dark .user-mgmt-page select,
+html.dark .role-mgmt-page input,
+html.dark .role-mgmt-page select,
+html.dark .data-mgmt-page input,
+html.dark .data-mgmt-page select {
+  color: var(--text, #F1F5F9) !important;
+  background: var(--surface, #1E293B) !important;
+  border-color: var(--border, #334155) !important;
+}
+
+/* Card/container backgrounds */
+html.dark .user-mgmt-page > div > div,
+html.dark .role-mgmt-page > div > div {
+  color: var(--text, #F1F5F9);
+}
+
+/* Pending invitations amber tones — keep them but make text readable */
+html.dark .user-mgmt-page [style*="#92400E"],
+html.dark .user-mgmt-page [style*="#B45309"] {
+  color: #FCD34D !important;
+}
+
+/* Permission rows in Roles page */
+html.dark .role-mgmt-page [style*="color: var(--text, #111827)"],
+html.dark .role-mgmt-page [style*="color: #111827"] {
+  color: var(--text, #F1F5F9) !important;
+}
+
+html.dark .role-mgmt-page [style*="#9CA3AF"],
+html.dark .role-mgmt-page [style*="text-soft"] {
+  color: var(--text-soft, #94A3B8) !important;
+}
+
+/* ── Dark mode: Scheduled Email Panel selects ─────────────────────────────── */
+/* The sel style uses background: rgba(255,255,255,0.9) which is hardcoded     */
+html.dark .field select,
+html.dark .stack select,
+html.dark .card select,
+html.dark select {
+  background: #0F172A !important;
+  border-color: #334155 !important;
+  color: #E2E8F0 !important;
+}
+
+/* ── Dark mode: Role Management Page ─────────────────────────────────────── */
+/* Permission group cards use background: "#FFFFFF" inline */
+html.dark [style*="background: \"#FFFFFF\""],
+html.dark [style*='background: "#FFFFFF"'] {
+  background: var(--surface, #1E293B) !important;
+  border-color: var(--border, #334155) !important;
+}
+
+/* Permission row hover states ─ #FAFAFA and #FAFFFE go bright white in dark  */
+html.dark label[style*="#FAFAFA"],
+html.dark label[style*="#FAFFFE"],
+html.dark label[style*="#F0FDF9"] {
+  background: rgba(13,124,102,0.08) !important;
+}
+
+/* Role list item hover ─ #F9FAFB goes bright in dark                         */
+html.dark [style*="#F9FAFB"] {
+  background: var(--surface-alt, #1E293B) !important;
+}
+
+html.dark [style*="#F3F4F6"]:not(button):not(.ghost-button) {
+  background: var(--surface-hover, #273548) !important;
+}
+
+/* Role editor right panel white card                                          */
+html.dark [style*="background: \"#fff\""],
+html.dark [style*='background: "#fff"'] {
+  background: var(--surface, #1E293B) !important;
+}
+
+/* ── Dark mode: User Management Page table rows ───────────────────────────── */
+/* Row hover via inline onMouseEnter sets #FAFAFA — override at CSS level     */
+html.dark tr[style*="#FAFAFA"],
+html.dark tr[style*="background: #FAFAFA"],
+html.dark tr:hover > td {
+  background: var(--surface-hover, #273548) !important;
+}
+
+/* The all-users card wrapper and pending invitations table                    */
+html.dark [style*="background: var(--surface, #fff)"] {
+  background: var(--surface, #1E293B) !important;
+  color: var(--text, #E2E8F0) !important;
+}
+
+/* Table header row using #F9FAFB inside dark card                            */
+html.dark thead tr[style*="#F9FAFB"],
+html.dark tr[style*="#F9FAFB"] {
+  background: #142030 !important;
+}
+
+/* Pending invitations amber header row                                        */
+html.dark [style*="#FFFBEB"] {
+  background: rgba(217,119,6,0.12) !important;
+  border-color: rgba(217,119,6,0.25) !important;
+}
+
+html.dark [style*="#FEF3C7"] {
+  background: rgba(217,119,6,0.08) !important;
+  border-color: rgba(217,119,6,0.2) !important;
+}
+
+/* Role dropdown select inside user row action area                            */
+html.dark [style*="background: var(--surface, #fff)"] select {
+  background: #0F172A !important;
+  color: #E2E8F0 !important;
 }
 
 html.dark .reader-sidebar {

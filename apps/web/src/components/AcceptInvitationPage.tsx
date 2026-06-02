@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useNavigate, useLocation, useParams } from "react-router-dom";
 import { getInvitation, acceptInvitation } from "../lib/studioApi";
 import type { PendingInvitation } from "../lib/studioApi";
 
@@ -18,7 +18,15 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 export function AcceptInvitationPage() {
-  const { token } = useParams<{ token: string }>();
+  // useParams() only works inside a <Route> — fall back to parsing the URL directly
+  // since this component may be rendered from App.tsx's early-return path check.
+  const params = useParams<{ token: string }>();
+  const location = useLocation();
+  // Extract token from multiple sources — useParams only works inside a <Route>,
+  // so fall back to location.pathname, then window.location for guaranteed extraction.
+  const token = params.token
+    || location.pathname.split("/accept-invitation/")[1]?.split("/")[0]
+    || window.location.pathname.split("/accept-invitation/")[1]?.split("/")[0];
   const navigate = useNavigate();
 
   const [status, setStatus] = useState<"loading" | "valid" | "invalid" | "success">("loading");
@@ -49,7 +57,7 @@ export function AcceptInvitationPage() {
     try {
       await acceptInvitation(token, { displayName: displayName.trim(), password });
       setStatus("success");
-      setTimeout(() => navigate("/"), 2500);
+      setTimeout(() => { window.location.href = "/"; }, 2500);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
     } finally { setSubmitting(false); }
@@ -84,7 +92,7 @@ export function AcceptInvitationPage() {
               <p style={{ margin: "0 0 20px", fontSize: 13, color: T.textSoft, lineHeight: 1.6 }}>
                 This invitation link has expired or has already been used. Ask your administrator to send a new invitation.
               </p>
-              <button onClick={() => navigate("/")} style={{ padding: "10px 20px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: T.font }}>
+              <button onClick={() => { window.location.href = "/"; }} style={{ padding: "10px 20px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: T.font }}>
                 Go to sign-in
               </button>
             </div>

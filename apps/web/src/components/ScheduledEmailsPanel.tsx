@@ -90,7 +90,7 @@ function ScheduleBuilder({ value, onChange }: { value: string; onChange: (cron: 
     setChoice(next);
     onChange(scheduleChoiceToCron(next));
   }
-  const sel = { padding: "0.35rem 0.5rem", borderRadius: 8, border: "1px solid var(--line)", fontFamily: "inherit", fontSize: "0.875rem", background: "rgba(255,255,255,0.9)" } as const;
+  const sel = { padding: "0.35rem 0.5rem", borderRadius: 8, border: "1px solid var(--border, #E5E7EB)", fontFamily: "inherit", fontSize: "0.875rem", background: "var(--surface, #fff)", color: "var(--text, #111827)" } as const;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
       <label className="field">

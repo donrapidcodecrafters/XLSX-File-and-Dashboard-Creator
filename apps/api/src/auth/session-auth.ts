@@ -172,6 +172,7 @@ function isPublicAuthPath(path: string) {
   ) return true;
   if (path.startsWith("/api/invitations/")) return true;
   if (path === "/api/admin/config") return true;
+  if (path === "/api/auth/reset-password" || path.startsWith("/api/auth/reset-password/")) return true;
   return false;
 }
 
@@ -360,6 +361,7 @@ export async function registerSessionAuth(app: FastifyInstance) {
     request.session.userRole = entry.userRole;
     request.session.displayName = entry.displayName;
     request.session.authenticatedAt = new Date().toISOString();
+    await request.session.save();
     void logAuditEvent("login", { userEmail: entry.email, metadata: { method: "2fa_setup", role: entry.userRole } });
 
     return { user: { email: entry.email, id: entry.userId, role: entry.userRole, displayName: entry.displayName } };
@@ -405,6 +407,7 @@ export async function registerSessionAuth(app: FastifyInstance) {
     request.session.userRole = entry.userRole;
     request.session.displayName = entry.displayName;
     request.session.authenticatedAt = new Date().toISOString();
+    await request.session.save();
     void logAuditEvent("login", { userEmail: entry.email, metadata: { method: "2fa_verify", role: entry.userRole } });
 
     return { user: { email: entry.email, id: entry.userId, role: entry.userRole, displayName: entry.displayName } };

@@ -2,6 +2,9 @@ import { useEffect, useState } from "react";
 import {
   listUsers,
   inviteUser,
+  deleteInvitation,
+  sendPasswordReset,
+  deleteUser,
   updateUserRole,
   deactivateUser,
   impersonateUser,
@@ -20,7 +23,7 @@ const PRIMARY_BORDER = "#A7F3D0";
 const ROLE_BADGE: Record<PlatformUser["role"], { bg: string; color: string; border: string; label: string }> = {
   admin:  { bg: "#ECFDF5", color: "#065F46", border: "#A7F3D0", label: "Admin" },
   editor: { bg: "#EFF6FF", color: "#1D4ED8", border: "#BFDBFE", label: "Editor" },
-  viewer: { bg: "#F9FAFB", color: "#6B7280", border: "#E5E7EB", label: "Viewer" },
+  viewer: { bg: "#F9FAFB", color: "var(--text-soft, #6B7280)", border: "#E5E7EB", label: "Viewer" },
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -137,8 +140,8 @@ function InviteForm({ onCancel, onSuccess, onError }: InviteFormProps) {
     fontSize: "13px",
     fontFamily: FONT,
     outline: "none",
-    background: "#fff",
-    color: "#111827",
+    background: "var(--surface, #fff)",
+    color: "var(--text, #111827)",
     boxSizing: "border-box",
   };
 
@@ -169,11 +172,11 @@ function InviteForm({ onCancel, onSuccess, onError }: InviteFormProps) {
       marginBottom: 20,
     }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-        <strong style={{ fontSize: 14, color: "#111827" }}>Invite a new user</strong>
+        <strong style={{ fontSize: 14, color: "var(--text, #111827)" }}>Invite a new user</strong>
         <button
           type="button"
           onClick={onCancel}
-          style={{ background: "none", border: "none", cursor: "pointer", color: "#6B7280", fontSize: 18, lineHeight: 1, padding: "2px 4px" }}
+          style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-soft, #6B7280)", fontSize: 18, lineHeight: 1, padding: "2px 4px" }}
           aria-label="Close invite form"
         >
           ×
@@ -182,7 +185,7 @@ function InviteForm({ onCancel, onSuccess, onError }: InviteFormProps) {
       <form onSubmit={(e) => { void handleSubmit(e); }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto auto", gap: 10, alignItems: "flex-end" }}>
           <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: "#374151", letterSpacing: "0.01em" }}>Email address *</span>
+            <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary, #374151)", letterSpacing: "0.01em" }}>Email address *</span>
             <input
               type="email"
               value={email}
@@ -196,7 +199,7 @@ function InviteForm({ onCancel, onSuccess, onError }: InviteFormProps) {
             />
           </label>
           <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: "#374151", letterSpacing: "0.01em" }}>Display name</span>
+            <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary, #374151)", letterSpacing: "0.01em" }}>Display name</span>
             <input
               type="text"
               value={displayName}
@@ -209,7 +212,7 @@ function InviteForm({ onCancel, onSuccess, onError }: InviteFormProps) {
             />
           </label>
           <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: "#374151", letterSpacing: "0.01em" }}>Role</span>
+            <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary, #374151)", letterSpacing: "0.01em" }}>Role</span>
             <select
               value={role}
               onChange={(e) => setRole(e.target.value as PlatformUser["role"])}
@@ -258,10 +261,12 @@ interface UserRowProps {
   onRoleChange: (id: string, role: PlatformUser["role"]) => Promise<void>;
   onToggleActive: (user: PlatformUser) => Promise<void>;
   onImpersonate: (user: PlatformUser) => Promise<void>;
+  onPasswordReset: (userId: string, email: string) => Promise<void>;
+  onDelete: (userId: string, email: string) => Promise<void>;
   isWorking: boolean;
 }
 
-function UserRow({ user, currentUserId, onRoleChange, onToggleActive, onImpersonate, isWorking }: UserRowProps) {
+function UserRow({ user, currentUserId, onRoleChange, onToggleActive, onImpersonate, onPasswordReset, onDelete, isWorking }: UserRowProps) {
   const isSelf = user.id === currentUserId;
   const [roleChanging, setRoleChanging] = useState(false);
 
@@ -274,15 +279,15 @@ function UserRow({ user, currentUserId, onRoleChange, onToggleActive, onImperson
 
   const cellStyle: React.CSSProperties = {
     padding: "12px 14px",
-    borderBottom: "1px solid #F3F4F6",
+    borderBottom: "1px solid var(--border, #F3F4F6)",
     verticalAlign: "middle",
     fontSize: 13,
-    color: "#374151",
+    color: "var(--text-secondary, #374151)",
   };
 
   return (
     <tr style={{ transition: "background 80ms" }}
-      onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "#FAFAFA"; }}
+      onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "var(--surface-hover, #F9FAFB)"; }}
       onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = ""; }}
     >
       {/* Avatar + identity */}
@@ -290,7 +295,7 @@ function UserRow({ user, currentUserId, onRoleChange, onToggleActive, onImperson
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <Avatar user={user} />
           <div>
-            <div style={{ fontWeight: 600, color: "#111827", lineHeight: 1.3 }}>
+            <div style={{ fontWeight: 600, color: "var(--text, #111827)", lineHeight: 1.3 }}>
               {user.displayName || user.email}
               {isSelf && (
                 <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 600, color: PRIMARY, background: PRIMARY_BG, border: `1px solid ${PRIMARY_BORDER}`, borderRadius: 99, padding: "1px 6px", verticalAlign: "middle" }}>
@@ -298,7 +303,7 @@ function UserRow({ user, currentUserId, onRoleChange, onToggleActive, onImperson
                 </span>
               )}
             </div>
-            <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 1 }}>{user.email}</div>
+            <div style={{ fontSize: 12, color: "var(--text-muted, #9CA3AF)", marginTop: 1 }}>{user.email}</div>
           </div>
         </div>
       </td>
@@ -314,7 +319,7 @@ function UserRow({ user, currentUserId, onRoleChange, onToggleActive, onImperson
       </td>
 
       {/* Last login */}
-      <td style={{ ...cellStyle, color: "#9CA3AF", fontSize: 12 }}>
+      <td style={{ ...cellStyle, color: "var(--text-muted, #9CA3AF)", fontSize: 12 }}>
         {formatDate(user.lastLoginAt)}
       </td>
 
@@ -335,8 +340,8 @@ function UserRow({ user, currentUserId, onRoleChange, onToggleActive, onImperson
               fontFamily: FONT,
               cursor: roleChanging || isWorking || isSelf ? "not-allowed" : "pointer",
               opacity: isSelf ? 0.45 : 1,
-              background: "#fff",
-              color: "#374151",
+              background: "var(--surface, #fff)",
+              color: "var(--text-secondary, #374151)",
             }}
           >
             <option value="viewer">Viewer</option>
@@ -394,6 +399,28 @@ function UserRow({ user, currentUserId, onRoleChange, onToggleActive, onImperson
               View as
             </button>
           )}
+          {!isSelf && (
+            <button
+              type="button"
+              onClick={() => { void onPasswordReset(user.id, user.email); }}
+              disabled={isWorking}
+              title="Send password reset email"
+              style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid #FDE68A", background: "#FFFBEB", color: "#92400E", fontSize: 12, fontWeight: 600, fontFamily: FONT, cursor: isWorking ? "not-allowed" : "pointer", whiteSpace: "nowrap" }}
+            >
+              Reset pwd
+            </button>
+          )}
+          {!isSelf && (
+            <button
+              type="button"
+              onClick={() => { void onDelete(user.id, user.email); }}
+              disabled={isWorking}
+              title="Permanently delete this user"
+              style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid #FECACA", background: "#FEF2F2", color: "#DC2626", fontSize: 12, fontWeight: 600, fontFamily: FONT, cursor: isWorking ? "not-allowed" : "pointer", whiteSpace: "nowrap" }}
+            >
+              Delete
+            </button>
+          )}
         </div>
       </td>
     </tr>
@@ -408,6 +435,9 @@ interface UserManagementPageProps {
 
 export function UserManagementPage({ currentUser }: UserManagementPageProps) {
   const [users, setUsers] = useState<PlatformUser[]>([]);
+  const [pendingInvitations, setPendingInvitations] = useState<Array<{ id: string; email: string; role: string; displayName: string; expiresAt: string; status: string }>>([]);
+  const [resendingEmail, setResendingEmail] = useState<string | null>(null);
+  const [deletingInviteId, setDeletingInviteId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [showInviteForm, setShowInviteForm] = useState(false);
@@ -432,10 +462,59 @@ export function UserManagementPage({ currentUser }: UserManagementPageProps) {
     try {
       const result = await listUsers();
       setUsers(result.users);
+      setPendingInvitations((result as { users: PlatformUser[]; pendingInvitations?: typeof pendingInvitations }).pendingInvitations || []);
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : "Failed to load users.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleSendPasswordReset(userId: string, email: string) {
+    if (!window.confirm(`Send a password reset link to ${email}?`)) return;
+    try {
+      const result = await sendPasswordReset(userId);
+      setBanner({ type: "success", message: result.message || `Reset link sent to ${email}.` });
+    } catch (err) {
+      setBanner({ type: "error", message: err instanceof Error ? err.message : "Failed to send reset link." });
+    }
+  }
+
+  async function handleDeleteUser(userId: string, email: string) {
+    if (!window.confirm(`Permanently delete user ${email}? This cannot be undone.`)) return;
+    try {
+      await deleteUser(userId);
+      setBanner({ type: "success", message: `User ${email} deleted.` });
+      void loadUsers();
+    } catch (err) {
+      setBanner({ type: "error", message: err instanceof Error ? err.message : "Failed to delete user." });
+    }
+  }
+
+  async function handleDeleteInvite(id: string, email: string) {
+    if (!window.confirm(`Cancel the invitation for ${email}?`)) return;
+    setDeletingInviteId(id);
+    try {
+      await deleteInvitation(id);
+      setBanner({ type: "success", message: `Invitation for ${email} cancelled.` });
+      void loadUsers();
+    } catch (err) {
+      setBanner({ type: "error", message: err instanceof Error ? err.message : "Failed to cancel invitation." });
+    } finally {
+      setDeletingInviteId(null);
+    }
+  }
+
+  async function handleResendInvite(email: string, role: string, displayName: string) {
+    setResendingEmail(email);
+    try {
+      await inviteUser({ email, role, displayName: displayName || email });
+      setBanner({ type: "success", message: `Invitation resent to ${email}.` });
+      void loadUsers();
+    } catch (err) {
+      setBanner({ type: "error", message: err instanceof Error ? err.message : "Failed to resend invitation." });
+    } finally {
+      setResendingEmail(null);
     }
   }
 
@@ -520,7 +599,7 @@ export function UserManagementPage({ currentUser }: UserManagementPageProps) {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ fontFamily: FONT, minHeight: "100dvh", background: "#F8FAFC" }}>
+    <div className="user-mgmt-page" style={{ fontFamily: FONT, minHeight: "100dvh", background: "var(--bg, #F8FAFC)" }}>
 
       {/* Impersonation banner */}
       {isImpersonating && (
@@ -529,7 +608,7 @@ export function UserManagementPage({ currentUser }: UserManagementPageProps) {
           top: 0,
           zIndex: 1000,
           background: "#F59E0B",
-          color: "#111827",
+          color: "var(--text, #111827)",
           padding: "10px 20px",
           display: "flex",
           alignItems: "center",
@@ -570,10 +649,10 @@ export function UserManagementPage({ currentUser }: UserManagementPageProps) {
         {/* Page header */}
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 24, gap: 16 }}>
           <div>
-            <h1 style={{ margin: "0 0 4px", fontSize: "1.5rem", fontWeight: 800, color: "#111827", letterSpacing: "-0.025em" }}>
+            <h1 style={{ margin: "0 0 4px", fontSize: "1.5rem", fontWeight: 800, color: "var(--text, #111827)", letterSpacing: "-0.025em" }}>
               User Management
             </h1>
-            <p style={{ margin: 0, fontSize: 13, color: "#6B7280" }}>
+            <p style={{ margin: 0, fontSize: 13, color: "var(--text-soft, #6B7280)" }}>
               Manage who has access, control roles, and send invitations.
             </p>
           </div>
@@ -642,7 +721,7 @@ export function UserManagementPage({ currentUser }: UserManagementPageProps) {
 
         {/* Users card */}
         <div style={{
-          background: "#fff",
+          background: "var(--surface, #fff)",
           borderRadius: 16,
           border: "1px solid #E5E7EB",
           boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 4px 8px rgba(0,0,0,0.03)",
@@ -651,15 +730,15 @@ export function UserManagementPage({ currentUser }: UserManagementPageProps) {
           {/* Card header */}
           <div style={{
             padding: "16px 20px",
-            borderBottom: "1px solid #F3F4F6",
+            borderBottom: "1px solid var(--border, #F3F4F6)",
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
           }}>
             <div>
-              <strong style={{ fontSize: 14, color: "#111827" }}>All users</strong>
+              <strong style={{ fontSize: 14, color: "var(--text, #111827)" }}>All users</strong>
               {!loading && (
-                <span style={{ marginLeft: 8, fontSize: 12, color: "#9CA3AF" }}>
+                <span style={{ marginLeft: 8, fontSize: 12, color: "var(--text-muted, #9CA3AF)" }}>
                   {users.length} {users.length === 1 ? "member" : "members"}
                 </span>
               )}
@@ -672,8 +751,8 @@ export function UserManagementPage({ currentUser }: UserManagementPageProps) {
                 padding: "5px 12px",
                 borderRadius: 6,
                 border: "1px solid #E5E7EB",
-                background: "#F9FAFB",
-                color: "#374151",
+                background: "var(--surface-alt, #F9FAFB)",
+                color: "var(--text-secondary, #374151)",
                 fontSize: 12,
                 fontWeight: 600,
                 fontFamily: FONT,
@@ -687,7 +766,7 @@ export function UserManagementPage({ currentUser }: UserManagementPageProps) {
 
           {/* Loading state */}
           {loading && (
-            <div style={{ padding: "48px 20px", textAlign: "center", color: "#9CA3AF", fontSize: 14 }}>
+            <div style={{ padding: "48px 20px", textAlign: "center", color: "var(--text-muted, #9CA3AF)", fontSize: 14 }}>
               Loading users…
             </div>
           )}
@@ -718,7 +797,7 @@ export function UserManagementPage({ currentUser }: UserManagementPageProps) {
 
           {/* Empty state */}
           {!loading && !loadError && users.length === 0 && (
-            <div style={{ padding: "48px 20px", textAlign: "center", color: "#9CA3AF", fontSize: 14 }}>
+            <div style={{ padding: "48px 20px", textAlign: "center", color: "var(--text-muted, #9CA3AF)", fontSize: 14 }}>
               No users found. Invite someone to get started.
             </div>
           )}
@@ -728,7 +807,7 @@ export function UserManagementPage({ currentUser }: UserManagementPageProps) {
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
-                  <tr style={{ background: "#F9FAFB" }}>
+                  <tr style={{ background: "var(--surface-alt, #F9FAFB)" }}>
                     {(["User", "Role", "Status", "Last login", "Actions"] as const).map((heading, i) => (
                       <th
                         key={heading}
@@ -738,9 +817,9 @@ export function UserManagementPage({ currentUser }: UserManagementPageProps) {
                           fontSize: 11,
                           fontWeight: 700,
                           letterSpacing: "0.06em",
-                          color: "#9CA3AF",
+                          color: "var(--text-muted, #9CA3AF)",
                           textTransform: "uppercase",
-                          borderBottom: "1px solid #E5E7EB",
+                          borderBottom: "1px solid var(--border, #E5E7EB)",
                           paddingLeft: i === 0 ? 20 : 14,
                           paddingRight: i === 4 ? 20 : 14,
                           whiteSpace: "nowrap",
@@ -760,6 +839,8 @@ export function UserManagementPage({ currentUser }: UserManagementPageProps) {
                       onRoleChange={handleRoleChange}
                       onToggleActive={handleToggleActive}
                       onImpersonate={handleImpersonate}
+                      onPasswordReset={handleSendPasswordReset}
+                      onDelete={handleDeleteUser}
                       isWorking={workingIds.has(user.id)}
                     />
                   ))}
@@ -769,8 +850,75 @@ export function UserManagementPage({ currentUser }: UserManagementPageProps) {
           )}
         </div>
 
+        {/* Pending invitations */}
+        {pendingInvitations.length > 0 && (
+          <div style={{
+            background: "var(--surface, #fff)", borderRadius: 14,
+            border: "1px solid #E5E7EB", boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+            overflow: "hidden", marginTop: 20,
+          }}>
+            <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border, #F3F4F6)", background: "#FFFBEB", display: "flex", alignItems: "center", gap: 8 }}>
+              <strong style={{ fontSize: 14, color: "#92400E" }}>⏳ Pending invitations</strong>
+              <span style={{ fontSize: 12, color: "#B45309" }}>{pendingInvitations.length} awaiting acceptance</span>
+            </div>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ background: "#FFFBEB" }}>
+                  {["Email", "Role", "Expires", ""].map((h, i) => (
+                    <th key={h + i} style={{ padding: "8px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", color: "#B45309", textTransform: "uppercase" as const, paddingLeft: i === 0 ? 20 : 14 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {pendingInvitations.map((inv) => (
+                  <tr key={inv.id} style={{ borderTop: "1px solid #FEF3C7" }}>
+                    <td style={{ padding: "10px 20px", fontSize: 13, color: "var(--text-secondary, #374151)" }}>{inv.email}</td>
+                    <td style={{ padding: "10px 14px" }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 4, background: "#FEF3C7", color: "#92400E", border: "1px solid #FDE68A", textTransform: "capitalize" as const }}>
+                        {inv.role}
+                      </span>
+                    </td>
+                    <td style={{ padding: "10px 14px", fontSize: 12, color: "var(--text-soft, #6B7280)" }}>
+                      {new Date(inv.expiresAt).toLocaleDateString()}
+                    </td>
+                    <td style={{ padding: "10px 20px 10px 14px", textAlign: "right", display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                      <button
+                        type="button"
+                        disabled={resendingEmail === inv.email}
+                        onClick={() => { void handleResendInvite(inv.email, inv.role, inv.displayName); }}
+                        style={{
+                          padding: "5px 12px", borderRadius: 6, border: "1px solid #FDE68A",
+                          background: resendingEmail === inv.email ? "#FEF3C7" : "#FFFBEB",
+                          color: "#92400E", fontSize: 12, fontWeight: 600,
+                          cursor: resendingEmail === inv.email ? "not-allowed" : "pointer",
+                          fontFamily: FONT, opacity: resendingEmail === inv.email ? 0.6 : 1,
+                        }}
+                      >
+                        {resendingEmail === inv.email ? "Sending…" : "↺ Resend"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={deletingInviteId === inv.id}
+                        onClick={() => { void handleDeleteInvite(inv.id, inv.email); }}
+                        style={{
+                          padding: "5px 12px", borderRadius: 6, border: "1px solid #FECACA",
+                          background: "#FEF2F2", color: "#DC2626", fontSize: 12, fontWeight: 600,
+                          cursor: deletingInviteId === inv.id ? "not-allowed" : "pointer",
+                          fontFamily: FONT, opacity: deletingInviteId === inv.id ? 0.6 : 1,
+                        }}
+                      >
+                        {deletingInviteId === inv.id ? "…" : "✕ Cancel"}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
         {/* Footer hint */}
-        <p style={{ margin: "16px 0 0", fontSize: 12, color: "#9CA3AF", textAlign: "center" }}>
+        <p style={{ margin: "16px 0 0", fontSize: 12, color: "var(--text-muted, #9CA3AF)", textAlign: "center" }}>
           Invited users will receive an email with a link to set up their account.
           Role changes take effect immediately.
         </p>

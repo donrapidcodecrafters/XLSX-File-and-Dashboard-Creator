@@ -410,7 +410,7 @@ export function HomePage({
           {/* ── Right sidebar ── */}
           <div className="home-column">
 
-            <SectionCard title="Data Status" subtitle="Postgres database sources and sync status">
+            <SectionCard title="Data Status" subtitle="Connected data sources and sync status">
               <div className="home-status-list">
                 <div className="home-status-item">
                   <strong>Rows in database</strong>

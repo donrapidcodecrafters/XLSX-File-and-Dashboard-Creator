@@ -132,7 +132,7 @@ export function StudioSettingsPanel({
             <div className="summary-card"><strong>{documentState.sync.lastSavedAt ? new Date(documentState.sync.lastSavedAt).toLocaleTimeString() : "Not yet"}</strong><span>Last saved</span></div>
             <div className="summary-card"><strong>{activeQuickbaseProfile?.refreshStatus.lastSuccessAt ? new Date(activeQuickbaseProfile.refreshStatus.lastSuccessAt).toLocaleString() : "Never synced"}</strong><span>Last data sync</span></div>
             <div className="summary-card"><strong>{activeQuickbaseProfile?.refreshStatus.nextRunAt ? new Date(activeQuickbaseProfile.refreshStatus.nextRunAt).toLocaleString() : "Not scheduled"}</strong><span>Next scheduled sync</span></div>
-            <div className="summary-card"><strong>{savedRowsForApp.toLocaleString()}</strong><span>Rows in database</span></div>
+            <div className="summary-card"><strong>{savedRowsForApp.toLocaleString()}</strong><span>Records in database</span></div>
           </div>
           <label className="field">
             <span>Platform name</span>
@@ -426,90 +426,30 @@ export function StudioSettingsPanel({
 
       {renderStep("storage", (
         <>
-          {/* Postgres connection — read-only, auto-populated from env */}
+          {/* Database status — admin-friendly, no technical details */}
           <div className="card">
             <div className="card-head">
-              <strong>Database connection</strong>
-              <span className="micro">Read-only — configured via environment variables on the server.</span>
+              <strong>Data storage</strong>
+              <span className="micro">All platform data is stored securely on the server.</span>
             </div>
             {platformConfigLoading ? (
-              <div className="empty-hint">Loading configuration…</div>
+              <div className="empty-hint">Loading…</div>
             ) : platformConfig ? (
               <>
                 <div className={`sync-status ${platformConfig.postgres.connected ? "sync-status-ok" : "sync-status-warn"}`} style={{ margin: 0 }}>
-                  <strong>{platformConfig.postgres.connected ? "Connected to Postgres" : "Postgres not configured"}</strong>
-                  <span>{platformConfig.postgres.connected ? "All platform data is stored in your Postgres 16 database." : "Set DATABASE_URL in your .env file to enable Postgres."}</span>
+                  <strong>{platformConfig.postgres.connected ? "Database connected" : "Database not configured"}</strong>
+                  <span>{platformConfig.postgres.connected ? "All platform data is stored and backed up on the server." : "Contact your system administrator to configure the database connection."}</span>
                 </div>
-                <div className="filter-grid compact-grid" style={{ marginTop: 8 }}>
-                  <label className="field">
-                    <span>Connection URL</span>
-                    <input readOnly value={platformConfig.postgres.urlSanitized} style={{ fontFamily: "monospace", fontSize: 12 }} />
-                  </label>
-                  <label className="field">
-                    <span>SSL</span>
-                    <input readOnly value={platformConfig.postgres.ssl ? "Enabled" : "Disabled"} />
-                  </label>
-                </div>
-                <div className="filter-grid compact-grid">
-                  <label className="field">
-                    <span>Connection pool size</span>
-                    <input readOnly value={platformConfig.postgres.poolMax} />
-                  </label>
-                  <label className="field">
-                    <span>Auto-migrate schema</span>
-                    <input readOnly value={platformConfig.postgres.autoMigrate ? "Yes" : "No"} />
-                  </label>
-                </div>
-                <div className="filter-grid compact-grid">
-                  <label className="field">
-                    <span>Idle timeout</span>
-                    <input readOnly value={`${platformConfig.postgres.idleTimeoutMs / 1000}s`} />
-                  </label>
-                  <label className="field">
-                    <span>Statement timeout</span>
-                    <input readOnly value={`${platformConfig.postgres.statementTimeoutMs / 1000}s`} />
-                  </label>
-                </div>
-                <div className="summary-grid" style={{ marginTop: 4 }}>
-                  <div className="summary-card"><strong>{savedRowsForApp.toLocaleString()}</strong><span>Rows in database</span></div>
-                  <div className="summary-card"><strong>{platformConfig.postgres.legacyRowLoadLimit.toLocaleString()}</strong><span>Max in-memory rows</span></div>
+                <div className="summary-grid" style={{ marginTop: 8 }}>
+                  <div className="summary-card"><strong>{savedRowsForApp.toLocaleString()}</strong><span>Records in database</span></div>
+                  <div className="summary-card"><strong>{platformConfig.auth.sessionTtlHours}h</strong><span>Session timeout</span></div>
+                  <div className="summary-card"><strong>{platformConfig.server.publicUrl.replace(/^https?:\/\//, "")}</strong><span>Platform address</span></div>
                 </div>
               </>
             ) : (
-              <div className="empty-hint">Configuration unavailable — admin access required.</div>
+              <div className="empty-hint">Contact your administrator for storage configuration details.</div>
             )}
           </div>
-
-          {/* Auth / session */}
-          {platformConfig && (
-            <div className="card">
-              <div className="card-head">
-                <strong>Authentication</strong>
-                <span className="micro">Read-only — configured via environment variables.</span>
-              </div>
-              <div className="filter-grid compact-grid">
-                <label className="field">
-                  <span>Auth required</span>
-                  <input readOnly value={platformConfig.auth.enabled ? "Yes — login required" : "No — open access (dev mode)"} />
-                </label>
-                <label className="field">
-                  <span>Session timeout</span>
-                  <input readOnly value={`${platformConfig.auth.sessionTtlHours} hours`} />
-                </label>
-              </div>
-              <div className="filter-grid compact-grid">
-                <label className="field">
-                  <span>Whitelist users configured</span>
-                  <input readOnly value={platformConfig.auth.userCount} />
-                </label>
-                <label className="field">
-                  <span>Public URL</span>
-                  <input readOnly value={platformConfig.server.publicUrl} style={{ fontFamily: "monospace", fontSize: 12 }} />
-                </label>
-              </div>
-              <div className="micro">To change these settings, edit the <code>.env</code> file on the server and restart the API.</div>
-            </div>
-          )}
 
           {/* Sharing model */}
           <div className="card">
@@ -565,34 +505,23 @@ export function StudioSettingsPanel({
         <>
           <div className="summary-grid">
             <div className="summary-card"><strong>{documentState.sync.providerMode === "api" ? "Active" : "Local only"}</strong><span>Workspace mode</span></div>
-            <div className="summary-card"><strong>{activeQuickbaseConfig.appId || "Not set"}</strong><span>Active app ID</span></div>
-            <div className="summary-card"><strong>{activeQuickbaseProfile?.refreshSource.tableIds.length || 0}</strong><span>Tables selected for refresh</span></div>
-            <div className="summary-card"><strong>{savedRowsForApp.toLocaleString()}</strong><span>Rows cached for this app</span></div>
+            <div className="summary-card"><strong>{documentState.sync.lastLoadedAt ? new Date(documentState.sync.lastLoadedAt).toLocaleTimeString() : "Not yet"}</strong><span>Last loaded</span></div>
+            <div className="summary-card"><strong>{documentState.sync.lastSavedAt ? new Date(documentState.sync.lastSavedAt).toLocaleTimeString() : "Not yet"}</strong><span>Last saved</span></div>
+            <div className="summary-card"><strong>{savedRowsForApp.toLocaleString()}</strong><span>Rows in database</span></div>
           </div>
-          {lastQuickbaseSync ? (
-            <div className={`sync-status ${lastQuickbaseSync.ok ? "sync-status-ok" : "sync-status-warn"}`}>
-              <strong>{lastQuickbaseSync.ok ? "Quickbase save succeeded" : "Quickbase save needs attention"}</strong>
-              <span>{lastQuickbaseSync.message}</span>
-              <span>
-                {lastQuickbaseSync.savedObjects} saved reports or dashboards · {lastQuickbaseSync.savedSettings} user settings rows · {lastQuickbaseSync.savedVersions} version rows
-              </span>
-            </div>
-          ) : (
-            <div className="sync-status">
-              <strong>Ready to save</strong>
-              <span>Use the actions below to load from the server or save the current settings into Quickbase and the server document.</span>
-            </div>
-          )}
+          <div className="sync-status sync-status-ok">
+            <strong>Ready to save</strong>
+            <span>Review the summary above, then use the buttons below to reload settings from the server or save your current changes.</span>
+          </div>
         </>
       ))}
 
       <div className="studio-actions">
         <button type="button" className="ghost-button btn-neutral" onClick={() => setActiveStep(settingsSteps[Math.max(0, activeStepIndex - 1)].id)} disabled={activeStepIndex <= 0}>Back</button>
-        <button type="button" onClick={() => setActiveStep(settingsSteps[Math.min(settingsSteps.length - 1, activeStepIndex + 1)].id)} disabled={activeStepIndex >= settingsSteps.length - 1}>Next</button>
       </div>
       <div className="studio-actions">
-        <button type="button" onClick={() => { void reloadRemote(); }}>Load all settings from server</button>
-        <button type="button" onClick={() => { void saveRemote(); }} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save all settings to Quickbase and server"}</button>
+        <button type="button" className="ghost-button btn-system" onClick={() => { void reloadRemote(); }}>↺ Reload settings from server</button>
+        <button type="button" className="ghost-button btn-create" onClick={() => { void saveRemote(); }} disabled={savingRemote}>{savingRemote ? "Saving…" : "✓ Save settings to server"}</button>
       </div>
     </div>
   );

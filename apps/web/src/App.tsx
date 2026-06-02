@@ -16,6 +16,7 @@ import {
   type TableDefinition
 } from "@studio/shared";
 import { AcceptInvitationPage } from "./components/AcceptInvitationPage";
+import { ResetPasswordPage } from "./components/ResetPasswordPage";
 import { DataManagementPage } from "./components/DataManagementPage";
 import { InactivityWarning } from "./components/InactivityWarning";
 import { ScheduledReportsPage } from "./components/ScheduledReportsPage";
@@ -1311,9 +1312,14 @@ export function App() {
     document.title = platformName;
   }, [helpRoute, homeRoute, location.pathname, platformName, readerRoute, studioRoute, viewerRoute]);
 
-  // AcceptInvitationPage is public — render it before auth checks
-  if (location.pathname.startsWith("/accept-invitation/")) {
+  // Public pages — use window.location (not React Router's location) because
+  // the Apache SPA rewrite can cause useLocation() to return "/" instead of the real path.
+  const rawPath = window.location.pathname;
+  if (rawPath.startsWith("/accept-invitation/")) {
     return <AcceptInvitationPage />;
+  }
+  if (rawPath.startsWith("/reset-password/")) {
+    return <ResetPasswordPage />;
   }
 
   if (authState === "loading") {
@@ -1339,7 +1345,9 @@ export function App() {
   }
 
 
-  if (hostedLaunchRequiredMessage || (studioDocument && sessionStatus && !sessionStatus.valid)) {
+  // Skip Quickbase session validation when user is authenticated via the platform's own auth system
+  const skipQuickbaseSessionCheck = authRequired ? authState === "authenticated" : true;
+  if (!skipQuickbaseSessionCheck && (hostedLaunchRequiredMessage || (studioDocument && sessionStatus && !sessionStatus.valid))) {
     return (
       <div className="app-shell">
         <main className="content">
@@ -1531,8 +1539,8 @@ export function App() {
           ) : null}
           {!authRequired && (
             <section className="sync-status" style={{ borderColor: "rgba(13,124,102,0.22)", background: "rgba(13,124,102,0.06)" }}>
-              <strong>Running without login (development mode)</strong>
-              <span>Login is currently disabled. Anyone with the URL can access this platform. To require login, set <code>AUTH_ENABLED=true</code> in your <code>.env</code> file and restart the server.</span>
+              <strong>Open access mode</strong>
+              <span>Sign-in is currently disabled. Contact your administrator to enable login and restrict access.</span>
             </section>
           )}
           {catalogError ? (

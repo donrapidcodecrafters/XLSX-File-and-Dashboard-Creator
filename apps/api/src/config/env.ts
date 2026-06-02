@@ -73,7 +73,10 @@ export const apiConfig = {
     idleTimeoutMillis: readNumber("POSTGRES_IDLE_TIMEOUT_MS", 30_000, 1_000, 120_000),
     connectionTimeoutMillis: readNumber("POSTGRES_CONNECTION_TIMEOUT_MS", 5_000, 500, 30_000),
     statementTimeoutMillis: readNumber("POSTGRES_STATEMENT_TIMEOUT_MS", 60_000, 1_000, 300_000),
-    legacyRowLoadLimit: readNumber("POSTGRES_LEGACY_ROW_LOAD_LIMIT", 100_000, 1_000, 1_000_000),
+    // Max rows loaded into memory for in-memory sorted reports.
+    // Cursor-based exports/scheduled reports are unlimited regardless of this setting.
+    // Warning: values above ~500k will use significant RAM on a 4GB server.
+    legacyRowLoadLimit: readNumber("POSTGRES_LEGACY_ROW_LOAD_LIMIT", 100_000, 1_000, 50_000_000),
     autoMigrate: readBoolean("POSTGRES_AUTO_MIGRATE", true)
   },
   auth: {

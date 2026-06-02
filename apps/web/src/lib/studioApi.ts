@@ -357,6 +357,36 @@ export function inviteUser(payload: { email: string; role: string; displayName: 
   });
 }
 
+export function sendPasswordReset(userId: string) {
+  return request<{ ok: boolean; message: string }>(`/api/users/${encodeURIComponent(userId)}/reset-password`, { method: "POST" });
+}
+
+export function deleteUser(id: string) {
+  return request<{ ok: boolean }>(`/api/users/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export async function verifyPasswordResetToken(token: string) {
+  return request<{ valid: boolean; email: string }>(`/api/auth/reset-password/${encodeURIComponent(token)}`);
+}
+
+export async function completePasswordReset(token: string, password: string) {
+  return request<{ ok: boolean }>("/api/auth/reset-password", {
+    method: "POST",
+    body: JSON.stringify({ token, password })
+  });
+}
+
+export function deleteInvitation(id: string) {
+  return request<{ ok: boolean }>(`/api/users/invite/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export function updateInvitation(id: string, payload: { role?: string; displayName?: string }) {
+  return request<{ invitation: PendingInvitation }>(`/api/users/invite/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(payload)
+  });
+}
+
 export function updateUserRole(id: string, role: string) {
   return request<{ user: PlatformUser }>(`/api/users/${encodeURIComponent(id)}/role`, {
     method: "PUT",

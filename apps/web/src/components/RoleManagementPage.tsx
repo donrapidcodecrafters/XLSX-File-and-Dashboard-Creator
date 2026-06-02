@@ -209,7 +209,7 @@ const BUILT_IN_ROLES: PlatformRole[] = [
     id: "viewer",
     name: "Viewer",
     description: "Can read and use shared reports and dashboards.",
-    color: "#6B7280",
+    color: "var(--text-soft, #6B7280)",
     permissions: BUILT_IN_PERMISSIONS.viewer,
     isBuiltIn: true,
   },
@@ -285,7 +285,7 @@ function RoleListItem({
         outlineOffset: -2,
       }}
       onMouseEnter={(e) => {
-        if (!selected) e.currentTarget.style.background = "#F9FAFB";
+        if (!selected) e.currentTarget.style.background = "var(--surface-hover, #F9FAFB)";
       }}
       onMouseLeave={(e) => {
         if (!selected) e.currentTarget.style.background = "transparent";
@@ -306,7 +306,7 @@ function RoleListItem({
         <div style={{
           fontSize: 13,
           fontWeight: 600,
-          color: "#111827",
+          color: "var(--text, #111827)",
           display: "flex",
           alignItems: "center",
           gap: 6,
@@ -318,8 +318,8 @@ function RoleListItem({
               fontWeight: 700,
               letterSpacing: "0.06em",
               textTransform: "uppercase",
-              color: "#9CA3AF",
-              background: "#F3F4F6",
+              color: "var(--text-muted, #9CA3AF)",
+              background: "var(--surface-hover, #F3F4F6)",
               border: "1px solid #E5E7EB",
               borderRadius: 4,
               padding: "1px 5px",
@@ -328,7 +328,7 @@ function RoleListItem({
             </span>
           )}
         </div>
-        <div style={{ fontSize: 11, color: "#9CA3AF", marginTop: 1 }}>
+        <div style={{ fontSize: 11, color: "var(--text-muted, #9CA3AF)", marginTop: 1 }}>
           {granted}/{total} permissions
         </div>
       </div>
@@ -360,7 +360,7 @@ function PermissionGroupCard({ group, permissions, readOnly, onChange }: Permiss
       border: "1px solid #E5E7EB",
       borderRadius: 10,
       overflow: "hidden",
-      background: "#FFFFFF",
+      background: "var(--surface, #FFFFFF)",
     }}>
       {/* Group header */}
       <div style={{
@@ -368,11 +368,11 @@ function PermissionGroupCard({ group, permissions, readOnly, onChange }: Permiss
         alignItems: "center",
         justifyContent: "space-between",
         padding: "10px 14px",
-        background: "#F9FAFB",
-        borderBottom: "1px solid #F3F4F6",
+        background: "var(--surface-alt, #F9FAFB)",
+        borderBottom: "1px solid var(--border, #F3F4F6)",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 12, fontWeight: 700, color: "#374151", letterSpacing: "0.01em" }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-secondary, #374151)", letterSpacing: "0.01em" }}>
             {group.label}
           </span>
           <span style={{
@@ -402,7 +402,7 @@ function PermissionGroupCard({ group, permissions, readOnly, onChange }: Permiss
               padding: "2px 6px",
               borderRadius: 4,
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = "#F3F4F6"; }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "var(--surface-hover, #F3F4F6)"; }}
             onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
           >
             {allGranted ? "Remove all" : noneGranted ? "Grant all" : "Grant all"}
@@ -428,10 +428,10 @@ function PermissionGroupCard({ group, permissions, readOnly, onChange }: Permiss
                 transition: "background 60ms",
               }}
               onMouseEnter={(e) => {
-                if (!readOnly) (e.currentTarget as HTMLLabelElement).style.background = granted ? "#F0FDF9" : "#FAFAFA";
+                if (!readOnly) (e.currentTarget as HTMLLabelElement).style.background = granted ? "var(--brand-light, #F0FDF9)" : "var(--surface-hover, #FAFAFA)";
               }}
               onMouseLeave={(e) => {
-                (e.currentTarget as HTMLLabelElement).style.background = granted && !readOnly ? "#FAFFFE" : "transparent";
+                (e.currentTarget as HTMLLabelElement).style.background = granted && !readOnly ? "var(--brand-light, #FAFFFE)" : "transparent";
               }}
             >
               <input
@@ -457,7 +457,7 @@ function PermissionGroupCard({ group, permissions, readOnly, onChange }: Permiss
                 }}>
                   {perm.label}
                 </div>
-                <div style={{ fontSize: 11, color: "#6B7280", marginTop: 1, fontFamily: FONT }}>
+                <div style={{ fontSize: 11, color: "var(--text-soft, #6B7280)", marginTop: 1, fontFamily: FONT }}>
                   {perm.description}
                 </div>
               </div>
@@ -493,7 +493,7 @@ function DeleteConfirmDialog({
       background: "rgba(0,0,0,0.45)",
     }}>
       <div style={{
-        background: "#fff",
+        background: "var(--surface, #fff)",
         borderRadius: 14,
         border: "1px solid #E5E7EB",
         boxShadow: "0 8px 40px rgba(0,0,0,0.18)",
@@ -502,10 +502,10 @@ function DeleteConfirmDialog({
         width: "calc(100% - 40px)",
         fontFamily: FONT,
       }}>
-        <div style={{ fontSize: 16, fontWeight: 800, color: "#111827", marginBottom: 8 }}>
+        <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text, #111827)", marginBottom: 8 }}>
           Delete "{role.name}"?
         </div>
-        <div style={{ fontSize: 13, color: "#6B7280", marginBottom: 22, lineHeight: 1.6 }}>
+        <div style={{ fontSize: 13, color: "var(--text-soft, #6B7280)", marginBottom: 22, lineHeight: 1.6 }}>
           This custom role will be permanently removed. Users currently assigned this role will lose these permissions.
           This action cannot be undone.
         </div>
@@ -518,15 +518,15 @@ function DeleteConfirmDialog({
               padding: "8px 18px",
               borderRadius: 8,
               border: "1px solid #E5E7EB",
-              background: "#F9FAFB",
-              color: "#374151",
+              background: "var(--surface-alt, #F9FAFB)",
+              color: "var(--text-secondary, #374151)",
               fontSize: 13,
               fontWeight: 600,
               fontFamily: FONT,
               cursor: deleting ? "not-allowed" : "pointer",
             }}
-            onMouseEnter={(e) => { if (!deleting) e.currentTarget.style.background = "#F3F4F6"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = "#F9FAFB"; }}
+            onMouseEnter={(e) => { if (!deleting) e.currentTarget.style.background = "var(--surface-hover, #F3F4F6)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "var(--surface-alt, #F9FAFB)"; }}
           >
             Cancel
           </button>
@@ -595,7 +595,7 @@ export function RoleManagementPage() {
         ...(result.builtIn || []).map((r): PlatformRole => ({
           id: `builtin-${r.name}`, name: r.name,
           description: (r as Record<string, unknown>).description as string || "",
-          color: "#6B7280",
+          color: "var(--text-soft, #6B7280)",
           permissions: r.permissions as RolePermissions,
           isBuiltIn: true,
         })),
@@ -734,8 +734,8 @@ export function RoleManagementPage() {
     fontSize: 13,
     fontFamily: FONT,
     outline: "none",
-    background: "#fff",
-    color: "#111827",
+    background: "var(--surface, #fff)",
+    color: "var(--text, #111827)",
     boxSizing: "border-box",
   };
 
@@ -757,16 +757,16 @@ export function RoleManagementPage() {
   // ── Render ────────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ fontFamily: FONT, minHeight: "100dvh", background: "#F8FAFC" }}>
+    <div className="role-mgmt-page" style={{ fontFamily: FONT, minHeight: "100dvh", background: "var(--bg, #F8FAFC)" }}>
       <div style={{ maxWidth: 1200, margin: "0 auto", padding: "32px 24px" }}>
 
         {/* Page header */}
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 24, gap: 16 }}>
           <div>
-            <h1 style={{ margin: "0 0 4px", fontSize: "1.5rem", fontWeight: 800, color: "#111827", letterSpacing: "-0.025em" }}>
+            <h1 style={{ margin: "0 0 4px", fontSize: "1.5rem", fontWeight: 800, color: "var(--text, #111827)", letterSpacing: "-0.025em" }}>
               Role Management
             </h1>
-            <p style={{ margin: 0, fontSize: 13, color: "#6B7280" }}>
+            <p style={{ margin: 0, fontSize: 13, color: "var(--text-soft, #6B7280)" }}>
               Create and manage custom roles with granular permission controls.
             </p>
           </div>
@@ -829,7 +829,7 @@ export function RoleManagementPage() {
 
           {/* ── Left: role list ─────────────────────────────────────────────── */}
           <div style={{
-            background: "#fff",
+            background: "var(--surface, #fff)",
             borderRadius: 14,
             border: "1px solid #E5E7EB",
             boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
@@ -838,17 +838,17 @@ export function RoleManagementPage() {
             {/* List header */}
             <div style={{
               padding: "13px 14px",
-              borderBottom: "1px solid #F3F4F6",
-              background: "#F9FAFB",
+              borderBottom: "1px solid var(--border, #F3F4F6)",
+              background: "var(--surface-alt, #F9FAFB)",
             }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: "#9CA3AF", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted, #9CA3AF)", letterSpacing: "0.06em", textTransform: "uppercase" }}>
                 Roles
               </span>
             </div>
 
             {/* Built-in section */}
             <div style={{ padding: "6px 6px 2px" }}>
-              <div style={{ padding: "5px 8px 3px", fontSize: 10, fontWeight: 700, color: "#9CA3AF", letterSpacing: "0.07em", textTransform: "uppercase" }}>
+              <div style={{ padding: "5px 8px 3px", fontSize: 10, fontWeight: 700, color: "var(--text-muted, #9CA3AF)", letterSpacing: "0.07em", textTransform: "uppercase" }}>
                 Built-in
               </div>
               {BUILT_IN_ROLES.map((role) => (
@@ -864,12 +864,12 @@ export function RoleManagementPage() {
             {/* Custom section */}
             <div style={{ padding: "4px 6px 8px", borderTop: customRoles.length > 0 || loading ? "1px solid #F3F4F6" : "none", marginTop: customRoles.length > 0 || loading ? 4 : 0 }}>
               {(customRoles.length > 0 || loading) && (
-                <div style={{ padding: "5px 8px 3px", fontSize: 10, fontWeight: 700, color: "#9CA3AF", letterSpacing: "0.07em", textTransform: "uppercase" }}>
+                <div style={{ padding: "5px 8px 3px", fontSize: 10, fontWeight: 700, color: "var(--text-muted, #9CA3AF)", letterSpacing: "0.07em", textTransform: "uppercase" }}>
                   Custom
                 </div>
               )}
               {loading && (
-                <div style={{ padding: "8px 8px", fontSize: 12, color: "#9CA3AF" }}>Loading…</div>
+                <div style={{ padding: "8px 8px", fontSize: 12, color: "var(--text-muted, #9CA3AF)" }}>Loading…</div>
               )}
               {!loading && loadError && (
                 <div style={{ padding: "8px 8px", fontSize: 12, color: "#DC2626" }}>
@@ -897,7 +897,7 @@ export function RoleManagementPage() {
           {/* ── Right: role editor ──────────────────────────────────────────── */}
           {selectedRole && (
             <div style={{
-              background: "#fff",
+              background: "var(--surface, #fff)",
               borderRadius: 14,
               border: "1px solid #E5E7EB",
               boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
@@ -906,8 +906,8 @@ export function RoleManagementPage() {
               {/* Editor header */}
               <div style={{
                 padding: "16px 20px",
-                borderBottom: "1px solid #F3F4F6",
-                background: "#F9FAFB",
+                borderBottom: "1px solid var(--border, #F3F4F6)",
+                background: "var(--surface-alt, #F9FAFB)",
                 display: "flex",
                 alignItems: "center",
                 gap: 10,
@@ -923,7 +923,7 @@ export function RoleManagementPage() {
                   }}
                 />
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: "#111827" }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text, #111827)" }}>
                     {canEdit ? (draftName || "New role") : selectedRole.name}
                     {dirty && canEdit && (
                       <span style={{ marginLeft: 6, fontSize: 10, color: "#B45309", fontWeight: 600, background: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 4, padding: "1px 5px", verticalAlign: "middle" }}>
@@ -931,7 +931,7 @@ export function RoleManagementPage() {
                       </span>
                     )}
                   </div>
-                  <div style={{ fontSize: 11, color: "#9CA3AF", marginTop: 1 }}>
+                  <div style={{ fontSize: 11, color: "var(--text-muted, #9CA3AF)", marginTop: 1 }}>
                     {selectedRole.id === "developer"
                       ? <span style={{ color: "#7C3AED", fontWeight: 600 }}>Full access to everything · Read-only</span>
                       : <>
@@ -952,15 +952,15 @@ export function RoleManagementPage() {
                         padding: "6px 14px",
                         borderRadius: 7,
                         border: "1px solid #E5E7EB",
-                        background: "#F9FAFB",
-                        color: "#6B7280",
+                        background: "var(--surface-alt, #F9FAFB)",
+                        color: "var(--text-soft, #6B7280)",
                         fontSize: 12,
                         fontWeight: 600,
                         fontFamily: FONT,
                         cursor: "pointer",
                       }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = "#F3F4F6"; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = "#F9FAFB"; }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = "var(--surface-hover, #F3F4F6)"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = "var(--surface-alt, #F9FAFB)"; }}
                     >
                       Discard
                     </button>
@@ -1020,7 +1020,7 @@ export function RoleManagementPage() {
                   <div style={{ marginBottom: 22 }}>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
                       <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                        <span style={{ fontSize: 11, fontWeight: 600, color: "#374151", letterSpacing: "0.01em" }}>Role name *</span>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary, #374151)", letterSpacing: "0.01em" }}>Role name *</span>
                         <input
                           type="text"
                           value={draftName}
@@ -1032,7 +1032,7 @@ export function RoleManagementPage() {
                         />
                       </label>
                       <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                        <span style={{ fontSize: 11, fontWeight: 600, color: "#374151", letterSpacing: "0.01em" }}>Description</span>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary, #374151)", letterSpacing: "0.01em" }}>Description</span>
                         <input
                           type="text"
                           value={draftDescription}
@@ -1047,7 +1047,7 @@ export function RoleManagementPage() {
 
                     {/* Colour picker */}
                     <div>
-                      <span style={{ fontSize: 11, fontWeight: 600, color: "#374151", letterSpacing: "0.01em", display: "block", marginBottom: 6 }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary, #374151)", letterSpacing: "0.01em", display: "block", marginBottom: 6 }}>
                         Colour
                       </span>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -1080,21 +1080,21 @@ export function RoleManagementPage() {
                     marginBottom: 20,
                     padding: "12px 14px",
                     borderRadius: 10,
-                    background: "#F9FAFB",
+                    background: "var(--surface-alt, #F9FAFB)",
                     border: "1px solid #E5E7EB",
                   }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: "#111827", marginBottom: 3 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text, #111827)", marginBottom: 3 }}>
                       {selectedRole.name}
                     </div>
                     {selectedRole.description && (
-                      <div style={{ fontSize: 12, color: "#6B7280" }}>
+                      <div style={{ fontSize: 12, color: "var(--text-soft, #6B7280)" }}>
                         {selectedRole.description}
                       </div>
                     )}
                     <div style={{
                       marginTop: 8,
                       fontSize: 11,
-                      color: "#9CA3AF",
+                      color: "var(--text-muted, #9CA3AF)",
                       display: "flex",
                       alignItems: "center",
                       gap: 6,
@@ -1128,7 +1128,7 @@ export function RoleManagementPage() {
                       <div style={{ fontSize: 15, fontWeight: 700, color: "#5B21B6", marginBottom: 4 }}>
                         Developer — Unrestricted Access
                       </div>
-                      <div style={{ fontSize: 13, color: "#6B7280", lineHeight: 1.5 }}>
+                      <div style={{ fontSize: 13, color: "var(--text-soft, #6B7280)", lineHeight: 1.5 }}>
                         The Developer role automatically has full access to every feature and setting in the platform.
                         No configuration is needed — this role bypasses all permission checks and is reserved for <strong>don@rapidcodecrafters.com</strong>.
                       </div>
@@ -1173,8 +1173,8 @@ export function RoleManagementPage() {
                             padding: "6px 14px",
                             borderRadius: 7,
                             border: "1px solid #E5E7EB",
-                            background: "#fff",
-                            color: "#6B7280",
+                            background: "var(--surface, #fff)",
+                            color: "var(--text-soft, #6B7280)",
                             fontSize: 12,
                             fontWeight: 600,
                             fontFamily: FONT,
@@ -1213,7 +1213,7 @@ export function RoleManagementPage() {
           )}
         </div>
 
-        <p style={{ margin: "16px 0 0", fontSize: 12, color: "#9CA3AF", textAlign: "center" }}>
+        <p style={{ margin: "16px 0 0", fontSize: 12, color: "var(--text-muted, #9CA3AF)", textAlign: "center" }}>
           Built-in roles cannot be modified. Custom roles can be assigned to users from the User Management page.
         </p>
       </div>

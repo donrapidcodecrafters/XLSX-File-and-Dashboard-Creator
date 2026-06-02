@@ -18,6 +18,16 @@ CREATE TABLE IF NOT EXISTS users (
 ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret text;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled boolean NOT NULL DEFAULT false;
 
+-- Password reset tokens
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  id text PRIMARY KEY,
+  user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token text NOT NULL UNIQUE,
+  expires_at timestamptz NOT NULL DEFAULT now() + interval '1 hour',
+  used_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
 -- TOTP for whitelist-only users (no full users row) keyed by email
 CREATE TABLE IF NOT EXISTS user_totp (
   email text PRIMARY KEY,
