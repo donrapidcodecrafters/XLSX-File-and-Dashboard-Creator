@@ -651,9 +651,9 @@ export function ReportView({
       ) : null}
 
       {zeroRows ? (
-        <div className="sync-status sync-status-warn">
-          <strong>No rows found</strong>
-          <span>This report loaded successfully, but it returned 0 rows. Refresh all or Refresh now if you expected results.</span>
+        <div className="sync-status" style={{ borderLeft: "4px solid var(--border-md, #B0BEC8)" }}>
+          <strong>No data available</strong>
+          <span>This report returned 0 rows. If you expected results, use Refresh Now to pull fresh data from the source.</span>
         </div>
       ) : null}
 
@@ -730,12 +730,12 @@ export function ReportView({
       ) : null}
 
       {!loading && result && !showSummary && !showChart && !showDetails ? (
-        <div className="sync-status sync-status-warn">
-          <strong>{zeroRows ? "No rows found" : "No visible report sections"}</strong>
+        <div className="sync-status" style={{ borderLeft: "4px solid var(--border-md, #B0BEC8)" }}>
+          <strong>{zeroRows ? "No data available" : "No visible report sections"}</strong>
           <span>
             {zeroRows
-              ? "This report loaded successfully, but the current filters returned no rows."
-              : "This report has data, but summary, chart, and detail sections are all hidden in the current configuration."}
+              ? "This report returned 0 rows. Use Refresh Now to pull fresh data from the source."
+              : "This report has data, but summary, chart, and detail sections are all turned off in the report editor."}
           </span>
         </div>
       ) : null}

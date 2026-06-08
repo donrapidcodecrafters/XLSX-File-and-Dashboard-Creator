@@ -3883,6 +3883,26 @@ th {
   width: min(1180px, calc(100vw - 36px));
 }
 
+/* Settings panel body — gives cards visible contrast in light mode */
+.settings-panel-body {
+  background: var(--bg-accent, #E6EBF2);
+  border-radius: 10px;
+  padding: 16px;
+  gap: 14px;
+}
+
+html.dark .settings-panel-body {
+  background: transparent;
+  padding: 0;
+}
+
+/* Settings cards inherit proper background */
+.settings-panel-body > .card,
+.settings-panel-body > .sync-status,
+.settings-panel-body > .builder-stepper {
+  background: var(--surface);
+}
+
 /* Settings as a full-page route (/settings) — renders without builder UI */
 .settings-full-page {
   min-height: 100vh;

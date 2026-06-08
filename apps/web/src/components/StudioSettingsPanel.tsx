@@ -146,7 +146,7 @@ export function StudioSettingsPanel({
     );
   }
   return (
-    <div className="stack">
+    <div className="stack settings-panel-body">
       <div className="builder-stepper">
         {settingsSteps.map((step, index) => (
           <button
@@ -169,62 +169,80 @@ export function StudioSettingsPanel({
 
       {renderStep("overview", (
         <>
-          <div className="summary-grid">
-            <div className="summary-card"><strong>{documentState.sync.providerMode === "api" ? "Active" : "Local only"}</strong><span>Workspace mode</span></div>
-            <div className="summary-card"><strong>{documentState.sync.lastLoadedAt ? new Date(documentState.sync.lastLoadedAt).toLocaleTimeString() : "Not yet"}</strong><span>Last loaded</span></div>
-            <div className="summary-card"><strong>{documentState.sync.lastSavedAt ? new Date(documentState.sync.lastSavedAt).toLocaleTimeString() : "Not yet"}</strong><span>Last saved</span></div>
-            <div className="summary-card"><strong>{activeQuickbaseProfile?.refreshStatus.lastSuccessAt ? new Date(activeQuickbaseProfile.refreshStatus.lastSuccessAt).toLocaleString() : "Never synced"}</strong><span>Last data sync</span></div>
-            <div className="summary-card"><strong>{activeQuickbaseProfile?.refreshStatus.nextRunAt ? new Date(activeQuickbaseProfile.refreshStatus.nextRunAt).toLocaleString() : "Not scheduled"}</strong><span>Next scheduled sync</span></div>
-            <div className="summary-card"><strong>{savedRowsForApp.toLocaleString()}</strong><span>Records in database</span></div>
+          <div className="card">
+            <div className="card-head">
+              <strong>Platform status</strong>
+              <span className="micro">Overview of your current workspace and sync state.</span>
+            </div>
+            <div className="summary-grid">
+              <div className="summary-card"><strong>{documentState.sync.providerMode === "api" ? "Active" : "Local only"}</strong><span>Workspace mode</span></div>
+              <div className="summary-card"><strong>{documentState.sync.lastLoadedAt ? new Date(documentState.sync.lastLoadedAt).toLocaleTimeString() : "Not yet"}</strong><span>Last loaded</span></div>
+              <div className="summary-card"><strong>{documentState.sync.lastSavedAt ? new Date(documentState.sync.lastSavedAt).toLocaleTimeString() : "Not yet"}</strong><span>Last saved</span></div>
+              <div className="summary-card"><strong>{activeQuickbaseProfile?.refreshStatus.lastSuccessAt ? new Date(activeQuickbaseProfile.refreshStatus.lastSuccessAt).toLocaleString() : "Never synced"}</strong><span>Last data sync</span></div>
+              <div className="summary-card"><strong>{activeQuickbaseProfile?.refreshStatus.nextRunAt ? new Date(activeQuickbaseProfile.refreshStatus.nextRunAt).toLocaleString() : "Not scheduled"}</strong><span>Next scheduled sync</span></div>
+              <div className="summary-card"><strong>{savedRowsForApp.toLocaleString()}</strong><span>Records in database</span></div>
+            </div>
           </div>
-          <label className="field">
-            <span>Platform name</span>
-            <input value={documentState.branding.platformName} onChange={(event) => applyDocumentUpdate((draft) => { draft.branding.platformName = event.target.value; })} />
-          </label>
-          <label className="field">
-            <span>Navigation label</span>
-            <input value={documentState.branding.navigationLabel} onChange={(event) => applyDocumentUpdate((draft) => { draft.branding.navigationLabel = event.target.value; })} />
-          </label>
-          <label className="field">
-            <span>Home label</span>
-            <input value={documentState.branding.homeLabel} onChange={(event) => applyDocumentUpdate((draft) => { draft.branding.homeLabel = event.target.value; })} />
-          </label>
-          <label className="toggle-row">
-            <input
-              type="checkbox"
-              checked={documentState.branding.openLinksInNewTab === true}
-              onChange={(event) => applyDocumentUpdate((draft) => { draft.branding.openLinksInNewTab = event.target.checked; })}
-            />
-            Open reports and dashboards in a new tab
-          </label>
-          <label className="field">
-            <span>Session timeout after idle (hours)</span>
-            <input
-              type="number"
-              min="1"
-              step="1"
-              value={documentState.session.inactivityTimeoutHours}
-              onChange={(event) => applyDocumentUpdate((draft) => {
-                const nextValue = Math.max(1, Number(event.target.value) || 24);
-                draft.session.inactivityTimeoutHours = nextValue;
-              })}
-            />
-          </label>
-          <label className="field">
-            <span>Idle grace before timeout starts (minutes)</span>
-            <input
-              type="number"
-              min="0"
-              step="1"
-              value={documentState.session.inactivityGraceMinutes}
-              onChange={(event) => applyDocumentUpdate((draft) => {
-                const nextValue = Math.max(0, Number(event.target.value) || 5);
-                draft.session.inactivityGraceMinutes = nextValue;
-              })}
-            />
-          </label>
-          <div className="micro">
-            Users stay signed in while they are active. The timeout countdown only starts after this many idle minutes, and activity in another tab from the same browser keeps the same session alive.
+          <div className="card">
+            <div className="card-head">
+              <strong>Branding</strong>
+              <span className="micro">Customize the platform name and navigation labels shown to users.</span>
+            </div>
+            <label className="field">
+              <span>Platform name</span>
+              <input value={documentState.branding.platformName} onChange={(event) => applyDocumentUpdate((draft) => { draft.branding.platformName = event.target.value; })} />
+            </label>
+            <label className="field">
+              <span>Navigation label</span>
+              <input value={documentState.branding.navigationLabel} onChange={(event) => applyDocumentUpdate((draft) => { draft.branding.navigationLabel = event.target.value; })} />
+            </label>
+            <label className="field">
+              <span>Home label</span>
+              <input value={documentState.branding.homeLabel} onChange={(event) => applyDocumentUpdate((draft) => { draft.branding.homeLabel = event.target.value; })} />
+            </label>
+            <label className="toggle-row">
+              <input
+                type="checkbox"
+                checked={documentState.branding.openLinksInNewTab === true}
+                onChange={(event) => applyDocumentUpdate((draft) => { draft.branding.openLinksInNewTab = event.target.checked; })}
+              />
+              Open reports and dashboards in a new tab
+            </label>
+          </div>
+          <div className="card">
+            <div className="card-head">
+              <strong>Session &amp; timeout</strong>
+              <span className="micro">Control how long users stay signed in when idle.</span>
+            </div>
+            <label className="field">
+              <span>Session timeout after idle (hours)</span>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={documentState.session.inactivityTimeoutHours}
+                onChange={(event) => applyDocumentUpdate((draft) => {
+                  const nextValue = Math.max(1, Number(event.target.value) || 24);
+                  draft.session.inactivityTimeoutHours = nextValue;
+                })}
+              />
+            </label>
+            <label className="field">
+              <span>Idle grace before timeout starts (minutes)</span>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={documentState.session.inactivityGraceMinutes}
+                onChange={(event) => applyDocumentUpdate((draft) => {
+                  const nextValue = Math.max(0, Number(event.target.value) || 5);
+                  draft.session.inactivityGraceMinutes = nextValue;
+                })}
+              />
+            </label>
+            <div className="micro">
+              Users stay signed in while they are active. The timeout countdown only starts after this many idle minutes, and activity in another tab from the same browser keeps the same session alive.
+            </div>
           </div>
         </>
       ))}
@@ -576,15 +594,21 @@ export function StudioSettingsPanel({
 
       {renderStep("review", (
         <>
-          <div className="summary-grid">
-            <div className="summary-card"><strong>{documentState.sync.providerMode === "api" ? "Active" : "Local only"}</strong><span>Workspace mode</span></div>
-            <div className="summary-card"><strong>{documentState.sync.lastLoadedAt ? new Date(documentState.sync.lastLoadedAt).toLocaleTimeString() : "Not yet"}</strong><span>Last loaded</span></div>
-            <div className="summary-card"><strong>{documentState.sync.lastSavedAt ? new Date(documentState.sync.lastSavedAt).toLocaleTimeString() : "Not yet"}</strong><span>Last saved</span></div>
-            <div className="summary-card"><strong>{savedRowsForApp.toLocaleString()}</strong><span>Rows in database</span></div>
-          </div>
-          <div className="sync-status sync-status-ok">
-            <strong>Ready to save</strong>
-            <span>Review the summary above, then use the buttons below to reload settings from the server or save your current changes.</span>
+          <div className="card">
+            <div className="card-head">
+              <strong>Save &amp; apply</strong>
+              <span className="micro">Review the summary below, then save your changes to the server.</span>
+            </div>
+            <div className="summary-grid">
+              <div className="summary-card"><strong>{documentState.sync.providerMode === "api" ? "Active" : "Local only"}</strong><span>Workspace mode</span></div>
+              <div className="summary-card"><strong>{documentState.sync.lastLoadedAt ? new Date(documentState.sync.lastLoadedAt).toLocaleTimeString() : "Not yet"}</strong><span>Last loaded</span></div>
+              <div className="summary-card"><strong>{documentState.sync.lastSavedAt ? new Date(documentState.sync.lastSavedAt).toLocaleTimeString() : "Not yet"}</strong><span>Last saved</span></div>
+              <div className="summary-card"><strong>{savedRowsForApp.toLocaleString()}</strong><span>Rows in database</span></div>
+            </div>
+            <div className="sync-status sync-status-ok" style={{ margin: 0 }}>
+              <strong>Ready to save</strong>
+              <span>Use the buttons below to reload settings from the server or save your current changes.</span>
+            </div>
           </div>
         </>
       ))}
