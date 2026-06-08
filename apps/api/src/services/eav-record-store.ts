@@ -3,6 +3,7 @@ import type { DataRow, FieldDefinition, TableDefinition } from "@studio/shared";
 import type { PoolClient } from "pg";
 import { apiConfig, isPostgresEnabled } from "../config/env.js";
 import { pgQuery, withPgTransaction } from "../db/postgres.js";
+import { decryptJson, encryptJson, isEncryptionEnabled } from "./encryption.js";
 
 export type EnterpriseSourceType = "quickbase" | "xlsx" | "manual";
 
@@ -195,21 +196,37 @@ async function insertSourceRecordBatch(
   now: string
 ) {
   if (!rows.length) return;
+  const useEncryption = isEncryptionEnabled();
   const values: unknown[] = [];
   const placeholders = rows.map((row, index) => {
     const absoluteIndex = startIndex + index;
     const payload = normalizePayload(row);
     const payloadJson = stableJson(payload);
+    if (useEncryption) {
+      // Store an empty JSONB sentinel + encrypted ciphertext in payload_enc
+      values.push(
+        entityId,
+        sourceId,
+        externalRecordId(payload, absoluteIndex),
+        sha256(payloadJson),
+        JSON.stringify({}),   // empty JSONB placeholder — real data is in payload_enc
+        encryptJson(payload),
+        now
+      );
+      const base = index * 7;
+      return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}::jsonb, $${base + 6}, $${base + 7}, $${base + 7})`;
+    }
     values.push(
       entityId,
       sourceId,
       externalRecordId(payload, absoluteIndex),
       sha256(payloadJson),
       JSON.stringify(payload),
+      null,
       now
     );
-    const base = index * 6;
-    return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}::jsonb, $${base + 6}, $${base + 6})`;
+    const base = index * 7;
+    return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}::jsonb, $${base + 6}, $${base + 7}, $${base + 7})`;
   });
   await client.query(
     `
@@ -219,6 +236,7 @@ async function insertSourceRecordBatch(
       external_record_id,
       row_hash,
       payload,
+      payload_enc,
       created_at,
       updated_at
     )
@@ -345,9 +363,9 @@ export async function replaceTableRecords(
 
 export async function loadSourceRows(sourceId: string, limit = 1000, offset = 0): Promise<DataRow[]> {
   if (!isPostgresEnabled()) return [];
-  const result = await pgQuery<{ payload: DataRow }>(
+  const result = await pgQuery<{ payload: DataRow; payload_enc: string | null }>(
     `
-    SELECT payload
+    SELECT payload, payload_enc
     FROM app_records
     WHERE source_id = $1
     ORDER BY id
@@ -355,7 +373,16 @@ export async function loadSourceRows(sourceId: string, limit = 1000, offset = 0)
     `,
     [sourceId, Math.max(1, Math.min(limit, 50_000)), Math.max(0, offset)]
   );
-  return result.rows.map((row) => row.payload);
+  return result.rows.map((row) => {
+    if (row.payload_enc) {
+      try {
+        return decryptJson<DataRow>(row.payload_enc);
+      } catch {
+        return row.payload;
+      }
+    }
+    return row.payload;
+  });
 }
 
 export async function getSourceRecordSummary(sourceIds: string[]): Promise<SourceRecordSummary | null> {

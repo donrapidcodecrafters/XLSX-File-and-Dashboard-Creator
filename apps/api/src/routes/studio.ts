@@ -1,7 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { normalizeStudioDocument, type StudioDocument } from "@studio/shared";
 import { studioStore } from "../services/studio-store.js";
-import { ensureQuickbaseStorageForProfiles, syncStudioDocumentToQuickbase, syncStudioUserSettingsToQuickbase } from "../services/quickbase-storage.js";
 import {
   cancelRefreshJob,
   getActiveRefreshJob,
@@ -31,11 +30,10 @@ function isRefreshJobStale(job: { status?: string; updatedAt?: string; createdAt
 
 export async function registerStudioRoutes(app: FastifyInstance) {
   app.get("/api/studio/document", async () => {
-    await studioStore.hydrateFromQuickbase();
-    const hydrated = studioStore.getLiveDocument();
-    updateRefreshScheduleMetadata(hydrated);
-    const provisioned = await ensureQuickbaseStorageForProfiles(hydrated);
-    const document = studioStore.saveDocument(provisioned, { markSavedAt: false });
+    await studioStore.initializeFromPostgres();
+    const current = studioStore.getLiveDocument();
+    updateRefreshScheduleMetadata(current);
+    const document = studioStore.flushCurrent({ markSavedAt: false });
     return {
       document: {
         ...document,
@@ -133,17 +131,8 @@ export async function registerStudioRoutes(app: FastifyInstance) {
       })
     });
     updateRefreshScheduleMetadata(mergedDocument);
-    const provisioned = await ensureQuickbaseStorageForProfiles(mergedDocument);
-    const document = studioStore.saveDocument(provisioned);
-    const sync = await syncStudioDocumentToQuickbase(document, { removedObjectIds }).catch((error) => ({
-      enabled: true,
-      ok: false,
-      message: error instanceof Error ? error.message : "Quickbase sync failed.",
-      savedObjects: 0,
-      savedSettings: 0,
-      savedVersions: 0,
-      savedStorageConfig: 0
-    }));
+    const document = studioStore.saveDocument(mergedDocument);
+    const sync = { enabled: false, ok: true, message: "", savedObjects: 0, savedSettings: 0, savedVersions: 0, savedStorageConfig: 0 };
     return { document, sync };
   });
 
@@ -160,15 +149,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
       recent: Array.isArray(body.recent) ? body.recent.map(String) : current.recent,
       personalOverrides: body.personalOverrides || current.personalOverrides
     }), { markSavedAt: false });
-    const sync = await syncStudioUserSettingsToQuickbase(document).catch((error) => ({
-      enabled: true,
-      ok: false,
-      message: error instanceof Error ? error.message : "Quickbase user settings sync failed.",
-      savedObjects: 0,
-      savedSettings: 0,
-      savedVersions: 0,
-      savedStorageConfig: 0
-    }));
+    const sync = { enabled: false, ok: true, message: "", savedObjects: 0, savedSettings: 0, savedVersions: 0, savedStorageConfig: 0 };
     return {
       settings: {
         favorites: document.favorites,
@@ -550,21 +531,40 @@ export async function registerStudioRoutes(app: FastifyInstance) {
 
   app.patch("/api/studio/sources/:sourceId", async (request, reply) => {
     const { sourceId } = request.params as { sourceId: string };
-    const body = (request.body as { sourceName?: string } | undefined) || {};
-    const sourceName = String(body.sourceName || "").trim();
-    if (!sourceName) {
-      reply.code(400);
-      return { message: "sourceName is required." };
-    }
+    const body = (request.body as { sourceName?: string; keyFieldId?: string } | undefined) || {};
+
     if (!isPostgresEnabled()) {
       reply.code(503);
       return { message: "Postgres is not enabled." };
     }
+
+    // Handle key field update (immediate save to app_entities)
+    if (body.keyFieldId !== undefined) {
+      const keyFieldId = String(body.keyFieldId || "").trim();
+      const result = await pgQuery<{ source_id: string }>(
+        `UPDATE app_entities SET key_field_id = $1, updated_at = now()
+         WHERE source_id = $2
+         RETURNING source_id`,
+        [keyFieldId, sourceId]
+      );
+      if (!result.rows.length) {
+        reply.code(404);
+        return { message: "Source not found." };
+      }
+      return { sourceId, keyFieldId };
+    }
+
+    // Handle source name update
+    const sourceName = String(body.sourceName || "").trim();
+    if (!sourceName) {
+      reply.code(400);
+      return { message: "sourceName or keyFieldId is required." };
+    }
     const updateResult = await pgQuery<{ id: string; source_id: string }>(
-      `UPDATE app_entities SET source_name = $1, updated_at = $2
-       WHERE source_id = $3
+      `UPDATE app_entities SET source_name = $1, updated_at = now()
+       WHERE source_id = $2
        RETURNING id, source_id`,
-      [sourceName, new Date().toISOString(), sourceId]
+      [sourceName, sourceId]
     );
     if (!updateResult.rows.length) {
       reply.code(404);

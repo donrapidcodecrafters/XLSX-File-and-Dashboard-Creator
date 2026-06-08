@@ -1,5 +1,7 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import helmet from "@fastify/helmet";
+import rateLimit from "@fastify/rate-limit";
 import formbody from "@fastify/formbody";
 import multipart from "@fastify/multipart";
 import { registerSessionAuth } from "./auth/session-auth.js";
@@ -23,6 +25,40 @@ import { recoverExportJobsOnStartup } from "./services/export-jobs.js";
 const app = Fastify({
   logger: true,
   bodyLimit: apiConfig.uploads.maxFileBytes
+});
+
+// ── Security headers ─────────────────────────────────────────────────────────
+await app.register(helmet, {
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],   // React dev needs inline scripts
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "blob:"],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      frameAncestors: ["'none'"],
+      upgradeInsecureRequests: [],
+    }
+  },
+  hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
+  frameguard: { action: "deny" },
+  noSniff: true,
+  xssFilter: true,
+});
+
+// ── Global rate limiting ──────────────────────────────────────────────────────
+await app.register(rateLimit, {
+  global: true,
+  max: 300,
+  timeWindow: "1 minute",
+  allowList: ["127.0.0.1", "::1"],
+  errorResponseBuilder: (_req, context) => ({
+    statusCode: 429,
+    error: "Too Many Requests",
+    message: `Rate limit exceeded. Retry after ${Math.ceil(context.ttl / 1000)}s.`,
+  }),
 });
 
 await app.register(cors, {

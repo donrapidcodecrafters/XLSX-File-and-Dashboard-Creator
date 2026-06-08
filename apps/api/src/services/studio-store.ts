@@ -1,13 +1,12 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { buildStudioDocument, normalizeStudioDocument, type StudioDocument, type StudioObject, type StudioVersionRecord } from "@studio/shared";
-import { hydrateStudioDocumentFromQuickbase } from "./quickbase-storage.js";
+import { isPostgresEnabled } from "../config/env.js";
+import { pgQuery } from "../db/postgres.js";
 
 const STORAGE_PATH = resolve(process.cwd(), ".data/studio-document.json");
 const CACHE_PATH = resolve(process.cwd(), ".data/studio-cache.json");
 const CACHE_META_PATH = resolve(process.cwd(), ".data/studio-cache-meta.json");
-const HYDRATE_TTL_MS = 24 * 60 * 60 * 1000;
-const HYDRATE_TIMEOUT_MS = 12_000;
 const DISK_RELOAD_TTL_MS = 250;
 export const CACHE_RETENTION_MS = 24 * 60 * 60 * 1000;
 
@@ -79,6 +78,33 @@ function loadPersistedDocument(): StudioDocument | null {
   }
 }
 
+async function loadDocumentFromPostgres(): Promise<StudioDocument | null> {
+  if (!isPostgresEnabled()) return null;
+  try {
+    const result = await pgQuery<{ document: unknown }>(
+      "SELECT document FROM studio_document WHERE id = 1"
+    );
+    if (!result.rows[0]) return null;
+    return normalizeStudioDocument(result.rows[0].document as StudioDocument);
+  } catch {
+    return null;
+  }
+}
+
+async function saveDocumentToPostgres(document: StudioDocument): Promise<void> {
+  if (!isPostgresEnabled()) return;
+  try {
+    await pgQuery(
+      `INSERT INTO studio_document (id, document, updated_at)
+       VALUES (1, $1::jsonb, now())
+       ON CONFLICT (id) DO UPDATE SET document = EXCLUDED.document, updated_at = now()`,
+      [JSON.stringify(stripCachedRows(document))]
+    );
+  } catch {
+    // Non-blocking — disk is fallback
+  }
+}
+
 function resolveCachedTableEntry(
   document: StudioDocument,
   cacheMeta: Record<string, PersistedCacheMetaEntry>,
@@ -144,9 +170,9 @@ function reconcileRefreshStatusWithCache(
 export class StudioStore {
   private document: StudioDocument;
   private cacheMeta: Record<string, PersistedCacheMetaEntry> = {};
-  private hydratePromise: Promise<StudioDocument> | null = null;
   private lastHydratedAt = 0;
   private lastReloadedFromDiskAt = 0;
+  private pgInitialized = false;
 
   constructor() {
     this.document = this.load();
@@ -173,6 +199,7 @@ export class StudioStore {
     }
     writeFileSync(CACHE_META_PATH, JSON.stringify(this.cacheMeta || {}, null, 2));
     this.lastReloadedFromDiskAt = Date.now();
+    void saveDocumentToPostgres(document);
   }
 
   private reloadFromDisk(force = false) {
@@ -208,33 +235,29 @@ export class StudioStore {
     return this.document;
   }
 
-  async hydrateFromQuickbase(force = false) {
+  async initializeFromPostgres() {
+    if (this.pgInitialized || !isPostgresEnabled()) return;
+    this.pgInitialized = true;
+    const pgDoc = await loadDocumentFromPostgres();
+    if (pgDoc) {
+      this.document = pgDoc;
+      this.cacheMeta = loadPersistedCacheMeta();
+      reconcileRefreshStatusWithCache(this.document, this.cacheMeta);
+      this.lastHydratedAt = Date.parse(this.document.sync?.lastLoadedAt || "") || this.lastHydratedAt;
+      this.lastReloadedFromDiskAt = Date.now();
+      try {
+        mkdirSync(dirname(STORAGE_PATH), { recursive: true });
+        writeFileSync(STORAGE_PATH, JSON.stringify(stripCachedRows(pgDoc), null, 2));
+      } catch {
+        // Non-fatal
+      }
+    }
+  }
+
+  async hydrateFromQuickbase(_force = false) {
+    // Document is now persisted in Postgres/disk. QB is only a data source for record sync.
     this.reloadFromDisk();
-    if (!force && this.lastHydratedAt && Date.now() - this.lastHydratedAt < HYDRATE_TTL_MS) {
-      return this.getDocument();
-    }
-    if (this.hydratePromise) {
-      return this.hydratePromise;
-    }
-    let expired = false;
-    const hydrateTask = hydrateStudioDocumentFromQuickbase(this.document)
-      .then((document) => {
-        this.document = document;
-        this.lastHydratedAt = Date.now();
-        this.persist(this.document);
-        return expired ? clone(stripCachedRows(this.document)) : this.getDocument();
-      })
-      .catch(() => this.getDocument());
-    const timeoutTask = new Promise<StudioDocument>((resolve) => {
-      setTimeout(() => {
-        expired = true;
-        resolve(this.getDocument());
-      }, HYDRATE_TIMEOUT_MS);
-    });
-    this.hydratePromise = Promise.race([hydrateTask, timeoutTask]).finally(() => {
-      this.hydratePromise = null;
-    });
-    return this.hydratePromise;
+    return this.getDocument();
   }
 
   getBundle() {

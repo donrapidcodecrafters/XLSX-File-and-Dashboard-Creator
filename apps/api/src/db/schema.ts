@@ -105,6 +105,8 @@ CREATE INDEX IF NOT EXISTS app_records_entity_id_idx ON app_records (entity_id);
 CREATE INDEX IF NOT EXISTS app_records_source_id_idx ON app_records (source_id);
 CREATE INDEX IF NOT EXISTS app_records_external_record_id_idx ON app_records (source_id, external_record_id);
 CREATE INDEX IF NOT EXISTS app_records_payload_gin_idx ON app_records USING gin (payload jsonb_path_ops);
+-- Encrypted ciphertext for row-level AES-256-GCM payload encryption
+ALTER TABLE app_records ADD COLUMN IF NOT EXISTS payload_enc text;
 
 CREATE TABLE IF NOT EXISTS app_sync_jobs (
   id text PRIMARY KEY,
@@ -228,6 +230,18 @@ CREATE INDEX IF NOT EXISTS custom_roles_name_idx ON custom_roles (name);
 
 -- Link users to custom roles (in addition to the built-in role in user_roles)
 ALTER TABLE user_roles ADD COLUMN IF NOT EXISTS custom_role_id text REFERENCES custom_roles(id) ON DELETE SET NULL;
+
+-- Editable email subject/body per scheduled report config
+ALTER TABLE report_configs ADD COLUMN IF NOT EXISTS email_subject text NOT NULL DEFAULT '';
+ALTER TABLE report_configs ADD COLUMN IF NOT EXISTS email_body text NOT NULL DEFAULT '';
+
+-- Studio document persistence (singleton row, replaces disk JSON + Quickbase storage)
+CREATE TABLE IF NOT EXISTS studio_document (
+  id integer PRIMARY KEY,
+  document jsonb NOT NULL,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT studio_document_singleton CHECK (id = 1)
+);
 `;
 
 export async function ensureEnterpriseSchema(logger?: FastifyBaseLogger) {

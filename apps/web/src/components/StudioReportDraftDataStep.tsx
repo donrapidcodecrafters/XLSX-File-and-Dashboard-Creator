@@ -286,8 +286,8 @@ export function StudioReportDraftDataStep({
           </select>
         </label>
 
-        {/* Source report override (advanced, single source only) */}
-        {sourceJoins.length === 0 && (
+        {/* Source report override (advanced, single source only, QB tables only) */}
+        {sourceJoins.length === 0 && !!createDraftTable.quickbaseTableId && (
           <label className="field">
             <span>Quickbase saved report <span style={{ fontWeight: 400, fontSize: "0.8em" }}>(advanced — leave blank for most reports)</span></span>
             <input

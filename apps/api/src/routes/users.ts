@@ -15,6 +15,9 @@ interface UserRow {
   active: boolean;
   created_at: Date;
   last_login_at: Date | null;
+  system_notifications_enabled: boolean;
+  failed_login_attempts: number;
+  locked_until: Date | null;
 }
 
 interface UserWithRole extends UserRow {
@@ -363,7 +366,7 @@ export async function registerUserRoutes(app: FastifyInstance) {
       }
 
       const { id } = request.params as { id: string };
-      const body = (request.body as { displayName?: unknown; active?: unknown }) || {};
+      const body = (request.body as { displayName?: unknown; active?: unknown; systemNotificationsEnabled?: unknown }) || {};
 
       const updates: string[] = [];
       const values: unknown[] = [];
@@ -378,9 +381,14 @@ export async function registerUserRoutes(app: FastifyInstance) {
         updates.push(`active = $${values.length}`);
       }
 
+      if (body.systemNotificationsEnabled !== undefined) {
+        values.push(Boolean(body.systemNotificationsEnabled));
+        updates.push(`system_notifications_enabled = $${values.length}`);
+      }
+
       if (updates.length === 0) {
         reply.code(400);
-        return { message: "Nothing to update. Provide displayName and/or active." };
+        return { message: "Nothing to update. Provide displayName, active, or systemNotificationsEnabled." };
       }
 
       values.push(id);

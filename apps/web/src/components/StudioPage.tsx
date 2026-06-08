@@ -92,7 +92,9 @@ import {
   fetchStudioVersions,
   restoreStudioVersion,
   startStudioRefresh,
-  saveStudioDocument
+  saveStudioDocument,
+  fetchStudioSources,
+  updateSourceKeyField
 } from "../lib/studioApi";
 import { createExportSaveTarget, downloadExportJob, fetchExportJobStatus, fetchExportJobs, startDashboardExportJob, startReportExportJob } from "../lib/api";
 import { applyLaunchScopeToDocument } from "../lib/catalog";
@@ -509,14 +511,21 @@ function mergeRefreshSourceFallback(baseDocument: StudioDocument, incomingDocume
     activeQuickbaseProfileId: incomingDocument.activeQuickbaseProfileId || baseDocument.activeQuickbaseProfileId,
     quickbaseProfiles: incomingDocument.quickbaseProfiles.map((profile) => {
       const baseProfile = baseDocument.quickbaseProfiles.find((item) => item.id === profile.id);
+      const baseKeyFieldIds = baseProfile?.refreshSource?.keyFieldIds || {};
+      // Always merge keyFieldIds from the base (pre-save) document — they're local-only and not stored in QB
+      const mergedKeyFieldIds = { ...(profile.refreshSource?.keyFieldIds || {}), ...baseKeyFieldIds };
       if (hasProfileRefreshSourceConfig(profile) || !hasProfileRefreshSourceConfig(baseProfile)) {
-        return profile;
+        return {
+          ...profile,
+          refreshSource: { ...(profile.refreshSource || {}), keyFieldIds: mergedKeyFieldIds }
+        };
       }
       return {
         ...profile,
         refreshSource: {
           tableIds: [...(baseProfile?.refreshSource?.tableIds || [])],
-          reportIds: { ...(baseProfile?.refreshSource?.reportIds || {}) }
+          reportIds: { ...(baseProfile?.refreshSource?.reportIds || {}) },
+          keyFieldIds: mergedKeyFieldIds
         }
       };
     })
@@ -1623,6 +1632,7 @@ export function StudioPage({
   const [previewPage, setPreviewPage] = useState(1);
   const [exportJob, setExportJob] = useState<ExportJobStatus | null>(null);
   const [liveExportJobs, setLiveExportJobs] = useState<ExportJobStatus[]>([]);
+  const [postgresSourceIds, setPostgresSourceIds] = useState<Set<string>>(new Set());
   const [downloadedJobId, setDownloadedJobId] = useState("");
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editingReportId, setEditingReportId] = useState<string | null>(null);
@@ -2153,6 +2163,25 @@ export function StudioPage({
     return () => {
       active = false;
     };
+  }, []);
+
+  // Fetch Postgres-backed source IDs on mount so we can filter data source dropdowns
+  // to only show tables that have actual data in the database (app_entities).
+  useEffect(() => {
+    let active = true;
+    fetchStudioSources().then((response) => {
+      if (!active) return;
+      const ids = new Set<string>();
+      for (const source of response.sources) {
+        ids.add(source.sourceId);
+        if (source.table?.id) ids.add(source.table.id);
+        if ((source.table as { quickbaseTableId?: string } | null)?.quickbaseTableId) {
+          ids.add((source.table as { quickbaseTableId?: string }).quickbaseTableId!);
+        }
+      }
+      setPostgresSourceIds(ids);
+    }).catch(() => { /* non-fatal, fall back to showing all tables */ });
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
@@ -3520,6 +3549,8 @@ export function StudioPage({
         [tableId]: keyFieldId
       };
     });
+    // Also persist immediately to app_entities so key field survives without explicit Save
+    void updateSourceKeyField(tableId, keyFieldId).catch(() => {});
   }
 
   function getFullRefreshValidation(document: StudioDocument) {
@@ -3758,6 +3789,12 @@ export function StudioPage({
     if (!refreshAllSignal) return;
     void refreshAllNow();
   }, [refreshAllSignal]);
+
+  useEffect(() => {
+    if (drawer === "settings") {
+      void reloadRemote({ showOverlay: false });
+    }
+  }, [drawer]);
 
   useEffect(() => {
     const sourceTableId = pendingWorkbookImport?.sourceTableId || "";
@@ -4723,7 +4760,9 @@ export function StudioPage({
 
                 {activeCreateStep === "data" && createDraft.type === "report" && createDraftTable ? (
                   <StudioReportDraftDataStep
-                    tables={bundle.tables}
+                    tables={postgresSourceIds.size > 0
+                      ? bundle.tables.filter((t) => postgresSourceIds.has(t.id) || (t.quickbaseTableId ? postgresSourceIds.has(t.quickbaseTableId) : false))
+                      : bundle.tables}
                     createDraft={createDraft}
                     createDraftTable={createDraftTable}
                     chartValueLabelOptions={chartValueLabelOptions}

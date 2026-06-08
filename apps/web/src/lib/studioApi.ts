@@ -181,6 +181,8 @@ export interface ReportConfig {
   sendgrid_template_id: string;
   export_format: string;
   config: Record<string, unknown>;
+  email_subject: string;
+  email_body: string;
   last_run_at: string | null;
   next_run_at: string | null;
   created_at: string;
@@ -199,6 +201,8 @@ export function createReportConfig(payload: {
   time_zone?: string;
   send_to?: string[];
   sendgrid_template_id?: string;
+  email_subject?: string;
+  email_body?: string;
 }) {
   return request<{ config: ReportConfig }>("/api/report-configs", {
     method: "POST",
@@ -212,6 +216,8 @@ export function updateReportConfig(id: string, payload: {
   time_zone?: string;
   send_to?: string[];
   sendgrid_template_id?: string;
+  email_subject?: string;
+  email_body?: string;
 }) {
   return request<{ config: ReportConfig }>(`/api/report-configs/${encodeURIComponent(id)}`, {
     method: "PUT",
@@ -335,6 +341,9 @@ export interface PlatformUser {
   preferences?: Record<string, unknown>;
   createdAt?: string;
   lastLoginAt?: string | null;
+  systemNotificationsEnabled?: boolean;
+  failedLoginAttempts?: number;
+  lockedUntil?: string | null;
 }
 
 export interface PendingInvitation {
@@ -394,7 +403,7 @@ export function updateUserRole(id: string, role: string) {
   });
 }
 
-export function updateUser(id: string, payload: { displayName?: string; active?: boolean }) {
+export function updateUser(id: string, payload: { displayName?: string; active?: boolean; systemNotificationsEnabled?: boolean }) {
   return request<{ user: PlatformUser }>(`/api/users/${encodeURIComponent(id)}`, {
     method: "PUT",
     body: JSON.stringify(payload)
@@ -624,6 +633,13 @@ export function renameSource(sourceId: string, sourceName: string) {
   return request<{ ok: boolean }>(`/api/studio/sources/${encodeURIComponent(sourceId)}`, {
     method: "PATCH",
     body: JSON.stringify({ sourceName })
+  });
+}
+
+export function updateSourceKeyField(sourceId: string, keyFieldId: string) {
+  return request<{ sourceId: string; keyFieldId: string }>(`/api/studio/sources/${encodeURIComponent(sourceId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ keyFieldId })
   });
 }
 

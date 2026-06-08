@@ -27,6 +27,8 @@ interface ReportConfigRow {
   sendgrid_template_id: string;
   export_format: string;
   config: Record<string, unknown>;
+  email_subject: string;
+  email_body: string;
   last_run_at: Date | null;
   next_run_at: Date | null;
 }
@@ -73,6 +75,105 @@ function buildTablesById(): Record<string, TableDefinition> {
   return Object.fromEntries(document.bundle.tables.map((t) => [t.id, t]));
 }
 
+function describeScheduleExpr(expr: string): string {
+  if (!expr || expr === "0 * * * *") return "Every hour";
+  const parts = expr.trim().split(/\s+/);
+  if (parts.length !== 5) return expr;
+  const [, hourStr, domStr, , dowStr] = parts;
+  const h24 = Number(hourStr);
+  const ampm = h24 < 12 ? "AM" : "PM";
+  const h12 = h24 === 0 ? 12 : h24 > 12 ? h24 - 12 : h24;
+  const timeLabel = `${h12}:00 ${ampm}`;
+  const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  if (dowStr !== "*") return `Every ${days[Number(dowStr)] || dowStr} at ${timeLabel}`;
+  if (domStr !== "*") {
+    const suffix = Number(domStr) === 1 ? "st" : Number(domStr) === 2 ? "nd" : Number(domStr) === 3 ? "rd" : "th";
+    return `${domStr}${suffix} of every month at ${timeLabel}`;
+  }
+  return `Every day at ${timeLabel}`;
+}
+
+function buildScheduledReportHtml(opts: {
+  platformName: string;
+  platformUrl: string;
+  objName: string;
+  objectTypeLabel: string;
+  filename: string;
+  bodyText: string;
+  sentAt: string;
+  scheduleLabel: string;
+}): string {
+  const { platformName, platformUrl, objName, objectTypeLabel, filename, bodyText, sentAt, scheduleLabel } = opts;
+  const ctaHref = platformUrl || "#";
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${objName} — Scheduled ${objectTypeLabel}</title>
+</head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:40px 16px">
+<tr><td>
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:580px;margin:0 auto;border-radius:10px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08)">
+
+  <!-- Header -->
+  <tr><td style="background:#0f172a;padding:28px 36px">
+    <div style="font-size:18px;font-weight:800;color:#ffffff;letter-spacing:-0.02em;line-height:1">${platformName}</div>
+    <div style="font-size:11px;font-weight:600;color:#64748b;margin-top:6px;text-transform:uppercase;letter-spacing:0.07em">Scheduled ${objectTypeLabel}</div>
+  </td></tr>
+
+  <!-- Object name + type badge -->
+  <tr><td style="background:#ffffff;padding:32px 36px 0">
+    <table cellpadding="0" cellspacing="0">
+      <tr><td style="padding-bottom:14px">
+        <span style="display:inline-block;padding:4px 12px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:99px;font-size:11px;font-weight:700;color:#065f46;text-transform:uppercase;letter-spacing:0.06em">${objectTypeLabel}</span>
+      </td></tr>
+      <tr><td>
+        <div style="font-size:22px;font-weight:800;color:#0f172a;line-height:1.2;letter-spacing:-0.025em">${objName}</div>
+      </td></tr>
+    </table>
+  </td></tr>
+
+  <!-- Body -->
+  <tr><td style="background:#ffffff;padding:20px 36px 32px">
+    <p style="margin:0 0 24px;font-size:15px;color:#374151;line-height:1.75">${bodyText}</p>
+
+    <!-- Attachment card -->
+    <table cellpadding="0" cellspacing="0" style="width:100%;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:28px">
+      <tr>
+        <td style="padding:14px 16px;width:52px;vertical-align:middle">
+          <div style="width:44px;height:44px;background:#d1fae5;border-radius:8px;text-align:center;line-height:44px;font-size:22px">&#128202;</div>
+        </td>
+        <td style="padding:14px 8px 14px 0;vertical-align:middle">
+          <div style="font-size:13px;font-weight:700;color:#111827">${filename}</div>
+          <div style="font-size:12px;color:#6b7280;margin-top:3px">Microsoft Excel attachment</div>
+        </td>
+      </tr>
+    </table>
+
+    <!-- CTA button -->
+    <a href="${ctaHref}" style="display:inline-block;padding:12px 26px;background:#0d7c66;color:#ffffff;text-decoration:none;font-size:13px;font-weight:700;border-radius:7px;letter-spacing:-0.01em">Open ${platformName} &#8594;</a>
+  </td></tr>
+
+  <!-- Footer -->
+  <tr><td style="background:#f8fafc;border-top:1px solid #e5e7eb;padding:16px 36px">
+    <table width="100%" cellpadding="0" cellspacing="0">
+      <tr>
+        <td style="font-size:11px;color:#9ca3af">Sent: ${sentAt}</td>
+        <td style="font-size:11px;color:#9ca3af;text-align:right">Schedule: ${scheduleLabel}</td>
+      </tr>
+    </table>
+    <div style="font-size:11px;color:#d1d5db;margin-top:10px;line-height:1.6">You are receiving this because you are subscribed to scheduled reports from ${platformName}. Contact your administrator to manage your preferences.</div>
+  </td></tr>
+
+</table>
+</td></tr>
+</table>
+</body>
+</html>`;
+}
+
 async function runReportConfig(config: ReportConfigRow, logger: FastifyBaseLogger) {
   // Guard: recipients and SendGrid key must be present before doing any expensive work
   const recipients = (config.send_to || []).filter(Boolean);
@@ -117,6 +218,24 @@ async function runReportConfig(config: ReportConfigRow, logger: FastifyBaseLogge
 
   sgMail.setApiKey(apiConfig.automation.sendgridApiKey);
 
+  let platformName = "Enterprise Platform";
+  try { platformName = studioStore.getLiveDocument()?.branding?.platformName || platformName; } catch { /* use default */ }
+  const platformUrl = apiConfig.server?.publicUrl || "";
+
+  const sentAt = new Date().toLocaleString("en-US", {
+    timeZone: config.time_zone || "UTC",
+    dateStyle: "long",
+    timeStyle: "short"
+  });
+  const scheduleLabel = describeScheduleExpr(config.cron_expression);
+  const objectTypeLabel = config.object_type === "dashboard" ? "Dashboard" : "Report";
+
+  const customSubject = (config.email_subject || "").trim();
+  const customBody = (config.email_body || "").trim();
+
+  const emailSubject = customSubject || `${obj.name} — ${objectTypeLabel} from ${platformName}`;
+  const emailBodyText = customBody || `Your scheduled ${objectTypeLabel.toLowerCase()} is ready and attached to this email as an Excel file.`;
+
   const attachment = {
     content: buffer.toString("base64"),
     filename,
@@ -124,30 +243,56 @@ async function runReportConfig(config: ReportConfigRow, logger: FastifyBaseLogge
     disposition: "attachment" as const
   };
 
-  const baseMessage = {
-    to: recipients,
-    from: apiConfig.automation.sendgridFromEmail || "reports@example.com",
-    attachments: [attachment]
-  };
+  const from = apiConfig.automation.sendgridFromEmail || "reports@example.com";
 
-  // If a SendGrid Dynamic Template ID is configured, use it for branded HTML emails.
-  // The template receives the report name and filename as template variables.
   if (config.sendgrid_template_id) {
     await sgMail.send({
-      ...baseMessage,
+      to: recipients,
+      from,
+      attachments: [attachment],
       templateId: config.sendgrid_template_id,
       dynamicTemplateData: {
         report_name: obj.name,
         filename,
         object_type: config.object_type,
-        sent_at: new Date().toLocaleString("en-US", { timeZone: config.time_zone || "UTC" })
+        sent_at: sentAt
       }
     });
   } else {
+    const html = buildScheduledReportHtml({
+      platformName,
+      platformUrl,
+      objName: obj.name,
+      objectTypeLabel,
+      filename,
+      bodyText: emailBodyText,
+      sentAt,
+      scheduleLabel
+    });
+    const text = [
+      `${platformName} — Scheduled ${objectTypeLabel}`,
+      "=".repeat(50),
+      "",
+      obj.name,
+      "",
+      emailBodyText,
+      "",
+      `Attachment: ${filename}`,
+      `Sent: ${sentAt}`,
+      `Schedule: ${scheduleLabel}`,
+      "",
+      platformUrl ? `Open platform: ${platformUrl}` : "",
+      "",
+      "You are receiving this because you are subscribed to scheduled reports."
+    ].filter((l) => l !== undefined).join("\n");
+
     await sgMail.send({
-      ...baseMessage,
-      subject: `Scheduled Report: ${obj.name}`,
-      text: `Your scheduled export of "${obj.name}" is attached.\n\nSent: ${new Date().toLocaleString()}`
+      to: recipients,
+      from: { email: from, name: platformName },
+      subject: emailSubject,
+      html,
+      text,
+      attachments: [attachment]
     });
   }
 

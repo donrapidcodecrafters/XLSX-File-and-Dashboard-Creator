@@ -86,14 +86,14 @@ export function StudioWorkspaceHome({
       title: "Create a new report",
       description: "Pick a data source, choose your fields and filters, and display results as a table or chart.",
       action: onCreateReport,
-      semanticClass: "btn-create"
+      semanticClass: ""
     }] : []),
     ...(canCreate !== false ? [{
       id: "new-dashboard",
       title: "Create a new dashboard",
       description: "Build a canvas that combines multiple reports, charts, and summary numbers in one view.",
       action: onCreateDashboard,
-      semanticClass: "btn-create"
+      semanticClass: ""
     }] : []),
     ...(canCreate !== false ? [{
       id: "template",
@@ -108,7 +108,7 @@ export function StudioWorkspaceHome({
       description: "Upload an Excel workbook and convert its sheets into reports and dashboards automatically.",
       action: onImportXlsx,
       disabled: xlsxImporting,
-      semanticClass: "btn-create"
+      semanticClass: ""
     }] : []),
   ];
 
@@ -251,8 +251,6 @@ export function StudioWorkspaceHome({
                   <Link
                     className="ghost-button btn-system"
                     to={buildHostedRoute(`/studio/${object.id}`)}
-                    target={openLinksInNewTab ? "_blank" : undefined}
-                    rel={openLinksInNewTab ? "noreferrer" : undefined}
                   >
                     Open
                   </Link>

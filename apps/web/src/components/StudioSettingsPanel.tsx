@@ -102,7 +102,48 @@ export function StudioSettingsPanel({
 
   function renderStep(id: (typeof settingsSteps)[number]["id"], content: ReactNode) {
     if (activeStep !== id) return null;
-    return content;
+    const idx = settingsSteps.findIndex((s) => s.id === id);
+    const hasPrev = idx > 0;
+    const hasNext = idx < settingsSteps.length - 1;
+    return (
+      <>
+        {content}
+        {(hasPrev || hasNext) && (
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, paddingTop: 8 }}>
+            <div>
+              {hasPrev && (
+                <button
+                  type="button"
+                  onClick={() => setActiveStep(settingsSteps[idx - 1].id)}
+                  style={{
+                    padding: "7px 16px", borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: "pointer",
+                    border: "1px solid var(--border, #E5E7EB)", background: "var(--surface-alt, #F9FAFB)",
+                    color: "var(--text-secondary, #374151)", fontFamily: "inherit",
+                  }}
+                >
+                  ← Back
+                </button>
+              )}
+            </div>
+            <div>
+              {hasNext && (
+                <button
+                  type="button"
+                  onClick={() => setActiveStep(settingsSteps[idx + 1].id)}
+                  style={{
+                    padding: "7px 18px", borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: "pointer",
+                    border: "none", background: "var(--brand, #0d7c66)",
+                    color: "#fff", fontFamily: "inherit",
+                  }}
+                >
+                  Next: {settingsSteps[idx + 1].label} →
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </>
+    );
   }
   return (
     <div className="stack">

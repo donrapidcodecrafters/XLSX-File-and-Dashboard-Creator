@@ -213,7 +213,19 @@ export async function registerSessionAuth(app: FastifyInstance) {
   // ── Step 1: POST /api/auth/login ──────────────────────────────────────────
   // Validates email + password. Does NOT create a session yet.
   // Returns { step: "2fa_required" | "2fa_setup_required", pendingToken }
-  app.post("/api/auth/login", async (request, reply) => {
+  app.post("/api/auth/login", {
+    config: {
+      rateLimit: {
+        max: 10,
+        timeWindow: "15 minutes",
+        errorResponseBuilder: () => ({
+          statusCode: 429,
+          error: "Too Many Requests",
+          message: "Too many login attempts. Please try again in 15 minutes.",
+        }),
+      },
+    },
+  }, async (request, reply) => {
     const body = (request.body as { email?: string; password?: string } | undefined) || {};
     const email = normalizeEmail(body.email);
     const password = String(body.password || "");
@@ -227,8 +239,21 @@ export async function registerSessionAuth(app: FastifyInstance) {
     if (isPostgresEnabled()) {
       const result = await pgQuery<{
         id: string; password_hash: string; display_name: string; active: boolean;
-      }>("SELECT id, password_hash, display_name, active FROM users WHERE email = $1 LIMIT 1", [email]);
+        failed_login_attempts: number; locked_until: string | null;
+      }>(
+        "SELECT id, password_hash, display_name, active, failed_login_attempts, locked_until FROM users WHERE email = $1 LIMIT 1",
+        [email]
+      );
       const dbUser = result.rows[0];
+
+      // Check account lockout before doing anything else
+      if (dbUser && dbUser.locked_until && new Date(dbUser.locked_until) > new Date()) {
+        const retryAfter = Math.ceil((new Date(dbUser.locked_until).getTime() - Date.now()) / 1000 / 60);
+        void logAuditEvent("login_blocked_locked", { userEmail: email, metadata: { retryAfterMinutes: retryAfter } });
+        reply.code(429);
+        return { message: `Account locked due to too many failed login attempts. Try again in ${retryAfter} minute${retryAfter !== 1 ? "s" : ""}.` };
+      }
+
       if (dbUser && dbUser.active && await bcrypt.compare(password, dbUser.password_hash)) {
         userId = dbUser.id;
         displayName = dbUser.display_name;
@@ -236,12 +261,35 @@ export async function registerSessionAuth(app: FastifyInstance) {
           "SELECT role FROM user_roles WHERE user_id = $1 LIMIT 1", [dbUser.id]
         );
         userRole = roleResult.rows[0]?.role || "viewer";
-        await pgQuery("UPDATE users SET last_login_at = now(), updated_at = now() WHERE id = $1", [dbUser.id]);
+        // Successful login: reset lockout counters
+        await pgQuery(
+          "UPDATE users SET last_login_at = now(), updated_at = now(), failed_login_attempts = 0, locked_until = NULL WHERE id = $1",
+          [dbUser.id]
+        );
         await pgQuery(
           `INSERT INTO user_preferences (user_id, theme) VALUES ($1, 'system') ON CONFLICT (user_id) DO NOTHING`,
           [dbUser.id]
         );
         authenticated = true;
+      } else if (dbUser) {
+        // Wrong password — increment failure counter and maybe lock
+        const newAttempts = (dbUser.failed_login_attempts || 0) + 1;
+        const LOCK_AFTER = 5;
+        const LOCK_MINUTES = 15;
+        if (newAttempts >= LOCK_AFTER) {
+          const lockedUntil = new Date(Date.now() + LOCK_MINUTES * 60 * 1000).toISOString();
+          await pgQuery(
+            "UPDATE users SET failed_login_attempts = $1, locked_until = $2, updated_at = now() WHERE id = $3",
+            [newAttempts, lockedUntil, dbUser.id]
+          );
+          void logAuditEvent("account_locked", { userEmail: email, metadata: { attempts: newAttempts, lockedUntilIso: lockedUntil } });
+        } else {
+          await pgQuery(
+            "UPDATE users SET failed_login_attempts = $1, updated_at = now() WHERE id = $2",
+            [newAttempts, dbUser.id]
+          );
+        }
+        void logAuditEvent("login_failed", { userEmail: email, metadata: { attempts: newAttempts } });
       }
     }
 
@@ -258,6 +306,9 @@ export async function registerSessionAuth(app: FastifyInstance) {
     }
 
     if (!authenticated) {
+      if (!isPostgresEnabled()) {
+        void logAuditEvent("login_failed", { userEmail: email, metadata: { source: "whitelist" } });
+      }
       reply.code(401);
       return { message: "Invalid email or password." };
     }

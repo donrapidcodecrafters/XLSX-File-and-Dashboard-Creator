@@ -443,6 +443,26 @@ async function quickbaseListFieldIds(config: StudioDocument["quickbase"], tableI
   return [] as string[];
 }
 
+/**
+ * Fetch ALL fields for a Quickbase table with full metadata (id, label, type).
+ * Used when no saved report ID is configured — we discover the schema live.
+ */
+export async function quickbaseFetchTableFields(
+  config: StudioDocument["quickbase"],
+  tableId: string
+): Promise<import("@studio/shared").FieldDefinition[]> {
+  if (!tableId || !usingDirectQuickbaseApi(config)) return [];
+  const raw = await quickbaseRestRequest(
+    config,
+    `/fields?tableId=${encodeURIComponent(tableId)}`
+  ) as Array<{ id: number | string; label?: string; fieldType?: string; baseType?: string }>;
+  return raw.map((field) => ({
+    id: String(field.id),
+    label: field.label || String(field.id),
+    type: mapQuickbaseFieldType(field.fieldType || "", field.baseType || "")
+  }));
+}
+
 async function quickbaseXmlRequest(
   config: StudioDocument["quickbase"],
   dbid: string,
@@ -1372,18 +1392,19 @@ function hasRefreshSourceConfig(profile: { refreshSource?: { tableIds?: string[]
 }
 
 function mergeProfileRefreshSource(
-  baseProfile: { refreshSource?: { tableIds?: string[]; reportIds?: Record<string, string> } } | undefined,
-  loadedProfile: { refreshSource?: { tableIds?: string[]; reportIds?: Record<string, string> } }
+  baseProfile: { refreshSource?: { tableIds?: string[]; reportIds?: Record<string, string>; keyFieldIds?: Record<string, string> } } | undefined,
+  loadedProfile: { refreshSource?: { tableIds?: string[]; reportIds?: Record<string, string>; keyFieldIds?: Record<string, string> } }
 ) {
-  if (hasRefreshSourceConfig(loadedProfile) || !hasRefreshSourceConfig(baseProfile)) {
-    return {
-      tableIds: [...(loadedProfile.refreshSource?.tableIds || [])],
-      reportIds: { ...(loadedProfile.refreshSource?.reportIds || {}) }
-    };
-  }
+  // Disk (base) is authoritative — user edits are saved to disk and must survive QB hydration.
+  // Only fall back to QB-loaded values when disk has no config at all (first-time setup).
+  const useDisk = hasRefreshSourceConfig(baseProfile);
+  const primary = useDisk ? baseProfile : loadedProfile;
+  const secondary = useDisk ? loadedProfile : baseProfile;
   return {
-    tableIds: [...(baseProfile?.refreshSource?.tableIds || [])],
-    reportIds: { ...(baseProfile?.refreshSource?.reportIds || {}) }
+    tableIds: [...(primary?.refreshSource?.tableIds || [])],
+    reportIds: { ...(primary?.refreshSource?.reportIds || {}) },
+    // Merge keyFieldIds from both — disk wins on conflict
+    keyFieldIds: { ...(secondary?.refreshSource?.keyFieldIds || {}), ...(primary?.refreshSource?.keyFieldIds || {}) }
   };
 }
 
@@ -1408,7 +1429,8 @@ function findLegacyUserProfilePlatformSettings(
   return {
     refreshSource: hasRefreshSourceConfig(legacyProfile) ? {
       tableIds: [...(legacyProfile.refreshSource?.tableIds || [])],
-      reportIds: { ...(legacyProfile.refreshSource?.reportIds || {}) }
+      reportIds: { ...(legacyProfile.refreshSource?.reportIds || {}) },
+      keyFieldIds: { ...(legacyProfile.refreshSource?.keyFieldIds || {}) }
     } : undefined,
     refreshSchedule: legacyProfile.refreshSchedule && typeof legacyProfile.refreshSchedule === "object"
       ? legacyProfile.refreshSchedule
@@ -1486,14 +1508,26 @@ export async function hydrateStudioDocumentFromQuickbase(document: StudioDocumen
         const storageRefreshSource = hasRefreshSourceConfig({ refreshSource: storagePayload?.refreshSource })
           ? storagePayload?.refreshSource
           : undefined;
+        // Disk (base) profile is authoritative for refreshSource. Only use QB-stored or legacy values
+        // when the disk profile has no config at all (first-time setup / migration).
+        const diskProfile = baseProfilesById.get(profile.id);
+        const diskHasConfig = hasRefreshSourceConfig(diskProfile);
+        const resolvedRefreshSource = diskHasConfig
+          ? diskProfile!.refreshSource
+          : (storageRefreshSource || legacyPlatformSettings.refreshSource || profile.refreshSource);
+        // keyFieldIds are never stored in QB — always take from disk
+        const localKeyFieldIds = diskProfile?.refreshSource?.keyFieldIds || {};
         return {
           ...profile,
           quickbase: mergeQuickbaseConfig(
-            mergeQuickbaseConfig(baseProfilesById.get(profile.id)?.quickbase || profile.quickbase, profile.quickbase),
+            mergeQuickbaseConfig(diskProfile?.quickbase || profile.quickbase, profile.quickbase),
             config,
             { allowEmpty: true }
           ),
-          refreshSource: storageRefreshSource || legacyPlatformSettings.refreshSource || profile.refreshSource,
+          refreshSource: {
+            ...(resolvedRefreshSource || {}),
+            keyFieldIds: { ...(resolvedRefreshSource?.keyFieldIds || {}), ...localKeyFieldIds }
+          },
           refreshSchedule: storagePayload?.refreshSchedule || legacyPlatformSettings.refreshSchedule || profile.refreshSchedule
         };
       } catch {

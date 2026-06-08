@@ -16,10 +16,10 @@ type Weekday = "0" | "1" | "2" | "3" | "4" | "5" | "6";
 
 interface ScheduleChoice {
   frequency: Frequency;
-  hour: string;     // "7", "8", ..., "17"
+  hour: string;
   ampm: "AM" | "PM";
-  weekday: Weekday; // for weekly
-  monthDay: string; // "1".."28" for monthly
+  weekday: Weekday;
+  monthDay: string;
 }
 
 const WEEKDAY_LABELS: Record<Weekday, string> = {
@@ -62,7 +62,8 @@ function describeSchedule(expr: string): string {
   if (s.frequency === "daily")   return `Every day at ${timeLabel}`;
   if (s.frequency === "weekly")  return `Every ${WEEKDAY_LABELS[s.weekday]} at ${timeLabel}`;
   if (s.frequency === "monthly") {
-    const suffix = ["th","st","nd","rd"][ Number(s.monthDay) <= 3 ? Number(s.monthDay) : 0 ] || "th";
+    const n = Number(s.monthDay);
+    const suffix = n === 1 ? "st" : n === 2 ? "nd" : n === 3 ? "rd" : "th";
     return `${s.monthDay}${suffix} of every month at ${timeLabel}`;
   }
   return expr;
@@ -83,59 +84,88 @@ const CITY_TIMEZONES = [
   { label: "UTC (no time zone)",    value: "UTC" }
 ];
 
+// Shared styles for native selects that look like proper dropdowns in all browsers/themes
+const selectStyle: React.CSSProperties = {
+  display: "block",
+  width: "100%",
+  padding: "0.45rem 2rem 0.45rem 0.65rem",
+  borderRadius: 7,
+  border: "1px solid var(--border, #D1D5DB)",
+  fontFamily: "inherit",
+  fontSize: "0.875rem",
+  background: "var(--surface, #ffffff)",
+  color: "var(--text, #111827)",
+  cursor: "pointer",
+  outline: "none",
+  // appearance: none + SVG arrow gives consistent cross-browser dropdown affordance
+  appearance: "none" as const,
+  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14'%3E%3Cpath fill='%239CA3AF' d='M7 9.5L2 4.5h10z'/%3E%3C/svg%3E")`,
+  backgroundRepeat: "no-repeat",
+  backgroundPosition: "right 0.55rem center",
+};
+
+// Labeled select field with consistent styling
+function SelectField({ label, children, flex }: { label: string; children: React.ReactNode; flex?: number | string }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 5, flex }}>
+      <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "var(--text-soft, #6B7280)", letterSpacing: "0.01em" }}>
+        {label}
+      </span>
+      {children}
+    </div>
+  );
+}
+
 function ScheduleBuilder({ value, onChange }: { value: string; onChange: (cron: string) => void }) {
   const [choice, setChoice] = useState<ScheduleChoice>(() => cronToScheduleChoice(value));
+
   function update(patch: Partial<ScheduleChoice>) {
     const next = { ...choice, ...patch };
     setChoice(next);
     onChange(scheduleChoiceToCron(next));
   }
-  const sel = { padding: "0.35rem 0.5rem", borderRadius: 8, border: "1px solid var(--border, #E5E7EB)", fontFamily: "inherit", fontSize: "0.875rem", background: "var(--surface, #fff)", color: "var(--text, #111827)" } as const;
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-      <label className="field">
-        How often?
-        <select style={sel} value={choice.frequency} onChange={(e) => update({ frequency: e.target.value as Frequency })}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+      <SelectField label="How often?">
+        <select style={selectStyle} value={choice.frequency} onChange={(e) => update({ frequency: e.target.value as Frequency })}>
           <option value="hourly">Every hour</option>
           <option value="daily">Every day</option>
           <option value="weekly">Every week</option>
           <option value="monthly">Every month</option>
         </select>
-      </label>
+      </SelectField>
 
       {choice.frequency !== "hourly" && (
-        <label className="field">
-          What time?
-          <div style={{ display: "flex", gap: "0.4rem" }}>
-            <select style={{ ...sel, flex: 1 }} value={choice.hour} onChange={(e) => update({ hour: e.target.value })}>
-              {HOUR_OPTIONS.map((h) => <option key={h} value={h}>{h} {choice.ampm}</option>)}
+        <SelectField label="What time?">
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <select style={{ ...selectStyle, flex: 1 }} value={choice.hour} onChange={(e) => update({ hour: e.target.value })}>
+              {HOUR_OPTIONS.map((h) => <option key={h} value={h}>{h}:00</option>)}
             </select>
-            <select style={sel} value={choice.ampm} onChange={(e) => update({ ampm: e.target.value as "AM" | "PM" })}>
+            <select style={{ ...selectStyle, width: 80, flex: "none" }} value={choice.ampm} onChange={(e) => update({ ampm: e.target.value as "AM" | "PM" })}>
               <option value="AM">AM</option>
               <option value="PM">PM</option>
             </select>
           </div>
-        </label>
+        </SelectField>
       )}
 
       {choice.frequency === "weekly" && (
-        <label className="field">
-          Which day of the week?
-          <select style={sel} value={choice.weekday} onChange={(e) => update({ weekday: e.target.value as Weekday })}>
+        <SelectField label="Which day of the week?">
+          <select style={selectStyle} value={choice.weekday} onChange={(e) => update({ weekday: e.target.value as Weekday })}>
             {(Object.entries(WEEKDAY_LABELS) as [Weekday, string][]).map(([v, l]) => (
               <option key={v} value={v}>{l}</option>
             ))}
           </select>
-        </label>
+        </SelectField>
       )}
 
       {choice.frequency === "monthly" && (
-        <label className="field">
-          Which day of the month?
-          <select style={sel} value={choice.monthDay} onChange={(e) => update({ monthDay: e.target.value })}>
+        <SelectField label="Which day of the month?">
+          <select style={selectStyle} value={choice.monthDay} onChange={(e) => update({ monthDay: e.target.value })}>
             {MONTH_DAY_OPTIONS.map((d) => <option key={d} value={d}>{d}</option>)}
           </select>
-        </label>
+        </SelectField>
       )}
     </div>
   );
@@ -170,6 +200,8 @@ interface ConfigFormState {
   timeZone: string;
   recipientsRaw: string;
   enabled: boolean;
+  emailSubject: string;
+  emailBody: string;
 }
 
 function blankForm(doc: StudioDocument): ConfigFormState {
@@ -180,7 +212,9 @@ function blankForm(doc: StudioDocument): ConfigFormState {
     cronExpression: "0 8 * * 1",
     timeZone: "America/New_York",
     recipientsRaw: "",
-    enabled: true
+    enabled: true,
+    emailSubject: "",
+    emailBody: ""
   };
 }
 
@@ -191,8 +225,24 @@ function configToForm(c: ReportConfig): ConfigFormState {
     cronExpression: c.cron_expression,
     timeZone: c.time_zone,
     recipientsRaw: recipientsToString(c.send_to),
-    enabled: c.enabled
+    enabled: c.enabled,
+    emailSubject: c.email_subject || "",
+    emailBody: c.email_body || ""
   };
+}
+
+// Divider used between form sections
+function SectionDivider({ label }: { label: string }) {
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 10,
+      margin: "4px 0", color: "var(--text-soft, #9CA3AF)"
+    }}>
+      <div style={{ flex: 1, height: 1, background: "var(--border, #E5E7EB)" }} />
+      <span style={{ fontSize: "0.75rem", fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{label}</span>
+      <div style={{ flex: 1, height: 1, background: "var(--border, #E5E7EB)" }} />
+    </div>
+  );
 }
 
 // ── Config form component ─────────────────────────────────────────────────────
@@ -220,6 +270,11 @@ function ConfigForm({
   const reports = allObjects.filter((o) => o.type === "report");
   const dashboards = allObjects.filter((o) => o.type === "dashboard");
 
+  // Derive display name for default email placeholder
+  const selectedObj = doc.bundle.objects[form.objectId];
+  const objName = selectedObj?.name || "this report";
+  const objTypeLabel = form.objectType === "dashboard" ? "dashboard" : "report";
+
   return (
     <div className="card" style={{ borderColor: "rgba(13,124,102,0.22)" }}>
       <div className="card-head">
@@ -228,31 +283,37 @@ function ConfigForm({
       </div>
       {error ? <div className="sync-status sync-status-warn"><span>{error}</span></div> : null}
 
+      <SectionDivider label="What to send" />
+
       <label className="field">
-        Which report or dashboard should be emailed?
-        <select value={form.objectId} onChange={(e) => {
-          const obj = doc.bundle.objects[e.target.value];
-          setForm((f) => ({ ...f, objectId: e.target.value, objectType: obj?.type === "dashboard" ? "dashboard" : "report" }));
-        }}>
+        Report or dashboard
+        <select
+          style={selectStyle}
+          value={form.objectId}
+          onChange={(e) => {
+            const obj = doc.bundle.objects[e.target.value];
+            setForm((f) => ({ ...f, objectId: e.target.value, objectType: obj?.type === "dashboard" ? "dashboard" : "report" }));
+          }}
+        >
           {reports.length > 0 && <optgroup label="Reports">{reports.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</optgroup>}
           {dashboards.length > 0 && <optgroup label="Dashboards">{dashboards.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</optgroup>}
         </select>
       </label>
 
-      <label className="field">
-        When should it be sent?
-      </label>
+      <SectionDivider label="When to send" />
+
       <ScheduleBuilder
         value={form.cronExpression}
         onChange={(cron) => setForm((f) => ({ ...f, cronExpression: cron }))}
       />
 
-      <label className="field">
-        Time zone
-        <select value={form.timeZone} onChange={(e) => setForm((f) => ({ ...f, timeZone: e.target.value }))}>
+      <SelectField label="Time zone">
+        <select style={selectStyle} value={form.timeZone} onChange={(e) => setForm((f) => ({ ...f, timeZone: e.target.value }))}>
           {CITY_TIMEZONES.map((tz) => <option key={tz.value} value={tz.value}>{tz.label}</option>)}
         </select>
-      </label>
+      </SelectField>
+
+      <SectionDivider label="Recipients" />
 
       <label className="field">
         Who should receive the email?
@@ -262,15 +323,41 @@ function ConfigForm({
           placeholder={"alice@company.com\nbob@company.com"}
           rows={3}
         />
-        <span className="micro">One email address per line. You can add up to 50 people.</span>
+        <span className="micro">One email per line — up to 50 addresses.</span>
       </label>
+
+      <SectionDivider label="Email content (optional)" />
+
+      <label className="field">
+        Subject line
+        <input
+          type="text"
+          value={form.emailSubject}
+          onChange={(e) => setForm((f) => ({ ...f, emailSubject: e.target.value }))}
+          placeholder={`${objName} — ${objTypeLabel.charAt(0).toUpperCase() + objTypeLabel.slice(1)} from your platform`}
+        />
+        <span className="micro">Leave blank to use the platform default.</span>
+      </label>
+
+      <label className="field">
+        Message body
+        <textarea
+          value={form.emailBody}
+          onChange={(e) => setForm((f) => ({ ...f, emailBody: e.target.value }))}
+          placeholder={`Your scheduled ${objTypeLabel} is ready and attached to this email as an Excel file.`}
+          rows={3}
+        />
+        <span className="micro">Leave blank to use the platform default message. The Excel file is always attached automatically.</span>
+      </label>
+
+      <SectionDivider label="Options" />
 
       <label className="toggle-row">
         <input type="checkbox" checked={form.enabled} onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))} />
         Start sending right away
       </label>
 
-      <button type="button" className="ghost-button btn-create" onClick={onSubmit} disabled={saving} style={{ width: "100%", justifyContent: "center" }}>
+      <button type="button" className="ghost-button btn-create" onClick={onSubmit} disabled={saving} style={{ width: "100%", justifyContent: "center", marginTop: 4 }}>
         {saving ? "Saving…" : submitLabel}
       </button>
     </div>
@@ -317,7 +404,9 @@ export function ScheduledEmailsPanel({ documentState }: Props) {
         enabled: createForm.enabled,
         cron_expression: createForm.cronExpression,
         time_zone: createForm.timeZone,
-        send_to: recipients
+        send_to: recipients,
+        email_subject: createForm.emailSubject.trim(),
+        email_body: createForm.emailBody.trim()
       });
       setShowCreate(false);
       setCreateForm(blankForm(documentState));
@@ -336,7 +425,9 @@ export function ScheduledEmailsPanel({ documentState }: Props) {
         enabled: editForm.enabled,
         cron_expression: editForm.cronExpression,
         time_zone: editForm.timeZone,
-        send_to: recipients
+        send_to: recipients,
+        email_subject: editForm.emailSubject.trim(),
+        email_body: editForm.emailBody.trim()
       });
       setEditingId(null);
       await load();
@@ -350,7 +441,9 @@ export function ScheduledEmailsPanel({ documentState }: Props) {
         enabled: !config.enabled,
         cron_expression: config.cron_expression,
         time_zone: config.time_zone,
-        send_to: config.send_to
+        send_to: config.send_to,
+        email_subject: config.email_subject,
+        email_body: config.email_body
       });
       setConfigs((prev) => prev.map((c) => c.id === config.id ? updated.config : c));
     } catch (err) { setError(err instanceof Error ? err.message : "Could not update."); }
@@ -365,7 +458,7 @@ export function ScheduledEmailsPanel({ documentState }: Props) {
   async function handleTest(id: string) {
     setTestingId(id); setTestResult(null);
     try {
-      const result = await testReportConfig(id);
+      await testReportConfig(id);
       setTestResult({ id, message: "Test email sent successfully! Check your inbox.", ok: true });
     } catch (err) {
       setTestResult({ id, message: err instanceof Error ? err.message : "Test failed — check the recipients and try again.", ok: false });
@@ -426,6 +519,11 @@ export function ScheduledEmailsPanel({ documentState }: Props) {
                   <div className="micro" style={{ color: "var(--text-soft)" }}>
                     To: {config.send_to.join(", ") || "No recipients set"}
                   </div>
+                  {config.email_subject && (
+                    <div className="micro" style={{ color: "var(--text-soft)" }}>
+                      Subject: {config.email_subject}
+                    </div>
+                  )}
                   <div className="micro" style={{ display: "flex", gap: 12, flexWrap: "wrap", color: "var(--text-soft)" }}>
                     <span>Last sent: {formatDate(config.last_run_at)}</span>
                     <span>Next: {formatDate(config.next_run_at)}</span>

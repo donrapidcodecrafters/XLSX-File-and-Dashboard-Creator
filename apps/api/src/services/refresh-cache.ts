@@ -1,8 +1,9 @@
 import type { FastifyBaseLogger } from "fastify";
 import type { DataRow, RefreshJobStatus, RefreshScheduleConfig, ReportDefinition, StudioDocument, TableDefinition } from "@studio/shared";
 import { loadQuickbaseSchema } from "./quickbase-schema.js";
-import { convertQuickbaseSchemaToTables, fetchQuickbaseSavedReportPage, fetchQuickbaseTablePage } from "./quickbase-storage.js";
+import { convertQuickbaseSchemaToTables, fetchQuickbaseSavedReportPage, fetchQuickbaseTablePage, quickbaseFetchTableFields } from "./quickbase-storage.js";
 import { replaceSourceRecords } from "./eav-record-store.js";
+import { sendSystemNotification } from "./notification-service.js";
 import { invalidateSourceCaches } from "./report-runner.js";
 import { studioStore } from "./studio-store.js";
 import { RefreshCancelledError, refreshJobStore } from "./refresh-jobs.js";
@@ -34,13 +35,14 @@ async function persistQuickbaseRowsToEnterpriseStore(
   document: StudioDocument,
   table: TableDefinition,
   rows: DataRow[],
-  metadata: Record<string, unknown> = {}
+  metadata: Record<string, unknown> = {},
+  fieldsOverride?: import("@studio/shared").FieldDefinition[]
 ) {
   await replaceSourceRecords({
     sourceId: table.id,
     sourceName: table.name || table.quickbaseTableId || table.id,
     sourceType: "quickbase",
-    fields: table.fields || [],
+    fields: fieldsOverride ?? table.fields ?? [],
     rows,
     quickbaseProfileId: table.quickbaseProfileId || "",
     quickbaseTableId: getQuickbaseTableId(table),
@@ -792,15 +794,29 @@ async function fetchAllTableRows(
     }
     return Array.from(merged.values());
   }
+  // No saved report ID — fetch ALL fields from the QB API, then page through all records.
+  // This also handles the case where table.fields is empty (e.g. table added without schema load).
+  const qbTableId = getQuickbaseTableId(table);
+  let dynamicFields = table.fields && table.fields.length > 0 ? table.fields : [];
   if (hasQuickbaseSource) {
-    const tableLabel = table.name || table.quickbaseTableId || table.id;
-    throw new Error(
-      options.objectId
-        ? `No saved report ID is configured for "${tableLabel}". Go to Settings → Data Refresh to add one.`
-        : `No saved report ID is configured for "${tableLabel}". Go to Settings → Data Refresh to set it up.`
-    );
+    try {
+      const fetched = await quickbaseFetchTableFields(quickbase, qbTableId);
+      if (fetched.length > 0) {
+        dynamicFields = fetched;
+        // Update table in-place so the caller's persist call sees the current field schema
+        table.fields = fetched;
+      }
+    } catch {
+      // If field fetch fails and we have no fields at all, we can't proceed
+      if (!dynamicFields.length) {
+        throw new Error(`Could not fetch fields for "${table.name || qbTableId}" from Quickbase. Check your credentials and try again.`);
+      }
+    }
   }
-  const fieldIds = table.fields.map((field) => field.id).filter(Boolean);
+  const fieldIds = dynamicFields.map((field) => field.id).filter(Boolean);
+  if (!fieldIds.length) {
+    return [] as DataRow[];
+  }
   const chunks = chunk(fieldIds, 30);
   const merged = new Map<string, DataRow>();
   let fetchedPages = 0;
@@ -809,7 +825,7 @@ async function fetchAllTableRows(
     let skip = 0;
     while (true) {
       assertRefreshNotCancelled(options.activeJobId || "", profileIds);
-      const page = await fetchQuickbaseTablePage(quickbase, getQuickbaseTableId(table), fieldChunk, {
+      const page = await fetchQuickbaseTablePage(quickbase, qbTableId, fieldChunk, {
         top: 1000,
         skip
       });
@@ -1178,6 +1194,24 @@ export async function refreshAllCachedDataWithProgress(
     // Evict stale report/dashboard cache entries so the new data is served immediately.
     invalidateSourceCaches(...tableIds);
     onProgress?.(100, "Refresh complete", { tableCount: tableIds.length, rowCount: totalRows });
+    const elapsedFinal = Math.round((Date.now() - startedAt) / 1000);
+    void sendSystemNotification({
+      type: reason === "scheduled" ? "scheduled_refresh_complete" : "refresh_complete",
+      title: reason === "scheduled" ? "Scheduled Data Refresh Complete" : "Manual Data Refresh Complete",
+      status: "success",
+      summary: `All selected tables have been successfully synced from Quickbase into the database. Reports and dashboards now reflect the latest data.`,
+      tableCount: tableIds.length,
+      rowCount: totalRows,
+      durationSeconds: elapsedFinal,
+      triggeredBy: reason === "scheduled" ? "Scheduled refresh" : "Manual refresh",
+      occurredAt: new Date().toISOString(),
+      details: [
+        { label: "Trigger", value: reason === "scheduled" ? "Scheduled" : "Manual" },
+        { label: "Tables synced", value: String(tableIds.length) },
+        { label: "Records stored", value: totalRows.toLocaleString() },
+        { label: "Completed at", value: new Date().toLocaleString() }
+      ]
+    });
     return {
       ok: true,
       reason,
@@ -1195,16 +1229,25 @@ export async function refreshAllCachedDataWithProgress(
       updateRefreshScheduleMetadata(failed);
       updateLegacyActiveQuickbase(failed);
       studioStore.flushDocument(failed, { markSavedAt: false });
+      void sendSystemNotification({
+        type: "refresh_cancelled",
+        title: "Data Refresh Cancelled",
+        status: "warning",
+        summary: "The data refresh was cancelled before it completed. Some tables may not have been updated.",
+        occurredAt: new Date().toISOString(),
+        triggeredBy: reason === "scheduled" ? "Scheduled refresh" : "Manual refresh"
+      });
       throw error;
     }
+    const errorMessage = error instanceof Error ? error.message : "Refresh failed.";
     failed.sync.refreshStatus.running = false;
     failed.sync.refreshStatus.activeJobId = "";
     failed.sync.refreshStatus.cancelRequested = false;
-    failed.sync.refreshStatus.message = error instanceof Error ? error.message : "Refresh failed.";
+    failed.sync.refreshStatus.message = errorMessage;
     failed.sync.refreshStatus.estimatedSecondsRemaining = undefined;
     failed.sync.refreshStatus.lastCompletedAt = new Date().toISOString();
     failed.sync.refreshStatus.lastCancelledAt = "";
-    failed.sync.refreshStatus.lastError = error instanceof Error ? error.message : "Refresh failed.";
+    failed.sync.refreshStatus.lastError = errorMessage;
     failedProfilesToUpdate.forEach((profile) => {
       syncProfileRefreshStatus(failed, profile.id, (status) => {
         status.running = false;
@@ -1220,6 +1263,15 @@ export async function refreshAllCachedDataWithProgress(
     updateRefreshScheduleMetadata(failed);
     updateLegacyActiveQuickbase(failed);
     studioStore.flushDocument(failed, { markSavedAt: false });
+    void sendSystemNotification({
+      type: reason === "scheduled" ? "scheduled_refresh_failed" : "refresh_failed",
+      title: reason === "scheduled" ? "Scheduled Data Refresh Failed" : "Data Refresh Failed",
+      status: "error",
+      summary: "The data refresh encountered an error and could not complete. Please review the errors below and check your Quickbase connection settings.",
+      occurredAt: new Date().toISOString(),
+      triggeredBy: reason === "scheduled" ? "Scheduled refresh" : "Manual refresh",
+      errors: [errorMessage]
+    });
     throw error;
   }
 }

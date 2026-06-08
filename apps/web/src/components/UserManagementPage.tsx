@@ -20,10 +20,11 @@ const PRIMARY_DARK = "#065F46";
 const PRIMARY_BG = "#ECFDF5";
 const PRIMARY_BORDER = "#A7F3D0";
 
-const ROLE_BADGE: Record<PlatformUser["role"], { bg: string; color: string; border: string; label: string }> = {
-  admin:  { bg: "#ECFDF5", color: "#065F46", border: "#A7F3D0", label: "Admin" },
-  editor: { bg: "#EFF6FF", color: "#1D4ED8", border: "#BFDBFE", label: "Editor" },
-  viewer: { bg: "#F9FAFB", color: "var(--text-soft, #6B7280)", border: "#E5E7EB", label: "Viewer" },
+const ROLE_BADGE: Record<string, { bg: string; color: string; border: string; label: string }> = {
+  admin:     { bg: "#ECFDF5", color: "#065F46", border: "#A7F3D0", label: "Admin" },
+  editor:    { bg: "#EFF6FF", color: "#1D4ED8", border: "#BFDBFE", label: "Editor" },
+  viewer:    { bg: "#F9FAFB", color: "var(--text-soft, #6B7280)", border: "#E5E7EB", label: "Viewer" },
+  developer: { bg: "#F5F3FF", color: "#6D28D9", border: "#DDD6FE", label: "Developer" },
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -82,10 +83,12 @@ function RoleBadge({ role }: { role: PlatformUser["role"] }) {
       fontSize: 11,
       fontWeight: 700,
       letterSpacing: "0.04em",
+      whiteSpace: "nowrap",
       background: meta.bg,
       color: meta.color,
       border: `1px solid ${meta.border}`,
       textTransform: "capitalize",
+      flexShrink: 0,
     }}>
       {meta.label}
     </span>
@@ -102,6 +105,7 @@ function StatusBadge({ active }: { active: boolean }) {
       borderRadius: 99,
       fontSize: 11,
       fontWeight: 600,
+      whiteSpace: "nowrap",
       background: active ? "#ECFDF5" : "#F9FAFB",
       color: active ? "#065F46" : "#9CA3AF",
       border: `1px solid ${active ? "#A7F3D0" : "#E5E7EB"}`,
@@ -260,13 +264,14 @@ interface UserRowProps {
   currentUserId: string;
   onRoleChange: (id: string, role: PlatformUser["role"]) => Promise<void>;
   onToggleActive: (user: PlatformUser) => Promise<void>;
+  onToggleNotifications: (user: PlatformUser) => Promise<void>;
   onImpersonate: (user: PlatformUser) => Promise<void>;
   onPasswordReset: (userId: string, email: string) => Promise<void>;
   onDelete: (userId: string, email: string) => Promise<void>;
   isWorking: boolean;
 }
 
-function UserRow({ user, currentUserId, onRoleChange, onToggleActive, onImpersonate, onPasswordReset, onDelete, isWorking }: UserRowProps) {
+function UserRow({ user, currentUserId, onRoleChange, onToggleActive, onToggleNotifications, onImpersonate, onPasswordReset, onDelete, isWorking }: UserRowProps) {
   const isSelf = user.id === currentUserId;
   const [roleChanging, setRoleChanging] = useState(false);
 
@@ -314,13 +319,64 @@ function UserRow({ user, currentUserId, onRoleChange, onToggleActive, onImperson
       </td>
 
       {/* Status */}
-      <td style={cellStyle}>
+      <td style={{ ...cellStyle, whiteSpace: "nowrap" }}>
         <StatusBadge active={user.active} />
       </td>
 
       {/* Last login */}
       <td style={{ ...cellStyle, color: "var(--text-muted, #9CA3AF)", fontSize: 12 }}>
         {formatDate(user.lastLoginAt)}
+      </td>
+
+      {/* System notifications toggle */}
+      <td style={{ ...cellStyle, textAlign: "center" }}>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={user.systemNotificationsEnabled === true}
+          onClick={() => { void onToggleNotifications(user); }}
+          disabled={isWorking}
+          title={user.systemNotificationsEnabled ? "System notifications ON — click to disable" : "System notifications OFF — click to enable"}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "4px 10px",
+            borderRadius: 6,
+            border: `1px solid ${user.systemNotificationsEnabled ? "#A7F3D0" : "#E5E7EB"}`,
+            background: user.systemNotificationsEnabled ? "#ECFDF5" : "#F9FAFB",
+            color: user.systemNotificationsEnabled ? "#065F46" : "#9CA3AF",
+            fontSize: 12,
+            fontWeight: 600,
+            fontFamily: FONT,
+            cursor: isWorking ? "not-allowed" : "pointer",
+            whiteSpace: "nowrap",
+            transition: "all 120ms",
+          }}
+        >
+          <span style={{
+            display: "inline-block",
+            width: 28,
+            height: 16,
+            borderRadius: 99,
+            background: user.systemNotificationsEnabled ? "#10B981" : "#D1D5DB",
+            position: "relative",
+            transition: "background 150ms",
+            flexShrink: 0,
+          }}>
+            <span style={{
+              position: "absolute",
+              top: 2,
+              left: user.systemNotificationsEnabled ? 14 : 2,
+              width: 12,
+              height: 12,
+              borderRadius: "50%",
+              background: "#fff",
+              transition: "left 150ms",
+            }} />
+          </span>
+          {user.systemNotificationsEnabled ? "On" : "Off"}
+        </button>
       </td>
 
       {/* Actions */}
@@ -541,6 +597,20 @@ export function UserManagementPage({ currentUser }: UserManagementPageProps) {
       showBanner("error", err instanceof Error ? err.message : "Failed to update role.");
     } finally {
       setWorking(id, false);
+    }
+  }
+
+  async function handleToggleNotifications(user: PlatformUser) {
+    setWorking(user.id, true);
+    try {
+      const { updateUser } = await import("../lib/studioApi");
+      const result = await updateUser(user.id, { systemNotificationsEnabled: !user.systemNotificationsEnabled });
+      setUsers((prev) => prev.map((u) => u.id === user.id ? result.user : u));
+      showBanner("success", `System notifications ${result.user.systemNotificationsEnabled ? "enabled" : "disabled"} for ${user.displayName || user.email}.`);
+    } catch (err) {
+      showBanner("error", err instanceof Error ? err.message : "Failed to update notification settings.");
+    } finally {
+      setWorking(user.id, false);
     }
   }
 
@@ -808,7 +878,7 @@ export function UserManagementPage({ currentUser }: UserManagementPageProps) {
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr style={{ background: "var(--surface-alt, #F9FAFB)" }}>
-                    {(["User", "Role", "Status", "Last login", "Actions"] as const).map((heading, i) => (
+                    {(["User", "Role", "Status", "Last login", "Notifications", "Actions"] as const).map((heading, i) => (
                       <th
                         key={heading}
                         style={{
@@ -821,7 +891,7 @@ export function UserManagementPage({ currentUser }: UserManagementPageProps) {
                           textTransform: "uppercase",
                           borderBottom: "1px solid var(--border, #E5E7EB)",
                           paddingLeft: i === 0 ? 20 : 14,
-                          paddingRight: i === 4 ? 20 : 14,
+                          paddingRight: i === 5 ? 20 : 14,
                           whiteSpace: "nowrap",
                         }}
                       >
@@ -838,6 +908,7 @@ export function UserManagementPage({ currentUser }: UserManagementPageProps) {
                       currentUserId={currentUser?.id ?? ""}
                       onRoleChange={handleRoleChange}
                       onToggleActive={handleToggleActive}
+                      onToggleNotifications={handleToggleNotifications}
                       onImpersonate={handleImpersonate}
                       onPasswordReset={handleSendPasswordReset}
                       onDelete={handleDeleteUser}

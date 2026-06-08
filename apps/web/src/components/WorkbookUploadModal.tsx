@@ -1,6 +1,6 @@
-import { useRef, useState } from "react";
-import { importStudioWorkbook, importStudioWorkbookSource, peekXlsxFile, recreateWorkbookFromDataSource } from "../lib/studioApi";
-import type { StudioWorkbookImportResult, StudioWorkbookSourceImportResult } from "../lib/studioApi";
+import { useEffect, useRef, useState } from "react";
+import { fetchStudioSources, importStudioWorkbook, importStudioWorkbookSource, peekXlsxFile, recreateWorkbookFromDataSource } from "../lib/studioApi";
+import type { StudioSourceSummary, StudioWorkbookImportResult, StudioWorkbookSourceImportResult } from "../lib/studioApi";
 
 type UploadMode = "data-source" | "template";
 
@@ -24,31 +24,38 @@ interface WorkbookUploadModalProps {
   onSuccess: (result: WorkbookUploadResult) => void;
 }
 
-// ─── Design tokens (inline to avoid CSS inheritance conflicts) ─────────────
 const T = {
-  bg:        "var(--surface, #fff)",
-  bgAlt:     "var(--surface-alt, #F9FAFB)",
-  border:    "var(--border, #E5E7EB)",
-  borderMd:  "var(--border-md, #D1D5DB)",
-  brand:     "var(--brand, #0d7c66)",
-  brandDeep: "var(--brand-deep, #065F46)",
-  brandLight:"var(--brand-light, #ECFDF5)",
-  brandBorder:"var(--brand-border, #A7F3D0)",
-  text:      "var(--text, #111827)",
-  textSoft:  "var(--text-soft, #6B7280)",
-  textSecondary:"var(--text-secondary, #374151)",
-  radius:    "10px",
-  radiusSm:  "6px",
-  shadow:    "0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06)",
-  shadowXl:  "0 20px 25px rgba(0,0,0,0.12), 0 8px 10px rgba(0,0,0,0.06)",
-  font:      "'Inter', 'Segoe UI', system-ui, sans-serif",
+  bg:          "var(--surface, #fff)",
+  bgAlt:       "var(--surface-alt, #F9FAFB)",
+  border:      "var(--border, #E5E7EB)",
+  borderMd:    "var(--border-md, #D1D5DB)",
+  brand:       "var(--brand, #0d7c66)",
+  brandDeep:   "var(--brand-deep, #065F46)",
+  brandLight:  "var(--brand-light, #ECFDF5)",
+  brandBorder: "var(--brand-border, #A7F3D0)",
+  text:        "var(--text, #111827)",
+  textSoft:    "var(--text-soft, #6B7280)",
+  textSecondary: "var(--text-secondary, #374151)",
+  radius:      "10px",
+  radiusSm:    "6px",
+  shadowXl:    "0 20px 25px rgba(0,0,0,0.12), 0 8px 10px rgba(0,0,0,0.06)",
+  font:        "'Inter', 'Segoe UI', system-ui, sans-serif",
 };
+
+/** Derives a stable source ID from a user-typed name, matching the server's normalizeBaseSourceId logic. */
+function slugify(name: string) {
+  return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64) || "workbook";
+}
+function nameToSourceId(name: string) {
+  return `xlsx:${slugify(name)}`;
+}
 
 export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUploadModalProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // UI state
   const [mode, setMode] = useState<UploadMode>("data-source");
   const [recreate, setRecreate] = useState(true);
-  const [sourceName, setSourceName] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [peek, setPeek] = useState<FilePeek | null>(null);
   const [peeking, setPeeking] = useState(false);
@@ -56,9 +63,43 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState("");
 
+  // Workbook picker state (data-source mode only)
+  const [xlsxSources, setXlsxSources] = useState<StudioSourceSummary[]>([]);
+  const [sourcesLoading, setSourcesLoading] = useState(false);
+  // "" = nothing chosen, "new" = creating new, anything else = existing sourceId
+  const [selectedSourceId, setSelectedSourceId] = useState<string>("");
+  const [newWorkbookName, setNewWorkbookName] = useState("");
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Load existing xlsx sources whenever modal opens in data-source mode
+  useEffect(() => {
+    if (!open || mode !== "data-source") return;
+    setSourcesLoading(true);
+    fetchStudioSources()
+      .then((res: { sources: StudioSourceSummary[] }) => {
+        setXlsxSources(res.sources.filter((s) => s.sourceType === "xlsx"));
+      })
+      .catch(() => { /* non-blocking */ })
+      .finally(() => setSourcesLoading(false));
+  }, [open, mode]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    if (!dropdownOpen) return;
+    function handleClick(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [dropdownOpen]);
+
   function reset() {
-    setFile(null); setPeek(null); setSourceName(""); setError("");
-    setImporting(false); setDragging(false);
+    setFile(null); setPeek(null); setError(""); setImporting(false);
+    setDragging(false); setSelectedSourceId(""); setNewWorkbookName("");
+    setDropdownOpen(false);
   }
 
   function handleClose() {
@@ -72,7 +113,10 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
       f.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
     if (!isXlsx) { setError("Only .xlsx files are supported."); return; }
     setError(""); setPeek(null); setFile(f);
-    if (!sourceName) setSourceName(f.name.replace(/\.xlsx$/i, "").replace(/[-_]/g, " ").trim());
+    // Auto-fill new workbook name from filename if user is creating new
+    if (selectedSourceId === "new" && !newWorkbookName) {
+      setNewWorkbookName(f.name.replace(/\.xlsx$/i, "").replace(/[-_]/g, " ").trim());
+    }
     setPeeking(true);
     try { const r = await peekXlsxFile(f); setPeek(r); } catch {}
     finally { setPeeking(false); }
@@ -82,13 +126,18 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
     if (!file || importing) return;
     setImporting(true); setError("");
     try {
-      const nameForId = sourceName.trim() || file.name.replace(/\.xlsx$/i, "").trim();
       if (mode === "data-source") {
+        // Determine which sourceId / sourceName to pass
+        const isNew = selectedSourceId === "new" || selectedSourceId === "";
+        const sourceIdArg = isNew ? undefined : selectedSourceId;
+        const sourceNameArg = isNew ? (newWorkbookName.trim() || file.name.replace(/\.xlsx$/i, "").trim()) : undefined;
+        const opts = { sourceId: sourceIdArg, sourceName: sourceNameArg };
+
         if (recreate) {
-          const result = await recreateWorkbookFromDataSource(file, { sourceName: nameForId });
+          const result = await recreateWorkbookFromDataSource(file, opts);
           onSuccess({ mode, recreated: true, sourceImport: result });
         } else {
-          const result = await importStudioWorkbookSource(file, { sourceName: nameForId });
+          const result = await importStudioWorkbookSource(file, opts);
           onSuccess({ mode, recreated: false, sourceImport: result as typeof result & { reports: unknown[]; dashboard: unknown | null } });
         }
       } else {
@@ -96,18 +145,40 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
         onSuccess({ mode, recreated: recreate, workbookImport: result });
       }
       reset(); onClose();
-    } catch (err) { setError(err instanceof Error ? err.message : "Something went wrong. Please try again."); }
-    finally { setImporting(false); }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setImporting(false);
+    }
   }
 
   if (!open) return null;
 
   const isData = mode === "data-source";
+  const selectedSource = xlsxSources.find((s) => s.sourceId === selectedSourceId);
+  const isUpdating = Boolean(selectedSource);
+  const canSubmit = Boolean(file) && !importing && (
+    !isData ||
+    selectedSourceId === "" ||
+    (selectedSourceId === "new" && newWorkbookName.trim().length > 0) ||
+    isUpdating
+  );
+
+  // Label for the picker button
+  function pickerLabel() {
+    if (sourcesLoading) return "Loading workbooks…";
+    if (selectedSourceId === "new") return `+ New workbook${newWorkbookName.trim() ? ` — "${newWorkbookName.trim()}"` : ""}`;
+    if (selectedSource) return `Update: ${selectedSource.sourceName}`;
+    if (xlsxSources.length === 0) return "New workbook (no existing workbooks yet)";
+    return "Select workbook…";
+  }
 
   const submitLabel = importing
-    ? (recreate ? "Importing…" : "Importing…")
+    ? "Importing…"
     : isData
-      ? recreate ? "Import file and create reports & dashboard" : "Import as data source"
+      ? isUpdating
+        ? recreate ? `Update "${selectedSource!.sourceName}" + refresh reports` : `Update "${selectedSource!.sourceName}"`
+        : recreate ? "Import & create reports and dashboard" : "Import as data source"
       : "Import report layouts";
 
   return (
@@ -118,9 +189,10 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
         display: "flex", alignItems: "center", justifyContent: "center",
         padding: "24px",
       }}
+      onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}
     >
       <div style={{
-        width: "100%", maxWidth: 520,
+        width: "100%", maxWidth: 540,
         background: T.bg, borderRadius: 16,
         border: `1px solid ${T.border}`, boxShadow: T.shadowXl,
         display: "flex", flexDirection: "column", gap: 0,
@@ -159,9 +231,8 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
                 const active = mode === opt.id;
                 return (
                   <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => setMode(opt.id as UploadMode)}
+                    key={opt.id} type="button"
+                    onClick={() => { setMode(opt.id as UploadMode); setSelectedSourceId(""); setNewWorkbookName(""); }}
                     disabled={importing}
                     style={{
                       display: "flex", flexDirection: "column", gap: 4,
@@ -195,19 +266,15 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
             cursor: importing ? "not-allowed" : "pointer", fontFamily: T.font,
             transition: "border-color 100ms, background 100ms",
           }} onClick={() => { if (!importing) setRecreate((r) => !r); }}>
-            {/* Custom pill toggle */}
             <div style={{
               flexShrink: 0, marginTop: 2,
               width: 34, height: 18, borderRadius: 9,
               background: recreate ? T.brand : "#D1D5DB",
               position: "relative", transition: "background 150ms",
-              cursor: importing ? "not-allowed" : "pointer",
             }}>
               <div style={{
                 position: "absolute", width: 14, height: 14, borderRadius: "50%",
-                background: "#fff", top: 2,
-                left: recreate ? 18 : 2,
-                transition: "left 150ms",
+                background: "#fff", top: 2, left: recreate ? 18 : 2, transition: "left 150ms",
                 boxShadow: "0 1px 3px rgba(0,0,0,0.18)",
               }} />
             </div>
@@ -225,32 +292,138 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
             </div>
           </div>
 
-          {/* Source name */}
-          {isData ? (
+          {/* ── Workbook picker (data-source mode only) ── */}
+          {isData && (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <label style={{ fontSize: 12, fontWeight: 600, color: T.textSecondary, letterSpacing: "0.01em" }}>
-                Name this data source
+                Which workbook does this file belong to?
               </label>
-              <input
-                type="text"
-                value={sourceName}
-                onChange={(e) => setSourceName(e.target.value)}
-                placeholder="e.g. Sales Q1 2025"
-                disabled={importing}
-                style={{
-                  width: "100%", padding: "8px 12px", borderRadius: T.radiusSm,
-                  border: `1px solid ${T.borderMd}`, background: T.bg,
-                  fontSize: 13, fontFamily: T.font, color: T.text,
-                  outline: "none", boxSizing: "border-box",
-                }}
-                onFocus={(e) => { e.currentTarget.style.borderColor = T.brand; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(13,124,102,0.12)"; }}
-                onBlur={(e) => { e.currentTarget.style.borderColor = T.borderMd; e.currentTarget.style.boxShadow = "none"; }}
-              />
-              <p style={{ margin: 0, fontSize: 11, color: T.textSoft, lineHeight: 1.5, fontWeight: 400 }}>
-                Use the same name each time you upload an updated version — the platform will automatically replace the old data and update all reports instantly.
-              </p>
+
+              {/* Custom dropdown */}
+              <div ref={dropdownRef} style={{ position: "relative" }}>
+                <button
+                  type="button"
+                  disabled={importing || sourcesLoading}
+                  onClick={() => !importing && !sourcesLoading && setDropdownOpen((o) => !o)}
+                  style={{
+                    width: "100%", padding: "9px 12px",
+                    borderRadius: T.radiusSm, fontFamily: T.font,
+                    border: `1px solid ${dropdownOpen ? T.brand : T.borderMd}`,
+                    background: T.bg, color: selectedSourceId ? T.text : T.textSoft,
+                    fontSize: 13, textAlign: "left", cursor: importing ? "not-allowed" : "pointer",
+                    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+                    boxShadow: dropdownOpen ? `0 0 0 3px rgba(13,124,102,0.12)` : "none",
+                    boxSizing: "border-box",
+                  }}
+                >
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+                    {pickerLabel()}
+                  </span>
+                  <span style={{ color: T.textSoft, fontSize: 10, flexShrink: 0 }}>{dropdownOpen ? "▲" : "▼"}</span>
+                </button>
+
+                {dropdownOpen && (
+                  <div style={{
+                    position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0,
+                    background: T.bg, border: `1px solid ${T.borderMd}`, borderRadius: T.radius,
+                    boxShadow: "0 8px 24px rgba(0,0,0,0.12)", zIndex: 100,
+                    maxHeight: 260, overflowY: "auto",
+                  }}>
+                    {/* Existing workbooks */}
+                    {xlsxSources.length > 0 && (
+                      <>
+                        <div style={{ padding: "8px 12px 4px", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: T.textSoft }}>
+                          Update existing workbook
+                        </div>
+                        {xlsxSources.map((source) => (
+                          <button
+                            key={source.sourceId}
+                            type="button"
+                            onClick={() => { setSelectedSourceId(source.sourceId); setDropdownOpen(false); }}
+                            style={{
+                              display: "flex", flexDirection: "column", gap: 1,
+                              width: "100%", padding: "9px 12px", textAlign: "left",
+                              background: selectedSourceId === source.sourceId ? T.brandLight : "transparent",
+                              border: "none", cursor: "pointer", fontFamily: T.font,
+                              borderBottom: `1px solid ${T.border}`,
+                            }}
+                            onMouseEnter={(e) => { if (selectedSourceId !== source.sourceId) e.currentTarget.style.background = T.bgAlt; }}
+                            onMouseLeave={(e) => { if (selectedSourceId !== source.sourceId) e.currentTarget.style.background = "transparent"; }}
+                          >
+                            <span style={{ fontSize: 13, fontWeight: 600, color: selectedSourceId === source.sourceId ? T.brandDeep : T.text }}>
+                              {source.sourceName}
+                            </span>
+                            <span style={{ fontSize: 11, color: T.textSoft }}>
+                              {source.rowCount.toLocaleString()} rows · {source.fieldCount} columns · last updated {source.updatedAt ? new Date(source.updatedAt).toLocaleDateString() : "never"}
+                            </span>
+                          </button>
+                        ))}
+                        <div style={{ height: 4 }} />
+                      </>
+                    )}
+
+                    {/* Add new */}
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedSourceId("new"); setDropdownOpen(false); if (!newWorkbookName && file) setNewWorkbookName(file.name.replace(/\.xlsx$/i, "").replace(/[-_]/g, " ").trim()); }}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 8,
+                        width: "100%", padding: "10px 12px", textAlign: "left",
+                        background: selectedSourceId === "new" ? T.brandLight : "transparent",
+                        border: "none", cursor: "pointer", fontFamily: T.font,
+                      }}
+                      onMouseEnter={(e) => { if (selectedSourceId !== "new") e.currentTarget.style.background = T.bgAlt; }}
+                      onMouseLeave={(e) => { if (selectedSourceId !== "new") e.currentTarget.style.background = "transparent"; }}
+                    >
+                      <span style={{
+                        width: 20, height: 20, borderRadius: "50%",
+                        background: T.brand, color: "#fff",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: 14, fontWeight: 700, flexShrink: 0, lineHeight: 1,
+                      }}>+</span>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: selectedSourceId === "new" ? T.brandDeep : T.text }}>
+                        Add new workbook
+                      </span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* New workbook name input (only when "new" is selected) */}
+              {selectedSourceId === "new" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <input
+                    type="text"
+                    value={newWorkbookName}
+                    onChange={(e) => setNewWorkbookName(e.target.value)}
+                    placeholder="e.g. Sales Data, Claims Report, Employee List"
+                    disabled={importing}
+                    autoFocus
+                    style={{
+                      width: "100%", padding: "8px 12px", borderRadius: T.radiusSm,
+                      border: `1px solid ${T.borderMd}`, background: T.bg,
+                      fontSize: 13, fontFamily: T.font, color: T.text,
+                      outline: "none", boxSizing: "border-box",
+                    }}
+                    onFocus={(e) => { e.currentTarget.style.borderColor = T.brand; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(13,124,102,0.12)"; }}
+                    onBlur={(e) => { e.currentTarget.style.borderColor = T.borderMd; e.currentTarget.style.boxShadow = "none"; }}
+                  />
+                  {newWorkbookName.trim() && (
+                    <p style={{ margin: 0, fontSize: 11, color: T.textSoft }}>
+                      Will be saved as <strong style={{ color: T.text, fontFamily: "monospace" }}>{nameToSourceId(newWorkbookName)}</strong>
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Info when updating an existing workbook */}
+              {isUpdating && (
+                <div style={{ padding: "10px 12px", borderRadius: T.radiusSm, background: "#EFF6FF", border: "1px solid #BFDBFE", fontSize: 12, color: "#1E40AF", lineHeight: 1.5 }}>
+                  <strong>Replacing existing data.</strong> All rows in <strong>{selectedSource!.sourceName}</strong> will be replaced with the contents of this file. Columns added or removed in the file will be reflected immediately. All reports using this source will update automatically.
+                </div>
+              )}
             </div>
-          ) : null}
+          )}
 
           {/* Drop zone */}
           <div
@@ -323,19 +496,18 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
                 border: `1px solid ${T.border}`, background: T.bg, color: T.textSecondary,
                 fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: T.font,
               }}
-            >
-              Cancel
-            </button>
+            >Cancel</button>
             <button
               type="button"
               onClick={() => { void handleSubmit(); }}
-              disabled={!file || importing}
+              disabled={!canSubmit}
               style={{
                 padding: "0 16px", minHeight: 36, borderRadius: T.radiusSm,
-                border: "none", background: !file || importing ? T.borderMd : T.brand,
-                color: "#fff", fontSize: 13, fontWeight: 700, cursor: !file || importing ? "not-allowed" : "pointer",
+                border: "none", background: !canSubmit ? T.borderMd : T.brand,
+                color: "#fff", fontSize: 13, fontWeight: 700,
+                cursor: !canSubmit ? "not-allowed" : "pointer",
                 fontFamily: T.font, transition: "background 100ms",
-                opacity: !file || importing ? 0.65 : 1,
+                opacity: !canSubmit ? 0.65 : 1,
               }}
             >
               {submitLabel}

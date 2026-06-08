@@ -15,6 +15,8 @@ export interface ReportConfigRow {
   sendgrid_template_id: string;
   export_format: string;
   config: Record<string, unknown>;
+  email_subject: string;
+  email_body: string;
   last_run_at: string | null;
   next_run_at: string | null;
   created_at: string;
@@ -67,13 +69,15 @@ export async function registerReportConfigRoutes(app: FastifyInstance) {
     const result = await pgQuery<ReportConfigRow>(
       `INSERT INTO report_configs (
         id, object_id, object_type, enabled, cron_expression, time_zone,
-        send_to, sendgrid_template_id, export_format, config
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
+        send_to, sendgrid_template_id, export_format, config, email_subject, email_body
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12)
       RETURNING *`,
       [
         id, objectId, objectType, enabled, cronExpression, timeZone,
         sendTo, String(body.sendgrid_template_id || ""),
-        "xlsx", JSON.stringify(body.config || {})
+        "xlsx", JSON.stringify(body.config || {}),
+        String(body.email_subject || "").trim(),
+        String(body.email_body || "").trim()
       ]
     );
     return { config: result.rows[0] };
@@ -100,8 +104,10 @@ export async function registerReportConfigRoutes(app: FastifyInstance) {
         time_zone = $3,
         send_to = $4,
         sendgrid_template_id = $5,
+        email_subject = $6,
+        email_body = $7,
         updated_at = now()
-      WHERE id = $6
+      WHERE id = $8
       RETURNING *`,
       [
         body.enabled === true,
@@ -109,6 +115,8 @@ export async function registerReportConfigRoutes(app: FastifyInstance) {
         String(body.time_zone || "UTC").trim() || "UTC",
         sanitizeRecipients(body.send_to),
         String(body.sendgrid_template_id || ""),
+        String(body.email_subject || "").trim(),
+        String(body.email_body || "").trim(),
         id
       ]
     );
