@@ -433,6 +433,7 @@ export interface QuickbaseAppProfile {
   refreshSource: {
     tableIds: string[];
     reportIds: Record<string, string>;
+    keyFieldIds?: Record<string, string>;
   };
   refreshSchedule: RefreshScheduleConfig;
   refreshStatus: RefreshStatus;

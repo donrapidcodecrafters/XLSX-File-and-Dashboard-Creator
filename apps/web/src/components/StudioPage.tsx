@@ -3493,6 +3493,10 @@ export function StudioPage({
       profile.refreshSource.reportIds = Object.fromEntries(
         Object.entries(profile.refreshSource.reportIds || {}).filter(([tableId]) => nextTableIds.includes(tableId))
       );
+      const existingKeyFieldIds = profile.refreshSource.keyFieldIds || {};
+      profile.refreshSource.keyFieldIds = Object.fromEntries(
+        Object.entries(existingKeyFieldIds).filter(([tableId]) => nextTableIds.includes(tableId))
+      );
     });
   }
 
@@ -3503,6 +3507,17 @@ export function StudioPage({
       profile.refreshSource.reportIds = {
         ...(profile.refreshSource.reportIds || {}),
         [tableId]: reportId
+      };
+    });
+  }
+
+  function updateRefreshSourceKeyFieldId(tableId: string, keyFieldId: string) {
+    applyDocumentUpdate((draft) => {
+      const profile = draft.quickbaseProfiles.find((item) => item.id === draft.activeQuickbaseProfileId);
+      if (!profile) return;
+      profile.refreshSource.keyFieldIds = {
+        ...(profile.refreshSource.keyFieldIds || {}),
+        [tableId]: keyFieldId
       };
     });
   }
@@ -4845,6 +4860,7 @@ export function StudioPage({
                   updateRefreshScheduleField={updateRefreshScheduleField}
                   updateRefreshSourceTables={updateRefreshSourceTables}
                   updateRefreshSourceReportId={updateRefreshSourceReportId}
+                  updateRefreshSourceKeyFieldId={updateRefreshSourceKeyFieldId}
                   saveRemote={saveRemote}
                   refreshAllNow={refreshAllNow}
                   reloadRemote={reloadRemote}
@@ -4988,6 +5004,7 @@ export function StudioPage({
             updateRefreshScheduleField={updateRefreshScheduleField}
             updateRefreshSourceTables={updateRefreshSourceTables}
             updateRefreshSourceReportId={updateRefreshSourceReportId}
+            updateRefreshSourceKeyFieldId={updateRefreshSourceKeyFieldId}
             saveRemote={saveRemote}
             refreshAllNow={refreshAllNow}
             reloadRemote={reloadRemote}

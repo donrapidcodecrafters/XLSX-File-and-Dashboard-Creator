@@ -18,6 +18,12 @@ CREATE TABLE IF NOT EXISTS users (
 ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret text;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled boolean NOT NULL DEFAULT false;
 
+-- System notification preferences and brute-force protection
+ALTER TABLE users ADD COLUMN IF NOT EXISTS system_notifications_enabled boolean NOT NULL DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_login_attempts integer NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until timestamptz;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret_enc text;
+
 -- Password reset tokens
 CREATE TABLE IF NOT EXISTS password_reset_tokens (
   id text PRIMARY KEY,
@@ -36,6 +42,7 @@ CREATE TABLE IF NOT EXISTS user_totp (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE user_totp ADD COLUMN IF NOT EXISTS totp_secret_enc text;
 
 CREATE TABLE IF NOT EXISTS session (
   sid varchar NOT NULL PRIMARY KEY,
@@ -60,6 +67,9 @@ CREATE TABLE IF NOT EXISTS app_entities (
   updated_at timestamptz NOT NULL DEFAULT now(),
   refreshed_at timestamptz
 );
+
+-- The field that uniquely identifies each record in this table (used to relate tables to each other)
+ALTER TABLE app_entities ADD COLUMN IF NOT EXISTS key_field_id text NOT NULL DEFAULT '';
 
 CREATE INDEX IF NOT EXISTS app_entities_source_type_idx ON app_entities (source_type);
 CREATE INDEX IF NOT EXISTS app_entities_refreshed_at_idx ON app_entities (refreshed_at);

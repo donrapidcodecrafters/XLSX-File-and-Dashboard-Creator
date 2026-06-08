@@ -36,6 +36,7 @@ export function StudioSettingsPanel({
   updateRefreshScheduleField,
   updateRefreshSourceTables,
   updateRefreshSourceReportId,
+  updateRefreshSourceKeyFieldId,
   saveRemote,
   refreshAllNow,
   reloadRemote
@@ -70,6 +71,7 @@ export function StudioSettingsPanel({
   updateRefreshScheduleField: <K extends keyof QuickbaseAppProfile["refreshSchedule"]>(field: K, value: QuickbaseAppProfile["refreshSchedule"][K]) => void;
   updateRefreshSourceTables: (tableIds: string[]) => void;
   updateRefreshSourceReportId: (tableId: string, value: string) => void;
+  updateRefreshSourceKeyFieldId: (tableId: string, value: string) => void;
   saveRemote: () => void;
   refreshAllNow: () => Promise<void>;
   reloadRemote: () => void;
@@ -188,10 +190,14 @@ export function StudioSettingsPanel({
 
       {renderStep("profiles", (
         <>
+          <div className="sync-status sync-status-ok" style={{ marginBottom: 8 }}>
+            <strong>How Quickbase sync works</strong>
+            <span>Enter your Quickbase connection details below. When you click "Refresh all now" or the scheduled refresh runs, data is pulled from Quickbase and stored in the PostgreSQL database. Reports, charts, and dashboards always read from the database — Quickbase is never queried live when viewing content.</span>
+          </div>
           <div className="card">
         <div className="card-head">
           <strong>Quickbase app connections</strong>
-          <span className="micro">Connect one or more Quickbase apps. Each app has its own credentials, refresh schedule, and table selections.</span>
+          <span className="micro">Connect one or more Quickbase apps. Each app has its own credentials, refresh schedule, and table selections. Connection settings are saved to the database.</span>
         </div>
         <label className="field">
           <span>Active app profile</span>
@@ -280,7 +286,7 @@ export function StudioSettingsPanel({
         <div className="card">
         <div className="card-head">
           <strong>Automatic data refresh schedule</strong>
-          <span className="micro">Set a recurring schedule to pull fresh data from Quickbase automatically. Reports and dashboards will always show current information.</span>
+          <span className="micro">Set a recurring schedule to pull fresh data from Quickbase into the PostgreSQL database. Reports and dashboards always read from the database, so they load instantly without connecting to Quickbase each time.</span>
         </div>
         <label className="field">
           <span>Enable scheduled refresh</span>
@@ -329,11 +335,11 @@ export function StudioSettingsPanel({
         </label>
         <div className="card">
           <div className="card-head">
-            <strong>Which tables should be refreshed?</strong>
-            <span className="micro">Select the tables you want to keep up to date. Each selected table needs a saved report number from Quickbase.</span>
+            <strong>Which tables should be synced to the database?</strong>
+            <span className="micro">Select the Quickbase tables to sync into PostgreSQL. On each refresh (manual or scheduled), data is pulled from Quickbase and stored in the database. Reports and dashboards read from the database — not directly from Quickbase.</span>
           </div>
           <div className="field">
-            <span>Tables to refresh</span>
+            <span>Tables to sync to PostgreSQL</span>
             <div className="picker-list modal-picker-list">
               {activeProfileTables.map((table) => {
                 const tableId = table.quickbaseTableId || table.id;
@@ -361,43 +367,69 @@ export function StudioSettingsPanel({
               {!activeProfileTables.length ? <div className="empty-hint">Go to the "Connect Quickbase" step first and click "Connect and load tables" to see your available tables.</div> : null}
             </div>
           </div>
-          <div className="micro">For each table you selected, enter the saved report number from Quickbase. This tells the platform which report to pull data from.</div>
+          <div className="micro">For each table you select, enter the saved report number from Quickbase (tells the platform which report to sync) and choose the key field (the unique identifier for each record, used to relate tables to each other in the database).</div>
           {activeQuickbaseProfile?.refreshSource.tableIds.length ? (
             <div className="stack-compact">
               {activeQuickbaseProfile.refreshSource.tableIds.map((tableId) => {
                 const table = activeProfileTables.find((candidate) => (candidate.quickbaseTableId || candidate.id) === tableId);
                 const reportId = activeQuickbaseProfile.refreshSource.reportIds?.[tableId] || "";
+                const keyFieldId = activeQuickbaseProfile.refreshSource.keyFieldIds?.[tableId] || "";
                 const reportHref = buildQuickbaseSavedReportUrl({
                   realmHostname: activeQuickbaseConfig.realmHostname,
                   tableId
                 }, reportId);
                 return (
-                  <label className="field" key={tableId}>
-                    <span>{table?.name || tableId} — saved report number</span>
-                    <div className="inline-actions">
-                      <input
-                        value={reportId}
-                        onChange={(event) => updateRefreshSourceReportId(tableId, event.target.value)}
-                        placeholder="e.g. 7 — find this in Quickbase under Reports"
-                      />
-                      <a
-                        className="ghost-button btn-help"
-                        href={reportHref || undefined}
-                        target="_blank"
-                        rel="noreferrer"
-                        aria-disabled={!reportHref}
-                        onClick={(event) => { if (!reportHref) event.preventDefault(); }}
-                        title="Open this table in Quickbase to find the report number"
-                      >
-                        Open in Quickbase
-                      </a>
-                    </div>
-                  </label>
+                  <div className="card" key={tableId} style={{ padding: "10px 14px", gap: 8, display: "flex", flexDirection: "column" }}>
+                    <strong style={{ fontSize: "0.9em" }}>{table?.name || tableId}</strong>
+                    <label className="field">
+                      <span>Quickbase saved report number</span>
+                      <div className="inline-actions">
+                        <input
+                          value={reportId}
+                          onChange={(event) => updateRefreshSourceReportId(tableId, event.target.value)}
+                          placeholder="e.g. 7 — find this in Quickbase under Reports"
+                        />
+                        <a
+                          className="ghost-button btn-help"
+                          href={reportHref || undefined}
+                          target="_blank"
+                          rel="noreferrer"
+                          aria-disabled={!reportHref}
+                          onClick={(event) => { if (!reportHref) event.preventDefault(); }}
+                          title="Open this table in Quickbase to find the report number"
+                        >
+                          Open in QB
+                        </a>
+                      </div>
+                      <span className="micro">Data from this report is synced into the PostgreSQL database on every refresh.</span>
+                    </label>
+                    <label className="field">
+                      <span>Key field <span style={{ fontWeight: 400 }}>(unique record identifier)</span></span>
+                      {table?.fields?.length ? (
+                        <select
+                          value={keyFieldId}
+                          onChange={(event) => updateRefreshSourceKeyFieldId(tableId, event.target.value)}
+                        >
+                          <option value="">— select the key field —</option>
+                          {table.fields.map((field) => (
+                            <option key={field.id} value={field.id}>{field.label || field.id} ({field.id})</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          value={keyFieldId}
+                          onChange={(event) => updateRefreshSourceKeyFieldId(tableId, event.target.value)}
+                          placeholder="Field ID — e.g. 3 (Record ID) or your unique identifier field"
+                        />
+                      )}
+                      <span className="micro">The key field uniquely identifies each record. It is used to relate this table to other tables in the database when joining data.</span>
+                    </label>
+                  </div>
                 );
               })}
             </div>
           ) : null}
-          <div className="micro">Every selected table needs a saved report number so the platform knows which data to pull during a refresh.</div>
+          <div className="micro">Every selected table needs a saved report number so the platform knows which Quickbase data to pull, and a key field so records can be uniquely identified and related across tables.</div>
         </div>
         <div className="studio-actions">
           <button type="button" onClick={() => { void reloadRemote(); }} disabled={savingRemote || refreshingCache}>

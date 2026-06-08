@@ -8,6 +8,7 @@ import { exportJobStore } from "../services/export-jobs.js";
 import { buildDashboardFileName, buildReportFileName, streamDashboardWorkbook, streamReportWorkbook } from "../services/xlsx-export.js";
 import { refreshJobStore } from "../services/refresh-jobs.js";
 import { getActiveRefreshJob, primeRefreshJob, refreshObjectCachedDataWithProgress } from "../services/refresh-cache.js";
+import { getSourceRecordSummary } from "../services/eav-record-store.js";
 
 function normalizeClientFilters(filters: Array<{ fieldId: string; operator?: string; value: string; valueSource?: "literal" | "field"; compareFieldId?: string }> = []): FilterDefinition[] {
   return filters.map((filter, index) => ({
@@ -41,7 +42,7 @@ async function runWithConcurrency<T>(items: T[], concurrency: number, worker: (i
   await Promise.all(runners);
 }
 
-function getTableRefreshState(tableId: string) {
+async function getTableRefreshState(tableId: string) {
   const table = objectStore.getTable(tableId);
   if (!table) return { hasRows: false, isFresh: false };
   const keys = Array.from(new Set([tableId, table.id, table.quickbaseTableId || ""].filter(Boolean)));
@@ -69,6 +70,18 @@ function getTableRefreshState(tableId: string) {
   }
   if (!hasMeta && hasRows) {
     isFresh = true;
+  }
+  // If in-memory has no rows, check Postgres durable cache so that reports/dashboards
+  // always read from Postgres instead of triggering a live Quickbase pull on every open.
+  if (!hasRows) {
+    const summary = await getSourceRecordSummary(keys);
+    if (summary && summary.rowCount > 0) {
+      hasRows = true;
+      if (!hasMeta) {
+        // Postgres rows exist — treat as sufficiently fresh; no in-memory expiry applies.
+        isFresh = true;
+      }
+    }
   }
   return { hasRows, isFresh, isExpired };
 }
@@ -104,7 +117,7 @@ async function startAutoRefreshForObject(objectId: string) {
 }
 
 async function maybeStartAutoRefreshForReport(report: ReportDefinition) {
-  const state = getTableRefreshState(report.sourceTableId);
+  const state = await getTableRefreshState(report.sourceTableId);
   if (state.isFresh || (state.hasRows && !state.isExpired)) return { refreshJob: null, needsBlockingLoad: false };
   if (!hasQuickbaseSource(report.sourceTableId)) return null;
   return {
@@ -123,7 +136,7 @@ async function maybeStartAutoRefreshForDashboard(dashboard: DashboardDefinition,
       .filter(Boolean)
   ));
   if (!tableIds.length) return null;
-  const states = tableIds.map((tableId) => ({ tableId, ...getTableRefreshState(tableId) }));
+  const states = await Promise.all(tableIds.map(async (tableId) => ({ tableId, ...await getTableRefreshState(tableId) })));
   if (states.every((state) => state.isFresh || (state.hasRows && !state.isExpired))) {
     return { refreshJob: null, needsBlockingLoad: false };
   }

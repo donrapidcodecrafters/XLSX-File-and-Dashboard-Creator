@@ -17,6 +17,19 @@ function chunk<T>(items: T[], size: number) {
   return groups;
 }
 
+function getKeyFieldIdForTable(document: StudioDocument, table: TableDefinition) {
+  const profileId = table.quickbaseProfileId || "";
+  if (!profileId) return "";
+  const profile = document.quickbaseProfiles.find((item) => item.id === profileId);
+  if (!profile?.refreshSource?.keyFieldIds) return "";
+  const tableKeys = [getQuickbaseTableId(table), table.id].filter(Boolean);
+  for (const key of tableKeys) {
+    const value = String(profile.refreshSource.keyFieldIds[key] || "").trim();
+    if (value) return value;
+  }
+  return "";
+}
+
 async function persistQuickbaseRowsToEnterpriseStore(
   document: StudioDocument,
   table: TableDefinition,
@@ -32,6 +45,7 @@ async function persistQuickbaseRowsToEnterpriseStore(
     quickbaseProfileId: table.quickbaseProfileId || "",
     quickbaseTableId: getQuickbaseTableId(table),
     quickbaseReportId: getSavedReportIdForTable(document, table),
+    keyFieldId: getKeyFieldIdForTable(document, table),
     metadata: {
       quickbaseAppId: table.quickbaseAppId || "",
       ...metadata

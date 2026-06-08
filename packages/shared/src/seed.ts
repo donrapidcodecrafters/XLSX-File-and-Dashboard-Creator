@@ -152,7 +152,8 @@ function buildQuickbaseProfile(overrides: Partial<QuickbaseAppProfile> = {}): Qu
     }),
     refreshSource: {
       tableIds: [],
-      reportIds: {}
+      reportIds: {},
+      keyFieldIds: {}
     },
     refreshSchedule: buildRefreshSchedule(),
     refreshStatus: buildRefreshStatus(),
@@ -642,6 +643,9 @@ function mergeQuickbaseProfile(defaults: QuickbaseAppProfile, source?: Partial<Q
       tableIds: Array.isArray(current.refreshSource?.tableIds) ? current.refreshSource.tableIds.map(String) : defaults.refreshSource.tableIds,
       reportIds: Object.fromEntries(
         Object.entries(current.refreshSource?.reportIds || defaults.refreshSource.reportIds).map(([key, value]) => [String(key), String(value || "")])
+      ),
+      keyFieldIds: Object.fromEntries(
+        Object.entries(current.refreshSource?.keyFieldIds || {}).map(([key, value]) => [String(key), String(value || "")])
       )
     },
     refreshSchedule: {
