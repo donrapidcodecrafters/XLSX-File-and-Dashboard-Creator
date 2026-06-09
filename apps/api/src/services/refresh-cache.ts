@@ -1470,6 +1470,7 @@ let schedulerStarted = false;
 
 // Exported so pg-boss workers can call it directly.
 export async function checkAndTriggerScheduledRefreshes(logger?: FastifyBaseLogger) {
+  getActiveRefreshJob(); // clears stale running=true before schedule checks
   await studioStore.hydrateFromQuickbase();
   const document = studioStore.getLiveDocument();
   updateRefreshScheduleMetadata(document);
