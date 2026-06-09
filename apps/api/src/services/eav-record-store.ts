@@ -51,23 +51,13 @@ export interface SourceRecordSummary {
   updatedAt: string;
 }
 
-const INSERT_RECORD_BATCH_SIZE = 500;
+const INSERT_RECORD_BATCH_SIZE = 5000;
 const READ_RECORD_BATCH_SIZE = 1000;
 
 function sha256(value: string) {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function stableJson(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => stableJson(item)).join(",")}]`;
-  }
-  if (value && typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`).join(",")}}`;
-  }
-  return JSON.stringify(value);
-}
 
 function compactId(prefix: string, seed: string) {
   return `${prefix}_${sha256(seed).slice(0, 24)}`;
@@ -152,39 +142,33 @@ async function replaceSourceAttributes(
   now: string
 ) {
   await client.query("DELETE FROM app_attributes WHERE entity_id = $1", [entityId]);
-  for (const [index, field] of fields.entries()) {
-    await client.query(
-      `
-      INSERT INTO app_attributes (
-        id,
-        entity_id,
-        field_id,
-        field_label,
-        field_type,
-        ordinal,
-        options,
-        updated_at
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
-      ON CONFLICT (entity_id, field_id) DO UPDATE SET
-        field_label = EXCLUDED.field_label,
-        field_type = EXCLUDED.field_type,
-        ordinal = EXCLUDED.ordinal,
-        options = EXCLUDED.options,
-        updated_at = EXCLUDED.updated_at
-      `,
-      [
-        compactId("attr", `${entityId}:${field.id}`),
-        entityId,
-        field.id,
-        field.label || field.id,
-        field.type || "text",
-        index,
-        JSON.stringify(field.options || []),
-        now
-      ]
+  if (!fields.length) return;
+  const values: unknown[] = [];
+  const placeholders = fields.map((field, index) => {
+    values.push(
+      compactId("attr", `${entityId}:${field.id}`),
+      entityId,
+      field.id,
+      field.label || field.id,
+      field.type || "text",
+      index,
+      JSON.stringify(field.options || []),
+      now
     );
-  }
+    const base = index * 8;
+    return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}::jsonb, $${base + 8})`;
+  });
+  await client.query(
+    `INSERT INTO app_attributes (id, entity_id, field_id, field_label, field_type, ordinal, options, updated_at)
+     VALUES ${placeholders.join(", ")}
+     ON CONFLICT (entity_id, field_id) DO UPDATE SET
+       field_label = EXCLUDED.field_label,
+       field_type = EXCLUDED.field_type,
+       ordinal = EXCLUDED.ordinal,
+       options = EXCLUDED.options,
+       updated_at = EXCLUDED.updated_at`,
+    values
+  );
 }
 
 async function insertSourceRecordBatch(
@@ -201,15 +185,14 @@ async function insertSourceRecordBatch(
   const placeholders = rows.map((row, index) => {
     const absoluteIndex = startIndex + index;
     const payload = normalizePayload(row);
-    const payloadJson = stableJson(payload);
+    const payloadJson = JSON.stringify(payload); // single serialization; row_hash not read by any query
     if (useEncryption) {
-      // Store an empty JSONB sentinel + encrypted ciphertext in payload_enc
       values.push(
         entityId,
         sourceId,
         externalRecordId(payload, absoluteIndex),
-        sha256(payloadJson),
-        JSON.stringify({}),   // empty JSONB placeholder — real data is in payload_enc
+        "",                    // row_hash: not queried; skip sha256 to avoid O(n) crypto per row
+        JSON.stringify({}),    // empty JSONB placeholder — real data is in payload_enc
         encryptJson(payload),
         now
       );
@@ -220,8 +203,8 @@ async function insertSourceRecordBatch(
       entityId,
       sourceId,
       externalRecordId(payload, absoluteIndex),
-      sha256(payloadJson),
-      JSON.stringify(payload),
+      "",       // row_hash: not queried; skip sha256 to avoid O(n) crypto per row
+      payloadJson,
       null,
       now
     );
