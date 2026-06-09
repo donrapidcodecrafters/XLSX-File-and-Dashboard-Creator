@@ -302,6 +302,28 @@ export async function registerSessionAuth(app: FastifyInstance) {
       if (wl && await bcrypt.compare(password, wl.passwordHash)) {
         authenticated = true;
         userRole = "admin";
+        // Ensure a real DB user record exists so preferences/display name work
+        if (isPostgresEnabled() && !userId) {
+          const existing = await pgQuery<{ id: string; display_name: string }>(
+            "SELECT id, display_name FROM users WHERE email = $1 LIMIT 1", [email]
+          ).catch(() => null);
+          if (existing?.rows[0]) {
+            userId = existing.rows[0].id;
+            displayName = existing.rows[0].display_name || "";
+          } else {
+            const newId = randomUUID();
+            await pgQuery(
+              `INSERT INTO users (id, email, password_hash, active, created_at, updated_at)
+               VALUES ($1, $2, $3, true, now(), now()) ON CONFLICT (email) DO UPDATE SET id = EXCLUDED.id RETURNING id`,
+              [newId, email, wl.passwordHash]
+            ).catch(() => null);
+            userId = newId;
+          }
+          await pgQuery(
+            `INSERT INTO user_preferences (user_id, theme) VALUES ($1, 'system') ON CONFLICT (user_id) DO NOTHING`,
+            [userId]
+          ).catch(() => null);
+        }
       }
     }
 
