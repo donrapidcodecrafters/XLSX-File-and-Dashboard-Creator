@@ -944,8 +944,9 @@ export function App() {
     getMyProfile().then((r) => {
       setCurrentUser(r.user);
       const theme = r.user.theme || "system";
-      if (theme === "dark") document.documentElement.classList.add("dark");
-      else if (theme === "light") document.documentElement.classList.remove("dark");
+      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      const useDark = theme === "dark" || (theme === "system" && prefersDark);
+      document.documentElement.classList.toggle("dark", useDark);
     }).catch(() => {});
     getMyPermissions().then((r) => {
       setUserPermissions(r.permissions || {});
@@ -1509,8 +1510,9 @@ export function App() {
           onClose={() => setShowUserSettings(false)}
           onThemeChange={(theme) => {
             setCurrentUser((u) => u ? { ...u, theme } : u);
-            if (theme === "dark") document.documentElement.classList.add("dark");
-            else if (theme === "light") document.documentElement.classList.remove("dark");
+            const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+            const useDark = theme === "dark" || (theme === "system" && prefersDark);
+            document.documentElement.classList.toggle("dark", useDark);
           }}
           onUserChange={(updates) => setCurrentUser((u) => u ? { ...u, ...updates } : u)}
         />

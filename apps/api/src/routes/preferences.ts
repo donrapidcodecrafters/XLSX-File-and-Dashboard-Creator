@@ -47,12 +47,25 @@ export async function registerPreferencesRoutes(app: FastifyInstance) {
 
   // ── PUT /api/me/preferences ────────────────────────────────────────────────
   app.put("/api/me/preferences", async (request, reply) => {
-    const sess = (request as unknown as { session: { userId?: string; displayName?: string } }).session;
-    if (!isPostgresEnabled() || !sess?.userId) {
+    const sess = (request as unknown as { session: { userId?: string; userEmail?: string; displayName?: string } }).session;
+    if (!isPostgresEnabled()) {
       reply.code(503); return { message: "Postgres required." };
     }
+    let userId = sess?.userId || "";
+    // Fallback: if session has no userId yet (whitelist-auth session), look up by email
+    if (!userId && sess?.userEmail) {
+      const found = await pgQuery<{ id: string }>(
+        "SELECT id FROM users WHERE email = $1 LIMIT 1", [sess.userEmail]
+      ).catch(() => null);
+      if (found?.rows[0]) {
+        userId = found.rows[0].id;
+        sess.userId = userId;
+      }
+    }
+    if (!userId) {
+      reply.code(503); return { message: "User account not found. Please log out and back in." };
+    }
     const body = (request.body as { theme?: string; displayName?: string; preferences?: Record<string, unknown> } | undefined) || {};
-    const userId = sess.userId;
 
     if (body.displayName !== undefined) {
       await pgQuery("UPDATE users SET display_name = $1, updated_at = now() WHERE id = $2", [body.displayName.trim(), userId]);
