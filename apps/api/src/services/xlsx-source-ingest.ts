@@ -22,6 +22,8 @@ interface IngestXlsxSourceStreamOptions extends Omit<IngestXlsxSourceOptions, "b
 interface IngestedXlsxSource {
   sourceId: string;
   sourceName: string;
+  /** Original Excel sheet name before renaming to the display source name */
+  sheetName: string;
   table: TableDefinition;
   rowCount: number;
   fieldCount: number;
@@ -285,6 +287,7 @@ export async function ingestXlsxWorkbookSource(options: IngestXlsxSourceOptions)
     sources.push({
       sourceId,
       sourceName,
+      sheetName: importedTable.name,
       table,
       rowCount: rows.length,
       fieldCount: table.fields.length
@@ -415,6 +418,7 @@ export async function ingestXlsxWorkbookSourceStream(options: IngestXlsxSourceSt
       sources.push({
         sourceId,
         sourceName,
+        sheetName,
         table,
         rowCount,
         fieldCount: fields.length
@@ -471,13 +475,24 @@ export async function ingestXlsxWorkbookSourceAndRecreate(
     { dataSheets: options.dataSheets }
   );
 
-  // Step 3: build a name→sourceId map from the durable ingest
-  const sourceIdByName = new Map(
-    ingested.sources.map((source) => [source.table.name.trim().toLowerCase(), source.sourceId])
-  );
+  // Step 3: build a name→sourceId map from the durable ingest.
+  // Match by both the display source name AND the original Excel sheet name so that
+  // chart-derived reports on a sheet named differently than the source display name
+  // still get patched correctly.
+  const sourceIdByName = new Map<string, string>();
+  ingested.sources.forEach((source) => {
+    sourceIdByName.set(source.table.name.trim().toLowerCase(), source.sourceId);
+    if (source.sheetName && source.sheetName.trim().toLowerCase() !== source.table.name.trim().toLowerCase()) {
+      sourceIdByName.set(source.sheetName.trim().toLowerCase(), source.sourceId);
+    }
+  });
   const sourceIdById = new Map(
     ingested.sources.map((source) => [source.sourceId, source.sourceId])
   );
+  // When there is exactly one durable source, use it as the fallback for any temp table
+  // that can't be matched by name — covers chart-derived tables whose display name
+  // never matches the user-chosen source name.
+  const singleDurableSourceId = ingested.sources.length === 1 ? ingested.sources[0].sourceId : null;
 
   // Step 4: for each imported table, resolve its durable source_id by name match
   const importedTableIdToDurableId = new Map<string, string>();
@@ -486,7 +501,9 @@ export async function ingestXlsxWorkbookSourceAndRecreate(
     if (!table) return;
     const durableId =
       sourceIdByName.get(table.name.trim().toLowerCase()) ||
-      sourceIdById.get(tableId);
+      sourceIdById.get(tableId) ||
+      singleDurableSourceId ||
+      undefined;
     if (durableId) {
       importedTableIdToDurableId.set(tableId, durableId);
     }
@@ -507,11 +524,27 @@ export async function ingestXlsxWorkbookSourceAndRecreate(
 
   // Step 6: merge — start from the post-ingest document (use ingested.document which
   // has the durable source tables already saved, not a fresh store read which may race).
+  // Any temp tables that could NOT be remapped to a durable source (chart synthetic tables
+  // where the fallback didn't apply) are included as-is so their reports can still render.
   const ingestDoc = ingested.document;
+  const unmappedTempTableIds = new Set(
+    imported.importedTableIds.filter((id) => !importedTableIdToDurableId.has(id))
+  );
+  const unmappedTempTables = imported.document.bundle.tables.filter((t) => unmappedTempTableIds.has(t.id));
+  const unmappedTempData = Object.fromEntries(
+    [...unmappedTempTableIds].map((id) => [id, imported.document.bundle.data[id] || []])
+  );
   const merged = normalizeStudioDocument({
     ...ingestDoc,
     bundle: {
       ...ingestDoc.bundle,
+      // Include any unmapped synthetic chart tables so their reports can load
+      tables: unmappedTempTables.length
+        ? [...ingestDoc.bundle.tables, ...unmappedTempTables]
+        : ingestDoc.bundle.tables,
+      data: unmappedTempTables.length
+        ? { ...ingestDoc.bundle.data, ...unmappedTempData }
+        : ingestDoc.bundle.data,
       objects: {
         ...ingestDoc.bundle.objects,
         ...patchedObjects
