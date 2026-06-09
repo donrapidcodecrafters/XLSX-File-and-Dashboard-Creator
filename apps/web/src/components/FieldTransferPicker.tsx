@@ -88,7 +88,7 @@ export function FieldTransferPicker({
             >
               <div className="field-transfer-meta">
                 <strong>{field.label}</strong>
-                <span>FID {field.id} · {field.type}</span>
+                <span>{field.type}</span>
               </div>
               <span className="field-transfer-add">Add</span>
             </button>
@@ -117,7 +117,7 @@ export function FieldTransferPicker({
               <div className="field-transfer-main">
                 <button type="button" className="field-transfer-main-button" onDoubleClick={() => removeField(field.id)}>
                   <strong>{field.label}</strong>
-                  <span>FID {field.id} · {field.type}</span>
+                  <span>{field.type}</span>
                 </button>
                 <div className="field-transfer-actions">
                   <button type="button" className="ghost-button field-transfer-action-button" onClick={() => moveField(field.id, -1)} disabled={currentIndex <= 0}>Up</button>

@@ -11,7 +11,7 @@ import {
   updateRefreshScheduleMetadata
 } from "../services/refresh-cache.js";
 import { refreshJobStore } from "../services/refresh-jobs.js";
-import { listSourceRecordSummaries } from "../services/eav-record-store.js";
+import { listSourceRecordSummaries, loadAllSourceAttributes } from "../services/eav-record-store.js";
 import { ingestXlsxWorkbookSource, ingestXlsxWorkbookSourceAndRecreate, ingestXlsxWorkbookSourceStream } from "../services/xlsx-source-ingest.js";
 import { invalidateSourceCaches } from "../services/report-runner.js";
 import { logAuditEvent } from "../services/audit-log.js";
@@ -36,9 +36,23 @@ export async function registerStudioRoutes(app: FastifyInstance) {
     // Clear any stale running=true left by a crash or restart — no-op if a real job is active.
     getActiveRefreshJob();
     const document = studioStore.flushCurrent({ markSavedAt: false });
+
+    // Enrich bundle.tables with authoritative field definitions from Postgres (app_attributes).
+    // This ensures the field picker always shows columns from the data source, not from QB schema.
+    const sourceFieldsBySourceId = await loadAllSourceAttributes().catch(() => new Map<string, import("@studio/shared").FieldDefinition[]>());
+    const enrichedTables = sourceFieldsBySourceId.size > 0
+      ? document.bundle.tables.map((table) => {
+          const fields = sourceFieldsBySourceId.get(table.id)
+            ?? (table.quickbaseTableId ? sourceFieldsBySourceId.get(table.quickbaseTableId) : undefined)
+            ?? null;
+          return fields ? { ...table, fields } : table;
+        })
+      : document.bundle.tables;
+
     return {
       document: {
         ...document,
+        bundle: { ...document.bundle, tables: enrichedTables },
         // Keep the main studio document lightweight; versions are fetched on demand.
         versions: {},
         exportJobs: []

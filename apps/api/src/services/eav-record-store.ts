@@ -427,6 +427,34 @@ export async function loadSourceAttributes(sourceId: string): Promise<FieldDefin
   }));
 }
 
+export async function loadAllSourceAttributes(): Promise<Map<string, FieldDefinition[]>> {
+  if (!isPostgresEnabled()) return new Map();
+  const result = await pgQuery<{
+    source_id: string;
+    field_id: string;
+    field_label: string;
+    field_type: string;
+    options: unknown;
+  }>(
+    `SELECT ae.source_id, aa.field_id, aa.field_label, aa.field_type, aa.options
+     FROM app_entities ae
+     JOIN app_attributes aa ON aa.entity_id = ae.id
+     ORDER BY ae.source_id, aa.ordinal`
+  ).catch(() => null);
+  if (!result?.rows.length) return new Map();
+  const map = new Map<string, FieldDefinition[]>();
+  for (const row of result.rows) {
+    if (!map.has(row.source_id)) map.set(row.source_id, []);
+    map.get(row.source_id)!.push({
+      id: row.field_id,
+      label: row.field_label || row.field_id,
+      type: (row.field_type || "text") as FieldDefinition["type"],
+      options: Array.isArray(row.options) ? row.options : []
+    });
+  }
+  return map;
+}
+
 export async function listSourceRecordSummaries(): Promise<SourceRecordSummary[]> {
   if (!isPostgresEnabled()) return [];
   const result = await pgQuery<{
