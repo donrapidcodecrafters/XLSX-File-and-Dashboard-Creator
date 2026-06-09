@@ -11,6 +11,8 @@ interface IngestXlsxSourceOptions {
   buffer: Uint8Array;
   sourceId?: string;
   sourceName?: string;
+  /** Sheet names that should be stored as Postgres tables. Others are skipped for ingestion. */
+  dataSheets?: string[];
 }
 
 interface IngestXlsxSourceStreamOptions extends Omit<IngestXlsxSourceOptions, "buffer"> {
@@ -244,9 +246,18 @@ export async function ingestXlsxWorkbookSource(options: IngestXlsxSourceOptions)
   const workbookName = workbookNameFromFilename(options.filename);
   const baseSourceId = normalizeBaseSourceId(options.sourceId, options.filename);
   const baseSourceName = String(options.sourceName || workbookName).trim() || workbookName;
-  const importedTables = imported.importedTableIds
+  const allImportedTables = imported.importedTableIds
     .map((tableId) => imported.document.bundle.tables.find((table) => table.id === tableId))
     .filter((table): table is TableDefinition => Boolean(table));
+
+  // Only ingest sheets the user designated as data tabs. Fall back to all if no selection made.
+  const dataSheetSet = options.dataSheets && options.dataSheets.length > 0
+    ? new Set(options.dataSheets.map((s) => s.trim().toLowerCase()))
+    : null;
+  const importedTables = dataSheetSet
+    ? allImportedTables.filter((t) => dataSheetSet.has(t.name.trim().toLowerCase()))
+    : allImportedTables;
+
   const usedSourceIds = new Set<string>();
   const sourceTables: TableDefinition[] = [];
   const sources: IngestedXlsxSource[] = [];
@@ -309,6 +320,10 @@ export async function ingestXlsxWorkbookSourceStream(options: IngestXlsxSourceSt
     entries: "ignore"
   });
 
+  const streamDataSheetSet = options.dataSheets && options.dataSheets.length > 0
+    ? new Set(options.dataSheets.map((s) => s.trim().toLowerCase()))
+    : null;
+
   let worksheetIndex = 0;
   for await (const worksheet of workbookReader) {
     const workbookModel = workbookReader as unknown as { model?: { sheets?: unknown[] } };
@@ -316,6 +331,13 @@ export async function ingestXlsxWorkbookSourceStream(options: IngestXlsxSourceSt
     const singleTable = sheetCount === 1;
     const worksheetName = (worksheet as unknown as { name?: string }).name;
     const sheetName = String(worksheetName || `Sheet ${worksheetIndex + 1}`);
+
+    // If the user selected specific data sheets, consume-and-skip anything not in the list.
+    if (streamDataSheetSet && !streamDataSheetSet.has(sheetName.trim().toLowerCase())) {
+      for await (const _row of worksheet) { /* consume stream rows to avoid stall */ }
+      worksheetIndex += 1;
+      continue;
+    }
     const sourceId = stableSheetSourceId(baseSourceId, { id: "", name: sheetName, description: "", fields: [] }, worksheetIndex, singleTable, usedSourceIds);
     const sourceName = singleTable ? baseSourceName : `${baseSourceName} - ${sheetName}`;
     let fields: FieldDefinition[] = [];

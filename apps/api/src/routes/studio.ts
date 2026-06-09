@@ -220,7 +220,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
     }
   });
 
-  // Returns the first few rows and column names from an uploaded xlsx file for preview.
+  // Returns per-sheet stats from an uploaded xlsx file for preview and data-tab selection.
   app.post("/api/studio/sources/xlsx/peek", async (request, reply) => {
     try {
       const ExcelJSMod = await import("exceljs");
@@ -237,23 +237,45 @@ export async function registerStudioRoutes(app: FastifyInstance) {
         filename = file.filename || "";
         const workbook = new ExcelJSWorkbook();
         await workbook.xlsx.read(file.file);
-        sheetNames = workbook.worksheets.map((ws) => ws.name);
-        const ws = workbook.worksheets[0];
-        if (ws) {
+
+        // Build per-sheet stats for all worksheets.
+        const sheets = workbook.worksheets.map((ws) => {
           const headerRow = ws.getRow(1);
-          headers = (headerRow.values as unknown[]).slice(1).map((v, i) => String(v ?? `Column ${i + 1}`).trim() || `Column ${i + 1}`);
-          rowCount = ws.rowCount - 1;
-          ws.eachRow((row, rowNum) => {
-            if (rowNum === 1 || rows.length >= 5) return;
-            const obj: Record<string, unknown> = {};
-            headers.forEach((h, i) => { obj[h] = (row.values as unknown[])[i + 1] ?? null; });
-            rows.push(obj);
-          });
+          const wsHeaders = (headerRow.values as unknown[])
+            .slice(1)
+            .map((v, i) => String(v ?? `Column ${i + 1}`).trim() || `Column ${i + 1}`);
+          const wsRowCount = Math.max(0, ws.rowCount - 1);
+          // Heuristic: a data tab has meaningful rows and text-like headers,
+          // whereas pivot/summary/chart tabs tend to have far fewer rows.
+          const hasTextHeaders = wsHeaders.length >= 2 && wsHeaders.some((h) => /[a-zA-Z]/.test(h));
+          const looksLikeData = wsRowCount >= 5 && hasTextHeaders;
+          return { name: ws.name, rowCount: wsRowCount, columnCount: wsHeaders.length, headers: wsHeaders, looksLikeData };
+        });
+
+        sheetNames = sheets.map((s) => s.name);
+
+        // Use the first data-like sheet (or first sheet) for the backward-compat preview.
+        const previewSheet = sheets.find((s) => s.looksLikeData) ?? sheets[0];
+        if (previewSheet) {
+          headers = previewSheet.headers;
+          rowCount = previewSheet.rowCount;
+          const previewWs = workbook.getWorksheet(previewSheet.name);
+          if (previewWs) {
+            previewWs.eachRow((row, rowNum) => {
+              if (rowNum === 1 || rows.length >= 5) return;
+              const obj: Record<string, unknown> = {};
+              previewSheet.headers.forEach((h, i) => { obj[h] = (row.values as unknown[])[i + 1] ?? null; });
+              rows.push(obj);
+            });
+          }
         }
+
+        if (!filename) { reply.code(400); return { message: "No file provided." }; }
+        return { filename, sheetNames, sheets, headers, rows, rowCount };
       }
 
       if (!filename) { reply.code(400); return { message: "No file provided." }; }
-      return { filename, sheetNames, headers, rows, rowCount };
+      return { filename, sheetNames, sheets: [], headers, rows, rowCount };
     } catch (error) {
       reply.code(400);
       return { message: error instanceof Error ? error.message : "Could not preview file." };
@@ -262,11 +284,12 @@ export async function registerStudioRoutes(app: FastifyInstance) {
 
   app.post("/api/studio/sources/xlsx/recreate", async (request, reply) => {
     try {
-      const query = (request.query as { sourceId?: string; sourceName?: string } | undefined) || {};
+      const query = (request.query as { sourceId?: string; sourceName?: string; dataSheets?: string } | undefined) || {};
       let filename = "";
       let workbookBuffer: Buffer | null = null;
       let sourceId = String(query.sourceId || "").trim();
       let sourceName = String(query.sourceName || "").trim();
+      const dataSheets = String(query.dataSheets || "").split(",").map((s) => s.trim()).filter(Boolean);
       if (request.isMultipart()) {
         const file = await request.file();
         if (file) {
@@ -290,7 +313,8 @@ export async function registerStudioRoutes(app: FastifyInstance) {
         filename,
         buffer: workbookBuffer as Buffer,
         sourceId,
-        sourceName
+        sourceName,
+        dataSheets: dataSheets.length > 0 ? dataSheets : undefined
       });
       invalidateSourceCaches(...result.sources.map((s) => s.sourceId));
       void logAuditEvent("source.import.recreate", { userEmail: (request as unknown as { session?: { userEmail?: string } }).session?.userEmail, objectType: "source", metadata: { filename, sourceCount: result.sources.length } });
@@ -310,12 +334,13 @@ export async function registerStudioRoutes(app: FastifyInstance) {
 
   app.post("/api/studio/sources/xlsx", async (request, reply) => {
     try {
-      const query = (request.query as { sourceId?: string; sourceName?: string } | undefined) || {};
+      const query = (request.query as { sourceId?: string; sourceName?: string; dataSheets?: string } | undefined) || {};
       let filename = "";
       let workbookBuffer: Buffer | null = null;
       let streamImport: ReturnType<typeof ingestXlsxWorkbookSourceStream> | null = null;
       let sourceId = String(query.sourceId || "").trim();
       let sourceName = String(query.sourceName || "").trim();
+      const dataSheets = String(query.dataSheets || "").split(",").map((s) => s.trim()).filter(Boolean);
       if (request.isMultipart()) {
         const file = await request.file();
         if (file) {
@@ -324,7 +349,8 @@ export async function registerStudioRoutes(app: FastifyInstance) {
             filename,
             stream: file.file,
             sourceId,
-            sourceName
+            sourceName,
+            dataSheets: dataSheets.length > 0 ? dataSheets : undefined
           });
         }
       } else {
@@ -346,7 +372,8 @@ export async function registerStudioRoutes(app: FastifyInstance) {
             filename,
             buffer: workbookBuffer as Buffer,
             sourceId,
-            sourceName
+            sourceName,
+            dataSheets: dataSheets.length > 0 ? dataSheets : undefined
           });
       invalidateSourceCaches(...ingested.sources.map((s) => s.sourceId));
       void logAuditEvent("source.import", { userEmail: (request as unknown as { session?: { userEmail?: string } }).session?.userEmail, objectType: "source", metadata: { filename, sourceCount: ingested.sources.length } });

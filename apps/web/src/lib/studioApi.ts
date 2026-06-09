@@ -581,9 +581,18 @@ export function updateStudioSession(session: Partial<StudioDocument["session"]>)
   });
 }
 
+export interface XlsxSheetPeek {
+  name: string;
+  rowCount: number;
+  columnCount: number;
+  headers: string[];
+  looksLikeData: boolean;
+}
+
 export async function peekXlsxFile(file: File): Promise<{
   filename: string;
   sheetNames: string[];
+  sheets: XlsxSheetPeek[];
   headers: string[];
   rows: Record<string, unknown>[];
   rowCount: number;
@@ -598,7 +607,7 @@ export async function peekXlsxFile(file: File): Promise<{
   if (response.status === 401) throw new AuthRequiredError();
   const body = await response.json() as Record<string, unknown>;
   if (!response.ok) throw new Error(String(body?.message || "Preview failed."));
-  return body as { filename: string; sheetNames: string[]; headers: string[]; rows: Record<string, unknown>[]; rowCount: number; };
+  return body as { filename: string; sheetNames: string[]; sheets: XlsxSheetPeek[]; headers: string[]; rows: Record<string, unknown>[]; rowCount: number; };
 }
 
 export async function importStudioWorkbook(file: File) {
@@ -655,10 +664,11 @@ export function clearSourceData(sourceId: string) {
   });
 }
 
-export async function importStudioWorkbookSource(file: File, options: { sourceId?: string; sourceName?: string } = {}) {
+export async function importStudioWorkbookSource(file: File, options: { sourceId?: string; sourceName?: string; dataSheets?: string[] } = {}) {
   const params = new URLSearchParams();
   if (options.sourceId) params.set("sourceId", options.sourceId);
   if (options.sourceName) params.set("sourceName", options.sourceName);
+  if (options.dataSheets && options.dataSheets.length > 0) params.set("dataSheets", options.dataSheets.join(","));
   const formData = new FormData();
   formData.append("file", file, file.name);
   const response = await fetch(API_BASE + `/api/studio/sources/xlsx${params.toString() ? `?${params.toString()}` : ""}`, {
@@ -676,11 +686,12 @@ export async function importStudioWorkbookSource(file: File, options: { sourceId
 
 export async function recreateWorkbookFromDataSource(
   file: File,
-  options: { sourceId?: string; sourceName?: string } = {}
+  options: { sourceId?: string; sourceName?: string; dataSheets?: string[] } = {}
 ): Promise<StudioWorkbookSourceImportResult & { reports: unknown[]; dashboard: unknown | null }> {
   const params = new URLSearchParams();
   if (options.sourceId) params.set("sourceId", options.sourceId);
   if (options.sourceName) params.set("sourceName", options.sourceName);
+  if (options.dataSheets && options.dataSheets.length > 0) params.set("dataSheets", options.dataSheets.join(","));
   const formData = new FormData();
   formData.append("file", file, file.name);
   const response = await fetch(

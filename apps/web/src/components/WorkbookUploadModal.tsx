@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchStudioSources, importStudioWorkbook, importStudioWorkbookSource, peekXlsxFile, recreateWorkbookFromDataSource } from "../lib/studioApi";
-import type { StudioSourceSummary, StudioWorkbookImportResult, StudioWorkbookSourceImportResult } from "../lib/studioApi";
+import type { StudioSourceSummary, StudioWorkbookImportResult, StudioWorkbookSourceImportResult, XlsxSheetPeek } from "../lib/studioApi";
 
 type UploadMode = "data-source" | "template";
 
@@ -13,6 +13,7 @@ export interface WorkbookUploadResult {
 
 interface FilePeek {
   sheetNames: string[];
+  sheets: XlsxSheetPeek[];
   headers: string[];
   rows: Record<string, unknown>[];
   rowCount: number;
@@ -62,6 +63,8 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
   const [dragging, setDragging] = useState(false);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState("");
+  // Sheet selection: which tabs contain raw data (become Postgres tables)
+  const [dataSheets, setDataSheets] = useState<string[]>([]);
 
   // Workbook picker state (data-source mode only)
   const [xlsxSources, setXlsxSources] = useState<StudioSourceSummary[]>([]);
@@ -99,7 +102,7 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
   function reset() {
     setFile(null); setPeek(null); setError(""); setImporting(false);
     setDragging(false); setSelectedSourceId(""); setNewWorkbookName("");
-    setDropdownOpen(false);
+    setDropdownOpen(false); setDataSheets([]);
   }
 
   function handleClose() {
@@ -118,7 +121,13 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
       setNewWorkbookName(f.name.replace(/\.xlsx$/i, "").replace(/[-_]/g, " ").trim());
     }
     setPeeking(true);
-    try { const r = await peekXlsxFile(f); setPeek(r); } catch {}
+    try {
+      const r = await peekXlsxFile(f);
+      setPeek(r);
+      // Auto-select sheets that look like data tabs; if none qualify, select all.
+      const autoSelected = (r.sheets || []).filter((s) => s.looksLikeData).map((s) => s.name);
+      setDataSheets(autoSelected.length > 0 ? autoSelected : (r.sheets || []).map((s) => s.name));
+    } catch { /* non-blocking */ }
     finally { setPeeking(false); }
   }
 
@@ -131,7 +140,10 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
         const isNew = selectedSourceId === "new" || selectedSourceId === "";
         const sourceIdArg = isNew ? undefined : selectedSourceId;
         const sourceNameArg = isNew ? (newWorkbookName.trim() || file.name.replace(/\.xlsx$/i, "").trim()) : undefined;
-        const opts = { sourceId: sourceIdArg, sourceName: sourceNameArg };
+        // Only send dataSheets when there are multiple sheets and the user made a selection.
+        const multiSheet = (peek?.sheets?.length ?? 0) > 1;
+        const dataSheetsArg = multiSheet && dataSheets.length > 0 ? dataSheets : undefined;
+        const opts = { sourceId: sourceIdArg, sourceName: sourceNameArg, dataSheets: dataSheetsArg };
 
         if (recreate) {
           const result = await recreateWorkbookFromDataSource(file, opts);
@@ -157,7 +169,9 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
   const isData = mode === "data-source";
   const selectedSource = xlsxSources.find((s) => s.sourceId === selectedSourceId);
   const isUpdating = Boolean(selectedSource);
-  const canSubmit = Boolean(file) && !importing && (
+  const multiSheet = (peek?.sheets?.length ?? 0) > 1;
+  const hasDataSheetSelection = !isData || !multiSheet || dataSheets.length > 0;
+  const canSubmit = Boolean(file) && !importing && hasDataSheetSelection && (
     !isData ||
     selectedSourceId === "" ||
     (selectedSourceId === "new" && newWorkbookName.trim().length > 0) ||
@@ -461,23 +475,95 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
             )}
           </div>
 
-          {/* Peek preview */}
+          {/* Peek preview + sheet selector */}
           {peeking ? (
             <div style={{ fontSize: 12, color: T.textSoft }}>Reading file contents…</div>
           ) : peek ? (
-            <div style={{ border: `1px solid ${T.border}`, borderRadius: T.radius, padding: "12px 14px", background: T.bgAlt }}>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
-                {peek.sheetNames.map((n) => (
-                  <span key={n} style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 5, padding: "1px 8px", fontSize: 11, fontWeight: 600, color: T.textSoft }}>{n}</span>
-                ))}
-                <span style={{ background: T.brandLight, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "1px 8px", fontSize: 11, fontWeight: 700, color: T.brandDeep }}>
-                  {peek.rowCount.toLocaleString()} rows
-                </span>
+            <>
+              {/* Sheet type selector — only shown in data-source mode with 2+ sheets */}
+              {isData && peek.sheets && peek.sheets.length > 1 && (
+                <div style={{ border: `1px solid ${T.brand}`, borderRadius: T.radius, padding: "14px 16px", background: T.brandLight }}>
+                  <p style={{ margin: "0 0 4px", fontSize: 13, fontWeight: 700, color: T.brandDeep }}>
+                    Which tabs contain raw data rows?
+                  </p>
+                  <p style={{ margin: "0 0 12px", fontSize: 12, color: T.textSoft, lineHeight: 1.5 }}>
+                    Selected tabs become database tables. Unselected tabs (summaries, charts, pivot tables) will be recreated as reports and charts using the data tabs as their source.
+                  </p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {peek.sheets.map((sheet) => {
+                      const isChecked = dataSheets.includes(sheet.name);
+                      return (
+                        <label
+                          key={sheet.name}
+                          style={{
+                            display: "flex", alignItems: "center", gap: 10,
+                            padding: "9px 12px", borderRadius: T.radiusSm, cursor: "pointer",
+                            border: `1px solid ${isChecked ? T.brand : T.border}`,
+                            background: isChecked ? "#fff" : T.bgAlt,
+                            transition: "border-color 100ms, background 100ms",
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => {
+                              setDataSheets((prev) =>
+                                prev.includes(sheet.name)
+                                  ? prev.filter((n) => n !== sheet.name)
+                                  : [...prev, sheet.name]
+                              );
+                            }}
+                            style={{ width: 15, height: 15, accentColor: T.brand, flexShrink: 0 }}
+                          />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {sheet.name}
+                            </div>
+                            <div style={{ fontSize: 11, color: T.textSoft }}>
+                              {sheet.rowCount.toLocaleString()} rows · {sheet.columnCount} columns
+                            </div>
+                          </div>
+                          <span style={{
+                            fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 99,
+                            letterSpacing: "0.04em", textTransform: "uppercase", flexShrink: 0,
+                            background: sheet.looksLikeData ? T.brandLight : "#EFF6FF",
+                            color: sheet.looksLikeData ? T.brandDeep : "#1D4ED8",
+                            border: `1px solid ${sheet.looksLikeData ? T.brandBorder : "#BFDBFE"}`,
+                          }}>
+                            {sheet.looksLikeData ? "Data" : "Summary / Chart"}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  {dataSheets.length === 0 && (
+                    <p style={{ margin: "10px 0 0", fontSize: 12, color: "#991B1B", fontWeight: 600 }}>
+                      Select at least one data tab to continue.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* File summary (columns / row count) */}
+              <div style={{ border: `1px solid ${T.border}`, borderRadius: T.radius, padding: "10px 14px", background: T.bgAlt }}>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 4 }}>
+                  {peek.sheetNames.map((n) => (
+                    <span key={n} style={{
+                      background: isData && multiSheet && dataSheets.includes(n) ? T.brandLight : T.bg,
+                      border: `1px solid ${isData && multiSheet && dataSheets.includes(n) ? T.brandBorder : T.border}`,
+                      borderRadius: 5, padding: "1px 8px", fontSize: 11, fontWeight: 600,
+                      color: isData && multiSheet && dataSheets.includes(n) ? T.brandDeep : T.textSoft,
+                    }}>{n}</span>
+                  ))}
+                  <span style={{ background: T.brandLight, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "1px 8px", fontSize: 11, fontWeight: 700, color: T.brandDeep }}>
+                    {peek.rowCount.toLocaleString()} rows
+                  </span>
+                </div>
+                <div style={{ fontSize: 11, color: T.textSoft, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  Columns: {peek.headers.slice(0, 8).join(", ")}{peek.headers.length > 8 ? ` +${peek.headers.length - 8} more` : ""}
+                </div>
               </div>
-              <div style={{ fontSize: 11, color: T.textSoft, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                Columns: {peek.headers.slice(0, 8).join(", ")}{peek.headers.length > 8 ? ` +${peek.headers.length - 8} more` : ""}
-              </div>
-            </div>
+            </>
           ) : null}
 
           {/* Error */}
