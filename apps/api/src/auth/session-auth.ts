@@ -320,6 +320,10 @@ export async function registerSessionAuth(app: FastifyInstance) {
             userId = newId;
           }
           await pgQuery(
+            "UPDATE users SET last_login_at = now(), updated_at = now() WHERE id = $1",
+            [userId]
+          ).catch(() => null);
+          await pgQuery(
             `INSERT INTO user_preferences (user_id, theme) VALUES ($1, 'system') ON CONFLICT (user_id) DO NOTHING`,
             [userId]
           ).catch(() => null);

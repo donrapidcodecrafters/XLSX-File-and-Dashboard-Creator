@@ -77,7 +77,7 @@ export async function registerPreferencesRoutes(app: FastifyInstance) {
 
     await pgQuery(`
       INSERT INTO user_preferences (user_id, theme, preferences, updated_at)
-      VALUES ($1, $2, $3::jsonb, now())
+      VALUES ($1, $2, COALESCE($3::jsonb, '{}'::jsonb), now())
       ON CONFLICT (user_id) DO UPDATE SET
         theme = COALESCE($2, user_preferences.theme),
         preferences = CASE WHEN $3::jsonb IS NOT NULL
