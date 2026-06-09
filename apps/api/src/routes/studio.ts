@@ -33,6 +33,8 @@ export async function registerStudioRoutes(app: FastifyInstance) {
     await studioStore.initializeFromPostgres();
     const current = studioStore.getLiveDocument();
     updateRefreshScheduleMetadata(current);
+    // Clear any stale running=true left by a crash or restart — no-op if a real job is active.
+    getActiveRefreshJob();
     const document = studioStore.flushCurrent({ markSavedAt: false });
     return {
       document: {
