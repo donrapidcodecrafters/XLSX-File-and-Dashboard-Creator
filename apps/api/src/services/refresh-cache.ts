@@ -1136,6 +1136,12 @@ export async function refreshAllCachedDataWithProgress(
         });
       }, { activeJobId });
       nextDocument.bundle.data[tableId] = rows;
+      // QB fetch is done — now writing to Postgres. Progress and ETA are unknown during this phase.
+      updateDocumentProgress(5 + Math.round(((index + 0.97) / totalTables) * 80), `Writing ${rows.length.toLocaleString()} rows to database…`, {
+        tableCount: tableIds.length,
+        rowCount: totalRows + rows.length
+        // estimatedSecondsRemaining intentionally omitted — DB write duration is unknown
+      });
       await persistQuickbaseRowsToEnterpriseStore(nextDocument, table, rows, {
         trigger: "refresh-all-progress",
         reason,

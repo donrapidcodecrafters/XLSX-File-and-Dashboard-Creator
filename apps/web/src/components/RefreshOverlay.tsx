@@ -50,11 +50,11 @@ export function RefreshOverlay({
     timeHint = isFailed ? "Please review the message above" : "";
   } else if (indeterminate) {
     timeHint = "Preparing your results…";
-  } else if (typeof job.estimatedSecondsRemaining === "number") {
+  } else if (typeof job.estimatedSecondsRemaining === "number" && job.estimatedSecondsRemaining > 0) {
     const s = job.estimatedSecondsRemaining;
     timeHint = s < 5 ? "Almost there…" : s < 60 ? `About ${s} seconds left` : `About ${Math.ceil(s / 60)} minute${Math.ceil(s / 60) > 1 ? "s" : ""} left`;
   } else {
-    timeHint = "Estimating time…";
+    timeHint = "Working…";
   }
 
   const overlay = (
