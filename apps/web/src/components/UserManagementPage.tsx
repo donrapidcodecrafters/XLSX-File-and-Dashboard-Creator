@@ -878,7 +878,7 @@ export function UserManagementPage({ currentUser }: UserManagementPageProps) {
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr style={{ background: "var(--surface-alt, #F9FAFB)" }}>
-                    {(["User", "Role", "Status", "Last login", "Notifications", "Actions"] as const).map((heading, i) => (
+                    {(["User", "Role", "Status", "Last login", "System Notifications", "Actions"] as const).map((heading, i) => (
                       <th
                         key={heading}
                         style={{
