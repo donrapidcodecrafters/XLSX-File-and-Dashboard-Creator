@@ -2621,10 +2621,16 @@ function nativeDrawingAnchor(anchorNode: Record<string, unknown>): NativeChartAn
   };
 }
 
-async function readNativeWorkbookCharts(buffer: Uint8Array, workbook: ExcelJS.Workbook): Promise<{ charts: NativeWorkbookChart[]; dataSheetName: string }> {
+async function readNativeWorkbookCharts(buffer: Uint8Array, workbook: ExcelJS.Workbook, preferredDataSheets?: string[]): Promise<{ charts: NativeWorkbookChart[]; dataSheetName: string }> {
   const zip = await JSZip.loadAsync(Buffer.from(buffer));
   const sheets = await readWorkbookPackageSheets(zip);
-  const dataSheetName = sheets.find((sheet) => normalizeSheetNameForMatch(sheet.name) === "data")?.name || "";
+  // Prefer user-selected data sheets (exact or fuzzy match), then fall back to a sheet named "data"
+  const dataSheetName =
+    preferredDataSheets?.find((preferred) =>
+      sheets.some((s) => normalizeSheetNameForMatch(s.name) === normalizeSheetNameForMatch(preferred))
+    ) ||
+    sheets.find((sheet) => normalizeSheetNameForMatch(sheet.name) === "data")?.name ||
+    "";
   const themeColors = buildThemeColorMap(await readZipText(zip, "xl/theme/theme1.xml"));
   const charts: NativeWorkbookChart[] = [];
   for (const sheet of sheets) {
@@ -2966,7 +2972,8 @@ function readWorksheet(worksheet: ExcelJS.Worksheet): WorksheetReadResult[] {
 export async function importWorkbookIntoStudioDocument(
   document: StudioDocument,
   filename: string,
-  buffer: Uint8Array
+  buffer: Uint8Array,
+  options?: { dataSheets?: string[] }
 ): Promise<ImportedWorkbookResult> {
   debugImportStep(`start ${filename}`);
   const workbook = new ExcelJS.Workbook();
@@ -2976,7 +2983,7 @@ export async function importWorkbookIntoStudioDocument(
   const warnings: string[] = [];
   let nativeWorkbookCharts: { charts: NativeWorkbookChart[]; dataSheetName: string } = { charts: [], dataSheetName: "" };
   try {
-    nativeWorkbookCharts = await readNativeWorkbookCharts(buffer, workbook);
+    nativeWorkbookCharts = await readNativeWorkbookCharts(buffer, workbook, options?.dataSheets);
     debugImportStep(`recovered ${nativeWorkbookCharts.charts.length} native chart(s)${nativeWorkbookCharts.dataSheetName ? ` with Data sheet "${nativeWorkbookCharts.dataSheetName}"` : ""}`);
   } catch (error) {
     warnings.push(`Workbook charts: Could not inspect native Excel chart definitions (${error instanceof Error ? error.message : "unknown error"}).`);

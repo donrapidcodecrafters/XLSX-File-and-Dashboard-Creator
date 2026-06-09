@@ -17,6 +17,7 @@ import { registerReportConfigRoutes } from "./routes/report-configs.js";
 import { registerStudioRoutes } from "./routes/studio.js";
 import { registerRolesRoutes } from "./routes/roles.js";
 import { registerUserRoutes } from "./routes/users.js";
+import { registerWorkbookProfileRoutes } from "./routes/workbook-profiles.js";
 import { checkAndTriggerScheduledRefreshes, startRefreshScheduler } from "./services/refresh-cache.js";
 import { processDueConfigs, startReportScheduler } from "./services/report-scheduler.js";
 import { startJobQueue, stopJobQueue } from "./services/job-queue.js";
@@ -113,6 +114,7 @@ await registerReportConfigRoutes(app);
 await registerStudioRoutes(app);
 await registerUserRoutes(app);
 await registerRolesRoutes(app);
+await registerWorkbookProfileRoutes(app);
 
 // ── Password reset endpoints (public) ────────────────────────────────────────
 import { pgQuery } from "./db/postgres.js";

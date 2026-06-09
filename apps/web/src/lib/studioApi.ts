@@ -449,6 +449,28 @@ export function changeMyPassword(currentPassword: string, newPassword: string) {
   });
 }
 
+// ── Workbook import profiles ──────────────────────────────────────────────────
+
+export interface WorkbookProfile {
+  id: string;
+  workbookName: string;
+  dataSheets: string[];
+  sourceIds: string[];
+  objectIds: string[];
+  lastImportedAt: string | null;
+}
+
+export function getWorkbookProfile(id: string): Promise<{ profile: WorkbookProfile }> {
+  return request<{ profile: WorkbookProfile }>(`/api/workbook-profiles/${encodeURIComponent(id)}`);
+}
+
+export function saveWorkbookProfile(id: string, data: Partial<WorkbookProfile>): Promise<{ ok: boolean }> {
+  return request<{ ok: boolean }>(`/api/workbook-profiles/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(data)
+  });
+}
+
 // ── Custom roles ──────────────────────────────────────────────────────────────
 
 export interface CustomRole {

@@ -242,6 +242,18 @@ CREATE TABLE IF NOT EXISTS studio_document (
   updated_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT studio_document_singleton CHECK (id = 1)
 );
+
+-- Persistent import profiles: remember data-sheet selection and auto-apply on reimport
+CREATE TABLE IF NOT EXISTS workbook_profiles (
+  id text PRIMARY KEY,
+  workbook_name text NOT NULL DEFAULT '',
+  data_sheets text[] NOT NULL DEFAULT '{}',
+  source_ids text[] NOT NULL DEFAULT '{}',
+  object_ids text[] NOT NULL DEFAULT '{}',
+  last_imported_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
 `;
 
 export async function ensureEnterpriseSchema(logger?: FastifyBaseLogger) {

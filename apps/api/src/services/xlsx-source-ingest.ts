@@ -462,11 +462,13 @@ export async function ingestXlsxWorkbookSourceAndRecreate(
   const ingested = await ingestXlsxWorkbookSource(options);
 
   // Step 2: run chart/structure import on the pre-ingest document so we get
-  // fresh temp table IDs and chart-derived reports/dashboard
+  // fresh temp table IDs and chart-derived reports/dashboard.
+  // Pass dataSheets so chart formulas resolve against the correct sheet name.
   const imported = await importWorkbookIntoStudioDocument(
     preingestDocument,
     options.filename,
-    options.buffer
+    options.buffer,
+    { dataSheets: options.dataSheets }
   );
 
   // Step 3: build a name→sourceId map from the durable ingest

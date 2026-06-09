@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { fetchStudioSources, importStudioWorkbook, importStudioWorkbookSource, peekXlsxFile, recreateWorkbookFromDataSource } from "../lib/studioApi";
-import type { StudioSourceSummary, StudioWorkbookImportResult, StudioWorkbookSourceImportResult, XlsxSheetPeek } from "../lib/studioApi";
+import { fetchStudioSources, getWorkbookProfile, importStudioWorkbook, importStudioWorkbookSource, peekXlsxFile, recreateWorkbookFromDataSource, saveWorkbookProfile } from "../lib/studioApi";
+import type { StudioSourceSummary, StudioWorkbookImportResult, StudioWorkbookSourceImportResult, WorkbookProfile, XlsxSheetPeek } from "../lib/studioApi";
 
 type UploadMode = "data-source" | "template";
 
@@ -66,6 +66,10 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
   // Sheet selection: which tabs contain raw data (become Postgres tables)
   const [dataSheets, setDataSheets] = useState<string[]>([]);
 
+  // Workbook import profile (saved settings from previous imports)
+  const [profile, setProfile] = useState<WorkbookProfile | null>(null);
+  const [profileApplied, setProfileApplied] = useState(false);
+
   // Workbook picker state (data-source mode only)
   const [xlsxSources, setXlsxSources] = useState<StudioSourceSummary[]>([]);
   const [sourcesLoading, setSourcesLoading] = useState(false);
@@ -86,6 +90,32 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
       .catch(() => { /* non-blocking */ })
       .finally(() => setSourcesLoading(false));
   }, [open, mode]);
+
+  // Load saved profile when an existing workbook is selected
+  useEffect(() => {
+    if (!selectedSourceId || selectedSourceId === "new") {
+      setProfile(null); setProfileApplied(false); return;
+    }
+    getWorkbookProfile(selectedSourceId)
+      .then((res) => {
+        setProfile(res.profile);
+        // Auto-apply saved data sheets if no file peeked yet
+        if (res.profile.dataSheets?.length > 0) {
+          setDataSheets(res.profile.dataSheets);
+          setProfileApplied(true);
+        }
+        // Default to data-only update so user edits in reports/dashboards are preserved
+        setRecreate(false);
+      })
+      .catch(() => { setProfile(null); setProfileApplied(false); });
+  }, [selectedSourceId]);
+
+  // When a new file is peeked and we have a saved profile, override auto-detection with profile sheets
+  useEffect(() => {
+    if (!profile || !peek) return;
+    const saved = profile.dataSheets.filter((name) => peek.sheets?.some((s) => s.name === name));
+    if (saved.length > 0) { setDataSheets(saved); setProfileApplied(true); }
+  }, [peek, profile]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -124,9 +154,11 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
     try {
       const r = await peekXlsxFile(f);
       setPeek(r);
-      // Auto-select sheets that look like data tabs; if none qualify, select all.
+        // Auto-select: prefer saved profile sheets, then heuristic, then all
       const autoSelected = (r.sheets || []).filter((s) => s.looksLikeData).map((s) => s.name);
-      setDataSheets(autoSelected.length > 0 ? autoSelected : (r.sheets || []).map((s) => s.name));
+      if (!profile) {
+        setDataSheets(autoSelected.length > 0 ? autoSelected : (r.sheets || []).map((s) => s.name));
+      }
     } catch { /* non-blocking */ }
     finally { setPeeking(false); }
   }
@@ -147,9 +179,31 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
 
         if (recreate) {
           const result = await recreateWorkbookFromDataSource(file, opts);
+          // Save profile so next import auto-applies these settings
+          const profileId = result.sources?.[0]?.sourceId ?? sourceIdArg ?? slugify(sourceNameArg || file.name);
+          if (profileId) {
+            const objectIds = [
+              ...((result.reports || []) as { id: string }[]).map((r) => r.id),
+              ...(result.dashboard ? [(result.dashboard as { id: string }).id] : [])
+            ];
+            void saveWorkbookProfile(profileId, {
+              workbookName: sourceNameArg || profile?.workbookName || file.name.replace(/\.xlsx$/i, ""),
+              dataSheets: dataSheetsArg || dataSheets,
+              sourceIds: result.sources?.map((s: { sourceId: string }) => s.sourceId) || [],
+              objectIds
+            }).catch(() => {});
+          }
           onSuccess({ mode, recreated: true, sourceImport: result });
         } else {
           const result = await importStudioWorkbookSource(file, opts);
+          // Update profile data sheets on data-only reimport
+          const profileId = sourceIdArg || profile?.id;
+          if (profileId) {
+            void saveWorkbookProfile(profileId, {
+              dataSheets: dataSheetsArg || dataSheets,
+              sourceIds: result.sources?.map((s: { sourceId: string }) => s.sourceId) || profile?.sourceIds || []
+            }).catch(() => {});
+          }
           onSuccess({ mode, recreated: false, sourceImport: result as typeof result & { reports: unknown[]; dashboard: unknown | null } });
         }
       } else {
@@ -430,8 +484,14 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
                 </div>
               )}
 
-              {/* Info when updating an existing workbook */}
-              {isUpdating && (
+              {/* Saved profile notice */}
+              {profile && (
+                <div style={{ padding: "10px 12px", borderRadius: T.radiusSm, background: T.brandLight, border: `1px solid ${T.brandBorder}`, fontSize: 12, color: T.brandDeep, lineHeight: 1.5 }}>
+                  <strong>✓ Import profile found.</strong> Data sheets and settings from your last import are saved. Your reports and dashboards will not be recreated — only the data will update. Turn on "Automatically create reports" below to rebuild them.
+                </div>
+              )}
+              {/* Info when updating an existing workbook (no profile) */}
+              {isUpdating && !profile && (
                 <div style={{ padding: "10px 12px", borderRadius: T.radiusSm, background: "#EFF6FF", border: "1px solid #BFDBFE", fontSize: 12, color: "#1E40AF", lineHeight: 1.5 }}>
                   <strong>Replacing existing data.</strong> All rows in <strong>{selectedSource!.sourceName}</strong> will be replaced with the contents of this file. Columns added or removed in the file will be reflected immediately. All reports using this source will update automatically.
                 </div>
@@ -483,12 +543,20 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
               {/* Sheet type selector — only shown in data-source mode with 2+ sheets */}
               {isData && peek.sheets && peek.sheets.length > 1 && (
                 <div style={{ border: `1px solid ${T.brand}`, borderRadius: T.radius, padding: "14px 16px", background: T.brandLight }}>
-                  <p style={{ margin: "0 0 4px", fontSize: 13, fontWeight: 700, color: T.brandDeep }}>
-                    Which tabs contain raw data rows?
-                  </p>
-                  <p style={{ margin: "0 0 12px", fontSize: 12, color: T.textSoft, lineHeight: 1.5 }}>
-                    Selected tabs become database tables. Unselected tabs (summaries, charts, pivot tables) will be recreated as reports and charts using the data tabs as their source.
-                  </p>
+                  {profileApplied ? (
+                    <p style={{ margin: "0 0 10px", fontSize: 12, fontWeight: 600, color: T.brandDeep }}>
+                      ✓ Using saved settings from your previous import. Change selections below to override.
+                    </p>
+                  ) : (
+                    <p style={{ margin: "0 0 10px", fontSize: 13, fontWeight: 700, color: T.brandDeep }}>
+                      Which tabs contain raw data rows?
+                    </p>
+                  )}
+                  {!profileApplied && (
+                    <p style={{ margin: "0 0 12px", fontSize: 12, color: T.textSoft, lineHeight: 1.5 }}>
+                      Selected tabs become database tables. Unselected tabs (summaries, charts, pivot tables) will be recreated as reports and charts using the data tabs as their source.
+                    </p>
+                  )}
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     {peek.sheets.map((sheet) => {
                       const isChecked = dataSheets.includes(sheet.name);
