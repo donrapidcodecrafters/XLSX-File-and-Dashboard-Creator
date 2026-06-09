@@ -316,6 +316,10 @@ export class StudioStore {
     });
   }
 
+  setCachedRowsForTable(tableId: string, rows: StudioDocument["bundle"]["data"][string]) {
+    this.document.bundle.data[tableId] = rows;
+  }
+
   saveDocument(document: StudioDocument, options: { markSavedAt?: boolean } = {}) {
     this.document = normalizeStudioDocument(clone(document));
     if (options.markSavedAt !== false) {

@@ -32,7 +32,7 @@ import {
 } from "@studio/shared";
 import { apiConfig } from "../config/env.js";
 import { ExecutionCache } from "./execution-cache.js";
-import { forEachTableRowBatch, getSourceRecordSummary, loadTableRows, type SourceRecordSummary } from "./eav-record-store.js";
+import { forEachTableRowBatch, getSourceRecordSummary, loadSourceAttributes, loadTableRows, type SourceRecordSummary } from "./eav-record-store.js";
 import { objectStore } from "./object-store.js";
 import { fetchQuickbaseTablePage } from "./quickbase-storage.js";
 import { ensureTableRowsAvailable } from "./refresh-cache.js";
@@ -244,10 +244,29 @@ function resolveExecutionTableSync(report: ReportDefinition, requiredFieldIds: s
   return joinTables.length ? buildMergedTableForJoins(primary, report.sourceJoins, joinTables) : primary;
 }
 
+async function buildTableFromPostgres(sourceTableId: string): Promise<TableDefinition | null> {
+  const summary = await getSourceRecordSummary([sourceTableId]).catch(() => null);
+  if (!summary) return null;
+  const fields = await loadSourceAttributes(sourceTableId).catch(() => []);
+  return {
+    id: summary.sourceId,
+    name: summary.sourceName || summary.sourceId,
+    description: "",
+    fields: fields.length ? fields : [],
+    quickbaseTableId: "",
+    quickbaseProfileId: "",
+    quickbaseAppId: ""
+  };
+}
+
 async function resolveExecutionTable(report: ReportDefinition, extraFilters: FilterDefinition[] = []): Promise<TableDefinition | null> {
   const requiredFieldIds = collectReportFieldIds(report, extraFilters);
   const existing = resolveExecutionTableSync(report, requiredFieldIds);
   if (existing) return existing;
+  // Fallback: check Postgres for xlsx/durable sources not yet in the bundle
+  const pgTable = await buildTableFromPostgres(report.sourceTableId);
+  if (pgTable) return pgTable;
+  // Last resort: QB hydration
   await studioStore.hydrateFromQuickbase();
   return resolveExecutionTableSync(report, requiredFieldIds);
 }
@@ -423,14 +442,20 @@ async function loadPrimaryRows(
   table: TableDefinition,
   options: { objectId?: string; requiredFieldIds?: string[] } = {}
 ): Promise<DataRow[]> {
+  // 1. In-memory cache — instant after first load
   const existingRows = objectStore.getRows(table.id);
   if (existingRows.length) {
     return ensureRowsContainRequiredFields(table, existingRows, options.requiredFieldIds || []);
   }
-  const durableRows = await loadTableRows(table, apiConfig.postgres.legacyRowLoadLimit);
-  if (durableRows.length) {
-    return ensureRowsContainRequiredFields(table, durableRows, options.requiredFieldIds || []);
+  // 2. Load ALL rows from Postgres using batched cursor (no row-count cap)
+  const allRows: DataRow[] = [];
+  const summary = await forEachTableRowBatch(table, (batch) => { allRows.push(...batch); }).catch(() => null);
+  if (summary && allRows.length) {
+    // Warm the in-memory cache so subsequent report/dashboard renders in this process are instant
+    studioStore.setCachedRowsForTable(table.id, allRows);
+    return ensureRowsContainRequiredFields(table, allRows, options.requiredFieldIds || []);
   }
+  // 3. QB fallback — only reached when the table has no Postgres rows at all
   const rows = await ensureTableRowsAvailable(table.id, options);
   return ensureRowsContainRequiredFields(table, rows, options.requiredFieldIds || []);
 }

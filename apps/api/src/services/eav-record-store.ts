@@ -52,7 +52,7 @@ export interface SourceRecordSummary {
 }
 
 const INSERT_RECORD_BATCH_SIZE = 5000;
-const READ_RECORD_BATCH_SIZE = 1000;
+const READ_RECORD_BATCH_SIZE = 5000;
 
 function sha256(value: string) {
   return createHash("sha256").update(value).digest("hex");
@@ -407,6 +407,26 @@ export async function getSourceRecordSummary(sourceIds: string[]): Promise<Sourc
   };
 }
 
+export async function loadSourceAttributes(sourceId: string): Promise<FieldDefinition[]> {
+  if (!isPostgresEnabled() || !sourceId) return [];
+  const entity = await pgQuery<{ id: string }>(
+    "SELECT id FROM app_entities WHERE source_id = $1 LIMIT 1", [sourceId]
+  ).catch(() => null);
+  const entityId = entity?.rows[0]?.id;
+  if (!entityId) return [];
+  const result = await pgQuery<{ field_id: string; field_label: string; field_type: string; options: unknown }>(
+    `SELECT field_id, field_label, field_type, options
+     FROM app_attributes WHERE entity_id = $1 ORDER BY ordinal`, [entityId]
+  ).catch(() => null);
+  if (!result?.rows.length) return [];
+  return result.rows.map((row) => ({
+    id: row.field_id,
+    label: row.field_label || row.field_id,
+    type: (row.field_type || "text") as FieldDefinition["type"],
+    options: Array.isArray(row.options) ? row.options : []
+  }));
+}
+
 export async function listSourceRecordSummaries(): Promise<SourceRecordSummary[]> {
   if (!isPostgresEnabled()) return [];
   const result = await pgQuery<{
@@ -443,9 +463,6 @@ export async function loadTableRows(table: TableDefinition, limit = 50_000, offs
   const summary = await getSourceRecordSummary([table.id, table.quickbaseTableId || ""]);
   if (!summary) return [];
   const requestedLimit = Math.max(1, Number(limit) || 50_000);
-  if (requestedLimit > 50_000 && summary.rowCount > apiConfig.postgres.legacyRowLoadLimit) {
-    throw new Error(`Source "${summary.sourceName}" has ${summary.rowCount.toLocaleString()} rows and requires batched Postgres execution. Remove unsupported sorts or use a paged/aggregate-safe report path before loading it into memory.`);
-  }
   if (requestedLimit <= 50_000) {
     return loadSourceRows(summary.sourceId, requestedLimit, offset);
   }
