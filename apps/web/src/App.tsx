@@ -1512,6 +1512,7 @@ export function App() {
             if (theme === "dark") document.documentElement.classList.add("dark");
             else if (theme === "light") document.documentElement.classList.remove("dark");
           }}
+          onUserChange={(updates) => setCurrentUser((u) => u ? { ...u, ...updates } : u)}
         />
       ) : null}
 

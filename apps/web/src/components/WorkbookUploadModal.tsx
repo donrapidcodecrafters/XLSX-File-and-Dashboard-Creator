@@ -171,7 +171,7 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
   const isUpdating = Boolean(selectedSource);
   const multiSheet = (peek?.sheets?.length ?? 0) > 1;
   const hasDataSheetSelection = !isData || !multiSheet || dataSheets.length > 0;
-  const canSubmit = Boolean(file) && !importing && hasDataSheetSelection && (
+  const canSubmit = Boolean(file) && !importing && !peeking && hasDataSheetSelection && (
     !isData ||
     selectedSourceId === "" ||
     (selectedSourceId === "new" && newWorkbookName.trim().length > 0) ||

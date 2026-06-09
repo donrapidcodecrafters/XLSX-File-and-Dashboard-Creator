@@ -5,6 +5,7 @@ interface Props {
   user: PlatformUser;
   onClose: () => void;
   onThemeChange: (theme: string) => void;
+  onUserChange?: (updates: Partial<PlatformUser>) => void;
 }
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
@@ -51,7 +52,7 @@ function avatarColor(email: string): string {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function UserSettingsModal({ user, onClose, onThemeChange }: Props) {
+export function UserSettingsModal({ user, onClose, onThemeChange, onUserChange }: Props) {
   // Profile
   const [displayName, setDisplayName]     = useState(user.displayName || "");
   const [displayNameSaved, setDisplayNameSaved] = useState(false);
@@ -93,6 +94,7 @@ export function UserSettingsModal({ user, onClose, onThemeChange }: Props) {
     setDisplayNameSaving(true);
     try {
       await updateMyPreferences({ displayName: trimmed });
+      onUserChange?.({ displayName: trimmed });
       setDisplayNameSaved(true);
       setTimeout(() => setDisplayNameSaved(false), 2500);
     } catch {
