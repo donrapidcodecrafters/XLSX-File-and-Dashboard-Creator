@@ -154,6 +154,18 @@ app.post("/api/auth/reset-password", async (request, reply) => {
   return { ok: true };
 });
 
+// ── Admin restart endpoint (developer only) ──────────────────────────────────
+app.post("/api/admin/restart", async (request, reply) => {
+  const ip = request.ip || (request.socket as { remoteAddress?: string })?.remoteAddress || "";
+  const isLocal = ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";
+  const email = request.session?.userEmail;
+  if (!isLocal && email !== "don@rapidcodecrafters.com") {
+    reply.code(403); return { message: "Forbidden." };
+  }
+  reply.send({ ok: true, message: "Restarting..." });
+  setTimeout(() => process.exit(0), 200);
+});
+
 // ── Read-only platform config endpoint (admin/developer only) ────────────────
 app.get("/api/admin/config", async (request, reply) => {
   const email = request.session?.userEmail;

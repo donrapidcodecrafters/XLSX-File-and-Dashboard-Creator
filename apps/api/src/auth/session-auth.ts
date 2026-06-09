@@ -171,7 +171,7 @@ function isPublicAuthPath(path: string) {
     path === "/api/auth/2fa/verify"
   ) return true;
   if (path.startsWith("/api/invitations/")) return true;
-  if (path === "/api/admin/config") return true;
+  if (path === "/api/admin/config" || path === "/api/admin/restart") return true;
   if (path === "/api/auth/reset-password" || path.startsWith("/api/auth/reset-password/")) return true;
   return false;
 }
