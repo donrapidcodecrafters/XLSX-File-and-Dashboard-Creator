@@ -37,6 +37,21 @@ function normalizeEmail(value: unknown): string {
   return String(value || "").trim().toLowerCase();
 }
 
+function normalizeUser(row: UserRow & { role?: string }) {
+  return {
+    id: row.id,
+    email: row.email,
+    displayName: row.display_name || "",
+    role: row.role || "viewer",
+    active: row.active,
+    createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
+    lastLoginAt: row.last_login_at ? new Date(row.last_login_at).toISOString() : null,
+    systemNotificationsEnabled: Boolean(row.system_notifications_enabled),
+    failedLoginAttempts: Number(row.failed_login_attempts || 0),
+    lockedUntil: row.locked_until ? new Date(row.locked_until).toISOString() : null,
+  };
+}
+
 /**
  * Middleware that verifies the session user is an admin in the DB.
  * Sends 401 if not authenticated, 403 if not an admin.
@@ -105,7 +120,7 @@ export async function registerUserRoutes(app: FastifyInstance) {
       ]);
 
       return {
-        users: usersResult.rows,
+        users: usersResult.rows.map(normalizeUser),
         pendingInvitations: invitesResult.rows.map(inv => ({
           id: inv.id,
           email: inv.email,
@@ -351,7 +366,15 @@ export async function registerUserRoutes(app: FastifyInstance) {
         [id, role]
       );
 
-      return { ok: true, role };
+      const userResult = await pgQuery<UserWithRole>(
+        `SELECT u.*, COALESCE(r.role, 'viewer') AS role
+         FROM users u
+         LEFT JOIN user_roles r ON r.user_id = u.id
+         WHERE u.id = $1`,
+        [id]
+      );
+
+      return { user: normalizeUser(userResult.rows[0]) };
     }
   );
 
@@ -402,7 +425,7 @@ export async function registerUserRoutes(app: FastifyInstance) {
         return { message: "User not found." };
       }
 
-      return { user: result.rows[0] };
+      return { user: normalizeUser(result.rows[0]) };
     }
   );
 

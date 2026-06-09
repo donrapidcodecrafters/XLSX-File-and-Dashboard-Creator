@@ -55,6 +55,7 @@ export function UserSettingsModal({ user, onClose, onThemeChange }: Props) {
   // Profile
   const [displayName, setDisplayName]     = useState(user.displayName || "");
   const [displayNameSaved, setDisplayNameSaved] = useState(false);
+  const [displayNameSaving, setDisplayNameSaving] = useState(false);
 
   // Appearance
   const [theme, setTheme]       = useState(user.theme || "system");
@@ -86,15 +87,18 @@ export function UserSettingsModal({ user, onClose, onThemeChange }: Props) {
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
-  async function handleDisplayNameBlur() {
+  async function handleSaveDisplayName() {
     const trimmed = displayName.trim();
     if (!trimmed || trimmed === user.displayName) return;
+    setDisplayNameSaving(true);
     try {
       await updateMyPreferences({ displayName: trimmed });
       setDisplayNameSaved(true);
       setTimeout(() => setDisplayNameSaved(false), 2500);
     } catch {
       // silently ignore — user can retry
+    } finally {
+      setDisplayNameSaving(false);
     }
   }
 
@@ -270,23 +274,45 @@ export function UserSettingsModal({ user, onClose, onThemeChange }: Props) {
             {/* Display name */}
             <div style={{ marginBottom: 14 }}>
               <label style={labelStyle}>Display name</label>
-              <input
-                type="text"
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") { e.currentTarget.blur(); } }}
-                placeholder="Your name"
-                style={inputStyle}
-                onFocus={(e) => {
-                  e.currentTarget.style.borderColor = T.brand;
-                  e.currentTarget.style.boxShadow = "0 0 0 3px rgba(13,124,102,0.1)";
-                }}
-                onBlur={(e) => {
-                  e.currentTarget.style.borderColor = T.border;
-                  e.currentTarget.style.boxShadow = "none";
-                  void handleDisplayNameBlur();
-                }}
-              />
+              <div style={{ display: "flex", gap: 7 }}>
+                <input
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") { void handleSaveDisplayName(); } }}
+                  placeholder="Your name"
+                  style={{ ...inputStyle, flex: 1 }}
+                  onFocus={(e) => {
+                    e.currentTarget.style.borderColor = T.brand;
+                    e.currentTarget.style.boxShadow = "0 0 0 3px rgba(13,124,102,0.1)";
+                  }}
+                  onBlur={(e) => {
+                    e.currentTarget.style.borderColor = T.border;
+                    e.currentTarget.style.boxShadow = "none";
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => { void handleSaveDisplayName(); }}
+                  disabled={displayNameSaving || !displayName.trim() || displayName.trim() === user.displayName}
+                  style={{
+                    padding: "8px 12px",
+                    borderRadius: 7,
+                    border: "none",
+                    background: T.brand,
+                    color: "#fff",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: displayNameSaving ? "wait" : "pointer",
+                    fontFamily: T.font,
+                    flexShrink: 0,
+                    opacity: (displayNameSaving || !displayName.trim() || displayName.trim() === user.displayName) ? 0.5 : 1,
+                    transition: "opacity 120ms",
+                  }}
+                >
+                  {displayNameSaving ? "…" : "Save"}
+                </button>
+              </div>
               {displayNameSaved && (
                 <div style={{ fontSize: 11, color: T.brand, marginTop: 4, fontWeight: 600 }}>
                   Name updated

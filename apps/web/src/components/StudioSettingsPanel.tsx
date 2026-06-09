@@ -614,9 +614,6 @@ export function StudioSettingsPanel({
       ))}
 
       <div className="studio-actions">
-        <button type="button" className="ghost-button btn-neutral" onClick={() => setActiveStep(settingsSteps[Math.max(0, activeStepIndex - 1)].id)} disabled={activeStepIndex <= 0}>Back</button>
-      </div>
-      <div className="studio-actions">
         <button type="button" className="ghost-button btn-system" onClick={() => { void reloadRemote(); }}>↺ Reload settings from server</button>
         <button type="button" className="ghost-button btn-create" onClick={() => { void saveRemote(); }} disabled={savingRemote}>{savingRemote ? "Saving…" : "✓ Save settings to server"}</button>
       </div>
