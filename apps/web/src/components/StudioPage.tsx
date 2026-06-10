@@ -5690,6 +5690,9 @@ export function StudioPage({
                     <label className="field-inline"><span>Y</span><input type="number" min="1" max="99" value={selectedDashboardWidget.layout.y || 1} onChange={(event) => placeDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, { x: selectedDashboardWidget.layout.x || 1, y: Number(event.target.value) })} /></label>
                     <label className="toggle-row"><input type="checkbox" checked={selectedDashboardWidget.showSummary} onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, (widget) => ({ ...widget, showSummary: event.target.checked }))} /> Show summary metrics</label>
                     <label className="toggle-row"><input type="checkbox" checked={selectedDashboardWidget.showDetails} onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, (widget) => ({ ...widget, showDetails: event.target.checked }))} /> Show row details</label>
+                    {selectedDashboardWidget.showDetails && selectedDashboardWidgetReport && !selectedDashboardWidgetReport.selectedFieldIds.length ? (
+                      <p style={{ margin: "4px 0 0", padding: "6px 8px", background: "var(--warning-bg)", border: "1px solid #FCD34D", borderRadius: 4, fontSize: "0.8em", color: "var(--warning)" }}>No detail fields configured on this report (Step 2). Edit the report to select columns, or all fields will be used during export.</p>
+                    ) : null}
                   </div>
             </div>
 
