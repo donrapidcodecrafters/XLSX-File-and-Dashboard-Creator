@@ -825,7 +825,6 @@ function ObjectPage({
         dashboard={object}
         reportDefinitions={reportDefinitions}
         tables={tables}
-        getQuickbaseLinkContext={(tableId) => getQuickbaseLinkContextForTable(resolveTableDefinition(tables, tableId), studioDocument)}
         refreshNonce={refreshNonce}
         onRefresh={() => { void startObjectRefresh(); }}
         initialRuntimeFilters={dashboardPersonalOverride?.runtimeFilters}

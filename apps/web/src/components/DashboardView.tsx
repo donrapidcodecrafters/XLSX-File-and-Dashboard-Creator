@@ -8,7 +8,7 @@ import { RefreshOverlay } from "./RefreshOverlay";
 import { ResizableDataTable } from "./ResizableDataTable";
 import { buildHostedRoute, buildObjectUrl, getHostedContext } from "../lib/embed";
 import { buildDashboardExportDefinition } from "../lib/dashboardExport";
-import { buildQuickbaseChartDatumUrl, buildQuickbaseRecordEditUrl, buildQuickbaseReportFilterTree, type QuickbaseTableLinkContext } from "../lib/quickbaseLinks";
+import { buildQuickbaseReportFilterTree } from "../lib/quickbaseLinks";
 import { getChartViewportBounds } from "./studioReportUtils";
 import { exportDashboardWorkbook } from "../lib/workbookExport";
 
@@ -16,7 +16,6 @@ interface DashboardViewProps {
   dashboard: DashboardDefinition;
   reportDefinitions?: Record<string, ReportDefinition>;
   tables?: TableDefinition[];
-  getQuickbaseLinkContext?: (tableId: string) => QuickbaseTableLinkContext | null;
   refreshNonce?: number;
   onRefresh?: () => void;
   initialRuntimeFilters?: Record<string, string>;
@@ -198,7 +197,6 @@ export function DashboardView({
   dashboard,
   reportDefinitions,
   tables,
-  getQuickbaseLinkContext,
   refreshNonce = 0,
   onRefresh,
   initialRuntimeFilters,
@@ -830,122 +828,101 @@ export function DashboardView({
               </button>
             </div>
           ) : null}
-          {!isOverviewTab ? (
-            <div className="stack">
-              {activeTab.widgets.map((widget) => {
-                const pagedResult = widgetPageResults[widget.widgetId] || widget.result;
-                const currentPage = widgetPages[widget.widgetId] || pagedResult.page || 1;
-                const totalPages = pagedResult.totalPages || 1;
-                const pageLoading = widgetPageLoading[widget.widgetId];
-                const widgetTable = tables?.find((item) => item.id === widget.report.sourceTableId || item.quickbaseTableId === widget.report.sourceTableId);
-                const quickbaseLinkContext = getQuickbaseLinkContext?.(widget.report.sourceTableId) || null;
-                return (
-                  <div key={widget.widgetId}>
-                    {widget.status === "complete" && pagedResult.crosstab ? (
-                      <div className="pivot-table-shell">
-                        <table className="pivot-table">
-                          <thead><tr>
-                            <th className="pivot-metric-col"></th>
-                            {pagedResult.crosstab.columns.map((col, ci) => (
-                              <th key={ci} className={col === "Grand Total" ? "pivot-grand-total" : ""}>{col || "(blank)"}</th>
-                            ))}
-                          </tr></thead>
-                          <tbody>
-                            {pagedResult.crosstab.rows.map((row) => (
-                              <tr key={row.label}>
-                                <td className="pivot-row-header">{row.label}</td>
-                                {row.formatted.map((val, vi) => (
-                                  <td key={vi} className={pagedResult.crosstab!.columns[vi] === "Grand Total" ? "pivot-grand-total" : ""}>{val}</td>
-                                ))}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    ) : widget.status === "complete" && pagedResult.summary.length && widget.widget.showSummary ? (
-                      <div className="summary-grid">
-                        {pagedResult.summary.map((item) => (
-                          <div className="summary-card" key={item.label}>
-                            <strong>{item.value}</strong>
-                            <span>{item.label}</span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
-                    {widget.status === "complete" && widgetShowsChart(widget.widget, widget.report) ? (
-                      <div className="chart-scroll-shell" ref={bindChartMeasureRef(widget.widgetId)}>
-                        {(() => {
-                          const axisLabels = getChartAxisLabels(tables, widget.report);
-                          const chartBounds = getChartViewportBounds(widget.report.view.chartType, pagedResult.chartData.length, false);
-                          return (
-                            <div style={{ minWidth: `${chartBounds.minWidth}px`, minHeight: `${chartBounds.minHeight}px`, width: "100%", height: "100%" }}>
-                              <ChartPreview
-                                chartType={widget.report.view.chartType}
-                                data={pagedResult.chartData.length ? pagedResult.chartData : widget.result.chartData}
-                                title={widget.report.view.chartTitle || widget.widget.title}
-                                decimalPlaces={widget.report.view.decimalPlaces}
-                                chartColors={widget.report.view.chartColors}
-                                chartValueColors={widget.report.view.chartValueColors}
-                                chartSort={widget.report.view.chartSort}
-                                chartOrientation={widget.report.view.chartOrientation}
-                                xAxisLabel={axisLabels.xAxisLabel}
-                                yAxisLabel={axisLabels.yAxisLabel}
-                                secondaryYAxisLabel={axisLabels.secondaryYAxisLabel}
-                                secondarySeriesType={widget.report.view.chartSecondarySeriesType}
-                                showLegend={widget.report.view.chartShowLegend}
-                                showValues={widget.report.view.chartShowValues}
-                                viewportHeight={chartBounds.minHeight}
-                                openLinksInNewTab={openLinksInNewTab}
-                              />
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    ) : null}
-                    {widget.status === "complete" ? (
-                      <>
-                        <div className="link-toolbar">
-                          <button className="ghost-button" disabled={currentPage <= 1 || pageLoading} onClick={() => { void changeWidgetPage(widget, currentPage - 1); }}>Previous</button>
-                          <span className="micro">Page {currentPage} of {totalPages} · {pagedResult.totalRows || 0} rows</span>
-                          <button className="ghost-button" disabled={!pagedResult.hasNextPage || pageLoading} onClick={() => { void changeWidgetPage(widget, currentPage + 1); }}>Next</button>
-                        </div>
-                        <ResizableDataTable
-                          className="report-table-shell"
-                          columns={[
-                            ...(quickbaseLinkContext ? [{ key: "__quickbase", label: "Quickbase", minWidth: 120, defaultWidth: 120, className: "table-action-col" }] : []),
-                            ...widget.report.selectedFieldIds.map((fieldId) => ({
-                              key: fieldId,
-                              label: getFieldLabel(tables, widget.report, fieldId)
-                            }))
-                          ]}
-                          rows={pagedResult.rows.map((row, index) => ({
-                            key: String(row.__recordId || index),
-                            cells: [
-                              ...(quickbaseLinkContext ? [
-                                String(row.__recordId || "").trim() ? (
-                                  <a className="ghost-button table-edit-link" href={buildQuickbaseRecordEditUrl(quickbaseLinkContext, String(row.__recordId || ""))} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>Edit</a>
-                                ) : null
-                              ] : []),
-                              ...widget.report.selectedFieldIds.map((fieldId) =>
-                                widgetTable ? formatReportCellValue(widget.report, widgetTable, fieldId, row[fieldId]) : String(row[fieldId] ?? "")
-                              )
-                            ]
-                          }))}
-                        />
-                      </>
-                    ) : null}
-                    {dashboardLoading && !pagedResult.rows.length ? <div className="empty">Loading…</div> : null}
-                  </div>
-                );
-              })}
-              {!dashboardLoading && !tabErrors[activeTab.id] && !activeTab.widgets.length ? (
+          {!isOverviewTab ? (() => {
+            const primaryWidget = activeTab.widgets.find((w) => w.widget.showDetails || w.widget.displayMode === "inherit" || w.widget.displayMode === "table") || activeTab.widgets[0] || null;
+            if (!primaryWidget) {
+              return !dashboardLoading ? (
                 <div className="sync-status" style={{ borderLeft: "4px solid var(--border-md, #B0BEC8)" }}>
                   <strong>This tab has no report configured</strong>
                   <span>Open this dashboard in the Building area and add a report card to this tab.</span>
                 </div>
-              ) : null}
-            </div>
-          ) : null}
+              ) : null;
+            }
+            const pagedResult = widgetPageResults[primaryWidget.widgetId] || primaryWidget.result;
+            const currentPage = widgetPages[primaryWidget.widgetId] || pagedResult.page || 1;
+            const totalPages = pagedResult.totalPages || 1;
+            const pageLoading = widgetPageLoading[primaryWidget.widgetId];
+            const widgetTable = tables?.find((item) => item.id === primaryWidget.report.sourceTableId || item.quickbaseTableId === primaryWidget.report.sourceTableId);
+            return (
+              <div className="stack">
+                {primaryWidget.status === "complete" && pagedResult.crosstab ? (
+                  <div className="pivot-table-shell">
+                    <table className="pivot-table">
+                      <thead><tr>
+                        <th className="pivot-metric-col"></th>
+                        {pagedResult.crosstab.columns.map((col, ci) => (
+                          <th key={ci} className={col === "Grand Total" ? "pivot-grand-total" : ""}>{col || "(blank)"}</th>
+                        ))}
+                      </tr></thead>
+                      <tbody>
+                        {pagedResult.crosstab.rows.map((row) => (
+                          <tr key={row.label}>
+                            <td className="pivot-row-header">{row.label}</td>
+                            {row.formatted.map((val, vi) => (
+                              <td key={vi} className={pagedResult.crosstab!.columns[vi] === "Grand Total" ? "pivot-grand-total" : ""}>{val}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+                {primaryWidget.status === "complete" && widgetShowsChart(primaryWidget.widget, primaryWidget.report) ? (
+                  <div className="chart-scroll-shell" ref={bindChartMeasureRef(primaryWidget.widgetId)}>
+                    {(() => {
+                      const axisLabels = getChartAxisLabels(tables, primaryWidget.report);
+                      const chartBounds = getChartViewportBounds(primaryWidget.report.view.chartType, pagedResult.chartData.length, false);
+                      return (
+                        <div style={{ minWidth: `${chartBounds.minWidth}px`, minHeight: `${chartBounds.minHeight}px`, width: "100%", height: "100%" }}>
+                          <ChartPreview
+                            chartType={primaryWidget.report.view.chartType}
+                            data={pagedResult.chartData.length ? pagedResult.chartData : primaryWidget.result.chartData}
+                            title={primaryWidget.report.view.chartTitle || primaryWidget.widget.title}
+                            decimalPlaces={primaryWidget.report.view.decimalPlaces}
+                            chartColors={primaryWidget.report.view.chartColors}
+                            chartValueColors={primaryWidget.report.view.chartValueColors}
+                            chartSort={primaryWidget.report.view.chartSort}
+                            chartOrientation={primaryWidget.report.view.chartOrientation}
+                            xAxisLabel={axisLabels.xAxisLabel}
+                            yAxisLabel={axisLabels.yAxisLabel}
+                            secondaryYAxisLabel={axisLabels.secondaryYAxisLabel}
+                            secondarySeriesType={primaryWidget.report.view.chartSecondarySeriesType}
+                            showLegend={primaryWidget.report.view.chartShowLegend}
+                            showValues={primaryWidget.report.view.chartShowValues}
+                            viewportHeight={chartBounds.minHeight}
+                            openLinksInNewTab={openLinksInNewTab}
+                          />
+                        </div>
+                      );
+                    })()}
+                  </div>
+                ) : null}
+                {primaryWidget.status === "complete" ? (
+                  <>
+                    <div className="link-toolbar">
+                      <button className="ghost-button" disabled={currentPage <= 1 || pageLoading} onClick={() => { void changeWidgetPage(primaryWidget, currentPage - 1); }}>Previous</button>
+                      <span className="micro">Page {currentPage} of {totalPages} · {pagedResult.totalRows || 0} rows</span>
+                      <button className="ghost-button" disabled={!pagedResult.hasNextPage || pageLoading} onClick={() => { void changeWidgetPage(primaryWidget, currentPage + 1); }}>Next</button>
+                    </div>
+                    <ResizableDataTable
+                      className="report-table-shell"
+                      columns={primaryWidget.report.selectedFieldIds.map((fieldId) => ({
+                        key: fieldId,
+                        label: getFieldLabel(tables, primaryWidget.report, fieldId)
+                      }))}
+                      rows={pagedResult.rows.map((row, index) => ({
+                        key: String(row.__recordId || index),
+                        cells: primaryWidget.report.selectedFieldIds.map((fieldId) =>
+                          widgetTable ? formatReportCellValue(primaryWidget.report, widgetTable, fieldId, row[fieldId]) : String(row[fieldId] ?? "")
+                        )
+                      }))}
+                    />
+                  </>
+                ) : null}
+                {dashboardLoading && !pagedResult.rows.length ? <div className="empty">Loading…</div> : null}
+              </div>
+            );
+          })() : null}
           {isOverviewTab ? <div className="widget-grid dashboard-layout-grid">
             {activeTab.widgets.map((widget) => {
               const pagedResult = widgetPageResults[widget.widgetId] || widget.result;
@@ -955,7 +932,6 @@ export function DashboardView({
               const summaryData = pagedResult.summary.length ? pagedResult.summary : widget.result.summary;
               const chartData = pagedResult.chartData.length ? pagedResult.chartData : widget.result.chartData;
               const widgetTable = tables?.find((item) => item.id === widget.report.sourceTableId || item.quickbaseTableId === widget.report.sourceTableId);
-              const quickbaseLinkContext = getQuickbaseLinkContext?.(widget.report.sourceTableId) || null;
               const chartFieldId = getChartFieldId(widget.report);
               const axisLabels = getChartAxisLabels(tables, widget.report);
               const widgetQuickbaseFilterTree = buildQuickbaseReportFilterTree(
@@ -1056,7 +1032,7 @@ export function DashboardView({
                           showValues={widget.report.view.chartShowValues}
                           viewportHeight={chartBounds.minHeight}
                           openLinksInNewTab={openLinksInNewTab}
-                          getDatumHref={(datum) => buildQuickbaseChartDatumUrl(quickbaseLinkContext, widgetTable, chartFieldId, datum, widgetQuickbaseFilterTree)}
+                          getDatumHref={undefined}
                         />
                       </div>
                     </div>
@@ -1122,32 +1098,15 @@ export function DashboardView({
                       return (
                         <ResizableDataTable
                           className="widget-table-shell"
-                          columns={[
-                            ...(quickbaseLinkContext ? [{ key: "__quickbase", label: "Quickbase", minWidth: 120, defaultWidth: 120, className: "table-action-col" }] : []),
-                            ...widget.report.selectedFieldIds.slice(0, 6).map((fieldId) => ({
-                              key: fieldId,
-                              label: getFieldLabel(tables, widget.report, fieldId)
-                            }))
-                          ]}
+                          columns={widget.report.selectedFieldIds.slice(0, 6).map((fieldId) => ({
+                            key: fieldId,
+                            label: getFieldLabel(tables, widget.report, fieldId)
+                          }))}
                           rows={pagedResult.rows.map((row, index) => ({
                             key: String(row.__recordId || index),
-                            cells: [
-                              ...(quickbaseLinkContext ? [
-                                String(row.__recordId || "").trim() ? (
-                                  <a
-                                    className="ghost-button table-edit-link"
-                                    href={buildQuickbaseRecordEditUrl(quickbaseLinkContext, String(row.__recordId || ""))}
-                                    target={openLinksInNewTab ? "_blank" : undefined}
-                                    rel={openLinksInNewTab ? "noreferrer" : undefined}
-                                  >
-                                    Edit
-                                  </a>
-                                ) : null
-                              ] : []),
-                              ...widget.report.selectedFieldIds.slice(0, 6).map((fieldId) =>
-                                widgetTable ? formatReportCellValue(widget.report, widgetTable, fieldId, row[fieldId]) : String(row[fieldId] ?? "")
-                              )
-                            ]
+                            cells: widget.report.selectedFieldIds.slice(0, 6).map((fieldId) =>
+                              widgetTable ? formatReportCellValue(widget.report, widgetTable, fieldId, row[fieldId]) : String(row[fieldId] ?? "")
+                            )
                           }))}
                         />
                       );

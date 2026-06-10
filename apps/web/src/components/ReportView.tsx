@@ -544,32 +544,15 @@ export function ReportView({
     return (
       <ResizableDataTable
         className={tableShellClassName}
-        columns={[
-          ...(quickbaseLinkContext ? [{ key: "__quickbase", label: "Quickbase", minWidth: 120, defaultWidth: 120, className: "table-action-col" }] : []),
-          ...report.selectedFieldIds.map((fieldId) => ({
-            key: fieldId,
-            label: getReadableFieldLabel(report, fieldId, table) || "Value"
-          }))
-        ]}
+        columns={report.selectedFieldIds.map((fieldId) => ({
+          key: fieldId,
+          label: getReadableFieldLabel(report, fieldId, table) || "Value"
+        }))}
         rows={rows.map((row, index) => ({
           key: String(row.__recordId || index),
-          cells: [
-            ...(quickbaseLinkContext ? [
-              String(row.__recordId || "").trim() ? (
-                <a
-                  className="ghost-button table-edit-link"
-                  href={buildQuickbaseRecordEditUrl(quickbaseLinkContext, String(row.__recordId || ""))}
-                  target={openLinksInNewTab ? "_blank" : undefined}
-                  rel={openLinksInNewTab ? "noreferrer" : undefined}
-                >
-                  Edit
-                </a>
-              ) : null
-            ] : []),
-            ...report.selectedFieldIds.map((fieldId) =>
-              table ? formatReportCellValue(report, table, fieldId, row[fieldId]) : String(row[fieldId] ?? "")
-            )
-          ]
+          cells: report.selectedFieldIds.map((fieldId) =>
+            table ? formatReportCellValue(report, table, fieldId, row[fieldId]) : String(row[fieldId] ?? "")
+          )
         }))}
       />
     );
@@ -822,7 +805,7 @@ export function ReportView({
                     showValues={report.view.chartShowValues}
                     viewportHeight={chartBounds.minHeight}
                     openLinksInNewTab={openLinksInNewTab}
-                    getDatumHref={(datum) => buildQuickbaseChartDatumUrl(quickbaseLinkContext, table, chartFieldId, datum, quickbaseFilterTree)}
+                    getDatumHref={undefined}
                   />
                 </div>
               </div>

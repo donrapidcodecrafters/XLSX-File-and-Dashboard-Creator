@@ -119,7 +119,9 @@ await app.register(multipart, {
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
   }
-  if (lastError) throw lastError;
+  if (lastError) {
+    app.log.warn({ err: (lastError as Error).message }, "Postgres unavailable after all startup retries — API starting without DB. DB-dependent endpoints will fail until Postgres recovers.");
+  }
 }
 await recoverExportJobsOnStartup();
 await registerSessionAuth(app);
