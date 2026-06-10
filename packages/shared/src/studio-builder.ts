@@ -39,7 +39,6 @@ export function studioBuilderNeedsSelectedFields(view: Pick<ReportDefinition, "v
     || view.mode === "timeline"
     || view.mode === "calendar"
     || view.mode === "kanban"
-    || Boolean(view.showSummary)
     || Boolean(view.showDetails);
 }
 
