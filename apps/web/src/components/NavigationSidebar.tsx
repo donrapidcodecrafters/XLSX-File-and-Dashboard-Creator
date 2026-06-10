@@ -97,7 +97,7 @@ function AccordionGroup({
 export function NavigationSidebar({
   currentUser,
   onSignOut,
-  onOpenSettings: _onOpenSettings,
+  onOpenSettings,
   onPinnedChange,
   objects = [],
   authRequired = true,
@@ -292,15 +292,23 @@ export function NavigationSidebar({
       {/* ── User profile + sign out ── */}
       <div className="nav-sidebar-user-section">
         <div className="nav-sidebar-divider" />
-        <div className="nav-sidebar-item" style={{ cursor: "default", gap: 8 }} title={name}>
-          <div className="nav-sidebar-avatar" style={{ background: avatarColor, color: "#fff", fontSize: 12, fontWeight: 800, flexShrink: 0 }}>
-            {initial}
-          </div>
-          <div className="nav-sidebar-label" style={{ overflow: "hidden", minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <button
+          type="button"
+          className="nav-sidebar-item"
+          onClick={() => onOpenSettings?.()}
+          title={name ? `${name} — Account settings` : "Account settings"}
+          style={{ gap: 8 }}
+        >
+          <span className="nav-sidebar-icon">
+            <span className="nav-sidebar-avatar" style={{ background: avatarColor, color: "#fff", fontSize: 11, fontWeight: 800, width: 22, height: 22, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              {initial}
+            </span>
+          </span>
+          <span className="nav-sidebar-label" style={{ overflow: "hidden", minWidth: 0, textAlign: "left" }}>
+            <span style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {name}
-            </div>
-            <div style={{ display: "flex", gap: 4, alignItems: "center", marginTop: 1 }}>
+            </span>
+            <span style={{ display: "flex", gap: 4, alignItems: "center", marginTop: 1 }}>
               {role && (
                 <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 5px", borderRadius: 4, background: "var(--brand-light, #ECFDF5)", color: "var(--brand-deep, #065F46)", border: "1px solid var(--brand-border, #A7F3D0)" }}>
                   {role}
@@ -311,9 +319,9 @@ export function NavigationSidebar({
                   Dev
                 </span>
               )}
-            </div>
-          </div>
-        </div>
+            </span>
+          </span>
+        </button>
         <button
           type="button"
           className="nav-sidebar-item btn-danger"

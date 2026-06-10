@@ -1419,7 +1419,7 @@ export function App() {
       <NavigationSidebar
         currentUser={currentUser}
         onSignOut={() => { void logoutSession().finally(() => setAuthState("unauthenticated")); }}
-        onOpenSettings={() => navigate("/settings")}
+        onOpenSettings={() => setShowUserSettings(true)}
         onPinnedChange={setSidebarPinned}
         objects={visibleObjects}
         authRequired={authRequired}
@@ -1472,9 +1472,9 @@ export function App() {
                     {isDark ? "Light mode" : "Dark mode"}
                   </button>
                   {!helpRoute ? (
-                    <Link className="topbar-dropdown-item" to={buildHostedRoute("/help")} onClick={() => setUserMenuOpen(false)}>
+                    <button className="topbar-dropdown-item" onClick={() => { navigate(buildHostedRoute("/help")); setUserMenuOpen(false); }}>
                       Help guide
-                    </Link>
+                    </button>
                   ) : null}
                   {helpdeskTicketUrl ? (
                     <button className="topbar-dropdown-item" onClick={() => { openHelpdeskTicket(); setUserMenuOpen(false); }}>
@@ -1482,9 +1482,9 @@ export function App() {
                     </button>
                   ) : null}
                   {isAdminOrDev ? (
-                    <NavLink className="topbar-dropdown-item" to={buildHostedRoute("/users")} onClick={() => setUserMenuOpen(false)}>
+                    <button className="topbar-dropdown-item" onClick={() => { navigate(buildHostedRoute("/users")); setUserMenuOpen(false); }}>
                       Users
-                    </NavLink>
+                    </button>
                   ) : null}
                   <div className="topbar-dropdown-divider" />
                   <button
