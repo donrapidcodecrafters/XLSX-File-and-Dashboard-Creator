@@ -4677,10 +4677,8 @@ select {
   align-items: stretch;
   padding: 0;
   gap: 0;
-  overflow: hidden;
-  height: calc(100vh - 61px);
-  position: sticky;
-  top: 61px;
+  overflow-x: hidden;
+  min-height: 100vh;
 }
 
 .dashboard-builder-main {
@@ -4704,6 +4702,10 @@ select {
   display: grid;
   align-content: start;
   gap: 16px;
+  align-self: flex-start;
+  position: sticky;
+  top: 61px;
+  max-height: calc(100vh - 61px);
 }
 
 .dashboard-builder-widget-panel .card {
