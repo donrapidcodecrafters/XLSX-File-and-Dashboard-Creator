@@ -2538,7 +2538,7 @@ export function StudioPage({
 
     function handlePointerMove(event: PointerEvent) {
       const nextW = clampDashboardWidgetWidth(session.startW + Math.round((event.clientX - session.startX) / 96));
-      const nextH = clampDashboardWidgetHeight(session.startH + Math.round((event.clientY - session.startY) / 88));
+      const nextH = clampDashboardWidgetHeight(session.startH + Math.round((event.clientY - session.startY) / 96));
       if (nextW === session.nextW && nextH === session.nextH) return;
       setResizeSession((current) => (current ? { ...current, nextW, nextH } : current));
       updateActiveDashboardWidget(

@@ -613,7 +613,7 @@ export function DashboardView({
 
   const tabs = dashboard.tabs.map((tab) => tabResults[tab.id] || ({ id: tab.id, name: tab.name, widgets: [] }));
   const activeTab = tabs.find((tab) => tab.id === resolvedActiveTabId) || tabs[0];
-  const isOverviewTab = !resolvedActiveTabId || resolvedActiveTabId === dashboard.tabs[0]?.id;
+  const isOverviewTab = true; // all tabs use grid layout to match builder positioning
   const focusedWidget = activeTab?.widgets.find((widget) => widget.widgetId === focusedWidgetId) || null;
   const focusedWidgetCrossFilterOptions = focusedWidget
     ? getDashboardCrossFilterOptions(dashboard, focusedWidget.report, focusedWidget.result.chartData)
