@@ -140,7 +140,7 @@ function InviteForm({ onCancel, onSuccess, onError }: InviteFormProps) {
     width: "100%",
     padding: "8px 11px",
     borderRadius: 8,
-    border: "1px solid #D1D5DB",
+    border: "1px solid var(--border, #D1D5DB)",
     fontSize: "13px",
     fontFamily: FONT,
     outline: "none",
@@ -199,7 +199,7 @@ function InviteForm({ onCancel, onSuccess, onError }: InviteFormProps) {
               disabled={submitting}
               style={inputStyle}
               onFocus={(e) => { e.currentTarget.style.borderColor = PRIMARY; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(13,124,102,0.12)"; }}
-              onBlur={(e) => { e.currentTarget.style.borderColor = "#D1D5DB"; e.currentTarget.style.boxShadow = "none"; }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = ""; e.currentTarget.style.boxShadow = "none"; }}
             />
           </label>
           <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -212,7 +212,7 @@ function InviteForm({ onCancel, onSuccess, onError }: InviteFormProps) {
               disabled={submitting}
               style={inputStyle}
               onFocus={(e) => { e.currentTarget.style.borderColor = PRIMARY; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(13,124,102,0.12)"; }}
-              onBlur={(e) => { e.currentTarget.style.borderColor = "#D1D5DB"; e.currentTarget.style.boxShadow = "none"; }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = ""; e.currentTarget.style.boxShadow = "none"; }}
             />
           </label>
           <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -391,7 +391,7 @@ function UserRow({ user, currentUserId, onRoleChange, onToggleActive, onToggleNo
             style={{
               padding: "4px 8px",
               borderRadius: 6,
-              border: "1px solid #D1D5DB",
+              border: "1px solid var(--border, #D1D5DB)",
               fontSize: 12,
               fontFamily: FONT,
               cursor: roleChanging || isWorking || isSelf ? "not-allowed" : "pointer",
@@ -763,9 +763,9 @@ export function UserManagementPage({ currentUser }: UserManagementPageProps) {
             gap: 10,
             fontSize: 13,
             fontWeight: 500,
-            background: banner.type === "success" ? "#ECFDF5" : "#FEF2F2",
-            border: `1px solid ${banner.type === "success" ? "#A7F3D0" : "#FECACA"}`,
-            color: banner.type === "success" ? "#065F46" : "#991B1B",
+            background: banner.type === "success" ? "var(--brand-light, #ECFDF5)" : "var(--error-bg, #FEF2F2)",
+            border: `1px solid ${banner.type === "success" ? "var(--brand-border, #A7F3D0)" : "var(--error-border, #FECACA)"}`,
+            color: banner.type === "success" ? "var(--brand, #065F46)" : "var(--error-text, #991B1B)",
           }}>
             <span>{banner.type === "success" ? "✓" : "⚠"}</span>
             {banner.message}

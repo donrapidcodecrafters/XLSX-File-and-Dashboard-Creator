@@ -15,18 +15,18 @@ interface LoginPageProps {
 
 // ── Inline design tokens ──────────────────────────────────────────────────────
 const T = {
-  bg:          "#F8FAFC",
-  surface:     "#ffffff",
-  border:      "#E5E7EB",
+  bg:          "var(--bg, #F8FAFC)",
+  surface:     "var(--surface, #ffffff)",
+  border:      "var(--border, #E5E7EB)",
   brand:       "#0d7c66",
   brandDark:   "#065F46",
-  brandLight:  "#ECFDF5",
-  brandBorder: "#A7F3D0",
-  text:        "#111827",
-  textSoft:    "#6B7280",
+  brandLight:  "var(--brand-light, #ECFDF5)",
+  brandBorder: "var(--brand-border, #A7F3D0)",
+  text:        "var(--text, #111827)",
+  textSoft:    "var(--text-soft, #6B7280)",
   danger:      "#DC2626",
-  dangerBg:    "#FEF2F2",
-  dangerBorder:"#FECACA",
+  dangerBg:    "var(--error-bg, #FEF2F2)",
+  dangerBorder:"var(--error-border, #FECACA)",
   font:        "'Inter','Segoe UI',system-ui,sans-serif",
   radius:      "12px",
 };
@@ -477,7 +477,7 @@ function CodeInput({
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <label style={{ fontSize: 12, fontWeight: 600, color: "#111827" }}>
+      <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text, #111827)" }}>
         Authenticator code
       </label>
       <input
@@ -499,27 +499,27 @@ function CodeInput({
           width: "100%",
           padding: "14px 16px",
           borderRadius: 10,
-          border: "1.5px solid #D1D5DB",
+          border: "1.5px solid var(--border, #D1D5DB)",
           fontSize: 28,
           fontWeight: 700,
           letterSpacing: "0.3em",
           textAlign: "center",
           fontFamily: "monospace",
-          color: "#111827",
+          color: "var(--text, #111827)",
           outline: "none",
           boxSizing: "border-box" as const,
           transition: "border-color 100ms",
-          background: value.replace(/\s/g, "").length === 6 ? "#ECFDF5" : "#fff",
-          borderColor: value.replace(/\s/g, "").length === 6 ? "#0d7c66" : "#D1D5DB",
+          background: value.replace(/\s/g, "").length === 6 ? "var(--brand-light, #ECFDF5)" : "var(--surface, #fff)",
+          borderColor: value.replace(/\s/g, "").length === 6 ? "#0d7c66" : "var(--border-md, #D1D5DB)",
         }}
         onFocus={(e) => { e.currentTarget.style.borderColor = "#0d7c66"; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(13,124,102,0.12)"; }}
         onBlur={(e) => {
           const full = value.replace(/\s/g, "").length === 6;
-          e.currentTarget.style.borderColor = full ? "#0d7c66" : "#D1D5DB";
+          e.currentTarget.style.borderColor = full ? "#0d7c66" : "";
           e.currentTarget.style.boxShadow = "none";
         }}
       />
-      <div style={{ fontSize: 11, color: "#9CA3AF", textAlign: "center" }}>
+      <div style={{ fontSize: 11, color: "var(--text-soft, #9CA3AF)", textAlign: "center" }}>
         Code refreshes every 30 seconds
       </div>
     </div>
@@ -532,10 +532,11 @@ const inputStyle: React.CSSProperties = {
   width: "100%",
   padding: "10px 13px",
   borderRadius: 8,
-  border: "1.5px solid #D1D5DB",
+  border: "1.5px solid var(--border, #D1D5DB)",
   fontSize: 14,
   fontFamily: "'Inter','Segoe UI',system-ui,sans-serif",
-  color: "#111827",
+  color: "var(--text, #111827)",
+  background: "var(--surface, #fff)",
   outline: "none",
   boxSizing: "border-box",
   transition: "border-color 100ms, box-shadow 100ms",
@@ -547,7 +548,7 @@ function focusInput(e: React.FocusEvent<HTMLInputElement>) {
 }
 
 function blurInput(e: React.FocusEvent<HTMLInputElement>) {
-  e.currentTarget.style.borderColor = "#D1D5DB";
+  e.currentTarget.style.borderColor = "";
   e.currentTarget.style.boxShadow = "none";
 }
 

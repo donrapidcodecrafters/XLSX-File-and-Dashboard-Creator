@@ -85,7 +85,7 @@ export function RefreshOverlay({
         <div
           style={{
             width: "min(520px, 100%)",
-            background: "#ffffff",
+            background: "var(--surface, #ffffff)",
             borderRadius: "16px",
             padding: "32px 32px 28px",
             boxShadow: "0 8px 16px rgba(0,0,0,0.08), 0 32px 72px rgba(0,0,0,0.22)",
@@ -113,7 +113,7 @@ export function RefreshOverlay({
               margin: "0 0 6px",
               fontSize: "1.25rem",
               fontWeight: 700,
-              color: isFailed ? "#8c1c13" : "#0d2b20",
+              color: isFailed ? "var(--error-text, #8c1c13)" : "var(--text, #0d2b20)",
               lineHeight: 1.3,
             }}
           >
@@ -203,8 +203,8 @@ export function RefreshOverlay({
                   fontWeight: 600,
                   borderRadius: "8px",
                   border: "1.5px solid #c9d9d0",
-                  background: "#ffffff",
-                  color: "#0d2b20",
+                  background: "var(--surface, #ffffff)",
+                  color: "var(--text, #0d2b20)",
                   cursor: "pointer",
                   transition: "background 0.15s, border-color 0.15s",
                 }}
@@ -213,7 +213,7 @@ export function RefreshOverlay({
                   (e.currentTarget as HTMLButtonElement).style.borderColor = "#9bbdae";
                 }}
                 onMouseLeave={e => {
-                  (e.currentTarget as HTMLButtonElement).style.background = "#ffffff";
+                  (e.currentTarget as HTMLButtonElement).style.background = "";
                   (e.currentTarget as HTMLButtonElement).style.borderColor = "#c9d9d0";
                 }}
               >
@@ -234,8 +234,8 @@ export function RefreshOverlay({
                   fontWeight: 600,
                   borderRadius: "8px",
                   border: "1.5px solid #c9d9d0",
-                  background: "#ffffff",
-                  color: "#0d2b20",
+                  background: "var(--surface, #ffffff)",
+                  color: "var(--text, #0d2b20)",
                   cursor: "pointer",
                   transition: "background 0.15s, border-color 0.15s",
                 }}
@@ -244,7 +244,7 @@ export function RefreshOverlay({
                   (e.currentTarget as HTMLButtonElement).style.borderColor = "#9bbdae";
                 }}
                 onMouseLeave={e => {
-                  (e.currentTarget as HTMLButtonElement).style.background = "#ffffff";
+                  (e.currentTarget as HTMLButtonElement).style.background = "";
                   (e.currentTarget as HTMLButtonElement).style.borderColor = "#c9d9d0";
                 }}
               >
