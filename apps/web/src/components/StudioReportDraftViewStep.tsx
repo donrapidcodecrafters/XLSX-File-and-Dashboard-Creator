@@ -56,101 +56,159 @@ export function StudioReportDraftViewStep({
         {createDraft.view.mode === "summary" ? (
           <section className="builder-subsection">
             <div className="builder-subsection-head">
-              <strong>Column Group Field</strong>
-              <span className="micro">The field whose unique values become columns in the pivot table. Each metric row shows the aggregated value per group.</span>
+              <strong>Summary Setup</strong>
+              <span className="micro">Pick the two fields that define the summary: the column grouping (X axis) and the value to aggregate (Y axis).</span>
             </div>
-            <SearchableSelect
-              value={createDraft.groups[0]?.fieldId || ""}
-              options={fieldOptions}
-              allowEmpty
-              emptyOptionLabel="No grouping (flat totals only)"
-              onChange={(value) => setCreateDraft((current) => ({
-                ...current,
-                groups: value ? [{ id: current.groups[0]?.id || `grp-${Math.random().toString(36).slice(2, 8)}`, fieldId: value }] : []
-              }))}
-            />
-          </section>
-        ) : null}
-        <section className="builder-subsection">
-          <div className="builder-subsection-head">
-            <strong>Summary Metrics</strong>
-            <span className="micro">Choose the summary values to show above the report. Use `Count rows` when you want row count instead of a field calculation.</span>
-          </div>
-          <div className="stack-compact">
-            {createDraft.summaryMetrics.length ? createDraft.summaryMetrics.map((metric) => (
-              <div className="inline-edit-row" key={metric.id}>
+            <div className="builder-subsection-grid">
+              <label className="field">
+                <span>Group field (columns)</span>
                 <SearchableSelect
-                  value={metric.fieldId}
+                  value={createDraft.groups[0]?.fieldId || ""}
+                  options={fieldOptions}
+                  allowEmpty
+                  emptyOptionLabel="Choose a field…"
+                  onChange={(value) => setCreateDraft((current) => {
+                    const metric = current.summaryMetrics[0];
+                    const op = metric?.op || "sum";
+                    const valueFieldId = metric?.fieldId || "";
+                    const autoLabel = value ? `${op.charAt(0).toUpperCase() + op.slice(1)} of ${fieldOptions.find((f) => f.value === valueFieldId)?.label || valueFieldId || "rows"}` : "";
+                    return {
+                      ...current,
+                      groups: value ? [{ id: current.groups[0]?.id || `grp-1`, fieldId: value }] : [],
+                      summaryMetrics: metric ? [{ ...metric, label: autoLabel || metric.label }] : current.summaryMetrics
+                    };
+                  })}
+                />
+              </label>
+              <label className="field">
+                <span>Value field</span>
+                <SearchableSelect
+                  value={createDraft.summaryMetrics[0]?.fieldId || ""}
                   options={fieldOptions}
                   allowEmpty
                   emptyOptionLabel="Count rows"
-                  onChange={(value) => setCreateDraft((current) => ({
-                    ...current,
-                    summaryMetrics: current.summaryMetrics.map((item) => item.id === metric.id ? {
-                      ...item,
-                      fieldId: value,
-                      op: value ? item.op : "count",
-                      label: value ? item.label : (item.label || "Row count")
-                    } : item)
-                  }))}
+                  onChange={(value) => setCreateDraft((current) => {
+                    const op = value ? (current.summaryMetrics[0]?.op === "count" ? "sum" : (current.summaryMetrics[0]?.op || "sum")) : "count";
+                    const groupLabel = fieldOptions.find((f) => f.value === (current.groups[0]?.fieldId || ""))?.label || "";
+                    const valueLabel = fieldOptions.find((f) => f.value === value)?.label || "";
+                    const autoLabel = value ? `${op.charAt(0).toUpperCase() + op.slice(1)} of ${valueLabel}` : "Row count";
+                    return {
+                      ...current,
+                      summaryMetrics: [{
+                        id: current.summaryMetrics[0]?.id || createMetricId(),
+                        fieldId: value,
+                        op,
+                        label: autoLabel
+                      }]
+                    };
+                    void groupLabel;
+                  })}
                 />
+              </label>
+              <label className="field">
+                <span>Aggregation</span>
                 <select
-                  value={metric.op}
-                  onChange={(event) => setCreateDraft((current) => ({
-                    ...current,
-                    summaryMetrics: current.summaryMetrics.map((item) => item.id === metric.id ? {
-                      ...item,
-                      op: event.target.value as SummaryMetric["op"],
-                      fieldId: event.target.value === "count" ? "" : item.fieldId
-                    } : item)
-                  }))}
+                  value={createDraft.summaryMetrics[0]?.op || "sum"}
+                  disabled={!createDraft.summaryMetrics[0]?.fieldId}
+                  onChange={(event) => setCreateDraft((current) => {
+                    const op = event.target.value as SummaryMetric["op"];
+                    const valueFieldId = current.summaryMetrics[0]?.fieldId || "";
+                    const valueLabel = fieldOptions.find((f) => f.value === valueFieldId)?.label || valueFieldId || "rows";
+                    const autoLabel = valueFieldId ? `${op.charAt(0).toUpperCase() + op.slice(1)} of ${valueLabel}` : "Row count";
+                    return {
+                      ...current,
+                      summaryMetrics: current.summaryMetrics.length
+                        ? [{ ...current.summaryMetrics[0], op, label: autoLabel }]
+                        : [{ id: createMetricId(), fieldId: "", op: "count", label: "Row count" }]
+                    };
+                  })}
                 >
-                  <option value="count">Count rows</option>
+                  <option value="count">Count</option>
                   <option value="sum">Sum</option>
                   <option value="avg">Average</option>
                   <option value="min">Minimum</option>
                   <option value="max">Maximum</option>
                 </select>
-                <input
-                  value={metric.label}
-                  onChange={(event) => setCreateDraft((current) => ({
-                    ...current,
-                    summaryMetrics: current.summaryMetrics.map((item) => item.id === metric.id ? { ...item, label: event.target.value } : item)
-                  }))}
-                  placeholder={metric.op === "count" ? "Row count" : "Metric label"}
-                />
+              </label>
+            </div>
+          </section>
+        ) : (
+          <section className="builder-subsection">
+            <div className="builder-subsection-head">
+              <strong>Summary Metrics</strong>
+              <span className="micro">Choose the summary values to show above the report. Use Count rows when you want row count instead of a field calculation.</span>
+            </div>
+            <div className="stack-compact">
+              {createDraft.summaryMetrics.length ? createDraft.summaryMetrics.map((metric) => (
+                <div className="inline-edit-row" key={metric.id}>
+                  <SearchableSelect
+                    value={metric.fieldId}
+                    options={fieldOptions}
+                    allowEmpty
+                    emptyOptionLabel="Count rows"
+                    onChange={(value) => setCreateDraft((current) => ({
+                      ...current,
+                      summaryMetrics: current.summaryMetrics.map((item) => item.id === metric.id ? {
+                        ...item,
+                        fieldId: value,
+                        op: value ? item.op : "count",
+                        label: value ? item.label : (item.label || "Row count")
+                      } : item)
+                    }))}
+                  />
+                  <select
+                    value={metric.op}
+                    onChange={(event) => setCreateDraft((current) => ({
+                      ...current,
+                      summaryMetrics: current.summaryMetrics.map((item) => item.id === metric.id ? {
+                        ...item,
+                        op: event.target.value as SummaryMetric["op"],
+                        fieldId: event.target.value === "count" ? "" : item.fieldId
+                      } : item)
+                    }))}
+                  >
+                    <option value="count">Count rows</option>
+                    <option value="sum">Sum</option>
+                    <option value="avg">Average</option>
+                    <option value="min">Minimum</option>
+                    <option value="max">Maximum</option>
+                  </select>
+                  <input
+                    value={metric.label}
+                    onChange={(event) => setCreateDraft((current) => ({
+                      ...current,
+                      summaryMetrics: current.summaryMetrics.map((item) => item.id === metric.id ? { ...item, label: event.target.value } : item)
+                    }))}
+                    placeholder={metric.op === "count" ? "Row count" : "Metric label"}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setCreateDraft((current) => ({
+                      ...current,
+                      summaryMetrics: current.summaryMetrics.filter((item) => item.id !== metric.id)
+                    }))}
+                  >
+                    Remove
+                  </button>
+                </div>
+              )) : <div className="empty-hint">No summary metrics yet. Add one to show values like row count, sum, average, minimum, or maximum.</div>}
+              <div className="studio-actions">
                 <button
                   type="button"
                   onClick={() => setCreateDraft((current) => ({
                     ...current,
-                    summaryMetrics: current.summaryMetrics.filter((item) => item.id !== metric.id)
+                    summaryMetrics: [
+                      ...current.summaryMetrics,
+                      { id: createMetricId(), fieldId: "", op: "count", label: "Row count" }
+                    ]
                   }))}
                 >
-                  Remove
+                  Add summary metric
                 </button>
               </div>
-            )) : <div className="empty-hint">No summary metrics yet. Add one to show values like row count, sum, average, minimum, or maximum.</div>}
-            <div className="studio-actions">
-              <button
-                type="button"
-                onClick={() => setCreateDraft((current) => ({
-                  ...current,
-                  summaryMetrics: [
-                    ...current.summaryMetrics,
-                    {
-                      id: createMetricId(),
-                      fieldId: "",
-                      op: "count",
-                      label: "Row count"
-                    }
-                  ]
-                }))}
-              >
-                Add summary metric
-              </button>
             </div>
-          </div>
-        </section>
+          </section>
+        )}
 
         {reportShowsChart({ view: createDraft.view }) ? (
           <section className="builder-subsection">
