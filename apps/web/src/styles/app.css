@@ -1946,6 +1946,7 @@ input {
 .preview-widget-table-shell {
   max-height: clamp(220px, 34vh, 360px);
   overflow-x: auto;
+  overflow-y: auto;
 }
 
 .compact-table-shell {
