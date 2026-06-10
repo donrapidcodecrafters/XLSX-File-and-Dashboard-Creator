@@ -4380,7 +4380,7 @@ export function StudioPage({
                 <div>
                   <strong>Imported workbook review</strong>
                   <div className="micro">
-                    {(pendingWorkbookImport?.review || lastWorkbookImportReview)?.workbookName} · {(pendingWorkbookImport ? pendingImportedReviewReports.length : importedReviewReports.length)} report{(pendingWorkbookImport ? pendingImportedReviewReports.length : importedReviewReports.length) === 1 ? "" : "s"}
+                    {(pendingWorkbookImport?.review || lastWorkbookImportReview)?.workbookName} · {importedReviewReports.length} report{importedReviewReports.length === 1 ? "" : "s"}
                     {importedReviewDashboardCount ? ` · ${importedReviewDashboardCount} dashboard candidate${importedReviewDashboardCount === 1 ? "" : "s"}` : ""}
                   </div>
                 </div>
@@ -4467,21 +4467,8 @@ export function StudioPage({
                 </div>
               ) : null}
 
-              {pendingWorkbookImport ? (
-                <div className="studio-actions import-review-actions-top">
-                  <button type="button" className="ghost-button btn-neutral" onClick={closeImportReviewModal}>Cancel</button>
-                  <button
-                    type="button"
-                    onClick={() => void applyPendingWorkbookImport()}
-                    disabled={!pendingWorkbookImport.sourceTableId || pendingImportedReviewReports.length > 0}
-                  >
-                    {pendingImportActionLabel}
-                  </button>
-                </div>
-              ) : null}
-
               <div className="stack">
-                {(pendingWorkbookImport ? pendingImportedReviewReports : importedReviewReports).map(({ report, table }) => {
+                {(pendingWorkbookImport ? importedReviewReports : importedReviewReports).map(({ report, table }) => {
                   const tableFieldIds = new Set((table?.fields || []).map((field) => field.id));
                   const referencedFieldIds = collectReportImportReferencedFieldIds(report);
                   const matchedReferencedCount = referencedFieldIds.filter((fieldId) => tableFieldIds.has(fieldId)).length;
@@ -4492,7 +4479,7 @@ export function StudioPage({
                         <div>
                           <strong>{report.name}</strong>
                           <div className="micro">
-                            {report.view.mode === "chart" ? report.view.chartType : report.view.mode} · {table?.name || "Missing source table"}
+                            {report.view.mode === "chart" ? report.view.chartType : report.view.mode} · {table?.name || (pendingWorkbookImport ? "Select a source table above" : "No source table")}
                           </div>
                         </div>
                         <span className={`badge${issues.length ? "" : " brand"}`}>
@@ -4541,10 +4528,10 @@ export function StudioPage({
                     </article>
                   );
                 })}
-                {!(pendingWorkbookImport ? pendingImportedReviewReports : importedReviewReports).length ? (
+                {!importedReviewReports.length ? (
                   <div className="empty-hint">
                     {pendingWorkbookImport
-                      ? "Every imported report has the fields it needs. Saving the last report will create the workbook automatically."
+                      ? "No reports were found in this workbook."
                       : "No imported reports are available to review."}
                   </div>
                 ) : null}

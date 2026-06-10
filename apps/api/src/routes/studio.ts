@@ -255,18 +255,33 @@ export async function registerStudioRoutes(app: FastifyInstance) {
         const workbook = new ExcelJSWorkbook();
         await workbook.xlsx.read(file.file);
 
+        // Detect the actual header row for a worksheet by scanning the first 10 rows.
+        // Returns the 1-based row number of the best header row candidate.
+        function detectHeaderRowNumber(ws: InstanceType<typeof ExcelJSWorkbook>["worksheets"][0]): number {
+          for (let r = 1; r <= Math.min(10, ws.rowCount); r++) {
+            const row = ws.getRow(r);
+            const vals = (row.values as unknown[]).slice(1).filter((v) => v !== null && v !== undefined && String(v).trim() !== "");
+            const textLike = vals.filter((v) => typeof v === "string" && /[a-zA-Z]/.test(v as string));
+            if (vals.length >= 2 && textLike.length >= Math.ceil(vals.length * 0.5)) {
+              return r;
+            }
+          }
+          return 1;
+        }
+
         // Build per-sheet stats for all worksheets.
         const sheets = workbook.worksheets.map((ws) => {
-          const headerRow = ws.getRow(1);
+          const headerRowNum = detectHeaderRowNumber(ws);
+          const headerRow = ws.getRow(headerRowNum);
           const wsHeaders = (headerRow.values as unknown[])
             .slice(1)
             .map((v, i) => String(v ?? `Column ${i + 1}`).trim() || `Column ${i + 1}`);
-          const wsRowCount = Math.max(0, ws.rowCount - 1);
+          const wsRowCount = Math.max(0, ws.rowCount - headerRowNum);
           // Heuristic: a data tab has meaningful rows and text-like headers,
           // whereas pivot/summary/chart tabs tend to have far fewer rows.
           const hasTextHeaders = wsHeaders.length >= 2 && wsHeaders.some((h) => /[a-zA-Z]/.test(h));
           const looksLikeData = wsRowCount >= 5 && hasTextHeaders;
-          return { name: ws.name, rowCount: wsRowCount, columnCount: wsHeaders.length, headers: wsHeaders, looksLikeData };
+          return { name: ws.name, rowCount: wsRowCount, columnCount: wsHeaders.length, headers: wsHeaders, looksLikeData, detectedHeaderRow: headerRowNum };
         });
 
         sheetNames = sheets.map((s) => s.name);
@@ -279,7 +294,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
           const previewWs = workbook.getWorksheet(previewSheet.name);
           if (previewWs) {
             previewWs.eachRow((row, rowNum) => {
-              if (rowNum === 1 || rows.length >= 5) return;
+              if (rowNum <= previewSheet.detectedHeaderRow || rows.length >= 5) return;
               const obj: Record<string, unknown> = {};
               previewSheet.headers.forEach((h, i) => { obj[h] = (row.values as unknown[])[i + 1] ?? null; });
               rows.push(obj);

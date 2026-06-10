@@ -45,7 +45,7 @@ function avatarColor(email: string): string {
 
 function formatDate(value: string | null | undefined): string {
   if (!value) return "Never";
-  try { return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }); }
+  try { return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }); }
   catch { return "Unknown"; }
 }
 
@@ -169,14 +169,14 @@ function InviteForm({ onCancel, onSuccess, onError }: InviteFormProps) {
 
   return (
     <div style={{
-      background: PRIMARY_BG,
-      border: `1px solid ${PRIMARY_BORDER}`,
+      background: "var(--brand-light, #ECFDF5)",
+      border: "1px solid var(--brand-border, #A7F3D0)",
       borderRadius: 12,
       padding: "20px 24px",
       marginBottom: 20,
     }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-        <strong style={{ fontSize: 14, color: "var(--text, #111827)" }}>Invite a new user</strong>
+        <strong style={{ fontSize: 14, color: "var(--text, #111827)", fontFamily: FONT }}>Invite a new user</strong>
         <button
           type="button"
           onClick={onCancel}

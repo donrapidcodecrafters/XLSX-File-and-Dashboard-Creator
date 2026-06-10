@@ -334,7 +334,11 @@ export async function ingestXlsxWorkbookSourceStream(options: IngestXlsxSourceSt
     // singleTable drives whether the source ID gets a sheet-name suffix.
     // When the user selected exactly one data sheet from a multi-sheet file, treat it as single-table
     // so the source ID matches the base (existing) source ID and updates it instead of creating a new one.
-    const singleTable = streamDataSheetSet ? streamDataSheetSet.size === 1 : sheetCount === 1;
+    // When options.sourceId is explicitly provided the user chose an existing source — always single-table
+    // so the ID never gets a sheet-name suffix that would create a new source instead of updating.
+    const singleTable = options.sourceId
+      ? true
+      : (streamDataSheetSet ? streamDataSheetSet.size === 1 : sheetCount === 1);
     const worksheetName = (worksheet as unknown as { name?: string }).name;
     const sheetName = String(worksheetName || `Sheet ${worksheetIndex + 1}`);
 

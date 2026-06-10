@@ -3352,6 +3352,7 @@ th {
 
 .import-review-type-select {
   flex-shrink: 0;
+  max-width: 180px;
   font-size: 0.8rem;
   padding: 4px 8px;
   border-radius: 8px;
@@ -3385,7 +3386,7 @@ th {
   padding: 14px;
   border-radius: 16px;
   border: 1px solid var(--line);
-  background: rgba(247, 248, 243, 0.92);
+  background: var(--surface, rgba(247, 248, 243, 0.92));
 }
 
 .import-review-sheet-skipped {
@@ -3414,7 +3415,7 @@ th {
   padding: 18px;
   border-radius: 18px;
   border: 1px solid var(--line);
-  background: rgba(247, 248, 243, 0.94);
+  background: var(--surface, rgba(247, 248, 243, 0.94));
 }
 
 .import-review-summary-grid {
@@ -3431,9 +3432,9 @@ th {
   align-items: start;
   min-height: 0;
   padding: 10px 12px;
-  border: 1px solid rgba(18, 47, 39, 0.12);
+  border: 1px solid var(--line);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.84);
+  background: var(--surface, rgba(255, 255, 255, 0.84));
 }
 
 .field-transfer-picker {
@@ -7968,6 +7969,20 @@ html.dark .import-review-type-select {
   background: #0F172A;
   border-color: #334155;
   color: #E2E8F0;
+}
+
+html.dark .import-review-report-card {
+  background: #1E293B;
+  border-color: #334155;
+}
+
+html.dark .import-review-field-option {
+  background: #0F172A;
+  border-color: #334155;
+}
+
+html.dark .import-review-hints .badge {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 /* Dark mode topbar nav */
