@@ -4693,7 +4693,6 @@ select {
 
 .dashboard-builder-widget-panel {
   width: 380px;
-  flex-shrink: 0;
   border-left: 1px solid var(--line);
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -4702,10 +4701,15 @@ select {
   display: grid;
   align-content: start;
   gap: 16px;
-  align-self: flex-start;
-  position: sticky;
+  position: fixed;
   top: 61px;
-  max-height: calc(100vh - 61px);
+  right: 0;
+  height: calc(100vh - 61px);
+  z-index: 10;
+}
+
+.dashboard-builder-shell:has(.dashboard-builder-widget-panel) .dashboard-builder-main {
+  margin-right: 380px;
 }
 
 .dashboard-builder-widget-panel .card {

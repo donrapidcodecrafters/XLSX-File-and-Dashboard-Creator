@@ -30,6 +30,7 @@ import {
   insertDashboardWidget,
   placeDashboardWidgetAtPosition as placeDashboardWidgetAtPositionInDefinition,
   moveDashboardWidgetByRow as moveDashboardWidgetByRowInDefinition,
+  getDashboardWidgetPlacements,
   moveDashboardWidgetByDirection as moveDashboardWidgetByDirectionInDefinition,
   moveDashboardWidgetToTab as moveDashboardWidgetToTabInDefinition,
   moveDashboardWidgetToEdge as moveDashboardWidgetToEdgeInDefinition,
@@ -2733,7 +2734,20 @@ export function StudioPage({
 
   function moveDashboardWidget(tabId: string, widgetId: string, direction: DashboardWidgetMoveDirection) {
     if (!activeDashboard) return;
-    writeObject(moveDashboardWidgetByDirectionInDefinition(activeDashboard, tabId, widgetId, direction));
+    const tab = activeDashboard.tabs.find((t) => t.id === tabId);
+    if (!tab) return;
+    const placements = getDashboardWidgetPlacements(tab);
+    const current = placements.find((p) => p.widgetId === widgetId);
+    if (!current) return;
+    const w = current.endCol - current.startCol + 1;
+    let newX = current.startCol;
+    let newY = current.startRow;
+    if (direction === "left") newX = Math.max(1, current.startCol - 1);
+    else if (direction === "right") newX = Math.min(13 - w, current.startCol + 1);
+    else if (direction === "up") newY = Math.max(1, current.startRow - 1);
+    else if (direction === "down") newY = current.startRow + 1;
+    if (newX === current.startCol && newY === current.startRow) return;
+    placeDashboardWidget(tabId, widgetId, { x: newX, y: newY });
   }
 
   function moveDashboardWidgetByRow(tabId: string, widgetId: string, direction: "up" | "down") {
