@@ -97,19 +97,25 @@ export async function registerReportConfigRoutes(app: FastifyInstance) {
       reply.code(404);
       return { message: "Config not found." };
     }
+    const objectId = String(body.object_id || "").trim();
+    const objectType = body.object_type === "dashboard" ? "dashboard" : "report";
     const result = await pgQuery<ReportConfigRow>(
       `UPDATE report_configs SET
-        enabled = $1,
-        cron_expression = $2,
-        time_zone = $3,
-        send_to = $4,
-        sendgrid_template_id = $5,
-        email_subject = $6,
-        email_body = $7,
+        object_id = COALESCE(NULLIF($1, ''), object_id),
+        object_type = $2,
+        enabled = $3,
+        cron_expression = $4,
+        time_zone = $5,
+        send_to = $6,
+        sendgrid_template_id = $7,
+        email_subject = $8,
+        email_body = $9,
         updated_at = now()
-      WHERE id = $8
+      WHERE id = $10
       RETURNING *`,
       [
+        objectId,
+        objectType,
         body.enabled === true,
         sanitizeCron(body.cron_expression),
         String(body.time_zone || "UTC").trim() || "UTC",

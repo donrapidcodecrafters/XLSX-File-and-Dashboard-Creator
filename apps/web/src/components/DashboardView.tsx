@@ -964,10 +964,12 @@ export function DashboardView({
                 {primaryWidget.status === "complete" ? (
                   <>
                     <div className="link-toolbar">
-                      <button className="ghost-button" disabled={currentPage <= 1 || pageLoading} onClick={() => { void changeWidgetPage(primaryWidget, currentPage - 1); }}>Previous</button>
+                      <button type="button" className="ghost-button" onClick={() => setFocusedWidgetId(primaryWidget.widgetId)}>Focus report</button>
+                      {currentPage > 1 ? <button className="ghost-button" disabled={pageLoading} onClick={() => { void changeWidgetPage(primaryWidget, currentPage - 1); }}>Previous</button> : null}
                       <span className="micro">Page {currentPage} of {totalPages} · {pagedResult.totalRows || 0} rows</span>
-                      <button className="ghost-button" disabled={!pagedResult.hasNextPage || pageLoading} onClick={() => { void changeWidgetPage(primaryWidget, currentPage + 1); }}>Next</button>
+                      {pagedResult.hasNextPage ? <button className="ghost-button" disabled={pageLoading} onClick={() => { void changeWidgetPage(primaryWidget, currentPage + 1); }}>Next</button> : null}
                     </div>
+                    <div className="report-table-scroll-wrap">
                     <ResizableDataTable
                       className="report-table-shell"
                       columns={primaryWidget.report.selectedFieldIds.map((fieldId) => ({
@@ -981,6 +983,7 @@ export function DashboardView({
                         )
                       }))}
                     />
+                    </div>
                   </>
                 ) : null}
                 {dashboardLoading && !pagedResult.rows.length ? <div className="empty">Loading…</div> : null}
@@ -1033,7 +1036,7 @@ export function DashboardView({
                   <strong>{widget.status === "failed" ? "Widget unavailable" : "Widget ready"}</strong>
                   <span>{widget.error || widget.message}</span>
                 </div>
-                {widget.status === "complete" && widget.widget.showSummary ? (
+                {widget.status === "complete" && (widget.widget.showSummary || isSummaryOnly) && summaryData.length > 0 ? (
                   <div className="widget-metrics">
                     {summaryData.map((item) => (
                       <div key={item.label} className="mini-stat">
@@ -1109,9 +1112,9 @@ export function DashboardView({
                 {widget.status === "complete" && (widgetRenderMode(widget.widget, widget.report) === "table" || widgetRenderMode(widget.widget, widget.report) === "timeline" || widgetRenderMode(widget.widget, widget.report) === "calendar" || widgetRenderMode(widget.widget, widget.report) === "kanban" || widget.widget.showDetails) ? (
                   <div className="compact-table-shell">
                     <div className="widget-table-toolbar">
-                      <button className="ghost-button" disabled={currentPage <= 1 || pageLoading} onClick={() => { void changeWidgetPage(widget, currentPage - 1); }}>Previous</button>
+                      {currentPage > 1 ? <button className="ghost-button" disabled={pageLoading} onClick={() => { void changeWidgetPage(widget, currentPage - 1); }}>Previous</button> : null}
                       <span className="micro">Page {currentPage} of {totalPages} · {pagedResult.totalRows || 0} rows</span>
-                      <button className="ghost-button" disabled={!pagedResult.hasNextPage || pageLoading} onClick={() => { void changeWidgetPage(widget, currentPage + 1); }}>Next</button>
+                      {pagedResult.hasNextPage ? <button className="ghost-button" disabled={pageLoading} onClick={() => { void changeWidgetPage(widget, currentPage + 1); }}>Next</button> : null}
                     </div>
                     {(() => {
                       const mode = widgetRenderMode(widget.widget, widget.report);
@@ -1200,7 +1203,11 @@ export function DashboardView({
         <div className="focus-overlay" role="dialog" aria-modal="true">
           <div className="focus-overlay-card">
             <div className="card-head">
-              <strong>{focusedWidget.widget.title || focusedWidget.report.name}</strong>
+              <strong>{(() => {
+                const base = focusedWidget.widget.title || focusedWidget.report.name;
+                const focusedIsSummaryOnly = resolveWidgetDisplayMode(focusedWidget.widget, focusedWidget.report.view.mode) === "summary" || (focusedWidget.widget.showSummary && !focusedWidget.widget.showDetails);
+                return focusedIsSummaryOnly ? `${base} - Summary` : base;
+              })()}</strong>
               <div className="link-toolbar">
                 {focusedWidget.report.sourceTableId ? (
                   <Link className="ghost-button" to={buildHostedRoute(`/report/${focusedWidget.report.id}`)} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>Open report</Link>
@@ -1208,7 +1215,7 @@ export function DashboardView({
                 <button className="ghost-button" onClick={() => setFocusedWidgetId("")}>Close</button>
               </div>
             </div>
-            {focusedWidget.widget.showSummary ? (
+            {(focusedWidget.widget.showSummary || resolveWidgetDisplayMode(focusedWidget.widget, focusedWidget.report.view.mode) === "summary") && focusedWidget.result.summary.length > 0 ? (
               <div className="widget-metrics">
                 {focusedWidget.result.summary.map((item) => (
                   <div key={item.label} className="mini-stat">
@@ -1272,22 +1279,35 @@ export function DashboardView({
                 </div>
               </div>
             ) : null}
-            {(widgetRenderMode(focusedWidget.widget, focusedWidget.report) === "table" || focusedWidget.widget.showDetails) ? (
-              <ResizableDataTable
-                className="focus-table-shell"
-                columns={focusedWidget.report.selectedFieldIds.slice(0, 8).map((fieldId) => ({
-                  key: fieldId,
-                  label: getFieldLabel(tables, focusedWidget.report, fieldId)
-                }))}
-                rows={focusedWidget.result.rows.slice(0, 20).map((row, index) => ({
-                  key: String(row.__recordId || index),
-                  cells: focusedWidget.report.selectedFieldIds.slice(0, 8).map((fieldId) => {
-                    const focusedWidgetTable = tables?.find((item) => item.id === focusedWidget.report.sourceTableId || item.quickbaseTableId === focusedWidget.report.sourceTableId);
-                    return focusedWidgetTable ? formatReportCellValue(focusedWidget.report, focusedWidgetTable, fieldId, row[fieldId]) : String(row[fieldId] ?? "");
-                  })
-                }))}
-              />
-            ) : null}
+            {(widgetRenderMode(focusedWidget.widget, focusedWidget.report) === "table" || focusedWidget.widget.showDetails) ? (() => {
+              const focusedPagedResult = widgetPageResults[focusedWidget.widgetId] || focusedWidget.result;
+              const focusedCurrentPage = widgetPages[focusedWidget.widgetId] || focusedPagedResult.page || 1;
+              const focusedTotalPages = focusedPagedResult.totalPages || 1;
+              const focusedPageLoading = widgetPageLoading[focusedWidget.widgetId];
+              const focusedWidgetTable = tables?.find((item) => item.id === focusedWidget.report.sourceTableId || item.quickbaseTableId === focusedWidget.report.sourceTableId);
+              return (
+                <>
+                  <div className="link-toolbar">
+                    {focusedCurrentPage > 1 ? <button className="ghost-button" disabled={focusedPageLoading} onClick={() => { void changeWidgetPage(focusedWidget, focusedCurrentPage - 1); }}>Previous</button> : null}
+                    <span className="micro">Page {focusedCurrentPage} of {focusedTotalPages} · {focusedPagedResult.totalRows || 0} rows</span>
+                    {focusedPagedResult.hasNextPage ? <button className="ghost-button" disabled={focusedPageLoading} onClick={() => { void changeWidgetPage(focusedWidget, focusedCurrentPage + 1); }}>Next</button> : null}
+                  </div>
+                  <ResizableDataTable
+                    className="focus-table-shell"
+                    columns={focusedWidget.report.selectedFieldIds.map((fieldId) => ({
+                      key: fieldId,
+                      label: getFieldLabel(tables, focusedWidget.report, fieldId)
+                    }))}
+                    rows={focusedPagedResult.rows.map((row, index) => ({
+                      key: String(row.__recordId || index),
+                      cells: focusedWidget.report.selectedFieldIds.map((fieldId) =>
+                        focusedWidgetTable ? formatReportCellValue(focusedWidget.report, focusedWidgetTable, fieldId, row[fieldId]) : String(row[fieldId] ?? "")
+                      )
+                    }))}
+                  />
+                </>
+              );
+            })() : null}
           </div>
         </div>
       ) : null}

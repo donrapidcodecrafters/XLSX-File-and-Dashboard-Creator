@@ -853,7 +853,7 @@ export function DataManagementPage({ canDelete = false, canImport = true }: Data
                         key={source.sourceId}
                         style={{
                           transition: "background 80ms",
-                          background: isSelected ? "#F0FDF9" : undefined,
+                          background: isSelected ? "var(--brand-light, #F0FDF9)" : undefined,
                         }}
                         onMouseEnter={(e) => {
                           if (!isSelected) (e.currentTarget as HTMLTableRowElement).style.background = "var(--surface-hover, #FAFAFA)";
