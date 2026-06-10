@@ -36,7 +36,8 @@ const FILTER_OPERATOR_LABELS: Record<FilterOperator, string> = {
   lte: "is at most",
   on: "is on",
   "on-or-after": "is on or after",
-  "on-or-before": "is on or before"
+  "on-or-before": "is on or before",
+  in: "is one of"
 };
 
 function safeSheetName(name: string, usedNames: Set<string>) {

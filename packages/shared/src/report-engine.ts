@@ -336,6 +336,11 @@ export function matchesFilter(row: DataRow, filter: FilterDefinition): boolean {
   const isBlank = candidates.length === 0 || candidates.every((value) => !String(value).trim());
   if (filter.operator === "blank") return isBlank;
   if (filter.operator === "not-blank") return !isBlank;
+  if (filter.operator === "in") {
+    const inValues = expected.split("|||").map((v) => normalizedFilterText(v)).filter(Boolean);
+    if (!inValues.length) return true;
+    return candidates.some((c) => inValues.includes(normalizedFilterText(c)));
+  }
   if (!usesFieldValue && !expected) return true;
   if (!usesFieldValue && DATE_TOKENS.has(expected)) {
     return matchesDateToken(raw, expected);
@@ -646,14 +651,19 @@ export function buildDashboardFilters(
       if (!mappedFieldId && filter.sourceTableId && reportSourceTableId && filter.sourceTableId !== reportSourceTableId) return false;
       return true;
     })
-    .map((filter) => ({
-      id: "runtime-" + filter.id,
-      fieldId: widget?.runtimeFilterMappings?.[filter.id] || filter.fieldId,
-      operator: filter.operator || "equals",
-      value: runtimeValues[filter.id] ?? filter.defaultValue ?? "",
-      valueSource: filter.valueSource || "literal",
-      compareFieldId: filter.compareFieldId || ""
-    }))
+    .map((filter) => {
+      const rawValue = runtimeValues[filter.id] ?? filter.defaultValue ?? "";
+      const isMultiValue = rawValue.includes("|||");
+      const operator = (isMultiValue ? "in" : (filter.operator || "equals")) as FilterDefinition["operator"];
+      return {
+        id: "runtime-" + filter.id,
+        fieldId: widget?.runtimeFilterMappings?.[filter.id] || filter.fieldId,
+        operator,
+        value: rawValue,
+        valueSource: filter.valueSource || "literal",
+        compareFieldId: filter.compareFieldId || ""
+      };
+    })
     .filter((filter) => filterHasValue(filter));
 }
 

@@ -134,6 +134,12 @@ async function request<T>(path: string, init?: RequestInit & { timeoutMs?: numbe
   return response.json() as Promise<T>;
 }
 
+export function fetchFieldValues(sourceId: string, fieldId: string) {
+  return request<{ values: string[] }>(
+    `/api/studio/sources/${encodeURIComponent(sourceId)}/field-values/${encodeURIComponent(fieldId)}`
+  );
+}
+
 export function fetchCatalog() {
   return request<{ app: { id: string; name: string }; objects: CatalogSummaryItem[] }>("/api/catalog");
 }

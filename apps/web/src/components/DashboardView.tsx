@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { buildDashboardFilters, formatReportCellValue, getDashboardWidgetLayoutStyle, getDashboardWidgetPlacements, getReportFieldLabel, resolveActiveDashboardTabId, type DashboardDefinition, type DashboardRunResult, type RefreshJobStatus, type ReportDefinition, type ReportRunResult, type TableDefinition } from "@studio/shared";
-import { createExportSaveTarget, fetchReportExportBundle, renderDashboard, runReportPage, type ExportSaveTarget } from "../lib/api";
+import { createExportSaveTarget, fetchFieldValues, fetchReportExportBundle, renderDashboard, runReportPage, type ExportSaveTarget } from "../lib/api";
 import { LinkToolbar } from "./LinkToolbar";
 import { ChartPreview } from "./ChartPreview";
 import { RefreshOverlay } from "./RefreshOverlay";
@@ -226,6 +226,7 @@ export function DashboardView({
     [defaults, initialRuntimeFilters]
   );
   const [runtimeFilters, setRuntimeFilters] = useState<Record<string, string>>(mergedDefaults);
+  const [filterOptions, setFilterOptions] = useState<Record<string, string[]>>({});
   const [tabResults, setTabResults] = useState<Record<string, DashboardRunResult["tabs"][number]>>({});
   const [tabLoading, setTabLoading] = useState<Record<string, boolean>>({});
   const [tabErrors, setTabErrors] = useState<Record<string, string>>({});
@@ -319,6 +320,22 @@ export function DashboardView({
 
   useEffect(() => {
     setRuntimeFilters(mergedDefaults);
+  }, [dashboard.id]);
+
+  useEffect(() => {
+    const textFilters = dashboard.runtimeFilters.filter(
+      (f) => f.fieldId && f.sourceTableId && (f.uiType === "single-select" || f.uiType === "multi-select" || f.uiType === "searchable-dropdown" || !f.uiType)
+    );
+    if (!textFilters.length) return;
+    void Promise.all(
+      textFilters.map((f) =>
+        fetchFieldValues(f.sourceTableId!, f.fieldId)
+          .then((res) => ({ id: f.id, values: res.values || [] }))
+          .catch(() => ({ id: f.id, values: [] }))
+      )
+    ).then((results) => {
+      setFilterOptions(Object.fromEntries(results.map((r) => [r.id, r.values])));
+    });
   }, [dashboard.id]);
 
   useEffect(() => {
@@ -753,30 +770,77 @@ export function DashboardView({
       ) : null}
 
       {dashboard.runtimeFilters.length ? (
-        <div className="card">
+        <div className="card dashboard-filter-panel">
           <div className="card-head">
             <strong>Filters</strong>
-            <span className="micro">Dashboard controls applied to the most recent refresh</span>
+            {Object.values(runtimeFilters).some((v) => v) ? (
+              <button type="button" className="ghost-button" onClick={() => setRuntimeFilters({})}>Clear all</button>
+            ) : null}
           </div>
-          <div className="filter-grid">
-            {dashboard.runtimeFilters.map((filter) => (
-              <label className="field" key={filter.id}>
-                <span>{filter.label}</span>
-                {filter.valueSource === "field" ? (
-                  <input value={`Uses ${filter.compareFieldId || "another field"}`} disabled />
-                ) : (
-                  <input
-                    value={runtimeFilters[filter.id] ?? ""}
-                    onChange={(event) =>
-                      setRuntimeFilters((current) => ({
-                        ...current,
-                        [filter.id]: event.target.value
-                      }))
-                    }
-                  />
-                )}
-              </label>
-            ))}
+          <div className="dashboard-live-filter-grid">
+            {[...dashboard.runtimeFilters]
+              .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0))
+              .map((filter) => {
+                const currentVal = runtimeFilters[filter.id] ?? "";
+                const selectedValues = currentVal ? currentVal.split("|||").filter(Boolean) : [];
+                const options = filterOptions[filter.id] || [];
+                const fieldType = tables?.find((t) => t.id === filter.sourceTableId)?.fields.find((f) => f.id === filter.fieldId)?.type || "text";
+                const isDate = fieldType === "date" || fieldType === "datetime";
+                const isNumber = fieldType === "number" || fieldType === "currency";
+                function toggleMultiValue(value: string) {
+                  setRuntimeFilters((current) => {
+                    const prev = (current[filter.id] || "").split("|||").filter(Boolean);
+                    const next = prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value];
+                    return { ...current, [filter.id]: next.join("|||") };
+                  });
+                }
+                return (
+                  <div className="dashboard-live-filter-field" key={filter.id}>
+                    <div className="dashboard-live-filter-label">
+                      <span>{filter.label}</span>
+                      {selectedValues.length ? (
+                        <button type="button" className="ghost-button micro" onClick={() => setRuntimeFilters((c) => ({ ...c, [filter.id]: "" }))}>Clear</button>
+                      ) : null}
+                    </div>
+                    {isDate ? (
+                      <input
+                        type="date"
+                        className="dashboard-live-filter-input"
+                        value={currentVal}
+                        onChange={(e) => setRuntimeFilters((c) => ({ ...c, [filter.id]: e.target.value }))}
+                      />
+                    ) : isNumber ? (
+                      <input
+                        type="number"
+                        className="dashboard-live-filter-input"
+                        value={currentVal}
+                        placeholder="Enter value"
+                        onChange={(e) => setRuntimeFilters((c) => ({ ...c, [filter.id]: e.target.value }))}
+                      />
+                    ) : options.length ? (
+                      <div className="dashboard-live-filter-options">
+                        {options.map((opt) => (
+                          <button
+                            key={opt}
+                            type="button"
+                            className={`dashboard-filter-option-chip${selectedValues.includes(opt) ? " selected" : ""}`}
+                            onClick={() => toggleMultiValue(opt)}
+                          >
+                            {opt}
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <input
+                        className="dashboard-live-filter-input"
+                        value={currentVal}
+                        placeholder="Type to filter…"
+                        onChange={(e) => setRuntimeFilters((c) => ({ ...c, [filter.id]: e.target.value }))}
+                      />
+                    )}
+                  </div>
+                );
+              })}
           </div>
         </div>
       ) : null}
@@ -950,10 +1014,14 @@ export function DashboardView({
                   .map((option) => option.filterId)
                   .filter((filterId) => String(runtimeFilters[filterId] || "").trim())
               ));
+              const resolvedDisplayMode = resolveWidgetDisplayMode(widget.widget, widget.report.view.mode);
+              const isSummaryOnly = resolvedDisplayMode === "summary" || (widget.widget.showSummary && !widget.widget.showDetails);
+              const widgetTitle = widget.widget.title || widget.report.name;
+              const displayTitle = isSummaryOnly ? `${widgetTitle} - Summary` : widgetTitle;
               return (
-                <article className="widget-card dashboard-layout-item" key={widget.widgetId} style={getDashboardWidgetLayoutStyle(widget.widget, activeTabLayout.get(widget.widgetId) || null)}>
+              <article className="widget-card dashboard-layout-item" key={widget.widgetId} style={getDashboardWidgetLayoutStyle(widget.widget, activeTabLayout.get(widget.widgetId) || null)}>
                 <div className="widget-head">
-                  <strong>{widget.widget.title || widget.report.name}</strong>
+                  <strong>{displayTitle}</strong>
                   <div className="widget-preview-controls">
                     <button type="button" className="widget-action-button" onClick={() => setFocusedWidgetId(widget.widgetId)}>Focus card</button>
                     {widget.report.sourceTableId ? (
