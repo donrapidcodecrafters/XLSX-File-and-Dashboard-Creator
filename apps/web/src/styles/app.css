@@ -1918,6 +1918,7 @@ input {
 .report-table-shell {
   max-height: clamp(320px, 56vh, 760px);
   overflow-x: auto;
+  overflow-y: auto;
 }
 
 .focus-table-shell {

@@ -661,85 +661,106 @@ export async function exportDashboardNativeChartWorkbook(
   const usedNames = new Set<string>();
   workbook.creator = "Cadence Reporting Portal";
   workbook.created = new Date();
-  const overview = workbook.addWorksheet(safeSheetName(`${dashboard.name} Native`, usedNames));
-  overview.columns = [{ width: 28 }, { width: 28 }, { width: 28 }, { width: 18 }, { width: 24 }];
+
+  // Overview sheet: shows summary metrics and charts for every widget
+  const overview = workbook.addWorksheet(safeSheetName(`${dashboard.name} Overview`, usedNames));
+  overview.columns = Array.from({ length: 12 }, () => ({ width: 18 }));
   overview.getCell("A1").value = dashboard.name;
   overview.getCell("A1").font = { bold: true, size: 18 };
-  overview.getCell("A2").value = dashboard.description || "Dashboard export with native Excel charts.";
-  overview.mergeCells("A2:E2");
-  overview.getRow(4).values = ["Tab", "Card", "Report", "Rows", "Native chart"];
-  overview.getRow(4).font = { bold: true };
+  overview.getCell("A2").value = dashboard.description || "";
+  overview.mergeCells("A2:L2");
 
-  const dataSheetName = safeSheetName("_native_chart_data", usedNames);
+  const dataSheetName = safeSheetName("_chart_src", usedNames);
   const dataSheet = workbook.addWorksheet(dataSheetName);
   dataSheet.state = "hidden";
   dataSheet.columns = Array.from({ length: 24 }, () => ({ width: 22 }));
   let dataRow = 1;
   let chartId = 1;
-  let overviewRow = 5;
   const chartsBySheet = new Map<string, NativeChartPlacement[]>();
 
+  // Track overview row position
+  let overviewRow = 4;
+
   rendered.tabs.forEach((tab) => {
-    const dashboardTab = dashboard.tabs.find((item) => item.id === tab.id);
+    // Write tab header on overview
+    overview.getCell(overviewRow, 1).value = tab.name;
+    overview.getCell(overviewRow, 1).font = { bold: true, size: 13 };
+    overviewRow += 1;
+
+    // Per-tab sheet: sequential layout, no placement math
     const sheet = workbook.addWorksheet(safeSheetName(tab.name, usedNames));
-    sheet.columns = Array.from({ length: 12 }, () => ({ width: 14 }));
+    sheet.columns = Array.from({ length: 12 }, () => ({ width: 18 }));
     sheet.getCell("A1").value = tab.name;
     sheet.getCell("A1").font = { bold: true, size: 18 };
     sheet.getCell("A2").value = dashboard.name;
-    const placements = new Map(
-      getDashboardWidgetPlacements(dashboardTab).map((placement) => [placement.widgetId, placement])
-    );
+
     const sheetCharts: NativeChartPlacement[] = [];
+    let currentRow = 4; // sequential row cursor per tab sheet
+
     tab.widgets.forEach((widget) => {
-      const placement = placements.get(widget.widgetId);
-      if (!placement) return;
       const exportResult = resolveWidgetResult(widget, exportResultsByWidgetId);
       const table = options.tablesById?.[widget.report.sourceTableId];
-      const startCol = placement.startCol;
-      const endCol = placement.endCol;
-      const startRow = ((placement.startRow - 1) * 8) + 4;
-      const endRow = Math.max(startRow + 18, startRow + placement.height * 8 - 1);
-      sheet.mergeCells(startRow, startCol, startRow, endCol);
-      sheet.getCell(startRow, startCol).value = widget.widget.title || widget.report.name;
-      sheet.getCell(startRow, startCol).font = { bold: true, size: 13 };
+      const widgetTitle = widget.report.name || widget.widget.title;
       const widgetDisplayMode = resolveWidgetDisplayMode(widget.widget, widget.report.view.mode);
       const isSummaryMode = widgetDisplayMode === "summary";
-      sheet.mergeCells(startRow + 1, startCol, startRow + 1, endCol);
-      sheet.getCell(startRow + 1, startCol).value = isSummaryMode
-        ? (exportResult.summary.length ? `${exportResult.summary.length} metric${exportResult.summary.length !== 1 ? "s" : ""}` : "Summary")
-        : `${exportResult.totalRows.toLocaleString()} rows`;
-      sheet.getCell(startRow + 1, startCol).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEAF5F1" } };
-      let contentRow = startRow + 3;
+
+      // --- Write to per-tab sheet (sequential) ---
+      sheet.getCell(currentRow, 1).value = widgetTitle;
+      sheet.getCell(currentRow, 1).font = { bold: true, size: 13 };
+      currentRow += 1;
+
+      const contentStartRow = currentRow;
+
       if ((widget.widget.showSummary || isSummaryMode) && exportResult.summary.length) {
-        contentRow = writeSummarySheet(sheet, exportResult, contentRow, startCol, endCol);
+        currentRow = writeSummarySheet(sheet, exportResult, currentRow, 1, 12);
       }
       if (isSummaryMode && exportResult.crosstab) {
-        contentRow = writeCrosstabBlock(sheet, exportResult.crosstab, contentRow, startCol);
+        currentRow = writeCrosstabBlock(sheet, exportResult.crosstab, currentRow, 1);
       }
+
       const hasChart = widget.status === "complete" && widgetShowsChart(widget.widget, widget.report) && exportResult.chartData.length > 0;
       if (hasChart) {
+        const chartEndRow = currentRow + 22;
         const written = writeHiddenChartData(dataSheet, dataSheetName, dataRow, widget.report, exportResult, table, chartId);
         dataRow = written.nextRow;
         sheetCharts.push({
           chart: written.source,
-          fromCol: startCol - 1,
-          fromRow: contentRow - 1,
-          toCol: endCol,
-          toRow: endRow
+          fromCol: 0,
+          fromRow: contentStartRow - 1,
+          toCol: 11,
+          toRow: chartEndRow
         });
+        currentRow = chartEndRow + 1;
         chartId += 1;
       } else if (widget.status === "complete" && widgetShowsRows(widget.widget, widget.report) && exportResult.rows.length) {
-        writeRowsSheet(sheet, widget.report, table, exportResult, contentRow, startCol);
-      } else if (!isSummaryMode && !exportResult.summary.length) {
-        sheet.getCell(contentRow, startCol).value = widget.error || widget.message || "No data available.";
+        currentRow = writeRowsSheet(sheet, widget.report, table, exportResult, currentRow, 1);
       }
-      overview.getCell(overviewRow, 1).value = tab.name;
-      overview.getCell(overviewRow, 2).value = widget.widget.title || widget.report.name;
-      overview.getCell(overviewRow, 3).value = widget.report.name;
-      overview.getCell(overviewRow, 4).value = exportResult.totalRows;
-      overview.getCell(overviewRow, 5).value = hasChart ? "Yes" : "No";
+
+      currentRow += 2; // small gap between widgets
+
+      // --- Write to overview sheet ---
+      overview.getCell(overviewRow, 1).value = widgetTitle;
+      overview.getCell(overviewRow, 1).font = { bold: false };
       overviewRow += 1;
+      if ((widget.widget.showSummary || isSummaryMode) && exportResult.summary.length) {
+        let col = 2;
+        exportResult.summary.forEach((item) => {
+          if (col > 12) return;
+          overview.getCell(overviewRow, col).value = item.value;
+          overview.getCell(overviewRow, col).font = { bold: true, size: 13 };
+          overview.getCell(overviewRow + 1, col).value = item.label;
+          col += 2;
+        });
+        overviewRow += 3;
+      } else if (isSummaryMode && exportResult.crosstab) {
+        overviewRow = writeCrosstabBlock(overview, exportResult.crosstab, overviewRow, 2);
+        overviewRow += 1;
+      } else {
+        overviewRow += 1;
+      }
     });
+
+    overviewRow += 1; // gap between tabs on overview
     chartsBySheet.set(sheet.name, sheetCharts);
   });
 
@@ -748,8 +769,8 @@ export async function exportDashboardNativeChartWorkbook(
   return injectNativeCharts(blob, chartsBySheet);
 }
 
-export function buildNativeDashboardExportFilename(name: string) {
-  return `${safeFileName(name)} native charts dev ${buildTimestamp()}.xlsx`;
+export function buildDashboardExportFilename(name: string) {
+  return `${safeFileName(name)} ${buildTimestamp()}.xlsx`;
 }
 
 export async function exportReportNativeChartWorkbook(

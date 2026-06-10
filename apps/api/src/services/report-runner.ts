@@ -1036,7 +1036,12 @@ async function executeDurableReport(
   const decimalPlaces = getReportDecimalPlaces(report);
   const crosstab: CrosstabResult | undefined = crosstabGroups
     ? (() => {
-        const sortedKeys = Array.from(crosstabGroups.keys()).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+        const sortedKeys = Array.from(crosstabGroups.keys()).sort((a, b) => {
+          const numA = parseInt(a, 10);
+          const numB = parseInt(b, 10);
+          if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+          return a.localeCompare(b, undefined, { numeric: true });
+        });
         const columns = [...sortedKeys, "Grand Total"];
         const grandAccum = finalizeMetricAccumulator(summaryAccumulator, decimalPlaces);
         const rows = metricSet.map((metric, i) => {

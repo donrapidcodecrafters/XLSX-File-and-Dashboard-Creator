@@ -569,10 +569,7 @@ export function DashboardView({
 
   async function beginNativeChartExport() {
     if (localExporting || nativeChartExporting) return;
-    const filename = `${String(dashboard.name || "dashboard")
-      .replace(/[\\/:*?"<>|]+/g, " ")
-      .replace(/\s+/g, " ")
-      .trim() || "dashboard"} native charts dev ${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19).replace("T", "_")}.xlsx`;
+    const filename = `${String(dashboard.name || "dashboard").replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim() || "dashboard"} ${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19).replace("T", "_")}.xlsx`;
     setNativeChartExporting(true);
     setExportError("");
     setPreparedExport(null);
@@ -765,7 +762,7 @@ export function DashboardView({
           <ul className="flat-list import-review-list">
             {activeTabResult.widgets
               .filter((widget) => widget.status === "failed")
-              .map((widget) => `${widget.widget.title || widget.report.name}: ${widget.error || widget.message}`)
+              .map((widget) => `${widget.report.name || widget.widget.title}: ${widget.error || widget.message}`)
               .map((warning) => <li key={warning}>{warning}</li>)}
           </ul>
         </div>
@@ -910,7 +907,7 @@ export function DashboardView({
                   const resolvedDisplayMode = resolveWidgetDisplayMode(widget.widget, widget.report.view.mode);
                   const isSummaryOnly = resolvedDisplayMode === "summary";
                   const showsTable = (resolvedDisplayMode === "table" || widgetRenderMode(widget.widget, widget.report) === "timeline" || widgetRenderMode(widget.widget, widget.report) === "calendar" || widgetRenderMode(widget.widget, widget.report) === "kanban" || widget.widget.showDetails) && !isSummaryOnly;
-                  const widgetTitle = widget.widget.title || widget.report.name;
+                  const widgetTitle = widget.report.name || widget.widget.title;
                   return (
                     <div key={widget.widgetId} className="tab-widget-section">
                       <div className="tab-widget-section-head">
@@ -1046,8 +1043,8 @@ export function DashboardView({
               ));
               const resolvedDisplayMode = resolveWidgetDisplayMode(widget.widget, widget.report.view.mode);
               const isSummaryOnly = resolvedDisplayMode === "summary" || (widget.widget.showSummary && !widget.widget.showDetails);
-              const widgetTitle = widget.widget.title || widget.report.name;
-              const displayTitle = widgetTitle;
+              const widgetTitle = widget.report.name || widget.widget.title;
+              const displayTitle = isSummaryOnly ? `${widgetTitle} - Summary` : widgetTitle;
               return (
               <article className="widget-card dashboard-layout-item" key={widget.widgetId} style={getDashboardWidgetLayoutStyle(widget.widget, activeTabLayout.get(widget.widgetId) || null)}>
                 <div className="widget-head">
