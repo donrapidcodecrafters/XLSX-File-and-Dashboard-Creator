@@ -2,7 +2,7 @@ import type { FastifyBaseLogger } from "fastify";
 import type { DataRow, RefreshJobStatus, RefreshScheduleConfig, ReportDefinition, StudioDocument, TableDefinition } from "@studio/shared";
 import { loadQuickbaseSchema } from "./quickbase-schema.js";
 import { convertQuickbaseSchemaToTables, fetchQuickbaseSavedReportPage, fetchQuickbaseTablePage, quickbaseFetchTableFields } from "./quickbase-storage.js";
-import { replaceSourceRecords } from "./eav-record-store.js";
+import { replaceSourceRecords, replaceSourceRecordsFromBatches } from "./eav-record-store.js";
 import { sendSystemNotification } from "./notification-service.js";
 import { invalidateSourceCaches } from "./report-runner.js";
 import { studioStore } from "./studio-store.js";
@@ -53,6 +53,110 @@ async function persistQuickbaseRowsToEnterpriseStore(
       ...metadata
     }
   });
+}
+
+// Stream QB records page-by-page directly into Postgres — never accumulates all rows in memory.
+// Returns total row count. Progress callback receives (rowsWritten, estimatedTotal, message).
+async function streamQuickbaseTableToPostgres(
+  document: StudioDocument,
+  table: TableDefinition,
+  metadata: Record<string, unknown>,
+  onProgress: (rowsWritten: number, estimatedTotal: number | null, message: string) => void,
+  options: { activeJobId?: string } = {}
+): Promise<number> {
+  const quickbase = getQuickbaseConfigForTable(document, table);
+  const savedReportId = getSavedReportIdForTable(document, table);
+  const profileIds = table.quickbaseProfileId ? [table.quickbaseProfileId] : [];
+  const PAGE_SIZE = 1000;
+
+  const result = await replaceSourceRecordsFromBatches(
+    {
+      sourceId: table.id,
+      sourceName: table.name || table.quickbaseTableId || table.id,
+      sourceType: "quickbase",
+      quickbaseProfileId: table.quickbaseProfileId || "",
+      quickbaseTableId: getQuickbaseTableId(table),
+      quickbaseReportId: savedReportId,
+      keyFieldId: getKeyFieldIdForTable(document, table),
+      metadata: { quickbaseAppId: table.quickbaseAppId || "", ...metadata }
+    },
+    async (writer) => {
+      let totalRowsHint: number | null = null;
+      let rowsWritten = 0;
+      let fields = table.fields ?? [];
+
+      if (savedReportId) {
+        // Saved-report path — single pass, pages are already deduplicated by QB.
+        let skip = 0;
+        let previousPageSignature = "";
+        while (true) {
+          assertRefreshNotCancelled(options.activeJobId || "", profileIds);
+          const page = await fetchQuickbaseSavedReportPage(quickbase, getQuickbaseTableId(table), savedReportId, { top: PAGE_SIZE, skip });
+          if (!page.rows.length && skip === 0) throw new Error(`QB report ${savedReportId} returned 0 rows for ${table.name}.`);
+          if (!page.rows.length) break;
+          if (typeof page.totalRecords === "number" && page.totalRecords > 0) totalRowsHint = page.totalRecords;
+          await writer.appendRows(page.rows);
+          rowsWritten += page.rows.length;
+          const msg = totalRowsHint
+            ? `Syncing ${table.name}: ${rowsWritten.toLocaleString()} of ${totalRowsHint.toLocaleString()} rows`
+            : `Syncing ${table.name}: ${rowsWritten.toLocaleString()} rows`;
+          onProgress(rowsWritten, totalRowsHint, msg);
+          const sig = page.rows.map((r) => String(r.__recordId || "")).join(",");
+          if (page.rows.length < PAGE_SIZE) break;
+          if (sig === previousPageSignature) throw new Error(`Data sync stalled on the same page for ${table.name}.`);
+          previousPageSignature = sig;
+          skip += page.rows.length;
+        }
+      } else {
+        // All-fields path — must merge across field chunks (same records, different fields).
+        const qbTableId = getQuickbaseTableId(table);
+        if (!fields.length) {
+          try {
+            const fetched = await quickbaseFetchTableFields(quickbase, qbTableId);
+            if (fetched.length) { fields = fetched; table.fields = fetched; }
+          } catch { /* ignore, proceed with empty */ }
+        }
+        if (!fields.length) return { fields, rowCount: 0 };
+        // For multi-chunk path we must still merge in-memory per-page across chunks.
+        // Use a Map but only keep one page worth of rows at a time per chunk, merging into final batch.
+        const fieldChunks = chunk(fields.map((f) => f.id).filter(Boolean), 30);
+        const merged = new Map<string, DataRow>();
+        for (const fieldChunk of fieldChunks) {
+          let skip = 0;
+          while (true) {
+            assertRefreshNotCancelled(options.activeJobId || "", profileIds);
+            const page = await fetchQuickbaseTablePage(quickbase, qbTableId, fieldChunk, { top: PAGE_SIZE, skip });
+            if (!page.rows.length) break;
+            if (typeof page.totalRecords === "number" && page.totalRecords > 0) totalRowsHint = page.totalRecords;
+            for (const row of page.rows) {
+              const id = String(row.__recordId || "");
+              const existing = merged.get(id) || { __recordId: id };
+              Object.assign(existing, row);
+              merged.set(id, existing);
+            }
+            if (page.rows.length < PAGE_SIZE) break;
+            skip += page.rows.length;
+            // Flush merged rows to Postgres in batches as we accumulate, to cap memory.
+            if (merged.size >= 5000) {
+              const batch = Array.from(merged.values());
+              await writer.appendRows(batch);
+              rowsWritten += batch.length;
+              merged.clear();
+              onProgress(rowsWritten, totalRowsHint, `Syncing ${table.name}: ${rowsWritten.toLocaleString()} rows`);
+            }
+          }
+        }
+        if (merged.size > 0) {
+          const batch = Array.from(merged.values());
+          await writer.appendRows(batch);
+          rowsWritten += batch.length;
+          merged.clear();
+        }
+      }
+      return { fields, rowCount: rowsWritten };
+    }
+  );
+  return result.rowCount;
 }
 
 function getUsedTableIds(document: StudioDocument) {
@@ -1126,30 +1230,29 @@ export async function refreshAllCachedDataWithProgress(
         rowCount: totalRows,
         estimatedSecondsRemaining
       });
-      const rows = await fetchAllTableRows(nextDocument, table, (tableProgress) => {
-        const elapsedSinceRefreshStartSeconds = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
-        const progress = estimateRefreshProgress(index, totalTables, tableProgress, totalRows, elapsedSinceRefreshStartSeconds);
-        updateDocumentProgress(progress.progress, tableProgress.message, {
-          tableCount: tableIds.length,
-          rowCount: progress.rowCount,
-          estimatedSecondsRemaining: progress.estimatedSecondsRemaining
-        });
-      }, { activeJobId });
-      nextDocument.bundle.data[tableId] = rows;
-      // QB fetch is done — now writing to Postgres. Progress and ETA are unknown during this phase.
-      updateDocumentProgress(5 + Math.round(((index + 0.97) / totalTables) * 80), `Writing ${rows.length.toLocaleString()} rows to database…`, {
-        tableCount: tableIds.length,
-        rowCount: totalRows + rows.length
-        // estimatedSecondsRemaining intentionally omitted — DB write duration is unknown
-      });
-      await persistQuickbaseRowsToEnterpriseStore(nextDocument, table, rows, {
-        trigger: "refresh-all-progress",
-        reason,
-        profileId,
-        activeJobId
-      });
-      studioStore.touchCacheEntry(tableId, rows.length);
-      totalRows += rows.length;
+      // Stream QB→Postgres one page at a time — no full-table accumulation in memory.
+      const tableRowCount = await streamQuickbaseTableToPostgres(
+        nextDocument,
+        table,
+        { trigger: "refresh-all-progress", reason, profileId, activeJobId },
+        (rowsWritten, estimatedTotal, msg) => {
+          const tableSliceStart = 5 + Math.round((index / totalTables) * 80);
+          const tableSliceEnd = 5 + Math.round(((index + 1) / totalTables) * 80);
+          const withinTable = estimatedTotal && estimatedTotal > 0
+            ? Math.min(0.99, rowsWritten / estimatedTotal)
+            : 0.5;
+          const progress = Math.round(tableSliceStart + withinTable * (tableSliceEnd - tableSliceStart));
+          updateDocumentProgress(progress, msg, {
+            tableCount: tableIds.length,
+            rowCount: totalRows + rowsWritten
+          });
+        },
+        { activeJobId }
+      );
+      // Data is in Postgres — don't hold it in memory.
+      nextDocument.bundle.data[tableId] = [];
+      studioStore.touchCacheEntry(tableId, tableRowCount);
+      totalRows += tableRowCount;
       const completedTables = index + 1;
       const elapsedAfterTable = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
       const remainingTables = tableIds.length - completedTables;
@@ -1190,7 +1293,7 @@ export async function refreshAllCachedDataWithProgress(
         status.lastSuccessAt = nextDocument.sync.refreshStatus.lastSuccessAt;
         status.lastError = "";
         status.cachedTableIds = tableIds.filter((tableId) => getTable(nextDocument, tableId)?.quickbaseProfileId === profile.id);
-        status.cachedRowCount = status.cachedTableIds.reduce((sum, tableId) => sum + (nextDocument.bundle.data[tableId]?.length || 0), 0);
+        status.cachedRowCount = totalRows;
       });
     });
     studioStore.touchCacheEntriesFromDocument(nextDocument, tableIds, nextDocument.sync.refreshStatus.lastSuccessAt);
@@ -1366,23 +1469,27 @@ export async function refreshObjectCachedDataWithProgress(
         rowCount: totalRows,
         estimatedSecondsRemaining
       });
-      const rows = await fetchAllTableRows(nextDocument, table, (tableProgress) => {
-        const elapsedSinceRefreshStartSeconds = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
-        const progress = estimateRefreshProgress(index, totalTables, tableProgress, totalRows, elapsedSinceRefreshStartSeconds);
-        updateDocumentProgress(progress.progress, tableProgress.message, {
-          tableCount: tableIds.length,
-          rowCount: progress.rowCount,
-          estimatedSecondsRemaining: progress.estimatedSecondsRemaining
-        });
-      }, { objectId, activeJobId });
-      nextDocument.bundle.data[tableId] = rows;
-      await persistQuickbaseRowsToEnterpriseStore(nextDocument, table, rows, {
-        trigger: "refresh-object-progress",
-        objectId,
-        activeJobId
-      });
-      studioStore.touchCacheEntry(tableId, rows.length);
-      totalRows += rows.length;
+      const tableRowCount = await streamQuickbaseTableToPostgres(
+        nextDocument,
+        table,
+        { trigger: "refresh-object-progress", objectId, activeJobId },
+        (rowsWritten, estimatedTotal, msg) => {
+          const tableSliceStart = 5 + Math.round((index / totalTables) * 80);
+          const tableSliceEnd = 5 + Math.round(((index + 1) / totalTables) * 80);
+          const withinTable = estimatedTotal && estimatedTotal > 0
+            ? Math.min(0.99, rowsWritten / estimatedTotal)
+            : 0.5;
+          const progress = Math.round(tableSliceStart + withinTable * (tableSliceEnd - tableSliceStart));
+          updateDocumentProgress(progress, msg, {
+            tableCount: tableIds.length,
+            rowCount: totalRows + rowsWritten
+          });
+        },
+        { activeJobId }
+      );
+      nextDocument.bundle.data[tableId] = [];
+      studioStore.touchCacheEntry(tableId, tableRowCount);
+      totalRows += tableRowCount;
       const completedTables = index + 1;
       const elapsedAfterTable = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
       const remainingTables = tableIds.length - completedTables;
@@ -1410,7 +1517,7 @@ export async function refreshObjectCachedDataWithProgress(
       ...(nextDocument.sync.refreshStatus.cachedTableIds || []),
       ...tableIds
     ]));
-    nextDocument.sync.refreshStatus.cachedRowCount = Object.values(nextDocument.bundle.data || {}).reduce((sum, rows) => sum + rows.length, 0);
+    nextDocument.sync.refreshStatus.cachedRowCount = totalRows;
 
     affectedProfiles.forEach((profileId) => {
       syncProfileRefreshStatus(nextDocument, profileId, (status) => {
@@ -1425,7 +1532,7 @@ export async function refreshObjectCachedDataWithProgress(
         status.lastSuccessAt = nextDocument.sync.refreshStatus.lastSuccessAt;
         status.lastError = "";
         status.cachedTableIds = Array.from(new Set([...(status.cachedTableIds || []), ...tableIds.filter((tableId) => getTable(nextDocument, tableId)?.quickbaseProfileId === profileId)]));
-        status.cachedRowCount = status.cachedTableIds.reduce((sum, tableId) => sum + (nextDocument.bundle.data[tableId]?.length || 0), 0);
+        status.cachedRowCount = totalRows;
       });
     });
 
