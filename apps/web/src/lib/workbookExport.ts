@@ -1652,25 +1652,37 @@ function layoutDashboardWidgets(
   const placementsById = new Map(
     getDashboardWidgetPlacements(dashboardTab).map((placement) => [placement.widgetId, placement])
   );
-  return widgets
+
+  // Build ordered list — sort by grid position so sequential layout matches visual order
+  const ordered = widgets
     .map((widget) => {
       const placement = placementsById.get(widget.widgetId);
-      if (!placement) return null;
-      return {
-        widget,
-        startCol: placement.startCol,
-        endCol: placement.endCol,
-        startRow: ((placement.startRow - 1) * 7) + startRowOffset,
-        endRow: (((placement.endRow - placement.startRow + 1) * 7) + ((placement.startRow - 1) * 7)) - 1 + startRowOffset
-      };
+      return placement ? { widget, placement } : null;
     })
     .filter(Boolean) as Array<{
       widget: DashboardRunResult["tabs"][number]["widgets"][number];
-      startCol: number;
-      endCol: number;
-      startRow: number;
-      endRow: number;
+      placement: ReturnType<typeof getDashboardWidgetPlacements>[number];
     }>;
+  ordered.sort((a, b) => {
+    if (a.placement.startRow !== b.placement.startRow) return a.placement.startRow - b.placement.startRow;
+    return a.placement.startCol - b.placement.startCol;
+  });
+
+  // Write widgets sequentially — ignore stored y values entirely so corrupted large y values
+  // don't produce thousands of empty rows in the exported workbook.
+  let currentRow = startRowOffset;
+  return ordered.map(({ widget, placement }) => {
+    const startRow = currentRow;
+    const endRow = startRow + (placement.height * 7) - 1;
+    currentRow = endRow + 2;
+    return {
+      widget,
+      startCol: placement.startCol,
+      endCol: placement.endCol,
+      startRow,
+      endRow,
+    };
+  });
 }
 
 function writeWidgetTitle(sheet: any, row: number, startCol: number, endCol: number, title: string, subtitle: string) {

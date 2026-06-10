@@ -56,7 +56,7 @@ export function clampDashboardWidgetX(value: number, width = 1) {
 }
 
 export function clampDashboardWidgetY(value: number) {
-  return Math.max(1, Math.round(value || 1));
+  return Math.max(1, Math.min(200, Math.round(value || 1)));
 }
 
 export function resolveDashboardWidgetDisplayMode(widget: WidgetDefinition) {

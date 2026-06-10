@@ -3352,8 +3352,6 @@ th {
 }
 
 .import-review-sheet-toggle input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
   cursor: pointer;
 }
 
@@ -4346,6 +4344,12 @@ th {
   background: rgba(255, 255, 255, 0.96);
   box-shadow: 0 10px 24px rgba(22, 39, 31, 0.08);
   backdrop-filter: blur(8px);
+}
+
+html.dark .import-builder-identity {
+  background: rgba(30, 41, 59, 0.96);
+  border-color: rgba(148, 163, 184, 0.2);
+  color: #E2E8F0;
 }
 
 .import-builder-identity strong {
