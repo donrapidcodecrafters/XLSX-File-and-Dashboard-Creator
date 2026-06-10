@@ -1466,31 +1466,24 @@ export function App() {
               {userMenuOpen && (
                 <div className="topbar-user-dropdown">
                   <button className="topbar-dropdown-item" onClick={() => { setShowUserSettings(true); setUserMenuOpen(false); }}>
-                    <span className="topbar-dropdown-icon">⚙</span> Account settings
+                    Account settings
                   </button>
-                  <button
-                    className="topbar-dropdown-item"
-                    onClick={() => { setIsDark((d) => !d); setUserMenuOpen(false); }}
-                  >
-                    <span className="topbar-dropdown-icon">{isDark ? "☀" : "🌙"}</span>
+                  <button className="topbar-dropdown-item" onClick={() => { setIsDark((d) => !d); setUserMenuOpen(false); }}>
                     {isDark ? "Light mode" : "Dark mode"}
                   </button>
                   {!helpRoute ? (
                     <Link className="topbar-dropdown-item" to={buildHostedRoute("/help")} onClick={() => setUserMenuOpen(false)}>
-                      <span className="topbar-dropdown-icon">?</span> Help guide
+                      Help guide
                     </Link>
                   ) : null}
                   {helpdeskTicketUrl ? (
-                    <button
-                      className="topbar-dropdown-item"
-                      onClick={() => { openHelpdeskTicket(); setUserMenuOpen(false); }}
-                    >
-                      <span className="topbar-dropdown-icon">🎫</span> Help Ticket
+                    <button className="topbar-dropdown-item" onClick={() => { openHelpdeskTicket(); setUserMenuOpen(false); }}>
+                      Help ticket
                     </button>
                   ) : null}
                   {isAdminOrDev ? (
                     <NavLink className="topbar-dropdown-item" to={buildHostedRoute("/users")} onClick={() => setUserMenuOpen(false)}>
-                      <span className="topbar-dropdown-icon">👥</span> Users
+                      Users
                     </NavLink>
                   ) : null}
                   <div className="topbar-dropdown-divider" />
@@ -1498,7 +1491,7 @@ export function App() {
                     className="topbar-dropdown-item topbar-dropdown-danger"
                     onClick={() => { void logoutSession().finally(() => setAuthState("unauthenticated")); }}
                   >
-                    <span className="topbar-dropdown-icon">→</span> Sign out
+                    Sign out
                   </button>
                 </div>
               )}

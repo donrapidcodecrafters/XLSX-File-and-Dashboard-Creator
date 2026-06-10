@@ -369,8 +369,8 @@ input {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
-  box-shadow: var(--shadow-lg);
-  min-width: 190px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  min-width: 180px;
   z-index: 200;
   overflow: hidden;
   display: flex;
@@ -378,51 +378,55 @@ input {
   padding: 4px;
 }
 
-.topbar-dropdown-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 12px;
+.topbar-dropdown-item,
+a.topbar-dropdown-item,
+a.topbar-dropdown-item:visited {
+  display: block;
+  padding: 8px 14px;
   font-size: 13px;
   font-weight: 500;
+  line-height: 1.4;
   color: var(--text);
   text-align: left;
   border: none;
   background: none;
-  border-radius: var(--r-sm);
+  border-radius: 6px;
   width: 100%;
   cursor: pointer;
   text-decoration: none;
   box-shadow: none;
   min-height: 0;
+  font-family: var(--sans);
 }
 
-.topbar-dropdown-item:hover {
-  background: var(--surface-hover);
+.topbar-dropdown-item:hover,
+a.topbar-dropdown-item:hover {
+  background: var(--surface-alt);
   color: var(--text);
   box-shadow: none;
+  text-decoration: none;
 }
 
-.topbar-dropdown-icon {
-  font-size: 14px;
-  width: 18px;
-  text-align: center;
-  flex-shrink: 0;
+.topbar-dropdown-item.active,
+a.topbar-dropdown-item.active {
+  background: none;
+  color: var(--text);
+  font-weight: 500;
 }
 
 .topbar-dropdown-divider {
   height: 1px;
   background: var(--border);
-  margin: 4px 0;
+  margin: 4px 2px;
 }
 
 .topbar-dropdown-danger {
-  color: var(--danger, #DC2626);
+  color: #DC2626;
 }
 
 .topbar-dropdown-danger:hover {
   background: rgba(220, 38, 38, 0.08);
-  color: var(--danger, #DC2626);
+  color: #DC2626;
 }
 
 .badge {
@@ -6751,14 +6755,29 @@ html.dark .sidebar {
 html.dark .topbar-user-dropdown {
   background: #1E293B;
   border-color: #334155;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
 }
 
-html.dark .topbar-dropdown-item {
+html.dark .topbar-dropdown-item,
+html.dark a.topbar-dropdown-item,
+html.dark a.topbar-dropdown-item:visited {
   color: #F1F5F9;
 }
 
-html.dark .topbar-dropdown-item:hover {
+html.dark .topbar-dropdown-item:hover,
+html.dark a.topbar-dropdown-item:hover {
   background: #273548;
+  color: #F1F5F9;
+}
+
+html.dark .topbar-dropdown-item.active,
+html.dark a.topbar-dropdown-item.active {
+  background: none;
+  color: #F1F5F9;
+}
+
+html.dark .topbar-dropdown-divider {
+  background: #334155;
 }
 
 html.dark .card,
