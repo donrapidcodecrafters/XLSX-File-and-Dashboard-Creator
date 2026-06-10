@@ -669,7 +669,7 @@ async function quickbaseQueryRecordsRest(
     }
   };
   if (where) payload.where = where;
-  if (options.sortBy?.length) payload.sortBy = options.sortBy;
+  if (options.sortBy?.length) payload.sortBy = options.sortBy.map((s) => ({ fieldId: qbFieldId(String(s.fieldId)), order: s.order || "ASC" }));
   return quickbaseRestRequest(config, "/records/query", {
     method: "POST",
     body: payload

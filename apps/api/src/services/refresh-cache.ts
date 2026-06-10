@@ -120,6 +120,7 @@ async function streamQuickbaseTableToPostgres(
         }
         if (!fields.length) return { fields, rowCount: 0 };
         const fieldChunks = chunk(fields.map((f) => f.id).filter(Boolean), 30);
+        const seenIds = new Set<string>();
         let skip = 0;
         while (true) {
           assertRefreshNotCancelled(options.activeJobId || "", profileIds);
@@ -132,6 +133,7 @@ async function streamQuickbaseTableToPostgres(
             if (typeof page.totalRecords === "number" && page.totalRecords > 0) totalRowsHint = page.totalRecords;
             for (const row of page.rows) {
               const id = String(row.__recordId || "");
+              if (!id) continue;
               const existing = pageMerged.get(id) || { __recordId: id };
               Object.assign(existing, row);
               pageMerged.set(id, existing);
@@ -139,11 +141,18 @@ async function streamQuickbaseTableToPostgres(
             pageSize = Math.max(pageSize, page.rows.length);
           }
           if (pageMerged.size === 0) break;
-          await writer.appendRows(Array.from(pageMerged.values()));
-          rowsWritten += pageMerged.size;
+          // Deduplicate: only write records not already written in a previous page.
+          const freshRows = Array.from(pageMerged.values()).filter((row) => {
+            const id = String(row.__recordId || "");
+            return id && !seenIds.has(id);
+          });
+          if (freshRows.length === 0) break; // all records already seen — paging looped or no new data
+          freshRows.forEach((row) => seenIds.add(String(row.__recordId)));
+          await writer.appendRows(freshRows);
+          rowsWritten += freshRows.length;
           onProgress(rowsWritten, totalRowsHint, `Syncing ${table.name}: ${rowsWritten.toLocaleString()} rows`);
           if (pageSize < PAGE_SIZE) break;
-          skip += pageSize;
+          skip += PAGE_SIZE;
         }
       }
       return { fields, rowCount: rowsWritten };
