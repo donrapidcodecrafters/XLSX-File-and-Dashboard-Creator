@@ -251,7 +251,11 @@ export function StudioDashboardPreview({
   const inlineRuntimeFilters = showAllRuntimeFilters ? visibleRuntimeFilters : visibleRuntimeFilters.slice(0, 4);
   const overflowRuntimeFilters = showAllRuntimeFilters ? [] : visibleRuntimeFilters.slice(4);
   const activeFilterChips = visibleRuntimeFilters
-    .map((filter) => ({ id: filter.id, label: filter.label, value: runtimeValues[filter.id] || "" }))
+    .map((filter) => {
+      const raw = runtimeValues[filter.id] || "";
+      const vals = raw ? raw.split("|||").filter(Boolean) : [];
+      return { id: filter.id, label: filter.label, value: raw, displayValue: vals.length > 1 ? `${vals.length} selected` : (vals[0] || "") };
+    })
     .filter((item) => String(item.value || "").trim());
 
   function updateRuntimeValue(filterId: string, value: string) {
@@ -277,24 +281,42 @@ export function StudioDashboardPreview({
             {inlineRuntimeFilters.map((filter) => {
               const options = runtimeFilterOptionsById[filter.id] || [];
               const value = runtimeValues[filter.id] || "";
+              const selectedValues = value ? value.split("|||").filter(Boolean) : [];
+              function toggleValue(opt: string) {
+                const next = selectedValues.includes(opt)
+                  ? selectedValues.filter((v) => v !== opt)
+                  : [...selectedValues, opt];
+                updateRuntimeValue(filter.id, next.join("|||"));
+              }
               return (
-                <label className="field" key={filter.id}>
-                  <span>{filter.label}</span>
+                <div className="dashboard-live-filter-field" key={filter.id}>
+                  <div className="dashboard-live-filter-label">
+                    <span>{filter.label}</span>
+                    {selectedValues.length ? (
+                      <button type="button" className="ghost-button micro" onClick={() => updateRuntimeValue(filter.id, "")}>Clear</button>
+                    ) : null}
+                  </div>
                   {filter.uiType === "boolean-toggle" ? (
-                    <select value={value} onChange={(event) => updateRuntimeValue(filter.id, event.target.value)}>
+                    <select className="dashboard-live-filter-input" value={value} onChange={(event) => updateRuntimeValue(filter.id, event.target.value)}>
                       <option value="">Any</option>
                       <option value="true">True</option>
                       <option value="false">False</option>
                     </select>
+                  ) : filter.uiType === "date-range" ? (
+                    <input type="date" className="dashboard-live-filter-input" value={value} onChange={(e) => updateRuntimeValue(filter.id, e.target.value)} />
                   ) : options.length ? (
-                    <select value={value} onChange={(event) => updateRuntimeValue(filter.id, event.target.value)}>
-                      <option value="">All</option>
-                      {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                    </select>
+                    <div className="dashboard-live-filter-options">
+                      {options.map((option) => (
+                        <button key={option.value} type="button"
+                          className={`dashboard-filter-option-chip${selectedValues.includes(option.value) ? " selected" : ""}`}
+                          onClick={() => toggleValue(option.value)}
+                        >{option.label}</button>
+                      ))}
+                    </div>
                   ) : (
-                    <input value={value} onChange={(event) => updateRuntimeValue(filter.id, event.target.value)} />
+                    <input className="dashboard-live-filter-input" value={value} onChange={(event) => updateRuntimeValue(filter.id, event.target.value)} />
                   )}
-                </label>
+                </div>
               );
             })}
           </div>
@@ -302,7 +324,7 @@ export function StudioDashboardPreview({
             <div className="dashboard-runtime-filter-chips">
               {activeFilterChips.map((chip) => (
                 <button key={chip.id} type="button" className="dashboard-runtime-filter-chip" onClick={() => updateRuntimeValue(chip.id, "")}>
-                  {chip.label}: {chip.value}
+                  {chip.label}: {chip.displayValue} ✕
                 </button>
               ))}
             </div>

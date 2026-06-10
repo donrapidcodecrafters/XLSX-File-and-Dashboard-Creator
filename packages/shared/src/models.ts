@@ -14,7 +14,8 @@ export type FilterOperator =
   | "lte"
   | "on"
   | "on-or-after"
-  | "on-or-before";
+  | "on-or-before"
+  | "in";
 export type FilterJoinOperator = "and" | "or";
 export type SortDirection = "asc" | "desc";
 export type WidgetMode = "linked" | "copied";

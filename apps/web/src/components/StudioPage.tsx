@@ -4606,9 +4606,12 @@ export function StudioPage({
               <div className="card-head">
                 <div>
                   <strong>Dashboard settings</strong>
-                  <div className="micro">{activeDashboard.name} · tabs, runtime filters, and dashboard-level overrides.</div>
+                  <div className="micro">Changes apply immediately — click Save to persist to server.</div>
                 </div>
-                <button type="button" className="btn-neutral" onClick={() => setDashboardSettingsModalOpen(false)}>Close</button>
+                <div className="studio-actions">
+                  <button type="button" className="btn-neutral ghost-button" onClick={() => setDashboardSettingsModalOpen(false)}>Done</button>
+                  <button type="button" onClick={() => { void saveRemote(); setDashboardSettingsModalOpen(false); }}>Save &amp; close</button>
+                </div>
               </div>
               <div className="stack">
                 <div className="card">
@@ -4784,28 +4787,14 @@ export function StudioPage({
                                 ))}
                               </div>
                             ) : null}
-                            <div className="filter-grid compact-grid">
+                            {valueOptions.length ? (
                               <label className="field">
-                                <span>Compare using</span>
-                                <select value={filter.valueSource || "literal"} onChange={(event) => updateRuntimeFilter(filter.id, (current) => ({ ...current, valueSource: event.target.value as "literal" | "field", defaultValue: event.target.value === "field" ? "" : current.defaultValue, compareFieldId: event.target.value === "field" ? current.compareFieldId || "" : "" }))}>
-                                  <option value="literal">{selectedField?.type === "date" || selectedField?.type === "datetime" ? "specific date" : "specific value"}</option>
-                                  <option value="field">{selectedField?.type === "date" || selectedField?.type === "datetime" ? "the date in the field" : "the value in the field"}</option>
-                                </select>
+                                <span>Default value</span>
+                                <SearchableSelect value={filter.defaultValue} options={valueOptions} allowEmpty emptyOptionLabel="No default (show all)" onChange={(value) => updateRuntimeFilter(filter.id, (current) => ({ ...current, defaultValue: value }))} />
                               </label>
-                              {(filter.valueSource || "literal") === "field" ? (
-                                <label className="field">
-                                  <span>Comparison field</span>
-                                  <SearchableSelect value={filter.compareFieldId || ""} options={comparisonFieldOptions} allowEmpty emptyOptionLabel="Choose a comparison field" onChange={(value) => updateRuntimeFilter(filter.id, (current) => ({ ...current, compareFieldId: value }))} />
-                                </label>
-                              ) : valueOptions.length ? (
-                                <label className="field">
-                                  <span>Default value</span>
-                                  <SearchableSelect value={filter.defaultValue} options={valueOptions} allowEmpty emptyOptionLabel="No default value" onChange={(value) => updateRuntimeFilter(filter.id, (current) => ({ ...current, defaultValue: value }))} />
-                                </label>
-                              ) : (
-                                <label className="field"><span>Default value</span><input value={filter.defaultValue} onChange={(event) => updateRuntimeFilter(filter.id, (current) => ({ ...current, defaultValue: event.target.value }))} /></label>
-                              )}
-                            </div>
+                            ) : (
+                              <label className="field"><span>Default value <span className="micro">(optional)</span></span><input value={filter.defaultValue} placeholder="Leave blank to show all" onChange={(event) => updateRuntimeFilter(filter.id, (current) => ({ ...current, defaultValue: event.target.value }))} /></label>
+                            )}
                           </div>
                         );
                       }) : <div className="empty-hint">No runtime filters configured yet.</div>}
@@ -5493,7 +5482,8 @@ export function StudioPage({
         ) : null}
 
         {activeDashboard && dashboardResult ? (
-          <section className="surface stack studio-dashboard-preview-panel dashboard-builder-shell">
+          <section className="surface studio-dashboard-preview-panel dashboard-builder-shell">
+          <div className="dashboard-builder-main">
             <div className="dashboard-builder-toolbar">
               <div className="dashboard-builder-toolbar-actions">
                 {canDo("building.edit") && <button type="button" className="btn-create" onClick={openDashboardAddModal}>Add report/graph</button>}
@@ -5604,20 +5594,15 @@ export function StudioPage({
                 onMoveWidget={moveDashboardWidget}
               />
             ) : null}
-          </section>
-        ) : null}
-        {objectActionDock}
-      </div>
-
-      {activeDashboard && selectedDashboardWidget && activeDashboardTab ? (
-        <div className="studio-drawer-backdrop dashboard-builder-drawer-backdrop">
-          <aside className="studio-drawer dashboard-builder-widget-drawer" onClick={(event) => event.stopPropagation()}>
-            <div className="studio-section-head dashboard-builder-drawer-head">
+          </div>
+          {activeDashboard && selectedDashboardWidget && activeDashboardTab ? (
+          <aside className="dashboard-builder-widget-panel" onClick={(event) => event.stopPropagation()}>
+            <div className="studio-section-head dashboard-builder-panel-head">
               <div>
-                <div className="eyebrow">Widget</div>
-                <h2>{selectedDashboardWidget.title || selectedDashboardWidgetReport?.name || "Selected widget"}</h2>
+                <div className="eyebrow">Widget settings</div>
+                <h2>{selectedDashboardWidget.title || selectedDashboardWidgetReport?.name || "Widget"}</h2>
               </div>
-              <button type="button" className="ghost-button btn-neutral" onClick={() => setSelectedWidgetId("")}>Close</button>
+              <button type="button" className="ghost-button btn-neutral" onClick={() => setSelectedWidgetId("")}>✕</button>
             </div>
             <div className="card">
                   <div className="card-head">
@@ -5747,13 +5732,16 @@ export function StudioPage({
                   </div>
             </div>
           </aside>
-        </div>
-      ) : null}
+          ) : null}
+          </section>
+        ) : null}
+        {objectActionDock}
+      </div>
+      </section>
 
       <div className="toast-stack">
         {toasts.map((toast) => <div key={toast.id} className={`toast toast-${toast.tone}`}>{toast.message}</div>)}
       </div>
-      </section>
       {renderStudioOverlays()}
     </>
   );
