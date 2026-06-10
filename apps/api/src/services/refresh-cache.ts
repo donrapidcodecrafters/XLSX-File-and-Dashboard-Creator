@@ -426,28 +426,6 @@ function getZonedParts(date: Date, timeZone: string) {
   };
 }
 
-function dailyKey(parts: ReturnType<typeof getZonedParts>) {
-  return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
-}
-
-function weeklyKey(parts: ReturnType<typeof getZonedParts>) {
-  const date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
-  const weekday = (date.getUTCDay() + 6) % 7;
-  date.setUTCDate(date.getUTCDate() - weekday);
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
-}
-
-function monthlyKey(parts: ReturnType<typeof getZonedParts>) {
-  return `${parts.year}-${String(parts.month).padStart(2, "0")}`;
-}
-
-function scheduleWindowKey(schedule: RefreshScheduleConfig, date: Date) {
-  const parts = getZonedParts(date, schedule.timeZone || "UTC");
-  if (schedule.cadence === "weekly") return weeklyKey(parts);
-  if (schedule.cadence === "monthly") return monthlyKey(parts);
-  return dailyKey(parts);
-}
-
 function scheduleMatchesNow(schedule: RefreshScheduleConfig, now: Date) {
   if (!schedule.enabled) return false;
   const parts = getZonedParts(now, schedule.timeZone || "UTC");
@@ -1585,12 +1563,6 @@ export async function checkAndTriggerScheduledRefreshes(logger?: FastifyBaseLogg
       profile.refreshStatus.running ||
       !isScheduleDue(schedule, profile.refreshStatus.nextRunAt, now)
     ) {
-      continue;
-    }
-    const lastSuccessAt = profile.refreshStatus.lastSuccessAt
-      ? new Date(profile.refreshStatus.lastSuccessAt)
-      : null;
-    if (lastSuccessAt && scheduleWindowKey(schedule, lastSuccessAt) === scheduleWindowKey(schedule, now)) {
       continue;
     }
     try {
