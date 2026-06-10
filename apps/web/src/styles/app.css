@@ -3279,6 +3279,89 @@ th {
   gap: 16px;
 }
 
+.import-review-sheets-card {
+  gap: 12px;
+}
+
+.import-review-sheet-list {
+  display: grid;
+  gap: 6px;
+}
+
+.import-review-sheet-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  transition: opacity 0.15s;
+}
+
+.import-review-sheet-row--off {
+  opacity: 0.55;
+}
+
+.import-review-sheet-toggle {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.import-review-sheet-toggle input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.import-review-sheet-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.import-review-sheet-tab {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted, rgba(18, 47, 39, 0.5));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.import-review-sheet-name {
+  font-size: 0.85rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.import-review-type-select {
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: inherit;
+  cursor: pointer;
+}
+
+.import-review-sheet-skip-label {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  font-style: italic;
+  color: var(--text-muted, rgba(18, 47, 39, 0.4));
+  padding: 4px 8px;
+}
+
 .studio-import-review-modal {
   width: min(1120px, calc(100vw - 36px));
 }
@@ -7722,6 +7805,17 @@ html.dark .studio-builder-dock-inner {
 html.dark .import-review-sheet {
   background: #1E293B;
   border-color: #334155;
+}
+
+html.dark .import-review-sheet-row {
+  background: #1E293B;
+  border-color: #334155;
+}
+
+html.dark .import-review-type-select {
+  background: #0F172A;
+  border-color: #334155;
+  color: #E2E8F0;
 }
 
 /* Dark mode topbar nav */
