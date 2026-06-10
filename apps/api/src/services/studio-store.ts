@@ -173,6 +173,7 @@ export class StudioStore {
   private lastHydratedAt = 0;
   private lastReloadedFromDiskAt = 0;
   private pgInitialized = false;
+  private pendingPostgresWrite: Promise<void> = Promise.resolve();
 
   constructor() {
     this.document = this.load();
@@ -201,7 +202,11 @@ export class StudioStore {
     }
     writeFileSync(CACHE_META_PATH, JSON.stringify(this.cacheMeta || {}, null, 2));
     this.lastReloadedFromDiskAt = Date.now();
-    void saveDocumentToPostgres(document);
+    this.pendingPostgresWrite = saveDocumentToPostgres(document);
+  }
+
+  async awaitPendingPostgresWrite(): Promise<void> {
+    await this.pendingPostgresWrite.catch(() => {});
   }
 
   private reloadFromDisk(force = false) {
@@ -242,16 +247,28 @@ export class StudioStore {
     this.pgInitialized = true;
     const pgDoc = await loadDocumentFromPostgres();
     if (pgDoc) {
-      this.document = pgDoc;
-      this.cacheMeta = loadPersistedCacheMeta();
-      reconcileRefreshStatusWithCache(this.document, this.cacheMeta);
-      this.lastHydratedAt = Date.parse(this.document.sync?.lastLoadedAt || "") || this.lastHydratedAt;
-      this.lastReloadedFromDiskAt = Date.now();
-      try {
-        mkdirSync(dirname(STORAGE_PATH), { recursive: true });
-        writeFileSync(STORAGE_PATH, JSON.stringify(stripCachedRows(pgDoc), null, 2));
-      } catch {
-        // Non-fatal
+      // Prefer whichever document was saved more recently. The disk file may be
+      // NEWER than Postgres when a restart occurs during the async Postgres write
+      // window — in that case, keep the disk version and let the next persist()
+      // bring Postgres up to date.
+      const diskSavedAt = Date.parse(this.document.sync?.lastSavedAt || "");
+      const pgSavedAt = Date.parse(pgDoc.sync?.lastSavedAt || "");
+      const usePostgres = !diskSavedAt || pgSavedAt >= diskSavedAt;
+      if (usePostgres) {
+        this.document = pgDoc;
+        this.cacheMeta = loadPersistedCacheMeta();
+        reconcileRefreshStatusWithCache(this.document, this.cacheMeta);
+        this.lastHydratedAt = Date.parse(this.document.sync?.lastLoadedAt || "") || this.lastHydratedAt;
+        this.lastReloadedFromDiskAt = Date.now();
+        try {
+          mkdirSync(dirname(STORAGE_PATH), { recursive: true });
+          writeFileSync(STORAGE_PATH, JSON.stringify(stripCachedRows(pgDoc), null, 2));
+        } catch {
+          // Non-fatal
+        }
+      } else {
+        // Disk is newer — push the disk version to Postgres to sync them up.
+        this.pendingPostgresWrite = saveDocumentToPostgres(this.document);
       }
     }
   }

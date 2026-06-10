@@ -148,6 +148,8 @@ export async function registerStudioRoutes(app: FastifyInstance) {
     });
     updateRefreshScheduleMetadata(mergedDocument);
     const document = studioStore.saveDocument(mergedDocument);
+    // Await Postgres write so a PM2 restart right after save can't lose user changes.
+    await studioStore.awaitPendingPostgresWrite();
     const sync = { enabled: false, ok: true, message: "", savedObjects: 0, savedSettings: 0, savedVersions: 0, savedStorageConfig: 0 };
     return { document, sync };
   });
