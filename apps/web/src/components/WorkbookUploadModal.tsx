@@ -37,6 +37,13 @@ const T = {
   text:        "var(--text, #111827)",
   textSoft:    "var(--text-soft, #6B7280)",
   textSecondary: "var(--text-secondary, #374151)",
+  infoBg:      "var(--info-bg, #EFF6FF)",
+  infoBorder:  "var(--info-border, #BFDBFE)",
+  infoText:    "var(--info-text, #1E40AF)",
+  errorBg:     "var(--error-bg, #FEF2F2)",
+  errorBorder: "var(--error-border, #FECACA)",
+  errorText:   "var(--error-text, #991B1B)",
+  trackOff:    "var(--track-off, #D1D5DB)",
   radius:      "10px",
   radiusSm:    "6px",
   shadowXl:    "0 20px 25px rgba(0,0,0,0.12), 0 8px 10px rgba(0,0,0,0.06)",
@@ -337,7 +344,7 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
             <div style={{
               flexShrink: 0, marginTop: 2,
               width: 34, height: 18, borderRadius: 9,
-              background: recreate ? T.brand : "#D1D5DB",
+              background: recreate ? T.brand : T.trackOff,
               position: "relative", transition: "background 150ms",
             }}>
               <div style={{
@@ -492,7 +499,7 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
               )}
               {/* Info when updating an existing workbook (no profile) */}
               {isUpdating && !profile && (
-                <div style={{ padding: "10px 12px", borderRadius: T.radiusSm, background: "#EFF6FF", border: "1px solid #BFDBFE", fontSize: 12, color: "#1E40AF", lineHeight: 1.5 }}>
+                <div style={{ padding: "10px 12px", borderRadius: T.radiusSm, background: T.infoBg, border: `1px solid ${T.infoBorder}`, fontSize: 12, color: T.infoText, lineHeight: 1.5 }}>
                   <strong>Replacing existing data.</strong> All rows in <strong>{selectedSource!.sourceName}</strong> will be replaced with the contents of this file. Columns added or removed in the file will be reflected immediately. All reports using this source will update automatically.
                 </div>
               )}
@@ -567,7 +574,7 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
                             display: "flex", alignItems: "center", gap: 10,
                             padding: "9px 12px", borderRadius: T.radiusSm, cursor: "pointer",
                             border: `1px solid ${isChecked ? T.brand : T.border}`,
-                            background: isChecked ? "#fff" : T.bgAlt,
+                            background: isChecked ? T.bg : T.bgAlt,
                             transition: "border-color 100ms, background 100ms",
                           }}
                         >
@@ -581,7 +588,6 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
                                   : [...prev, sheet.name]
                               );
                             }}
-                            style={{ width: 15, height: 15, accentColor: T.brand, flexShrink: 0 }}
                           />
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: 13, fontWeight: 600, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -594,9 +600,9 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
                           <span style={{
                             fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 99,
                             letterSpacing: "0.04em", textTransform: "uppercase", flexShrink: 0,
-                            background: sheet.looksLikeData ? T.brandLight : "#EFF6FF",
-                            color: sheet.looksLikeData ? T.brandDeep : "#1D4ED8",
-                            border: `1px solid ${sheet.looksLikeData ? T.brandBorder : "#BFDBFE"}`,
+                            background: sheet.looksLikeData ? T.brandLight : T.infoBg,
+                            color: sheet.looksLikeData ? T.brandDeep : T.infoText,
+                            border: `1px solid ${sheet.looksLikeData ? T.brandBorder : T.infoBorder}`,
                           }}>
                             {sheet.looksLikeData ? "Data" : "Summary / Chart"}
                           </span>
@@ -605,7 +611,7 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
                     })}
                   </div>
                   {dataSheets.length === 0 && (
-                    <p style={{ margin: "10px 0 0", fontSize: 12, color: "#991B1B", fontWeight: 600 }}>
+                    <p style={{ margin: "10px 0 0", fontSize: 12, color: T.errorText, fontWeight: 600 }}>
                       Select at least one data tab to continue.
                     </p>
                   )}
@@ -636,7 +642,7 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
 
           {/* Error */}
           {error ? (
-            <div style={{ padding: "10px 14px", borderRadius: T.radius, border: "1px solid #FECACA", background: "#FEF2F2", color: "#991B1B", fontSize: 13 }}>
+            <div style={{ padding: "10px 14px", borderRadius: T.radius, border: `1px solid ${T.errorBorder}`, background: T.errorBg, color: T.errorText, fontSize: 13 }}>
               {error}
             </div>
           ) : null}

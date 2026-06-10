@@ -349,7 +349,7 @@ export function ReportView({
   }
 
   function freshnessLabel() {
-    if (result?.freshness?.source === "quickbase-live") return "Live Quickbase data";
+    if (result?.freshness?.source === "quickbase-live") return "Live data";
     if (result?.freshness?.source === "scheduled-cache") return "Scheduled refresh cache";
     return "Local fallback data";
   }

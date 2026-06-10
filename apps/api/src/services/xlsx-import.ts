@@ -2973,7 +2973,7 @@ export async function importWorkbookIntoStudioDocument(
   document: StudioDocument,
   filename: string,
   buffer: Uint8Array,
-  options?: { dataSheets?: string[] }
+  options?: { dataSheets?: string[]; workbookName?: string }
 ): Promise<ImportedWorkbookResult> {
   debugImportStep(`start ${filename}`);
   const workbook = new ExcelJS.Workbook();
@@ -2995,7 +2995,7 @@ export async function importWorkbookIntoStudioDocument(
   const importedAt = new Date().toISOString();
   const ownerUserId = "";
   const scope: StudioObjectScope = "global";
-  const workbookName = filename.replace(/\.xlsx$/i, "").trim() || "Imported Workbook";
+  const workbookName = options?.workbookName?.trim() || filename.replace(/\.xlsx$/i, "").trim() || "Imported Workbook";
   const importedTables: TableDefinition[] = [];
   const importedRows: Record<string, DataRow[]> = {};
   const importedReports: ReportDefinition[] = [];

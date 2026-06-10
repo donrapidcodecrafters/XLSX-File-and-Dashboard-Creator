@@ -96,7 +96,7 @@ import {
   fetchStudioSources,
   updateSourceKeyField
 } from "../lib/studioApi";
-import { createExportSaveTarget, downloadExportJob, fetchExportJobStatus, fetchExportJobs, startDashboardExportJob, startReportExportJob } from "../lib/api";
+import { createExportSaveTarget, downloadExportJob, fetchExportJobStatus, fetchExportJobs, startDashboardExportJob, startReportExportJob, runReport as runReportFromServer } from "../lib/api";
 import { applyLaunchScopeToDocument } from "../lib/catalog";
 import { buildDashboardExportDefinition } from "../lib/dashboardExport";
 import { buildHostedHashUrl, buildHostedRoute } from "../lib/embed";
@@ -1629,6 +1629,8 @@ export function StudioPage({
         : "Run a refresh after you choose the source tables and enter a report ID for each one.");
   const [liveReportResult, setLiveReportResult] = useState<ReportRunResult | null>(null);
   const [liveReportLoading, setLiveReportLoading] = useState(false);
+  const [postgresReportResult, setPostgresReportResult] = useState<ReportRunResult | null>(null);
+  const [postgresReportLoading, setPostgresReportLoading] = useState(false);
   const [previewPage, setPreviewPage] = useState(1);
   const [exportJob, setExportJob] = useState<ExportJobStatus | null>(null);
   const [liveExportJobs, setLiveExportJobs] = useState<ExportJobStatus[]>([]);
@@ -2321,6 +2323,44 @@ export function StudioPage({
     documentState.quickbase.userToken
   ]);
 
+  // Fetch report result from server API for Postgres/Excel sources (no in-memory bundle data)
+  useEffect(() => {
+    let active = true;
+    if (!activeReport || !activeTable) {
+      setPostgresReportResult(null);
+      setPostgresReportLoading(false);
+      return;
+    }
+    if ((bundle.data[activeReport.sourceTableId]?.length || 0) > 0) {
+      setPostgresReportResult(null);
+      setPostgresReportLoading(false);
+      return;
+    }
+    const quickbaseConfig = getQuickbaseConfigForTable(documentState, activeTable);
+    if (quickbaseConfig.realmHostname && quickbaseConfig.userToken && quickbaseConfig.appId) {
+      setPostgresReportResult(null);
+      setPostgresReportLoading(false);
+      return;
+    }
+    setPostgresReportLoading(true);
+    runReportFromServer(activeReport.id, [], { report: activeReport })
+      .then((result) => {
+        if (active) { setPostgresReportResult(result); setPostgresReportLoading(false); }
+      })
+      .catch(() => {
+        if (active) { setPostgresReportResult(null); setPostgresReportLoading(false); }
+      });
+    return () => { active = false; };
+  }, [
+    activeReport?.id,
+    activeReport?.updatedAt,
+    activeTable?.id,
+    bundle.data,
+    documentState.activeQuickbaseProfileId,
+    documentState.quickbase.realmHostname,
+    documentState.quickbase.userToken
+  ]);
+
   useEffect(() => {
     if (!exportJob || exportJob.status === "complete" || exportJob.status === "failed") return;
     const handle = window.setInterval(() => {
@@ -2454,7 +2494,7 @@ export function StudioPage({
     return runReport(activeReport, activeTable, bundle.data[activeReport.sourceTableId] || []);
   }, [activeReport, activeTable, bundle.data]);
   const hasCachedRowsForActiveReport = Boolean(activeReport && (bundle.data[activeReport.sourceTableId]?.length || 0) > 0);
-  const reportResult = hasCachedRowsForActiveReport ? localReportResult : (liveReportResult || localReportResult);
+  const reportResult = hasCachedRowsForActiveReport ? localReportResult : (liveReportResult || postgresReportResult || localReportResult);
 
   const dashboardResult = useMemo(() => {
     if (!activeDashboard) return null;
@@ -5276,26 +5316,16 @@ export function StudioPage({
           </section>
         ) : null}
 
-        {activeReport && activeTable && (reportResult || liveReportLoading) ? (
+        {activeReport && activeTable && (reportResult || liveReportLoading || postgresReportLoading) ? (
           <section className="surface stack studio-report-preview-panel">
             <div className="card-head">
               <strong>Report Preview</strong>
               <span className="micro">
-                {liveReportLoading && !reportResult ? "Loading live Quickbase data…" : `${reportResult?.totalRows || 0} rows · ${activeTable.name}`}
+                {(liveReportLoading || postgresReportLoading) && !reportResult ? "Loading report data…" : `${reportResult?.totalRows || 0} rows · ${activeTable.name}`}
               </span>
             </div>
             {reportResult ? (
               <>
-                {reportShowsSummary(activeReport) ? (
-                  <div className="summary-grid">
-                    {reportResult.summary.map((item) => (
-                      <div className="summary-card" key={item.label}>
-                        <strong>{item.value}</strong>
-                        <span>{item.label}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
                 {reportResult.warnings.length ? (
                   <div className="sync-status sync-status-warn">
                     <strong>Report warnings</strong>
@@ -5313,7 +5343,7 @@ export function StudioPage({
                 />
               </>
             ) : (
-              <div className="empty-hint">Loading live Quickbase rows for this report.</div>
+              <div className="empty-hint">Loading live data for this report.</div>
             )}
           </section>
         ) : null}

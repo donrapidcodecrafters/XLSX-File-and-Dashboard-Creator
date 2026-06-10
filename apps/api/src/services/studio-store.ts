@@ -194,8 +194,10 @@ export class StudioStore {
     mkdirSync(dirname(STORAGE_PATH), { recursive: true });
     reconcileRefreshStatusWithCache(document, this.cacheMeta);
     writeFileSync(STORAGE_PATH, JSON.stringify(stripCachedRows(document), null, 2));
-    if (!options.skipCacheWrite && Object.keys(document.bundle.data || {}).length) {
-      writeFileSync(CACHE_PATH, JSON.stringify(document.bundle.data || {}, null, 2));
+    if (!options.skipCacheWrite) {
+      // Only cache xlsx-imported rows — QB rows are large and fetched from Postgres on demand
+      const xlsxOnlyData = stripCachedRows(document).bundle.data;
+      writeFileSync(CACHE_PATH, JSON.stringify(xlsxOnlyData, null, 2));
     }
     writeFileSync(CACHE_META_PATH, JSON.stringify(this.cacheMeta || {}, null, 2));
     this.lastReloadedFromDiskAt = Date.now();
@@ -271,14 +273,15 @@ export class StudioStore {
     for (const key of keys) {
       const inMemoryRows = this.document.bundle.data[key];
       if (Array.isArray(inMemoryRows) && inMemoryRows.length) {
-        return clone(inMemoryRows.slice(0, Math.max(1, limit)));
+        // Return reference — rows are read-only in all render paths (slimRowsForWorker creates new objects)
+        return limit >= inMemoryRows.length ? inMemoryRows : inMemoryRows.slice(0, limit);
       }
     }
     const cache = loadPersistedCache();
     for (const key of keys) {
       const rows = cache[key];
       if (Array.isArray(rows) && rows.length) {
-        return clone(rows.slice(0, Math.max(1, limit)));
+        return limit >= rows.length ? rows : rows.slice(0, limit);
       }
     }
     return [];

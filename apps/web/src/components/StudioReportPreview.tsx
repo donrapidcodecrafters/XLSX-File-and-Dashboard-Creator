@@ -58,19 +58,21 @@ export function StudioReportPreview({
   const visibleRows = result.rows.slice(startIndex, startIndex + pageSize);
   const pager = buildPager(page, totalPages, result.totalRows, pageSize, onPageChange);
 
+  const summaryGrid = reportShowsSummary(report) && result.summary.length > 0 ? (
+    <div className="summary-grid">
+      {result.summary.map((item) => (
+        <div className="summary-card" key={item.label}>
+          <strong>{item.value}</strong>
+          <span>{item.label}</span>
+        </div>
+      ))}
+    </div>
+  ) : null;
+
   if (report.view.mode === "summary") {
     return (
       <div className="studio-preview-stack">
-        {reportShowsSummary(report) ? (
-          <div className="summary-grid">
-            {result.summary.map((item) => (
-              <div className="summary-card" key={item.label}>
-                <strong>{item.value}</strong>
-                <span>{item.label}</span>
-              </div>
-            ))}
-          </div>
-        ) : null}
+        {summaryGrid}
         {reportShowsDetails(report) ? (
           <>
             {pager}
@@ -86,6 +88,7 @@ export function StudioReportPreview({
     const chartBounds = getChartViewportBounds(report.view.chartType, result.chartData.length, false);
     return (
       <div className="studio-preview-stack">
+        {summaryGrid}
         <div className="chart-scroll-shell">
           <div style={{ minWidth: `${chartBounds.minWidth}px`, minHeight: `${chartBounds.minHeight}px`, width: "100%", height: "100%" }}>
             <ChartPreview
@@ -182,6 +185,7 @@ export function StudioReportPreview({
 
   return (
     <div className="studio-preview-stack">
+      {summaryGrid}
       {pager}
       {renderDetailTable(report, table, visibleRows)}
     </div>

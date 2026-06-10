@@ -472,7 +472,7 @@ export async function ingestXlsxWorkbookSourceAndRecreate(
     preingestDocument,
     options.filename,
     options.buffer,
-    { dataSheets: options.dataSheets }
+    { dataSheets: options.dataSheets, workbookName: options.sourceName }
   );
 
   // Step 3: build a name→sourceId map from the durable ingest.

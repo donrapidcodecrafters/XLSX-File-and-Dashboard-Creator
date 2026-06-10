@@ -101,7 +101,26 @@ await app.register(multipart, {
   }
 });
 
-await ensureEnterpriseSchema(app.log);
+// Retry DB connection — Postgres may not be ready immediately after system boot
+{
+  const maxAttempts = 12;
+  const delayMs = 5000;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await ensureEnterpriseSchema(app.log);
+      lastError = null;
+      break;
+    } catch (err) {
+      lastError = err;
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== "ECONNREFUSED" && code !== "ENOENT" && code !== "ENOTFOUND") throw err;
+      app.log.warn({ attempt, maxAttempts, code }, "DB not ready yet, retrying in 5s…");
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  if (lastError) throw lastError;
+}
 await recoverExportJobsOnStartup();
 await registerSessionAuth(app);
 

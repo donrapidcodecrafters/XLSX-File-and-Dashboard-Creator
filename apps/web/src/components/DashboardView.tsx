@@ -314,7 +314,7 @@ export function DashboardView({
 
   function freshnessLabel() {
     const freshness = activeTabResult?.widgets.find((widget) => widget.result.freshness)?.result.freshness;
-    if (freshness?.source === "quickbase-live") return "Live Quickbase data";
+    if (freshness?.source === "quickbase-live") return "Live data";
     if (freshness?.source === "scheduled-cache") return "Scheduled refresh cache";
     return "Local fallback data";
   }
@@ -741,14 +741,14 @@ export function DashboardView({
         </div>
       ) : null}
 
-      {activeTabResult?.widgets.some((widget) => widget.status === "failed" || widget.result.warnings.length) ? (
+      {activeTabResult?.widgets.some((widget) => widget.status === "failed") ? (
         <div className="sync-status sync-status-warn">
-          <strong>Active tab warnings</strong>
+          <strong>Some widgets failed to load</strong>
           <ul className="flat-list import-review-list">
-            {activeTabResult.widgets.flatMap((widget) => [
-              ...(widget.status === "failed" ? [`${widget.widget.title || widget.report.name}: ${widget.error || widget.message}`] : []),
-              ...widget.result.warnings.map((warning) => `${widget.widget.title || widget.report.name}: ${warning}`)
-            ]).map((warning) => <li key={warning}>{warning}</li>)}
+            {activeTabResult.widgets
+              .filter((widget) => widget.status === "failed")
+              .map((widget) => `${widget.widget.title || widget.report.name}: ${widget.error || widget.message}`)
+              .map((warning) => <li key={warning}>{warning}</li>)}
           </ul>
         </div>
       ) : null}

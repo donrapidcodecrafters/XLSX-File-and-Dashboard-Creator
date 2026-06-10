@@ -33,6 +33,7 @@ import {
 import { apiConfig } from "../config/env.js";
 import { ExecutionCache } from "./execution-cache.js";
 import { forEachTableRowBatch, getSourceRecordSummary, loadSourceAttributes, loadTableRows, type SourceRecordSummary } from "./eav-record-store.js";
+import { trySqlExecuteDurableReport, trySqlExecuteDurablePageOnly } from "./sql-report-engine.js";
 import { objectStore } from "./object-store.js";
 import { fetchQuickbaseTablePage } from "./quickbase-storage.js";
 import { ensureTableRowsAvailable } from "./refresh-cache.js";
@@ -64,7 +65,7 @@ interface ExportProgressCallback {
 
 const DATE_TOKENS = new Set(["CURRENT_MONTH", "LAST_30_DAYS", "CURRENT_YEAR"]);
 const EXECUTION_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const DASHBOARD_WIDGET_CONCURRENCY = 2;
+const DASHBOARD_WIDGET_CONCURRENCY = 1;
 const reportCache = new ExecutionCache<ReportRunResult>(EXECUTION_CACHE_TTL_MS, 500);
 const reportPageCache = new ExecutionCache<ReportRunResult>(EXECUTION_CACHE_TTL_MS, 1_500);
 const dashboardCache = new ExecutionCache<DashboardRunResult>(EXECUTION_CACHE_TTL_MS, 200);
@@ -304,8 +305,11 @@ function collectMissingReportFieldWarnings(report: ReportDefinition, table: Tabl
   const referencedFieldIds = collectReportFieldIds(report);
   const missingFromDefinition = referencedFieldIds.filter((fieldId) => !knownFieldIds.has(String(fieldId)));
   missingFromDefinition.forEach((fieldId) => {
+    // If we have row data available, check whether the field actually exists in the rows before warning.
+    // The table.fields metadata may be incomplete (e.g. xlsx imports), but the data itself is correct.
+    if (rows.length && rows.some((row) => rowHasField(row, fieldId))) return;
     const label = getReportFieldDisplayLabel(report, table, fieldId);
-    warnings.push(`Field "${label}" (${fieldId}) is used by this report but is not available in the Quickbase source table/report.`);
+    warnings.push(`Field "${label}" (${fieldId}) is used by this report but was not found in the source table.`);
   });
   if (rows.length) {
     referencedFieldIds
@@ -313,7 +317,7 @@ function collectMissingReportFieldWarnings(report: ReportDefinition, table: Tabl
       .filter((fieldId) => rows.every((row) => !rowHasField(row, fieldId)))
       .forEach((fieldId) => {
         const label = getReportFieldDisplayLabel(report, table, fieldId);
-        warnings.push(`Quickbase did not return field "${label}" (${fieldId}) in the source rows for this report.`);
+        warnings.push(`Field "${label}" (${fieldId}) is defined in the table but has no data in the source rows.`);
       });
   }
   return Array.from(new Set(warnings));
@@ -889,6 +893,21 @@ function projectRows(report: ReportDefinition, rows: DataRow[]) {
   });
 }
 
+// Trim rows to only the fields a report actually references before handing to a Worker.
+// Worker threads receive rows via structured clone (full copy), so passing 38-field rows
+// when a chart only needs 3 fields wastes 12x memory during serialization.
+function slimRowsForWorker(rows: DataRow[], report: ReportDefinition, extraFilters: FilterDefinition[]): DataRow[] {
+  const needed = new Set(collectReportFieldIds(report, extraFilters));
+  return rows.map((row) => {
+    const slim: DataRow = {};
+    for (const key of needed) {
+      slim[key] = row[key] ?? "";
+    }
+    if (row.__recordId !== undefined) slim.__recordId = row.__recordId;
+    return slim;
+  });
+}
+
 function executeLocalReportPageOnly(
   report: ReportDefinition,
   table: TableDefinition,
@@ -923,10 +942,18 @@ async function executeDurableReportPageOnly(
   extraFilters: FilterDefinition[],
   options: ExecuteReportOptions
 ): Promise<ReportRunResult | null> {
-  // Multi-source reports can't use the cursor path — they need all rows in memory to merge.
+  const normalized = normalizePageOptions(options);
+  const { page, pageSize, includeRows, startIndex, endIndexExclusive } = normalized;
+  const durableFreshness = await getDurableFreshness(table);
+  const fresh = durableFreshness || freshness("local-fallback");
+
+  // Try SQL-native first — supports sorts natively, instant for any dataset size
+  const sqlResult = await trySqlExecuteDurablePageOnly(report, table, extraFilters, normalized, fresh);
+  if (sqlResult) return sqlResult;
+
+  // Fallback: cursor-based in-memory execution (no sorts supported here)
   if (report.sourceJoins?.length) return null;
   if (report.sorts.length) return null;
-  const { page, pageSize, includeRows, startIndex, endIndexExclusive } = normalizePageOptions(options);
   const filterTree = getCombinedFilterTree(report, extraFilters);
   const pageRows: DataRow[] = [];
   const sampleRows: DataRow[] = [];
@@ -942,7 +969,6 @@ async function executeDurableReportPageOnly(
     });
   });
   if (!summary) return null;
-  const durableFreshness = await getDurableFreshness(table);
   return {
     reportId: report.id,
     tableId: table.id,
@@ -955,7 +981,7 @@ async function executeDurableReportPageOnly(
     pageSize,
     totalPages: Math.max(1, Math.ceil(totalRows / pageSize)),
     hasNextPage: includeRows ? page * pageSize < totalRows : false,
-    freshness: durableFreshness || freshness("local-fallback")
+    freshness: fresh
   };
 }
 
@@ -965,7 +991,16 @@ async function executeDurableReport(
   extraFilters: FilterDefinition[],
   options: ExecuteReportOptions = {}
 ): Promise<ReportRunResult | null> {
-  const { page, pageSize, includeRows, startIndex, endIndexExclusive } = normalizePageOptions(options);
+  const normalized = normalizePageOptions(options);
+  const { page, pageSize, includeRows, startIndex, endIndexExclusive } = normalized;
+  const durableFreshness = await getDurableFreshness(table);
+  const fresh = durableFreshness || freshness("local-fallback");
+
+  // Try SQL-native execution first — instant for any dataset size
+  const sqlResult = await trySqlExecuteDurableReport(report, table, extraFilters, normalized, fresh);
+  if (sqlResult) return sqlResult;
+
+  // Fallback: cursor-based in-memory execution
   if (report.sourceJoins?.length) return null;
   if (includeRows && report.sorts.length) return null;
   const filterTree = getCombinedFilterTree(report, extraFilters);
@@ -990,7 +1025,6 @@ async function executeDurableReport(
     });
   });
   if (!summary) return null;
-  const durableFreshness = await getDurableFreshness(table);
   return {
     reportId: report.id,
     tableId: table.id,
@@ -1003,7 +1037,7 @@ async function executeDurableReport(
     pageSize,
     totalPages: Math.max(1, Math.ceil(totalRows / pageSize)),
     hasNextPage: includeRows ? page * pageSize < totalRows : false,
-    freshness: durableFreshness || freshness("local-fallback")
+    freshness: fresh
   };
 }
 
@@ -1362,7 +1396,7 @@ export async function executeReportPage(report: ReportDefinition, extraFilters: 
     const rows = await getExecutionRows(table, { objectId: report.id, requiredFieldIds: collectReportFieldIds(report, extraFilters) }, report);
     const result = rows.length <= 1500
       ? runReport(report, table, rows, extraFilters)
-      : await runReportWorker({ report, table, rows, extraFilters });
+      : await runReportWorker({ report, table, rows: slimRowsForWorker(rows, report, extraFilters), extraFilters });
     return {
       ...result,
       warnings: mergeWarnings(result.warnings, collectMissingReportFieldWarnings(report, table, rows)),
@@ -1406,7 +1440,7 @@ export async function fetchReportPage(report: ReportDefinition, extraFilters: Fi
     const rows = await getExecutionRows(table, { objectId: report.id, requiredFieldIds: collectReportFieldIds(report, extraFilters) }, report);
     const result = rows.length <= 1500
       ? runReport(report, table, rows, extraFilters)
-      : await runReportWorker({ report, table, rows, extraFilters });
+      : await runReportWorker({ report, table, rows: slimRowsForWorker(rows, report, extraFilters), extraFilters });
     return {
       ...result,
       warnings: mergeWarnings(result.warnings, collectMissingReportFieldWarnings(report, table, rows)),
@@ -1492,7 +1526,7 @@ export async function fetchReportExportBundle(
     const rows = await getExecutionRows(table, { objectId: report.id, requiredFieldIds: collectReportFieldIds(report, extraFilters) }, report);
     const result = rows.length <= 1500
       ? runReport(report, table, rows, extraFilters)
-      : await runReportWorker({ report, table, rows, extraFilters });
+      : await runReportWorker({ report, table, rows: slimRowsForWorker(rows, report, extraFilters), extraFilters });
     return {
       ...result,
       warnings: mergeWarnings(result.warnings, collectMissingReportFieldWarnings(report, table, rows)),
@@ -1530,12 +1564,14 @@ export async function executeReport(report: ReportDefinition, extraFilters: Filt
 
   const key = cacheKey(report, table, extraFilters);
   const full = await reportCache.getOrCreate(key, async () => {
-    const durable = await executeDurableReport(report, table, extraFilters, options);
+    // Always cache with rows included so later includeRows:true calls don't get empty results.
+    // paginateReportResult handles the final includeRows filtering for the caller.
+    const durable = await executeDurableReport(report, table, extraFilters, { ...options, includeRows: true });
     if (durable) return durable;
     const rows = await getExecutionRows(table, { objectId: report.id, requiredFieldIds: collectReportFieldIds(report, extraFilters) }, report);
     const result = rows.length <= 1500
       ? runReport(report, table, rows, extraFilters)
-      : await runReportWorker({ report, table, rows, extraFilters });
+      : await runReportWorker({ report, table, rows: slimRowsForWorker(rows, report, extraFilters), extraFilters });
     return {
       ...result,
       warnings: mergeWarnings(result.warnings, collectMissingReportFieldWarnings(report, table, rows)),
@@ -1569,6 +1605,7 @@ function buildDashboardExecutionKey(report: ReportDefinition, widget: DashboardR
     updatedAt: report.updatedAt,
     reportShape: buildReportExecutionShape(report),
     heavy: widgetNeedsAggregates(report, widget),
+    rows: widgetNeedsRows(report, widget),
     filters: extraFilters
       .filter((filter) => Boolean(filter.value))
       .map((filter) => [filter.fieldId, filter.operator, filter.value])
@@ -1577,6 +1614,7 @@ function buildDashboardExecutionKey(report: ReportDefinition, widget: DashboardR
     updatedAt: report.updatedAt,
     widgetId: widget.id,
     heavy: widgetNeedsAggregates(report, widget),
+    rows: widgetNeedsRows(report, widget),
     filterCount: extraFilters.length
   });
 }
@@ -1626,6 +1664,26 @@ async function executeDashboardUncached(
   runtimeValues: Record<string, string>,
   options: ExecuteDashboardOptions = {}
 ) {
+  // Pre-load all unique source tables ONCE before concurrent widget execution.
+  // Without this, concurrent widgets that share a source table each try to load
+  // all rows simultaneously, causing OOM crashes on large datasets (e.g. 46k rows).
+  // After the pre-load, objectStore cache hits are instant for all subsequent widgets.
+  if (!options.forceLive) {
+    const uniqueTableIds = new Set<string>();
+    for (const tab of tabsToRender) {
+      for (const widget of tab.widgets) {
+        const rep = objectStore.resolveWidgetReport(widget);
+        if (rep?.sourceTableId) uniqueTableIds.add(rep.sourceTableId);
+      }
+    }
+    for (const tableId of uniqueTableIds) {
+      if (!objectStore.getRows(tableId).length) {
+        const table = objectStore.getTable(tableId);
+        if (table) await loadPrimaryRows(table, { objectId: dashboard.id }).catch(() => null);
+      }
+    }
+  }
+
   const executionCache = new Map<string, Promise<ReportRunResult>>();
   const widgetJobs = tabsToRender.flatMap((tab) =>
     tab.widgets.map((widget) => ({ tab, widget }))

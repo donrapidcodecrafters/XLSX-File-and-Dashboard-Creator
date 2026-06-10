@@ -274,8 +274,8 @@ export async function registerSessionAuth(app: FastifyInstance) {
       } else if (dbUser) {
         // Wrong password — increment failure counter and maybe lock
         const newAttempts = (dbUser.failed_login_attempts || 0) + 1;
-        const LOCK_AFTER = 5;
-        const LOCK_MINUTES = 15;
+        const LOCK_AFTER = 10;
+        const LOCK_MINUTES = 5;
         if (newAttempts >= LOCK_AFTER) {
           const lockedUntil = new Date(Date.now() + LOCK_MINUTES * 60 * 1000).toISOString();
           await pgQuery(

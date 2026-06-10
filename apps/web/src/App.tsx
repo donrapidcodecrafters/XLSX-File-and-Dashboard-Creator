@@ -920,6 +920,8 @@ export function App() {
   const [isDark, setIsDark] = useDarkMode();
   const [currentUser, setCurrentUser] = useState<PlatformUser | null>(null);
   const [showUserSettings, setShowUserSettings] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
   const [sidebarPinned, setSidebarPinned] = useState<boolean>(() => {
     try { return window.localStorage.getItem("sidebar-pinned") === "true"; } catch { return false; }
   });
@@ -946,13 +948,25 @@ export function App() {
       const theme = r.user.theme || "system";
       const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
       const useDark = theme === "dark" || (theme === "system" && prefersDark);
-      document.documentElement.classList.toggle("dark", useDark);
+      setIsDark(useDark);
     }).catch(() => {});
     getMyPermissions().then((r) => {
       setUserPermissions(r.permissions || {});
     }).catch(() => {});
     getSessionTtlHours().then(setSessionTtlHours).catch(() => {});
   }, [authState]);
+
+  // Close user menu on outside click
+  useEffect(() => {
+    if (!userMenuOpen) return;
+    function onClickOutside(e: MouseEvent) {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setUserMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [userMenuOpen]);
 
   // Inactivity auto-logout
   const doLogout = useCallback(() => {
@@ -1414,7 +1428,7 @@ export function App() {
       <div className={`app-content-with-sidebar${sidebarPinned ? " sidebar-pinned" : ""}`}>
       {hosted.embed || readerRoute ? null : (
         <header className="topbar">
-          <div>
+          <div className="topbar-brand">
             <div className="eyebrow">{homeRoute ? "Home" : studioRoute ? "Building" : viewerRoute ? "Viewing" : helpRoute ? "Help" : "Viewer"}</div>
             <h1>{platformName}</h1>
           </div>
@@ -1424,71 +1438,70 @@ export function App() {
               <NavLink className={({ isActive }) => `topbar-tab${isActive ? " active" : ""}`} to={buildHostedRoute("/studio")}>Building</NavLink>
               <NavLink className={({ isActive }) => `topbar-tab${isActive ? " active" : ""}`} to={buildHostedRoute("/viewer")}>Viewing</NavLink>
             </div>
+            {(homeRoute || viewerRoute) ? (
+              <button className="ghost-button topbar-action btn-system" onClick={() => { void startTopbarRefresh(); }}>Refresh all</button>
+            ) : null}
             {studioRoute ? (
               <>
                 <button className="ghost-button topbar-action btn-system" onClick={() => { void startTopbarRefresh(); }}>Refresh all</button>
                 <button className="ghost-button topbar-action btn-system" onClick={() => navigate("/settings")}>Settings</button>
               </>
             ) : null}
-            {homeRoute ? (
-              <button className="ghost-button topbar-action btn-system" onClick={() => { void startTopbarRefresh(); }}>Refresh all</button>
-            ) : null}
-            {viewerRoute ? (
-              <button className="ghost-button topbar-action btn-system" onClick={() => { void startTopbarRefresh(); }}>Refresh all</button>
-            ) : null}
-            <button
-              className="ghost-button topbar-action btn-help"
-              onClick={openHelpdeskTicket}
-              disabled={!helpdeskTicketUrl}
-              title={helpdeskTicketUrl ? "Open a new helpdesk ticket" : "Configure helpdesk settings to enable this."}
-            >
-              Help Ticket
-            </button>
-            {!helpRoute ? <Link className="ghost-button topbar-action btn-help" to={buildHostedRoute("/help")}>Help</Link> : null}
-            <button
-              className="dark-mode-toggle btn-neutral"
-              type="button"
-              onClick={() => setIsDark((d) => !d)}
-              title={isDark ? "Switch to light mode" : "Switch to dark mode"}
-              aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
-            >
-              {isDark ? "☀" : "🌙"}
-            </button>
-            {/* User avatar → opens settings */}
-            {currentUser ? (
+          </div>
+          {/* User dropdown — must be outside topbar-meta (overflow:hidden) so dropdown isn't clipped */}
+          <div className="topbar-user-menu" ref={userMenuRef}>
               <button
-                className="ghost-button topbar-action"
-                onClick={() => setShowUserSettings(true)}
-                title={`${currentUser.displayName || currentUser.email} — Account settings`}
-                style={{ gap: 6 }}
+                className="ghost-button topbar-action topbar-user-trigger"
+                onClick={() => setUserMenuOpen((o) => !o)}
+                title={currentUser ? `${currentUser.displayName || currentUser.email} — Account options` : "Account options"}
               >
-                <span style={{
-                  display: "inline-flex", alignItems: "center", justifyContent: "center",
-                  width: 22, height: 22, borderRadius: "50%",
-                  background: "var(--brand)", color: "#fff",
-                  fontSize: 10, fontWeight: 800, flexShrink: 0,
-                }}>
-                  {(currentUser.displayName || currentUser.email).charAt(0).toUpperCase()}
+                <span className="topbar-avatar">
+                  {currentUser ? (currentUser.displayName || currentUser.email).charAt(0).toUpperCase() : "?"}
                 </span>
-                <span style={{ maxWidth: 96, overflow: "hidden", textOverflow: "ellipsis", fontSize: 13 }}>
-                  {currentUser.displayName || currentUser.email.split("@")[0]}
+                <span className="topbar-username">
+                  {currentUser ? (currentUser.displayName || currentUser.email.split("@")[0]) : "Account"}
                 </span>
+                <span className="topbar-chevron">{userMenuOpen ? "▴" : "▾"}</span>
               </button>
-            ) : null}
-            {/* Admin/dev: Users link */}
-            {(isAdminOrDev) ? (
-              <NavLink className={({ isActive }) => `ghost-button topbar-action btn-system${isActive ? " active" : ""}`} to={buildHostedRoute("/users")} title="Manage users">Users</NavLink>
-            ) : null}
-            <button
-              className="ghost-button topbar-action btn-danger"
-              onClick={() => {
-                void logoutSession().finally(() => setAuthState("unauthenticated"));
-              }}
-              title="Sign out"
-            >
-              Sign out
-            </button>
-            <span className="badge">{hosted.mode === "viewer" ? "Full-screen view" : navLabel}</span>
+              {userMenuOpen && (
+                <div className="topbar-user-dropdown">
+                  <button className="topbar-dropdown-item" onClick={() => { setShowUserSettings(true); setUserMenuOpen(false); }}>
+                    <span className="topbar-dropdown-icon">⚙</span> Account settings
+                  </button>
+                  <button
+                    className="topbar-dropdown-item"
+                    onClick={() => { setIsDark((d) => !d); setUserMenuOpen(false); }}
+                  >
+                    <span className="topbar-dropdown-icon">{isDark ? "☀" : "🌙"}</span>
+                    {isDark ? "Light mode" : "Dark mode"}
+                  </button>
+                  {!helpRoute ? (
+                    <Link className="topbar-dropdown-item" to={buildHostedRoute("/help")} onClick={() => setUserMenuOpen(false)}>
+                      <span className="topbar-dropdown-icon">?</span> Help guide
+                    </Link>
+                  ) : null}
+                  {helpdeskTicketUrl ? (
+                    <button
+                      className="topbar-dropdown-item"
+                      onClick={() => { openHelpdeskTicket(); setUserMenuOpen(false); }}
+                    >
+                      <span className="topbar-dropdown-icon">🎫</span> Help Ticket
+                    </button>
+                  ) : null}
+                  {isAdminOrDev ? (
+                    <NavLink className="topbar-dropdown-item" to={buildHostedRoute("/users")} onClick={() => setUserMenuOpen(false)}>
+                      <span className="topbar-dropdown-icon">👥</span> Users
+                    </NavLink>
+                  ) : null}
+                  <div className="topbar-dropdown-divider" />
+                  <button
+                    className="topbar-dropdown-item topbar-dropdown-danger"
+                    onClick={() => { void logoutSession().finally(() => setAuthState("unauthenticated")); }}
+                  >
+                    <span className="topbar-dropdown-icon">→</span> Sign out
+                  </button>
+                </div>
+              )}
           </div>
         </header>
       )}
