@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { formatReportCellValue, getReportFieldLabel, type ReportDefinition, type ReportFocusMode, type ReportRunResult, type TableDefinition } from "@studio/shared";
 import { LinkToolbar } from "./LinkToolbar";
@@ -43,6 +43,7 @@ interface ReportViewProps {
   isFavorite?: boolean;
   onToggleFavorite?: () => void;
   openLinksInNewTab?: boolean;
+  headerActions?: ReactNode;
 }
 
 function reportShowsChart(report: ReportDefinition) {
@@ -204,7 +205,8 @@ export function ReportView({
   onStateChange,
   isFavorite = false,
   onToggleFavorite,
-  openLinksInNewTab = false
+  openLinksInNewTab = false,
+  headerActions
 }: ReportViewProps) {
   const hosted = getHostedContext();
   const fullScreenUrl = buildObjectUrl("report", report.id, { viewer: true });
@@ -575,6 +577,9 @@ export function ReportView({
             <span className="badge brand">Report</span>
             <h1>{report.name}</h1>
             <p>{report.description || "Full-screen report view with live data, summaries, charts, and detail rows."}</p>
+          </div>
+          <div className="reader-hero-actions">
+            {headerActions}
           </div>
         </div>
 

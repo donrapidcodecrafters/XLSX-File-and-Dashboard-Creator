@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   filterStudioLibraryItems,
@@ -454,7 +454,8 @@ function ObjectPage({
   onObjectViewed,
   onRefreshComplete,
   onUserSettingsChange,
-  onToggleFavorite
+  onToggleFavorite,
+  headerActions
 }: {
   tables: TableDefinition[];
   platformName: string;
@@ -469,6 +470,7 @@ function ObjectPage({
     personalOverrides?: StudioDocument["personalOverrides"];
   }) => Promise<void>;
   onToggleFavorite: (objectId: string) => Promise<void>;
+  headerActions?: ReactNode;
 }) {
   const params = useParams();
   const [object, setObject] = useState<StudioObject | null>(null);
@@ -796,6 +798,7 @@ function ObjectPage({
           isFavorite={(studioDocument?.favorites || []).includes(object.id)}
           onToggleFavorite={() => { void onToggleFavorite(object.id); }}
           openLinksInNewTab={openLinksInNewTab}
+          headerActions={headerActions}
         />
       </>
     );
@@ -897,6 +900,7 @@ function ObjectPage({
         forceLive={liveModeEnabled}
         openLinksInNewTab={openLinksInNewTab}
         onRefreshJobDetected={(job: RefreshJobStatus | null) => setRefreshJob(job)}
+        headerActions={headerActions}
       />
     </>
   );
@@ -921,6 +925,8 @@ export function App() {
   const [showUserSettings, setShowUserSettings] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
+  const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
+  const headerMenuRef = useRef<HTMLDivElement>(null);
   const [sidebarPinned, setSidebarPinned] = useState<boolean>(() => {
     try { return window.localStorage.getItem("sidebar-pinned") === "true"; } catch { return false; }
   });
@@ -966,6 +972,17 @@ export function App() {
     document.addEventListener("mousedown", onClickOutside);
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, [userMenuOpen]);
+
+  useEffect(() => {
+    if (!headerMenuOpen) return;
+    function onClickOutside(e: MouseEvent) {
+      if (headerMenuRef.current && !headerMenuRef.current.contains(e.target as Node)) {
+        setHeaderMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [headerMenuOpen]);
 
   // Inactivity auto-logout
   const doLogout = useCallback(() => {
@@ -1591,7 +1608,31 @@ export function App() {
               <Route path="/roles" element={hasPerm("roles.view") ? <RoleManagementPage /> : <Navigate to={buildHostedRoute("/")} replace />} />
               <Route path="/data" element={hasPerm("data.view") ? <DataManagementPage canImport={hasPerm("data.import")} canDelete={hasPerm("data.delete")} /> : <Navigate to={buildHostedRoute("/")} replace />} />
               <Route path="/reports" element={isAdminOrDev ? <ScheduledReportsPage studioDocument={displayDocument} /> : <Navigate to={buildHostedRoute("/")} replace />} />
-              <Route path="/:type/:objectId" element={<ObjectPage tables={scopedTables} platformName={platformName} studioDocument={displayDocument} launchContext={hosted} openLinksInNewTab={openLinksInNewTab} onObjectViewed={markObjectAsRecent} onRefreshComplete={reloadCatalog} onUserSettingsChange={updateUserSettings} onToggleFavorite={toggleFavorite} />} />
+              <Route path="/:type/:objectId" element={<ObjectPage tables={scopedTables} platformName={platformName} studioDocument={displayDocument} launchContext={hosted} openLinksInNewTab={openLinksInNewTab} onObjectViewed={markObjectAsRecent} onRefreshComplete={reloadCatalog} onUserSettingsChange={updateUserSettings} onToggleFavorite={toggleFavorite} headerActions={
+                <div className="topbar-user-menu" ref={headerMenuRef}>
+                  <button
+                    className="ghost-button topbar-action topbar-user-trigger"
+                    onClick={() => setHeaderMenuOpen((o) => !o)}
+                    title={currentUser ? `${currentUser.displayName || currentUser.email} — Account options` : "Account options"}
+                  >
+                    <span className="topbar-avatar">
+                      {currentUser ? (currentUser.displayName || currentUser.email).charAt(0).toUpperCase() : "?"}
+                    </span>
+                    <span className="topbar-username">
+                      {currentUser ? (currentUser.displayName || currentUser.email.split("@")[0]) : "Account"}
+                    </span>
+                    <span className="topbar-chevron">{headerMenuOpen ? "▴" : "▾"}</span>
+                  </button>
+                  {headerMenuOpen ? (
+                    <div className="topbar-user-dropdown">
+                      <button className="topbar-dropdown-item" onClick={() => { setShowUserSettings(true); setHeaderMenuOpen(false); }}>Account settings</button>
+                      <button className="topbar-dropdown-item" onClick={() => { setIsDark((d) => !d); setHeaderMenuOpen(false); }}>{isDark ? "Light mode" : "Dark mode"}</button>
+                      <div className="topbar-dropdown-divider" />
+                      <button className="topbar-dropdown-item topbar-dropdown-danger" onClick={() => { void logoutSession().finally(() => setAuthState("unauthenticated")); }}>Sign out</button>
+                    </div>
+                  ) : null}
+                </div>
+              } />} />
               <Route path="*" element={<Navigate to={buildHostedRoute("/")} replace />} />
             </Routes>
           )}

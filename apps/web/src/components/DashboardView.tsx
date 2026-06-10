@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { buildDashboardFilters, formatReportCellValue, getDashboardWidgetLayoutStyle, getDashboardWidgetPlacements, getReportFieldLabel, resolveActiveDashboardTabId, type DashboardDefinition, type DashboardRunResult, type RefreshJobStatus, type ReportDefinition, type ReportRunResult, type TableDefinition } from "@studio/shared";
+import { buildDashboardFilters, compactDashboardTabWidgets, formatReportCellValue, getDashboardWidgetLayoutStyle, getDashboardWidgetPlacements, getReportFieldLabel, resolveActiveDashboardTabId, type DashboardDefinition, type DashboardRunResult, type RefreshJobStatus, type ReportDefinition, type ReportRunResult, type TableDefinition } from "@studio/shared";
 import { createExportSaveTarget, fetchFieldValues, fetchReportExportBundle, renderDashboard, runReportPage, type ExportSaveTarget } from "../lib/api";
 import { LinkToolbar } from "./LinkToolbar";
 import { ChartPreview } from "./ChartPreview";
@@ -43,6 +43,7 @@ interface DashboardViewProps {
   onRefreshJobDetected?: (job: RefreshJobStatus | null) => void;
   forceLive?: boolean;
   openLinksInNewTab?: boolean;
+  headerActions?: ReactNode;
 }
 
 function resolveWidgetDisplayMode(widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], reportMode: string) {
@@ -210,7 +211,8 @@ export function DashboardView({
   onStateChange,
   onRefreshJobDetected,
   forceLive = false,
-  openLinksInNewTab = false
+  openLinksInNewTab = false,
+  headerActions
 }: DashboardViewProps) {
   const hosted = getHostedContext();
   const fullScreenUrl = buildObjectUrl("dashboard", dashboard.id, { viewer: true });
@@ -256,7 +258,8 @@ export function DashboardView({
   const activeTabResult = tabResults[resolvedActiveTabId] || null;
   const activeTabLayout = useMemo(() => {
     const tab = dashboard.tabs.find((item) => item.id === resolvedActiveTabId);
-    return new Map((tab ? getDashboardWidgetPlacements(tab) : []).map((placement) => [placement.widgetId, placement]));
+    const compactedTab = tab ? (compactDashboardTabWidgets(tab) || tab) : null;
+    return new Map((compactedTab ? getDashboardWidgetPlacements(compactedTab) : []).map((placement) => [placement.widgetId, placement]));
   }, [dashboard.tabs, resolvedActiveTabId]);
   const activeTabError = tabErrors[resolvedActiveTabId] || "";
   const loading = Boolean(tabLoading[resolvedActiveTabId]);
@@ -644,14 +647,18 @@ export function DashboardView({
           <h1>{dashboard.name}</h1>
           <p>{dashboard.description || "Full-screen dashboard view with live filters, summaries, and linked reports."}</p>
         </div>
+        <div className="reader-hero-actions">
+          {toolbarCollapsed ? (
+            <button className="ghost-button reader-sidebar-show-btn" onClick={() => setToolbarCollapsed(false)}>
+              Show tools
+            </button>
+          ) : null}
+          {headerActions}
+        </div>
       </div>
 
       <div className={`reader-page-shell${toolbarCollapsed ? " sidebar-collapsed" : ""}`}>
-        {toolbarCollapsed ? (
-          <button className="ghost-button reader-sidebar-show-btn" onClick={() => setToolbarCollapsed(false)}>
-            Show tools
-          </button>
-        ) : (
+        {toolbarCollapsed ? null : (
         <aside className="reader-sidebar">
           <button className="ghost-button reader-sidebar-toggle" onClick={() => setToolbarCollapsed(true)}>
             {"Hide tools"}
