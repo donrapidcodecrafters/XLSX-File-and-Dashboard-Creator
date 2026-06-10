@@ -4696,11 +4696,9 @@ select {
   border-left: 1px solid var(--line);
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 0 0 120px;
   background: var(--surface);
-  display: grid;
-  align-content: start;
-  gap: 16px;
+  display: flex;
+  flex-direction: column;
   position: fixed;
   top: 61px;
   right: 0;
@@ -4717,6 +4715,11 @@ select {
   border-left: none;
   border-right: none;
   border-top: none;
+  flex-shrink: 0;
+}
+
+.dashboard-builder-widget-panel .card:last-child {
+  margin-bottom: 80px;
 }
 
 .dashboard-builder-panel-head {
