@@ -582,6 +582,7 @@ export function DashboardView({
 
   const tabs = dashboard.tabs.map((tab) => tabResults[tab.id] || ({ id: tab.id, name: tab.name, widgets: [] }));
   const activeTab = tabs.find((tab) => tab.id === resolvedActiveTabId) || tabs[0];
+  const isOverviewTab = !resolvedActiveTabId || resolvedActiveTabId === dashboard.tabs[0]?.id;
   const focusedWidget = activeTab?.widgets.find((widget) => widget.widgetId === focusedWidgetId) || null;
   const focusedWidgetCrossFilterOptions = focusedWidget
     ? getDashboardCrossFilterOptions(dashboard, focusedWidget.report, focusedWidget.result.chartData)
@@ -801,7 +802,9 @@ export function DashboardView({
         <div className="card">
           <div className="card-head">
             <strong>{activeTab.name}</strong>
-            <span className="micro">{activeTab.widgets.length || 0} cards</span>
+            {isOverviewTab
+              ? <span className="micro">{activeTab.widgets.length || 0} cards</span>
+              : <span className="micro">{activeTab.widgets[0]?.result?.totalRows ?? 0} rows</span>}
           </div>
           {tabErrors[activeTab.id] ? (
             <div className="sync-status sync-status-warn">
@@ -827,7 +830,123 @@ export function DashboardView({
               </button>
             </div>
           ) : null}
-          <div className="widget-grid dashboard-layout-grid">
+          {!isOverviewTab ? (
+            <div className="stack">
+              {activeTab.widgets.map((widget) => {
+                const pagedResult = widgetPageResults[widget.widgetId] || widget.result;
+                const currentPage = widgetPages[widget.widgetId] || pagedResult.page || 1;
+                const totalPages = pagedResult.totalPages || 1;
+                const pageLoading = widgetPageLoading[widget.widgetId];
+                const widgetTable = tables?.find((item) => item.id === widget.report.sourceTableId || item.quickbaseTableId === widget.report.sourceTableId);
+                const quickbaseLinkContext = getQuickbaseLinkContext?.(widget.report.sourceTableId) || null;
+                return (
+                  <div key={widget.widgetId}>
+                    {widget.status === "complete" && pagedResult.crosstab ? (
+                      <div className="pivot-table-shell">
+                        <table className="pivot-table">
+                          <thead><tr>
+                            <th className="pivot-metric-col"></th>
+                            {pagedResult.crosstab.columns.map((col, ci) => (
+                              <th key={ci} className={col === "Grand Total" ? "pivot-grand-total" : ""}>{col || "(blank)"}</th>
+                            ))}
+                          </tr></thead>
+                          <tbody>
+                            {pagedResult.crosstab.rows.map((row) => (
+                              <tr key={row.label}>
+                                <td className="pivot-row-header">{row.label}</td>
+                                {row.formatted.map((val, vi) => (
+                                  <td key={vi} className={pagedResult.crosstab!.columns[vi] === "Grand Total" ? "pivot-grand-total" : ""}>{val}</td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : widget.status === "complete" && pagedResult.summary.length && widget.widget.showSummary ? (
+                      <div className="summary-grid">
+                        {pagedResult.summary.map((item) => (
+                          <div className="summary-card" key={item.label}>
+                            <strong>{item.value}</strong>
+                            <span>{item.label}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                    {widget.status === "complete" && widgetShowsChart(widget.widget, widget.report) ? (
+                      <div className="chart-scroll-shell" ref={bindChartMeasureRef(widget.widgetId)}>
+                        {(() => {
+                          const axisLabels = getChartAxisLabels(tables, widget.report);
+                          const chartBounds = getChartViewportBounds(widget.report.view.chartType, pagedResult.chartData.length, false);
+                          return (
+                            <div style={{ minWidth: `${chartBounds.minWidth}px`, minHeight: `${chartBounds.minHeight}px`, width: "100%", height: "100%" }}>
+                              <ChartPreview
+                                chartType={widget.report.view.chartType}
+                                data={pagedResult.chartData.length ? pagedResult.chartData : widget.result.chartData}
+                                title={widget.report.view.chartTitle || widget.widget.title}
+                                decimalPlaces={widget.report.view.decimalPlaces}
+                                chartColors={widget.report.view.chartColors}
+                                chartValueColors={widget.report.view.chartValueColors}
+                                chartSort={widget.report.view.chartSort}
+                                chartOrientation={widget.report.view.chartOrientation}
+                                xAxisLabel={axisLabels.xAxisLabel}
+                                yAxisLabel={axisLabels.yAxisLabel}
+                                secondaryYAxisLabel={axisLabels.secondaryYAxisLabel}
+                                secondarySeriesType={widget.report.view.chartSecondarySeriesType}
+                                showLegend={widget.report.view.chartShowLegend}
+                                showValues={widget.report.view.chartShowValues}
+                                viewportHeight={chartBounds.minHeight}
+                                openLinksInNewTab={openLinksInNewTab}
+                              />
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    ) : null}
+                    {widget.status === "complete" ? (
+                      <>
+                        <div className="link-toolbar">
+                          <button className="ghost-button" disabled={currentPage <= 1 || pageLoading} onClick={() => { void changeWidgetPage(widget, currentPage - 1); }}>Previous</button>
+                          <span className="micro">Page {currentPage} of {totalPages} · {pagedResult.totalRows || 0} rows</span>
+                          <button className="ghost-button" disabled={!pagedResult.hasNextPage || pageLoading} onClick={() => { void changeWidgetPage(widget, currentPage + 1); }}>Next</button>
+                        </div>
+                        <ResizableDataTable
+                          className="report-table-shell"
+                          columns={[
+                            ...(quickbaseLinkContext ? [{ key: "__quickbase", label: "Quickbase", minWidth: 120, defaultWidth: 120, className: "table-action-col" }] : []),
+                            ...widget.report.selectedFieldIds.map((fieldId) => ({
+                              key: fieldId,
+                              label: getFieldLabel(tables, widget.report, fieldId)
+                            }))
+                          ]}
+                          rows={pagedResult.rows.map((row, index) => ({
+                            key: String(row.__recordId || index),
+                            cells: [
+                              ...(quickbaseLinkContext ? [
+                                String(row.__recordId || "").trim() ? (
+                                  <a className="ghost-button table-edit-link" href={buildQuickbaseRecordEditUrl(quickbaseLinkContext, String(row.__recordId || ""))} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>Edit</a>
+                                ) : null
+                              ] : []),
+                              ...widget.report.selectedFieldIds.map((fieldId) =>
+                                widgetTable ? formatReportCellValue(widget.report, widgetTable, fieldId, row[fieldId]) : String(row[fieldId] ?? "")
+                              )
+                            ]
+                          }))}
+                        />
+                      </>
+                    ) : null}
+                    {dashboardLoading && !pagedResult.rows.length ? <div className="empty">Loading…</div> : null}
+                  </div>
+                );
+              })}
+              {!dashboardLoading && !tabErrors[activeTab.id] && !activeTab.widgets.length ? (
+                <div className="sync-status" style={{ borderLeft: "4px solid var(--border-md, #B0BEC8)" }}>
+                  <strong>This tab has no report configured</strong>
+                  <span>Open this dashboard in the Building area and add a report card to this tab.</span>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          {isOverviewTab ? <div className="widget-grid dashboard-layout-grid">
             {activeTab.widgets.map((widget) => {
               const pagedResult = widgetPageResults[widget.widgetId] || widget.result;
               const currentPage = widgetPages[widget.widgetId] || pagedResult.page || 1;
@@ -1046,6 +1165,7 @@ export function DashboardView({
               </div>
             ) : null}
           </div>
+          : null}
         </div>
       ) : null}
 

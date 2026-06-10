@@ -658,6 +658,10 @@ export function fetchStudioSources() {
   return request<{ sources: StudioSourceSummary[] }>("/api/studio/sources");
 }
 
+export function fetchFieldUniqueValues(sourceId: string, fieldId: string) {
+  return request<{ values: string[] }>(`/api/studio/sources/${encodeURIComponent(sourceId)}/field-values/${encodeURIComponent(fieldId)}`);
+}
+
 // ── Data management ───────────────────────────────────────────────────────────
 
 export function renameSource(sourceId: string, sourceName: string) {

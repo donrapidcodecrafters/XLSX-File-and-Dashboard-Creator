@@ -95,6 +95,7 @@ import {
   startStudioRefresh,
   saveStudioDocument,
   fetchStudioSources,
+  fetchFieldUniqueValues,
   updateSourceKeyField
 } from "../lib/studioApi";
 import { createExportSaveTarget, downloadExportJob, fetchExportJobStatus, fetchExportJobs, startDashboardExportJob, startReportExportJob, runReport as runReportFromServer } from "../lib/api";
@@ -934,7 +935,7 @@ function rebuildPendingWorkbookImportObjects(
   Object.entries(baseObjects).forEach(([objectId, object]) => {
     if (object.type === "report") {
       if (skippedSet.has(objectId)) return;
-      nextObjects[objectId] = targetTable
+      const remapped = targetTable
         ? remapImportedReportToSourceTable(object, importedTablesById[object.sourceTableId] || null, targetTable)
         : remapImportedReportToSourceTable(object, importedTablesById[object.sourceTableId] || null, {
           id: "",
@@ -942,6 +943,7 @@ function rebuildPendingWorkbookImportObjects(
           description: "",
           fields: []
         });
+      nextObjects[objectId] = { ...remapped, view: { ...remapped.view, mode: "table" } };
       return;
     }
     const dashboardCopy = clone(object);
@@ -1234,6 +1236,72 @@ function validationMessages(object: StudioObject, table?: TableDefinition | null
   return messages;
 }
 
+function FilterValueComboInput({
+  sourceId,
+  fieldId,
+  field,
+  value,
+  onChange,
+  existingOptions
+}: {
+  sourceId: string;
+  fieldId: string;
+  field: TableDefinition["fields"][number] | null;
+  value: string;
+  onChange: (v: string) => void;
+  existingOptions: string[];
+}) {
+  const [fetchedValues, setFetchedValues] = useState<string[]>([]);
+  useEffect(() => {
+    if (!sourceId || !fieldId) return;
+    if (field?.type === "date" || field?.type === "datetime" || field?.type === "number" || field?.type === "currency") return;
+    fetchFieldUniqueValues(sourceId, fieldId)
+      .then((r) => setFetchedValues(r.values))
+      .catch(() => {});
+  }, [sourceId, fieldId, field?.type]);
+  const isDateType = field?.type === "date" || field?.type === "datetime";
+  const isNumericType = field?.type === "number" || field?.type === "currency";
+  if (isDateType) {
+    return (
+      <input
+        type={field?.type === "date" ? "date" : "datetime-local"}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Filter date"
+      />
+    );
+  }
+  if (isNumericType) {
+    return (
+      <input
+        type="number"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Filter value"
+      />
+    );
+  }
+  const allSuggestions = Array.from(new Set([...existingOptions, ...fetchedValues]))
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
+  const listId = `fv-${sourceId}-${fieldId}`.replace(/[^a-z0-9-]/gi, "-");
+  return (
+    <>
+      <input
+        type="text"
+        list={listId}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Type or pick a value…"
+      />
+      {allSuggestions.length > 0 && (
+        <datalist id={listId}>
+          {allSuggestions.map((v) => <option key={v} value={v} />)}
+        </datalist>
+      )}
+    </>
+  );
+}
+
 function FilterGroupEditor({
   table,
   rows,
@@ -1276,20 +1344,14 @@ function FilterGroupEditor({
             emptyOptionLabel="Choose a comparison field"
             onChange={(value) => onChange(updateFilterRuleInGroup(group, rule.id, (currentRule) => ({ ...currentRule, compareFieldId: value })))}
           />
-        ) : valueOptions.length && field?.type !== "date" && field?.type !== "datetime" && field?.type !== "number" && field?.type !== "currency" ? (
-          <SearchableSelect
-            value={rule.value}
-            options={valueOptions}
-            allowEmpty
-            emptyOptionLabel="Choose a value"
-            onChange={(value) => onChange(updateFilterRuleInGroup(group, rule.id, (currentRule) => ({ ...currentRule, value })))}
-          />
         ) : (
-          <input
-            type={field?.type === "date" ? "date" : field?.type === "datetime" ? "datetime-local" : field?.type === "number" || field?.type === "currency" ? "number" : "text"}
+          <FilterValueComboInput
+            sourceId={table.id}
+            fieldId={rule.fieldId}
+            field={field}
             value={rule.value}
-            onChange={(event) => onChange(updateFilterRuleInGroup(group, rule.id, (currentRule) => ({ ...currentRule, value: event.target.value })))}
-            placeholder={field?.type === "date" || field?.type === "datetime" ? "Filter date" : "Filter value"}
+            onChange={(value) => onChange(updateFilterRuleInGroup(group, rule.id, (currentRule) => ({ ...currentRule, value })))}
+            existingOptions={valueOptions.map((o) => o.value)}
           />
         )}
       </>
@@ -3981,15 +4043,18 @@ export function StudioPage({
           .map((table) => [table.id, clone(table)])
       );
       const targetTable = sourceTableId ? bundle.tables.find((table) => table.id === sourceTableId) || null : null;
+      const defaultSkippedReportIds = response.review.sheets
+        .filter((sheet) => sheet.importedReportId)
+        .map((sheet) => String(sheet.importedReportId));
       setPendingWorkbookImport({
         review: response.review,
         warnings: response.warnings,
         primaryObjectId: response.primaryObjectId,
         importedObjectIds: response.importedObjectIds,
         sourceTableId,
-        skippedReportIds: [],
+        skippedReportIds: defaultSkippedReportIds,
         baseObjects,
-        currentObjects: rebuildPendingWorkbookImportObjects(baseObjects, importedTablesById, targetTable, []),
+        currentObjects: rebuildPendingWorkbookImportObjects(baseObjects, importedTablesById, targetTable, defaultSkippedReportIds),
         importedTablesById
       });
       setImportReviewModalOpen(true);
@@ -4025,15 +4090,18 @@ export function StudioPage({
           .filter((table): table is TableDefinition => Boolean(table))
           .map((table) => [table.id, clone(table)])
       );
+      const defaultSkippedReportIdsWbu = response.review.sheets
+        .filter((sheet) => sheet.importedReportId)
+        .map((sheet) => String(sheet.importedReportId));
       setPendingWorkbookImport({
         review: response.review,
         warnings: response.warnings,
         primaryObjectId: response.primaryObjectId,
         importedObjectIds: response.importedObjectIds,
         sourceTableId: "",
-        skippedReportIds: [],
+        skippedReportIds: defaultSkippedReportIdsWbu,
         baseObjects,
-        currentObjects: rebuildPendingWorkbookImportObjects(baseObjects, importedTablesById, null, []),
+        currentObjects: rebuildPendingWorkbookImportObjects(baseObjects, importedTablesById, null, defaultSkippedReportIdsWbu),
         importedTablesById
       });
       setImportReviewModalOpen(true);
@@ -4261,8 +4329,8 @@ export function StudioPage({
               {pendingWorkbookImport && pendingWorkbookImport.review.dashboardCreated && importReviewSheetOptions.length ? (
                 <div className="card">
                   <div className="card-head">
-                    <strong>Imported dashboard tabs</strong>
-                    <span className="micro">Skip any worksheet tabs you do not want to create.</span>
+                    <strong>Create reports from data tabs</strong>
+                    <div className="micro">Off by default — check the tabs you want to create as table reports.</div>
                   </div>
                   <div className="picker-list modal-picker-list">
                     {importReviewSheetOptions.map((item) => (
@@ -4282,7 +4350,7 @@ export function StudioPage({
                       </label>
                     ))}
                   </div>
-                  <div className="micro">Unchecked tabs will not create their report, chart, or dashboard card content.</div>
+                  <div className="micro">Checked tabs will be created as table-style reports and added as dashboard tabs. Reports created from data tabs are always in table mode.</div>
                 </div>
               ) : null}
 
@@ -5203,8 +5271,6 @@ export function StudioPage({
       <div className="studio-builder-dock-inner">
         <Link className="ghost-button btn-neutral" to={buildHostedRoute("/studio")}>Back to Building home</Link>
         <button onClick={() => addTemplate(activeObject.type === "dashboard" ? "layout" : "yaml")}>Save as template</button>
-        <button onClick={snapshotCurrentObject}>Save version</button>
-        <button onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save to server"}</button>
         {activeReport && canDo("building.edit") ? <button onClick={() => openEditReportModal(activeReport)}>Edit report</button> : null}
         {activeReport && canDo("building.delete") ? <button className="btn-danger" onClick={() => deleteObject(activeReport.id)}>Delete report</button> : null}
         <button onClick={() => toggleFavorite(activeObject.id)}>{documentState.favorites.includes(activeObject.id) ? "Unfavorite" : "Favorite"}</button>
