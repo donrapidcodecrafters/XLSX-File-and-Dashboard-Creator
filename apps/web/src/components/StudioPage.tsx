@@ -765,9 +765,40 @@ interface PendingWorkbookImport {
   importedObjectIds: string[];
   sourceTableId: string;
   skippedReportIds: string[];
+  reportTypeOverrides: Record<string, string>;
   baseObjects: Record<string, StudioObject>;
   currentObjects: Record<string, StudioObject>;
   importedTablesById: Record<string, TableDefinition>;
+}
+
+const IMPORT_REPORT_TYPE_OPTIONS = [
+  { value: "table", label: "Table" },
+  { value: "summary", label: "Summary" },
+  { value: "chart:bar", label: "Bar Chart" },
+  { value: "chart:line", label: "Line Chart" },
+  { value: "chart:pie", label: "Pie Chart" },
+  { value: "chart:doughnut", label: "Doughnut" },
+  { value: "chart:area", label: "Area Chart" },
+  { value: "chart:horizontalBar", label: "Horizontal Bar" },
+  { value: "chart:scatter", label: "Scatter" },
+  { value: "timeline", label: "Timeline" },
+  { value: "calendar", label: "Calendar" },
+  { value: "kanban", label: "Kanban" },
+] as const;
+
+function getImportReportTypeKey(report: StudioObject): string {
+  if (report.type !== "report") return "table";
+  const mode = (report as ReportDefinition).view?.mode;
+  if (mode === "chart") return `chart:${(report as ReportDefinition).view?.chartType || "bar"}`;
+  return mode || "table";
+}
+
+function applyImportTypeKeyToReport(report: ReportDefinition, typeKey: string): ReportDefinition {
+  if (typeKey.startsWith("chart:")) {
+    const chartType = typeKey.slice(6) as ReportDefinition["view"]["chartType"];
+    return { ...report, view: { ...report.view, mode: "chart" as const, chartType } };
+  }
+  return { ...report, view: { ...report.view, mode: typeKey as ReportDefinition["view"]["mode"] } };
 }
 
 function normalizeImportMatchKey(value: string) {
@@ -928,7 +959,8 @@ function rebuildPendingWorkbookImportObjects(
   baseObjects: Record<string, StudioObject>,
   importedTablesById: Record<string, TableDefinition>,
   targetTable: TableDefinition | null,
-  skippedReportIds: string[] = []
+  skippedReportIds: string[] = [],
+  reportTypeOverrides: Record<string, string> = {}
 ) {
   const skippedSet = new Set(skippedReportIds);
   const nextObjects: Record<string, StudioObject> = {};
@@ -943,7 +975,11 @@ function rebuildPendingWorkbookImportObjects(
           description: "",
           fields: []
         });
-      nextObjects[objectId] = { ...remapped, view: { ...remapped.view, mode: "table" } };
+      const typeOverride = reportTypeOverrides[objectId];
+      const withType = typeOverride
+        ? applyImportTypeKeyToReport(remapped as ReportDefinition, typeOverride)
+        : remapped;
+      nextObjects[objectId] = withType;
       return;
     }
     const dashboardCopy = clone(object);
@@ -1769,11 +1805,15 @@ export function StudioPage({
           .map((sheet) => {
             const reportId = String(sheet.importedReportId || "");
             const report = pendingWorkbookImport.baseObjects[reportId];
+            const detectedType = report?.type === "report" ? getImportReportTypeKey(report) : "table";
+            const selectedType = pendingWorkbookImport.reportTypeOverrides[reportId] || detectedType;
             return {
               reportId,
               sheetName: sheet.sheetName,
               reportName: report?.type === "report" ? report.name : (sheet.sheetName || reportId),
-              skipped: pendingWorkbookImport.skippedReportIds.includes(reportId)
+              skipped: pendingWorkbookImport.skippedReportIds.includes(reportId),
+              detectedType,
+              selectedType
             };
           })
       : [],
@@ -4043,18 +4083,16 @@ export function StudioPage({
           .map((table) => [table.id, clone(table)])
       );
       const targetTable = sourceTableId ? bundle.tables.find((table) => table.id === sourceTableId) || null : null;
-      const defaultSkippedReportIds = response.review.sheets
-        .filter((sheet) => sheet.importedReportId)
-        .map((sheet) => String(sheet.importedReportId));
       setPendingWorkbookImport({
         review: response.review,
         warnings: response.warnings,
         primaryObjectId: response.primaryObjectId,
         importedObjectIds: response.importedObjectIds,
         sourceTableId,
-        skippedReportIds: defaultSkippedReportIds,
+        skippedReportIds: [],
+        reportTypeOverrides: {},
         baseObjects,
-        currentObjects: rebuildPendingWorkbookImportObjects(baseObjects, importedTablesById, targetTable, defaultSkippedReportIds),
+        currentObjects: rebuildPendingWorkbookImportObjects(baseObjects, importedTablesById, targetTable, [], {}),
         importedTablesById
       });
       setImportReviewModalOpen(true);
@@ -4090,18 +4128,16 @@ export function StudioPage({
           .filter((table): table is TableDefinition => Boolean(table))
           .map((table) => [table.id, clone(table)])
       );
-      const defaultSkippedReportIdsWbu = response.review.sheets
-        .filter((sheet) => sheet.importedReportId)
-        .map((sheet) => String(sheet.importedReportId));
       setPendingWorkbookImport({
         review: response.review,
         warnings: response.warnings,
         primaryObjectId: response.primaryObjectId,
         importedObjectIds: response.importedObjectIds,
         sourceTableId: "",
-        skippedReportIds: defaultSkippedReportIdsWbu,
+        skippedReportIds: [],
+        reportTypeOverrides: {},
         baseObjects,
-        currentObjects: rebuildPendingWorkbookImportObjects(baseObjects, importedTablesById, null, defaultSkippedReportIdsWbu),
+        currentObjects: rebuildPendingWorkbookImportObjects(baseObjects, importedTablesById, null, [], {}),
         importedTablesById
       });
       setImportReviewModalOpen(true);
@@ -4234,7 +4270,7 @@ export function StudioPage({
       return {
         ...current,
         sourceTableId: tableId,
-        currentObjects: rebuildPendingWorkbookImportObjects(current.baseObjects, current.importedTablesById, targetTable, current.skippedReportIds)
+        currentObjects: rebuildPendingWorkbookImportObjects(current.baseObjects, current.importedTablesById, targetTable, current.skippedReportIds, current.reportTypeOverrides)
       };
     });
   }
@@ -4247,7 +4283,20 @@ export function StudioPage({
       return {
         ...current,
         skippedReportIds: nextSkippedReportIds,
-        currentObjects: rebuildPendingWorkbookImportObjects(current.baseObjects, current.importedTablesById, sourceTable, nextSkippedReportIds)
+        currentObjects: rebuildPendingWorkbookImportObjects(current.baseObjects, current.importedTablesById, sourceTable, nextSkippedReportIds, current.reportTypeOverrides)
+      };
+    });
+  }
+
+  function updatePendingImportReportType(reportId: string, typeKey: string) {
+    setPendingWorkbookImport((current) => {
+      if (!current) return current;
+      const nextOverrides = { ...current.reportTypeOverrides, [reportId]: typeKey };
+      const sourceTable = current.sourceTableId ? bundle.tables.find((table) => table.id === current.sourceTableId) || null : null;
+      return {
+        ...current,
+        reportTypeOverrides: nextOverrides,
+        currentObjects: rebuildPendingWorkbookImportObjects(current.baseObjects, current.importedTablesById, sourceTable, current.skippedReportIds, nextOverrides)
       };
     });
   }
@@ -4326,31 +4375,49 @@ export function StudioPage({
                 </div>
               ) : null}
 
-              {pendingWorkbookImport && pendingWorkbookImport.review.dashboardCreated && importReviewSheetOptions.length ? (
-                <div className="card">
+              {pendingWorkbookImport && importReviewSheetOptions.length ? (
+                <div className="card import-review-sheets-card">
                   <div className="card-head">
-                    <strong>Create reports from data tabs</strong>
-                    <div className="micro">Off by default — check the tabs you want to create as table reports.</div>
+                    <strong>Reports &amp; charts found in workbook</strong>
+                    <div className="micro">Toggle on to create · sorted by tab</div>
                   </div>
-                  <div className="picker-list modal-picker-list">
-                    {importReviewSheetOptions.map((item) => (
-                      <label className="picker-row" key={item.reportId}>
-                        <input
-                          type="checkbox"
-                          checked={!item.skipped}
-                          onChange={(event) => {
-                            const nextSkipped = event.target.checked
-                              ? pendingWorkbookImport.skippedReportIds.filter((reportId) => reportId !== item.reportId)
-                              : Array.from(new Set([...pendingWorkbookImport.skippedReportIds, item.reportId]));
-                            updatePendingImportSkippedReports(nextSkipped);
-                          }}
-                        />
-                        <span>{item.sheetName}</span>
-                        <em>{item.reportName}</em>
-                      </label>
-                    ))}
+                  <div className="import-review-sheet-list">
+                    {[...importReviewSheetOptions]
+                      .sort((a, b) => a.sheetName.localeCompare(b.sheetName, undefined, { numeric: true, sensitivity: "base" }))
+                      .map((item) => (
+                        <div className={`import-review-sheet-row${item.skipped ? " import-review-sheet-row--off" : ""}`} key={item.reportId}>
+                          <label className="import-review-sheet-toggle">
+                            <input
+                              type="checkbox"
+                              checked={!item.skipped}
+                              onChange={(event) => {
+                                const nextSkipped = event.target.checked
+                                  ? pendingWorkbookImport.skippedReportIds.filter((id) => id !== item.reportId)
+                                  : Array.from(new Set([...pendingWorkbookImport.skippedReportIds, item.reportId]));
+                                updatePendingImportSkippedReports(nextSkipped);
+                              }}
+                            />
+                          </label>
+                          <div className="import-review-sheet-info">
+                            <span className="import-review-sheet-tab">{item.sheetName}</span>
+                            <span className="import-review-sheet-name">{item.reportName}</span>
+                          </div>
+                          {!item.skipped ? (
+                            <select
+                              className="import-review-type-select"
+                              value={item.selectedType}
+                              onChange={(e) => updatePendingImportReportType(item.reportId, e.target.value)}
+                            >
+                              {IMPORT_REPORT_TYPE_OPTIONS.map((opt) => (
+                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <span className="import-review-sheet-skip-label">skip</span>
+                          )}
+                        </div>
+                      ))}
                   </div>
-                  <div className="micro">Checked tabs will be created as table-style reports and added as dashboard tabs. Reports created from data tabs are always in table mode.</div>
                 </div>
               ) : null}
 
