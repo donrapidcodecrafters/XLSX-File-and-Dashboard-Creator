@@ -7612,6 +7612,23 @@ html.dark .builder-step-button {
   border-color: #334155;
 }
 
+html.dark .builder-details {
+  background: rgba(30, 41, 59, 0.5);
+  border-color: rgba(148, 163, 184, 0.12);
+}
+html.dark .builder-details[open] {
+  background: rgba(30, 41, 59, 0.7);
+}
+html.dark .builder-details summary {
+  color: #E2E8F0;
+}
+
+html.dark .chart-empty {
+  background: rgba(30, 41, 59, 0.5);
+  border-color: rgba(148, 163, 184, 0.18);
+  color: #94A3B8;
+}
+
 html.dark .builder-step-button:hover {
   background: #273548;
   border-color: #475569;
