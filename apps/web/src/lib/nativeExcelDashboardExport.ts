@@ -213,7 +213,8 @@ function sortChartData(data: ChartDatum[], chartType: ChartType, sort: ChartSort
   const entries = Array.from(grouped.entries());
   if (["line", "area", "line-bar", "scatter", "bubble"].includes(chartType)) {
     entries.sort((left, right) => compareCategory(left[0], right[0]) * (sort === "label-desc" ? -1 : 1));
-  } else if (sort === "label-asc") {
+  } else if (sort === "data-order") { /* preserve insertion order */ }
+  else if (sort === "label-asc") {
     entries.sort((left, right) => compareCategory(left[0], right[0]));
   } else if (sort === "label-desc") {
     entries.sort((left, right) => compareCategory(right[0], left[0]));

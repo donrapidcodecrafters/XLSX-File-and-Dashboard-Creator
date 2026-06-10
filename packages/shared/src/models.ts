@@ -66,7 +66,7 @@ export type ChartType =
   | "sankey"
   | "network-graph";
 export type ChartAggregation = "count" | "sum" | "avg" | "average" | "min" | "max" | "percent";
-export type ChartSortMode = "value-desc" | "value-asc" | "label-asc" | "label-desc";
+export type ChartSortMode = "value-desc" | "value-asc" | "label-asc" | "label-desc" | "data-order";
 export type ChartOrientation = "vertical" | "horizontal";
 export type ChartAxisAssignment = "primary" | "secondary";
 export type ChartSeriesType = "line" | "area" | "bar" | "column";

@@ -416,7 +416,8 @@ function sortPreviewItems(data: ChartDatum[], chartType: ChartType, sort: ChartS
     entries.sort((left, right) => comparePreviewCategory(left[0], right[0]) * (descending ? -1 : 1));
     return entries.flatMap(([, items]) => items);
   }
-  if (sort === "label-asc") {
+  if (sort === "data-order") { /* preserve insertion order from underlying data */ }
+  else if (sort === "label-asc") {
     entries.sort((left, right) => comparePreviewCategory(left[0], right[0]));
   } else if (sort === "label-desc") {
     entries.sort((left, right) => comparePreviewCategory(right[0], left[0]));

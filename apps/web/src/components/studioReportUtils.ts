@@ -38,6 +38,7 @@ export const CHART_SERIES_TYPE_OPTIONS: Array<{ value: ChartSeriesType; label: s
 ];
 
 export const CHART_SORT_OPTIONS: Array<{ value: ChartSortMode; label: string }> = [
+  { value: "data-order", label: "Report sort order" },
   { value: "value-desc", label: "Value high to low" },
   { value: "value-asc", label: "Value low to high" },
   { value: "label-asc", label: "Label A to Z" },

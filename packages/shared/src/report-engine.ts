@@ -581,7 +581,8 @@ function chartRows(rows: DataRow[], report: ReportDefinition): ChartDatum[] {
       : ordered;
     return trimmed.flatMap(([, entries]) => entries);
   }
-  if (sort === "value-asc") sortedCategories.sort((left, right) => categorySortValue(left[1]) - categorySortValue(right[1]));
+  if (sort === "data-order") { /* preserve insertion order from sorted rows */ }
+  else if (sort === "value-asc") sortedCategories.sort((left, right) => categorySortValue(left[1]) - categorySortValue(right[1]));
   else if (sort === "label-asc") sortedCategories.sort((left, right) => getChartLabel(report, left[0]).localeCompare(getChartLabel(report, right[0]), undefined, { numeric: true }));
   else if (sort === "label-desc") sortedCategories.sort((left, right) => getChartLabel(report, right[0]).localeCompare(getChartLabel(report, left[0]), undefined, { numeric: true }));
   else sortedCategories.sort((left, right) => categorySortValue(right[1]) - categorySortValue(left[1]));
