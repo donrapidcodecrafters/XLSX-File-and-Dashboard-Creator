@@ -579,17 +579,23 @@ export function ReportView({
             <p>{report.description || "Full-screen report view with live data, summaries, charts, and detail rows."}</p>
           </div>
           <div className="reader-hero-actions">
+            {!hosted.embed ? (
+              <button className="ghost-button btn-neutral" onClick={() => window.history.back()}>Back</button>
+            ) : null}
+            {toolbarCollapsed ? (
+              <button className="ghost-button reader-sidebar-show-btn" onClick={() => setToolbarCollapsed(false)}>Show tools</button>
+            ) : null}
             {headerActions}
           </div>
         </div>
 
-        <div className="reader-page-shell">
-          <aside className={`reader-sidebar ${toolbarCollapsed ? "collapsed" : ""}`}>
-            <button className="ghost-button reader-sidebar-toggle" onClick={() => setToolbarCollapsed((current) => !current)}>
-              {toolbarCollapsed ? "Show tools" : "Hide tools"}
+        <div className={`reader-page-shell${toolbarCollapsed ? " sidebar-collapsed" : ""}`}>
+          {toolbarCollapsed ? null : (
+          <aside className="reader-sidebar">
+            <button className="ghost-button reader-sidebar-toggle" onClick={() => setToolbarCollapsed(true)}>
+              Hide tools
             </button>
-            {toolbarCollapsed ? null : (
-              <div className="reader-sidebar-stack">
+            <div className="reader-sidebar-stack">
                 <div className="reader-sidebar-section">
                   <strong>Navigation</strong>
                   <div className="reader-sidebar-actions">
@@ -652,8 +658,8 @@ export function ReportView({
                   </div>
                 )}
               </div>
-            )}
           </aside>
+          )}
 
           <div className="reader-page-content">
       {savedViews.length ? (
