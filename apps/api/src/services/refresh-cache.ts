@@ -108,7 +108,9 @@ async function streamQuickbaseTableToPostgres(
           skip += page.rows.length;
         }
       } else {
-        // All-fields path — must merge across field chunks (same records, different fields).
+        // All-fields path — QB limits fields per request, so we chunk them.
+        // IMPORTANT: iterate pages first, then fetch all field chunks per page.
+        // The previous chunk-first approach wrote each record once per chunk (6x for 180 fields).
         const qbTableId = getQuickbaseTableId(table);
         if (!fields.length) {
           try {
@@ -117,40 +119,31 @@ async function streamQuickbaseTableToPostgres(
           } catch { /* ignore, proceed with empty */ }
         }
         if (!fields.length) return { fields, rowCount: 0 };
-        // For multi-chunk path we must still merge in-memory per-page across chunks.
-        // Use a Map but only keep one page worth of rows at a time per chunk, merging into final batch.
         const fieldChunks = chunk(fields.map((f) => f.id).filter(Boolean), 30);
-        const merged = new Map<string, DataRow>();
-        for (const fieldChunk of fieldChunks) {
-          let skip = 0;
-          while (true) {
+        let skip = 0;
+        while (true) {
+          assertRefreshNotCancelled(options.activeJobId || "", profileIds);
+          // Fetch all field chunks for this page offset and merge into one row per record ID.
+          const pageMerged = new Map<string, DataRow>();
+          let pageSize = 0;
+          for (const fieldChunk of fieldChunks) {
             assertRefreshNotCancelled(options.activeJobId || "", profileIds);
             const page = await fetchQuickbaseTablePage(quickbase, qbTableId, fieldChunk, { top: PAGE_SIZE, skip });
-            if (!page.rows.length) break;
             if (typeof page.totalRecords === "number" && page.totalRecords > 0) totalRowsHint = page.totalRecords;
             for (const row of page.rows) {
               const id = String(row.__recordId || "");
-              const existing = merged.get(id) || { __recordId: id };
+              const existing = pageMerged.get(id) || { __recordId: id };
               Object.assign(existing, row);
-              merged.set(id, existing);
+              pageMerged.set(id, existing);
             }
-            if (page.rows.length < PAGE_SIZE) break;
-            skip += page.rows.length;
-            // Flush merged rows to Postgres in batches as we accumulate, to cap memory.
-            if (merged.size >= 5000) {
-              const batch = Array.from(merged.values());
-              await writer.appendRows(batch);
-              rowsWritten += batch.length;
-              merged.clear();
-              onProgress(rowsWritten, totalRowsHint, `Syncing ${table.name}: ${rowsWritten.toLocaleString()} rows`);
-            }
+            pageSize = Math.max(pageSize, page.rows.length);
           }
-        }
-        if (merged.size > 0) {
-          const batch = Array.from(merged.values());
-          await writer.appendRows(batch);
-          rowsWritten += batch.length;
-          merged.clear();
+          if (pageMerged.size === 0) break;
+          await writer.appendRows(Array.from(pageMerged.values()));
+          rowsWritten += pageMerged.size;
+          onProgress(rowsWritten, totalRowsHint, `Syncing ${table.name}: ${rowsWritten.toLocaleString()} rows`);
+          if (pageSize < PAGE_SIZE) break;
+          skip += pageSize;
         }
       }
       return { fields, rowCount: rowsWritten };

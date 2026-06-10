@@ -331,7 +331,10 @@ export async function ingestXlsxWorkbookSourceStream(options: IngestXlsxSourceSt
   for await (const worksheet of workbookReader) {
     const workbookModel = workbookReader as unknown as { model?: { sheets?: unknown[] } };
     const sheetCount = Array.isArray(workbookModel.model?.sheets) ? workbookModel.model.sheets.length : 0;
-    const singleTable = sheetCount === 1;
+    // singleTable drives whether the source ID gets a sheet-name suffix.
+    // When the user selected exactly one data sheet from a multi-sheet file, treat it as single-table
+    // so the source ID matches the base (existing) source ID and updates it instead of creating a new one.
+    const singleTable = streamDataSheetSet ? streamDataSheetSet.size === 1 : sheetCount === 1;
     const worksheetName = (worksheet as unknown as { name?: string }).name;
     const sheetName = String(worksheetName || `Sheet ${worksheetIndex + 1}`);
 

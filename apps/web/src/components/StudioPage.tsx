@@ -98,7 +98,7 @@ import {
   fetchFieldUniqueValues,
   updateSourceKeyField
 } from "../lib/studioApi";
-import { createExportSaveTarget, downloadExportJob, fetchExportJobStatus, fetchExportJobs, startDashboardExportJob, startReportExportJob, runReport as runReportFromServer } from "../lib/api";
+import { createExportSaveTarget, downloadExportJob, fetchExportJobStatus, fetchExportJobs, renderDashboard, startDashboardExportJob, startReportExportJob, runReport as runReportFromServer } from "../lib/api";
 import { applyLaunchScopeToDocument } from "../lib/catalog";
 import { buildDashboardExportDefinition } from "../lib/dashboardExport";
 import { buildHostedHashUrl, buildHostedRoute } from "../lib/embed";
@@ -1730,6 +1730,7 @@ export function StudioPage({
   const [liveReportResult, setLiveReportResult] = useState<ReportRunResult | null>(null);
   const [liveReportLoading, setLiveReportLoading] = useState(false);
   const [postgresReportResult, setPostgresReportResult] = useState<ReportRunResult | null>(null);
+  const [liveDashboardPreviewResult, setLiveDashboardPreviewResult] = useState<DashboardRunResult | null>(null);
   const [postgresReportLoading, setPostgresReportLoading] = useState(false);
   const [previewPage, setPreviewPage] = useState(1);
   const [exportJob, setExportJob] = useState<ExportJobStatus | null>(null);
@@ -2600,8 +2601,25 @@ export function StudioPage({
   const hasCachedRowsForActiveReport = Boolean(activeReport && (bundle.data[activeReport.sourceTableId]?.length || 0) > 0);
   const reportResult = hasCachedRowsForActiveReport ? localReportResult : (liveReportResult || postgresReportResult || localReportResult);
 
+  const activeDashboardId = activeDashboard?.id;
+  useEffect(() => {
+    if (!activeDashboardId) { setLiveDashboardPreviewResult(null); return; }
+    renderDashboard(activeDashboardId, {})
+      .then((result) => setLiveDashboardPreviewResult(result))
+      .catch(() => setLiveDashboardPreviewResult(null));
+  }, [activeDashboardId]);
+
   const dashboardResult = useMemo(() => {
     if (!activeDashboard) return null;
+    // Build a lookup of live widget results fetched from Postgres via the API.
+    const liveWidgetMap = new Map<string, DashboardRunResult["tabs"][number]["widgets"][number]>();
+    if (liveDashboardPreviewResult) {
+      for (const tab of liveDashboardPreviewResult.tabs) {
+        for (const w of tab.widgets) {
+          liveWidgetMap.set(w.widgetId, w);
+        }
+      }
+    }
     const widgets = activeDashboard.tabs.flatMap((tab) =>
       tab.widgets.map((widget) => {
         const report = widget.mode === "copied" && widget.snapshot ? widget.snapshot : (bundle.objects[widget.reportId] as ReportDefinition | undefined);
@@ -2631,23 +2649,23 @@ export function StudioPage({
             error: message
           };
         }
+        const hasLocalData = (bundle.data[report.sourceTableId]?.length || 0) > 0;
+        const liveWidget = liveWidgetMap.get(widget.id);
+        const result = hasLocalData
+          ? runReport(report, table, bundle.data[report.sourceTableId] || [], buildDashboardFilters(activeDashboard, report.id, runtimeValues, report.sourceTableId, widget, tab.id))
+          : (liveWidget?.result ?? createEmptyDashboardReportResult(report.id, report.sourceTableId, "Preview ready"));
         return {
           widgetId: widget.id,
           widget,
           report,
-          result: runReport(
-            report,
-            table,
-            bundle.data[report.sourceTableId] || [],
-            buildDashboardFilters(activeDashboard, report.id, runtimeValues, report.sourceTableId, widget, tab.id)
-          ),
+          result,
           status: "complete" as const,
           message: "Preview ready"
         };
       })
     );
     return buildDashboardResult(activeDashboard, widgets);
-  }, [activeDashboard, bundle, runtimeValues]);
+  }, [activeDashboard, bundle, runtimeValues, liveDashboardPreviewResult]);
 
   function writeObject(nextObject: StudioObject, options?: { skipHistory?: boolean }) {
     applyDocumentUpdate((draft) => {

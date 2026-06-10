@@ -1910,9 +1910,19 @@ input {
   scrollbar-gutter: stable both-edges;
 }
 
+.report-table-scroll-wrap {
+  overflow-x: auto;
+  min-width: 0;
+}
+
 .report-table-shell {
   max-height: clamp(320px, 56vh, 760px);
   overflow-x: auto;
+}
+
+.focus-table-shell {
+  max-height: min(68vh, 760px);
+  overflow: auto;
 }
 
 .preview-table-shell {
@@ -1923,10 +1933,6 @@ input {
 .preview-widget-table-shell {
   max-height: clamp(220px, 34vh, 360px);
   overflow-x: auto;
-}
-
-.focus-table-shell {
-  max-height: min(68vh, 760px);
 }
 
 .compact-table-shell {
