@@ -1150,6 +1150,9 @@ function buildImportedReport(
     showDetails: true,
     titleFieldId: titleField?.id || selectedFieldIds[0] || ""
   });
+  if (!allowVisualInference) {
+    notes.push("Imported as a detail table because this workbook has no Data sheet to support field inference.");
+  } else {
   const compactSummaryFields = summaryMatrixMetricFields(rows, fields, allNumericFields, layoutHints);
 
   if (compactSummaryFields.length) {
@@ -1166,8 +1169,6 @@ function buildImportedReport(
       titleFieldId: titleField?.id || countField?.id || ""
     });
     notes.push(`Imported as a summary report from ${rows.length} compact workbook summary row${rows.length === 1 ? "" : "s"} across ${compactSummaryFields.length} summary value${compactSummaryFields.length === 1 ? "" : "s"}.`);
-  } else if (!allowVisualInference) {
-    notes.push("Imported as a detail table because this workbook has no Data sheet to support field inference.");
   } else if (startDateField && endDateField && titleField) {
     view = buildDefaultReportView({
       mode: "timeline",
@@ -1378,6 +1379,7 @@ function buildImportedReport(
   } else {
     notes.push("Imported as a detail table because no stronger chart or board pattern was detected.");
   }
+  } // end allowVisualInference else
 
   if (layoutHints.title) {
     notes.push(`Recovered source sheet title "${layoutHints.title}" from row ${layoutHints.titleRowNumber}.`);
@@ -1463,7 +1465,7 @@ function buildImportedReport(
     updatedAt: importedAt,
     sourceTableId: table.id,
     sourceReportOverrides: {},
-    selectedFieldIds: view.mode === "chart" || (view.mode === "summary" && !view.showDetails) ? [] : selectedFieldIds,
+    selectedFieldIds: view.mode === "chart" || (view.mode === "summary" && !view.showDetails) ? [] : view.mode === "table" ? preferredFields.map((f) => f.id) : selectedFieldIds,
     filters: [],
     filterTree: createFilterGroup("and", []),
     groups: [],
@@ -2973,7 +2975,7 @@ export async function importWorkbookIntoStudioDocument(
   document: StudioDocument,
   filename: string,
   buffer: Uint8Array,
-  options?: { dataSheets?: string[]; workbookName?: string }
+  options?: { dataSheets?: string[]; workbookName?: string; maxRowsPerSheet?: number }
 ): Promise<ImportedWorkbookResult> {
   debugImportStep(`start ${filename}`);
   const workbook = new ExcelJS.Workbook();
@@ -3036,9 +3038,14 @@ export async function importWorkbookIntoStudioDocument(
       importedTables.push(table);
       importedRows[tableId] = parsed.rows;
       importedRowsByTableId[tableId] = parsed.rows;
-      importedTableEntries.push({ table, rows: parsed.rows, parsed, worksheetName: worksheet.name });
-      const inferred = buildImportedReport(table.name, table, parsed.rows, parsed.layout, parsed.hiddenFieldIds, scope, ownerUserId, importedAt, existingIds, {
-        allowVisualInference: allowWorksheetVisualInference
+      const rowsForAnalysis = options?.maxRowsPerSheet && parsed.rows.length > options.maxRowsPerSheet
+        ? parsed.rows.slice(0, options.maxRowsPerSheet)
+        : parsed.rows;
+      importedTableEntries.push({ table, rows: rowsForAnalysis, parsed, worksheetName: worksheet.name });
+      const isNativeDataSheet = nativeWorkbookCharts.dataSheetName
+        && normalizeSheetNameForMatch(worksheet.name) === normalizeSheetNameForMatch(nativeWorkbookCharts.dataSheetName);
+      const inferred = buildImportedReport(table.name, table, rowsForAnalysis, parsed.layout, parsed.hiddenFieldIds, scope, ownerUserId, importedAt, existingIds, {
+        allowVisualInference: allowWorksheetVisualInference && !isNativeDataSheet
       });
       debugImportStep(`built report ${inferred.report.name} from ${parsed.sheetName} (${parsed.rows.length} row(s))`);
       const report = inferred.report;

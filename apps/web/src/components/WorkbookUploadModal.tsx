@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { fetchStudioSources, getWorkbookProfile, importStudioWorkbook, importStudioWorkbookSource, peekXlsxFile, recreateWorkbookFromDataSource, saveWorkbookProfile } from "../lib/studioApi";
+import { fetchStudioSources, getWorkbookProfile, importStudioWorkbook, importStudioWorkbookSource, peekXlsxFile, saveWorkbookProfile } from "../lib/studioApi";
 import type { StudioSourceSummary, StudioWorkbookImportResult, StudioWorkbookSourceImportResult, WorkbookProfile, XlsxSheetPeek } from "../lib/studioApi";
 
 type UploadMode = "data-source" | "template";
@@ -185,22 +185,20 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
         const opts = { sourceId: sourceIdArg, sourceName: sourceNameArg, dataSheets: dataSheetsArg };
 
         if (recreate) {
-          const result = await recreateWorkbookFromDataSource(file, opts);
-          // Save profile so next import auto-applies these settings
-          const profileId = result.sources?.[0]?.sourceId ?? sourceIdArg ?? slugify(sourceNameArg || file.name);
+          // Import data to Postgres only — report creation happens in the review modal
+          const sourceResult = await importStudioWorkbookSource(file, opts);
+          // Analyze workbook structure for the review modal (cap rows to avoid OOM on large data sheets)
+          const workbookResult = await importStudioWorkbook(file, { maxRowsPerSheet: 500 });
+          const profileId = sourceResult.sources?.[0]?.sourceId ?? sourceIdArg ?? slugify(sourceNameArg || file.name);
           if (profileId) {
-            const objectIds = [
-              ...((result.reports || []) as { id: string }[]).map((r) => r.id),
-              ...(result.dashboard ? [(result.dashboard as { id: string }).id] : [])
-            ];
             void saveWorkbookProfile(profileId, {
               workbookName: sourceNameArg || profile?.workbookName || file.name.replace(/\.xlsx$/i, ""),
               dataSheets: dataSheetsArg || dataSheets,
-              sourceIds: result.sources?.map((s: { sourceId: string }) => s.sourceId) || [],
-              objectIds
+              sourceIds: sourceResult.sources?.map((s: { sourceId: string }) => s.sourceId) || [],
+              objectIds: []
             }).catch(() => {});
           }
-          onSuccess({ mode, recreated: true, sourceImport: result });
+          onSuccess({ mode, recreated: true, sourceImport: sourceResult as typeof sourceResult & { reports: unknown[]; dashboard: unknown | null }, workbookImport: workbookResult });
         } else {
           const result = await importStudioWorkbookSource(file, opts);
           // Update profile data sheets on data-only reimport
