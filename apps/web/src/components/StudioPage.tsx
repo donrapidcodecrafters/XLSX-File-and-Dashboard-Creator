@@ -1732,6 +1732,7 @@ export function StudioPage({
   const [postgresReportResult, setPostgresReportResult] = useState<ReportRunResult | null>(null);
   const [liveDashboardPreviewResult, setLiveDashboardPreviewResult] = useState<DashboardRunResult | null>(null);
   const [postgresReportLoading, setPostgresReportLoading] = useState(false);
+  const [dataImportVersion, setDataImportVersion] = useState(0);
   const [previewPage, setPreviewPage] = useState(1);
   const [exportJob, setExportJob] = useState<ExportJobStatus | null>(null);
   const [liveExportJobs, setLiveExportJobs] = useState<ExportJobStatus[]>([]);
@@ -2463,7 +2464,8 @@ export function StudioPage({
     bundle.data,
     documentState.activeQuickbaseProfileId,
     documentState.quickbase.realmHostname,
-    documentState.quickbase.userToken
+    documentState.quickbase.userToken,
+    dataImportVersion
   ]);
 
   useEffect(() => {
@@ -2607,7 +2609,7 @@ export function StudioPage({
     renderDashboard(activeDashboardId, {})
       .then((result) => setLiveDashboardPreviewResult(result))
       .catch(() => setLiveDashboardPreviewResult(null));
-  }, [activeDashboardId]);
+  }, [activeDashboardId, dataImportVersion]);
 
   const dashboardResult = useMemo(() => {
     if (!activeDashboard) return null;
@@ -4199,6 +4201,18 @@ export function StudioPage({
     } else if (result.mode === "data-source" && result.sourceImport) {
       // Data-only reimport (recreate=false), no report creation
       await loadHostedDocumentIntoState({ resetHistory: false });
+      setDataImportVersion((v) => v + 1);
+      fetchStudioSources().then((response) => {
+        const ids = new Set<string>();
+        for (const source of response.sources) {
+          ids.add(source.sourceId);
+          if (source.table?.id) ids.add(source.table.id);
+          if ((source.table as { quickbaseTableId?: string } | null)?.quickbaseTableId) {
+            ids.add((source.table as { quickbaseTableId?: string }).quickbaseTableId!);
+          }
+        }
+        setPostgresSourceIds(ids);
+      }).catch(() => {});
       const { sources } = result.sourceImport as typeof result.sourceImport & { sources: { sourceName: string }[] };
       const sourcePart = sources.length === 1 ? `"${sources[0].sourceName}"` : `${sources.length} data sources`;
       pushToast(`Imported ${sourcePart}.`);
@@ -4312,6 +4326,18 @@ export function StudioPage({
     }
     pushToast(`Created imported ${importState.review.dashboardCreated ? "dashboard and reports" : "reports"} using ${sourceTable.name}.`);
     await persistRemote(nextDocument);
+    setDataImportVersion((v) => v + 1);
+    fetchStudioSources().then((response) => {
+      const ids = new Set<string>();
+      for (const source of response.sources) {
+        ids.add(source.sourceId);
+        if (source.table?.id) ids.add(source.table.id);
+        if ((source.table as { quickbaseTableId?: string } | null)?.quickbaseTableId) {
+          ids.add((source.table as { quickbaseTableId?: string }).quickbaseTableId!);
+        }
+      }
+      setPostgresSourceIds(ids);
+    }).catch(() => {});
   }
 
   function updatePendingImportSourceTable(tableId: string) {
