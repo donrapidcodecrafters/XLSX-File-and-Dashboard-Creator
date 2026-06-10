@@ -646,7 +646,8 @@ function resolveWidgetResult(
     summary: exported.summary.length ? exported.summary : widget.result.summary,
     chartData: exported.chartData.length ? exported.chartData : widget.result.chartData,
     warnings: exported.warnings.length ? exported.warnings : widget.result.warnings,
-    totalRows: exported.totalRows || widget.result.totalRows
+    totalRows: exported.totalRows || widget.result.totalRows,
+    crosstab: exported.crosstab || widget.result.crosstab
   };
 }
 
@@ -682,6 +683,9 @@ export async function exportDashboardNativeChartWorkbook(
   let overviewRow = 4;
 
   rendered.tabs.forEach((tab) => {
+    // Skip the portal Overview tab — it's navigation-only, not for export
+    if (tab.name.trim().toLowerCase() === "overview") return;
+
     // Write tab header on overview
     overview.getCell(overviewRow, 1).value = tab.name;
     overview.getCell(overviewRow, 1).font = { bold: true, size: 13 };

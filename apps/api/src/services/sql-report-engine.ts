@@ -439,7 +439,7 @@ export async function trySqlExecuteDurableReport(
         else selects.push(`COUNT(*) AS m${i}`);
       }
     }
-    const ctSql = `SELECT ${selects.join(", ")} FROM app_records WHERE source_id = ${srcCtP} AND (${filterSql}) GROUP BY ${grpCol} ORDER BY ${grpCol} LIMIT 2000`;
+    const ctSql = `SELECT ${selects.join(", ")} FROM app_records WHERE source_id = ${srcCtP} AND (${filterSql}) GROUP BY ${grpCol} ORDER BY CASE WHEN ${grpCol} ~ '^[0-9]' THEN LPAD(regexp_replace(${grpCol}, '[^0-9].*$', ''), 20, '0') ELSE ${grpCol} END, ${grpCol} LIMIT 2000`;
     const ctResult = await pgQuery<Record<string, string>>(ctSql, ctBld.values).catch(() => null);
     if (!ctResult) return undefined;
     const groupRows = ctResult.rows;

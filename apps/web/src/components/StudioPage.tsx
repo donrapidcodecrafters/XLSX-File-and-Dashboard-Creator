@@ -3208,13 +3208,18 @@ export function StudioPage({
         tabs: [{ id: uid("tab"), name: "Overview", color: "#0d7c66", widgets: [] }]
       };
       dashboard.defaultTabId = dashboard.tabs[0].id;
-      applyDocumentUpdate((draft) => {
-        draft.bundle.objects[dashboard.id] = dashboard;
-        draft.bundle.order.unshift(dashboard.id);
-      });
+      const nextDocument = clone(documentState);
+      nextDocument.bundle.objects[dashboard.id] = dashboard;
+      if (!nextDocument.bundle.order.includes(dashboard.id)) {
+        nextDocument.bundle.order.unshift(dashboard.id);
+      }
+      setHistory((previous) => [clone(documentState), ...previous].slice(0, 60));
+      setFuture([]);
+      setDocumentState(nextDocument);
       closeCreateModal();
       navigate(buildHostedRoute(`/studio/${dashboard.id}`));
       pushToast("Dashboard created.");
+      void persistRemote(nextDocument);
       return;
     }
 

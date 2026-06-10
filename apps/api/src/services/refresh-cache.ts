@@ -128,7 +128,7 @@ async function streamQuickbaseTableToPostgres(
           let pageSize = 0;
           for (const fieldChunk of fieldChunks) {
             assertRefreshNotCancelled(options.activeJobId || "", profileIds);
-            const page = await fetchQuickbaseTablePage(quickbase, qbTableId, fieldChunk, { top: PAGE_SIZE, skip });
+            const page = await fetchQuickbaseTablePage(quickbase, qbTableId, fieldChunk, { top: PAGE_SIZE, skip, sortBy: [{ fieldId: "3", order: "ASC" }] });
             if (typeof page.totalRecords === "number" && page.totalRecords > 0) totalRowsHint = page.totalRecords;
             for (const row of page.rows) {
               const id = String(row.__recordId || "");
