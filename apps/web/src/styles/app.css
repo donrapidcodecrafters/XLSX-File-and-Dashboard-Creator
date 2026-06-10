@@ -919,6 +919,61 @@ a.topbar-dropdown-item.active {
   letter-spacing: 0.05em;
 }
 
+.pivot-table-shell {
+  overflow-x: auto;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+.pivot-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.pivot-table th,
+.pivot-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  white-space: nowrap;
+  text-align: right;
+}
+.pivot-table th:last-child,
+.pivot-table td:last-child {
+  border-right: none;
+}
+.pivot-table thead th {
+  background: var(--surface-raised, var(--surface));
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  text-align: right;
+}
+.pivot-table th.pivot-metric-col {
+  text-align: left;
+  min-width: 140px;
+}
+.pivot-table td.pivot-row-header {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-soft);
+  white-space: nowrap;
+  min-width: 140px;
+}
+.pivot-table .pivot-grand-total {
+  font-weight: 700;
+  background: var(--surface-raised, rgba(0,0,0,0.03));
+}
+.pivot-table tbody tr:last-child td {
+  border-bottom: none;
+}
+.pivot-table tbody tr:hover td {
+  background: var(--hover-bg, rgba(0,0,0,0.025));
+}
+
 .card {
   display: grid;
   gap: 16px;
@@ -6919,6 +6974,24 @@ html.dark .summary-card,
 html.dark .mini-stat {
   background: #1E293B;
   border-color: #334155;
+}
+
+html.dark .pivot-table-shell {
+  background: #1E293B;
+  border-color: #334155;
+}
+html.dark .pivot-table th,
+html.dark .pivot-table td {
+  border-color: #334155;
+}
+html.dark .pivot-table thead th {
+  background: #0f172a;
+}
+html.dark .pivot-table .pivot-grand-total {
+  background: rgba(255,255,255,0.05);
+}
+html.dark .pivot-table tbody tr:hover td {
+  background: rgba(255,255,255,0.04);
 }
 
 html.dark .studio-quickstart-button,

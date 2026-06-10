@@ -335,6 +335,17 @@ export interface SummaryDatum {
   numericValue: number;
 }
 
+export interface CrosstabRow {
+  label: string;
+  values: number[];
+  formatted: string[];
+}
+
+export interface CrosstabResult {
+  columns: string[];
+  rows: CrosstabRow[];
+}
+
 export interface ChartDatum {
   label: string;
   rawLabel?: string;
@@ -461,6 +472,7 @@ export interface ReportRunResult {
   totalRows: number;
   rows: DataRow[];
   summary: SummaryDatum[];
+  crosstab?: CrosstabResult;
   chartData: ChartDatum[];
   warnings: string[];
   page?: number;

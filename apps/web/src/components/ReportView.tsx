@@ -658,14 +658,39 @@ export function ReportView({
       ) : null}
 
       {showSummary ? (
-        <div className="summary-grid">
-          {(result?.summary || []).map((item) => (
-            <div className="summary-card" key={item.label}>
-              <strong>{item.value}</strong>
-              <span>{item.label}</span>
-            </div>
-          ))}
-        </div>
+        result?.crosstab ? (
+          <div className="pivot-table-shell">
+            <table className="pivot-table">
+              <thead>
+                <tr>
+                  <th className="pivot-metric-col"></th>
+                  {result.crosstab.columns.map((col, i) => (
+                    <th key={i} className={col === "Grand Total" ? "pivot-grand-total" : ""}>{col || "(blank)"}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {result.crosstab.rows.map((row) => (
+                  <tr key={row.label}>
+                    <td className="pivot-row-header">{row.label}</td>
+                    {row.formatted.map((val, i) => (
+                      <td key={i} className={result.crosstab!.columns[i] === "Grand Total" ? "pivot-grand-total" : ""}>{val}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="summary-grid">
+            {(result?.summary || []).map((item) => (
+              <div className="summary-card" key={item.label}>
+                <strong>{item.value}</strong>
+                <span>{item.label}</span>
+              </div>
+            ))}
+          </div>
+        )
       ) : null}
 
       {showChart ? (

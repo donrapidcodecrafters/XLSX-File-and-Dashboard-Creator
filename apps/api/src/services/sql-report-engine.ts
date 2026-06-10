@@ -1,5 +1,6 @@
 import type {
   ChartDatum,
+  CrosstabResult,
   DataRow,
   DataFreshnessInfo,
   FieldDefinition,
@@ -415,6 +416,50 @@ export async function trySqlExecuteDurableReport(
     });
   })();
 
+  // 2b. Crosstab — GROUP BY pivot when summary mode + group field defined
+  const crosstabResult: CrosstabResult | undefined = await (async () => {
+    const groupFieldId = report.groups[0]?.fieldId;
+    if (!groupFieldId || !metricSet.length) return undefined;
+    const ctBld = newBuilder(filterValues, nextIndex);
+    const srcCtP = bp(ctBld, sourceId);
+    const grpP = bp(ctBld, groupFieldId);
+    const grpCol = `(payload ->> ${grpP})`;
+    const selects: string[] = [`COALESCE(${grpCol}, '') AS grp`];
+    for (let i = 0; i < metricSet.length; i++) {
+      const metric = metricSet[i];
+      if (metric.op === "count") {
+        selects.push(`COUNT(*) AS m${i}`);
+      } else {
+        const col = jsonExtract(metric.fieldId, ctBld);
+        const numCol = numericSafe(col);
+        if (metric.op === "sum") selects.push(`COALESCE(SUM(${numCol}), 0) AS m${i}`);
+        else if (metric.op === "avg") selects.push(`COALESCE(AVG(${numCol}), 0) AS m${i}`);
+        else if (metric.op === "min") selects.push(`MIN(${numCol}) AS m${i}`);
+        else if (metric.op === "max") selects.push(`MAX(${numCol}) AS m${i}`);
+        else selects.push(`COUNT(*) AS m${i}`);
+      }
+    }
+    const ctSql = `SELECT ${selects.join(", ")} FROM app_records WHERE source_id = ${srcCtP} AND (${filterSql}) GROUP BY ${grpCol} ORDER BY ${grpCol} LIMIT 2000`;
+    const ctResult = await pgQuery<Record<string, string>>(ctSql, ctBld.values).catch(() => null);
+    if (!ctResult) return undefined;
+    const groupRows = ctResult.rows;
+    const columns = groupRows.map((r) => r.grp ?? "");
+    columns.push("Grand Total");
+    const rows = metricSet.map((metric, i) => {
+      const values = groupRows.map((r) => Number(r[`m${i}`]) || 0);
+      const grandTotal = metric.op === "avg"
+        ? (values.length ? values.reduce((s, v) => s + v, 0) / values.length : 0)
+        : values.reduce((s, v) => s + v, 0);
+      const allValues = [...values, grandTotal];
+      return {
+        label: metric.label || metric.op,
+        values: allValues,
+        formatted: allValues.map((v) => formatMetricValue(v, metric.op, decimalPlaces))
+      };
+    });
+    return { columns, rows };
+  })();
+
   // 3. Chart data — GROUP BY query
   const chartData: ChartDatum[] = await (async () => {
     const chartField = report.view.chartFieldId || report.groups[0]?.fieldId || report.selectedFieldIds[0] || "";
@@ -502,6 +547,7 @@ export async function trySqlExecuteDurableReport(
     totalRows,
     rows: projectSqlRows(report, pageRows),
     summary: summaryData,
+    crosstab: crosstabResult,
     chartData,
     warnings: [],
     page: options.page,

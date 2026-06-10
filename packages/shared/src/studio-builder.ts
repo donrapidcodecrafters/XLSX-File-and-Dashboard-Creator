@@ -2,6 +2,7 @@ import { createFilterGroup } from "./report-engine.js";
 import { getAllowedAggregations, getChartSpec, normalizeChartAggregation } from "./chart-spec.js";
 import type {
   FilterGroupDefinition,
+  GroupDefinition,
   ReportDefinition,
   SourceJoin,
   StudioObjectScope,
@@ -24,6 +25,7 @@ export interface StudioBuilderDraft {
   sourceReportOverrides: Record<string, string>;
   selectedFieldIds: string[];
   filterTree: FilterGroupDefinition;
+  groups: GroupDefinition[];
   sorts: ReportDefinition["sorts"];
   summaryMetrics: SummaryMetric[];
   view: ReportDefinition["view"];
@@ -85,6 +87,7 @@ export function buildStudioBuilderDraft(
     sourceReportOverrides: {},
     selectedFieldIds: [],
     filterTree: createFilterGroup("and", []),
+    groups: [],
     sorts: [],
     summaryMetrics: [],
     view: {

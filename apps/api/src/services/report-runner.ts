@@ -23,6 +23,7 @@ import {
   type FilterDefinition,
   type FilterGroupDefinition,
   type DataFreshnessInfo,
+  type CrosstabResult,
   type JoinInput,
   type ReportDefinition,
   type ReportRunResult,
@@ -1009,6 +1010,8 @@ async function executeDurableReport(
     : [{ id: "default-count", fieldId: report.selectedFieldIds[0] || "recordId", op: "count" as const, label: "Rows" }];
   const summaryAccumulator = createMetricAccumulator(metricSet);
   const chartGroups = new Map<string, { primary: number[]; secondary: number[] }>();
+  const groupFieldId = report.groups[0]?.fieldId;
+  const crosstabGroups = groupFieldId ? new Map<string, ReturnType<typeof createMetricAccumulator>>() : null;
   const pageRows: DataRow[] = [];
   const sampleRows: DataRow[] = [];
   let totalRows = 0;
@@ -1018,6 +1021,11 @@ async function executeDurableReport(
       if (filterTree && !matchesFilterNode(row, filterTree)) return;
       addMetricRow(summaryAccumulator, row);
       addChartRow(chartGroups, report, row);
+      if (crosstabGroups && groupFieldId) {
+        const groupValue = String(row[groupFieldId] ?? "");
+        if (!crosstabGroups.has(groupValue)) crosstabGroups.set(groupValue, createMetricAccumulator(metricSet));
+        addMetricRow(crosstabGroups.get(groupValue)!, row);
+      }
       if (includeRows && totalRows >= startIndex && totalRows < endIndexExclusive) {
         pageRows.push(row);
       }
@@ -1025,12 +1033,35 @@ async function executeDurableReport(
     });
   });
   if (!summary) return null;
+  const decimalPlaces = getReportDecimalPlaces(report);
+  const crosstab: CrosstabResult | undefined = crosstabGroups
+    ? (() => {
+        const sortedKeys = Array.from(crosstabGroups.keys()).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+        const columns = [...sortedKeys, "Grand Total"];
+        const grandAccum = finalizeMetricAccumulator(summaryAccumulator, decimalPlaces);
+        const rows = metricSet.map((metric, i) => {
+          const values = sortedKeys.map((k) => {
+            const acc = finalizeMetricAccumulator(crosstabGroups.get(k)!, decimalPlaces);
+            return acc[i]?.numericValue ?? 0;
+          });
+          const grandTotal = grandAccum[i]?.numericValue ?? 0;
+          const allValues = [...values, grandTotal];
+          return {
+            label: metric.label || metric.op,
+            values: allValues,
+            formatted: allValues.map((v) => formatMetricValue(v, metric.op, decimalPlaces))
+          };
+        });
+        return { columns, rows };
+      })()
+    : undefined;
   return {
     reportId: report.id,
     tableId: table.id,
     totalRows,
     rows: includeRows ? projectRows(report, pageRows) : [],
-    summary: finalizeMetricAccumulator(summaryAccumulator, getReportDecimalPlaces(report)),
+    summary: finalizeMetricAccumulator(summaryAccumulator, decimalPlaces),
+    crosstab,
     chartData: buildChartResult(chartGroups, report),
     warnings: mergeWarnings(baseReportWarnings(report), collectMissingReportFieldWarnings(report, table, sampleRows)),
     page,

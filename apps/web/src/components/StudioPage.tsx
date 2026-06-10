@@ -280,6 +280,7 @@ function buildDraftFromReport(report: ReportDefinition, table?: TableDefinition 
     sourceReportOverrides: clone(report.sourceReportOverrides || {}),
     selectedFieldIds: clone(report.selectedFieldIds || []),
     filterTree: clone(report.filterTree || createFilterGroup("and", clone(report.filters || []))),
+    groups: clone(report.groups || []),
     sorts: clone(report.sorts || []),
     summaryMetrics: clone(report.summaryMetrics || []),
     view: clone(report.view),
@@ -1853,7 +1854,7 @@ export function StudioPage({
       selectedFieldIds: createDraft.selectedFieldIds,
       filters: flattenFilterTree(createDraft.filterTree),
       filterTree: clone(createDraft.filterTree),
-      groups: [],
+      groups: createDraft.groups || [],
       sorts: createDraft.sorts,
       summaryMetrics: createDraft.summaryMetrics,
       view: createDraft.view,
@@ -3133,7 +3134,7 @@ export function StudioPage({
       selectedFieldIds: createDraft.selectedFieldIds,
       filters: flattenFilterTree(createDraft.filterTree),
       filterTree: clone(createDraft.filterTree),
-      groups: [],
+      groups: clone(createDraft.groups || []),
       sorts: clone(createDraft.sorts),
       summaryMetrics: clone(createDraft.summaryMetrics),
       view: clone(createDraft.view),
@@ -3171,26 +3172,31 @@ export function StudioPage({
       pushToast("Imported report setup updated.");
       return;
     }
-    applyDocumentUpdate((draft) => {
-      draft.bundle.objects[report.id] = report;
-      if (!draft.bundle.order.includes(report.id)) {
-        draft.bundle.order.unshift(report.id);
-      }
-    });
+    const nextDocument = clone(documentState);
+    nextDocument.bundle.objects[report.id] = report;
+    if (!nextDocument.bundle.order.includes(report.id)) {
+      nextDocument.bundle.order.unshift(report.id);
+    }
+    setHistory((previous) => [clone(documentState), ...previous].slice(0, 60));
+    setFuture([]);
+    setDocumentState(nextDocument);
     closeCreateModal();
     if (dashboardBuilderFlow?.type === "create-widget-report" && dashboardBuilderFlow.dashboardId === activeDashboard?.id && !existingReport) {
       const added = addDashboardWidgetWithDraft(dashboardBuilderFlow.widgetDraft, { reportId: report.id });
       setDashboardBuilderFlow(null);
       pushToast(added ? "Report created and added to the dashboard." : "Report created.");
+      void persistRemote(nextDocument);
       return;
     }
     if (dashboardBuilderFlow?.type === "edit-widget-report" && dashboardBuilderFlow.dashboardId === activeDashboard?.id && dashboardBuilderFlow.reportId === report.id) {
       setDashboardBuilderFlow(null);
       pushToast("Report updated and dashboard preserved.");
+      void persistRemote(nextDocument);
       return;
     }
     navigate(buildHostedRoute(`/studio/${report.id}`));
     pushToast(existingReport ? "Report updated." : "Report created.");
+    void persistRemote(nextDocument);
   }
 
   function cloneObject(object: StudioObject) {

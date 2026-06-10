@@ -53,6 +53,24 @@ export function StudioReportDraftViewStep({
         <span className="micro">Only the settings relevant to the chosen report mode stay visible here.</span>
       </div>
       <div className="view-layout-grid">
+        {createDraft.view.mode === "summary" ? (
+          <section className="builder-subsection">
+            <div className="builder-subsection-head">
+              <strong>Column Group Field</strong>
+              <span className="micro">The field whose unique values become columns in the pivot table. Each metric row shows the aggregated value per group.</span>
+            </div>
+            <SearchableSelect
+              value={createDraft.groups[0]?.fieldId || ""}
+              options={fieldOptions}
+              allowEmpty
+              emptyOptionLabel="No grouping (flat totals only)"
+              onChange={(value) => setCreateDraft((current) => ({
+                ...current,
+                groups: value ? [{ id: current.groups[0]?.id || `grp-${Math.random().toString(36).slice(2, 8)}`, fieldId: value }] : []
+              }))}
+            />
+          </section>
+        ) : null}
         <section className="builder-subsection">
           <div className="builder-subsection-head">
             <strong>Summary Metrics</strong>
