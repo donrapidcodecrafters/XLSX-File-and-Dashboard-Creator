@@ -572,6 +572,25 @@ export async function registerStudioRoutes(app: FastifyInstance) {
     };
   });
 
+  app.get("/api/studio/sources/:sourceId/field-values/:fieldId", async (request, reply) => {
+    const { sourceId, fieldId } = request.params as { sourceId: string; fieldId: string };
+    if (!isPostgresEnabled()) {
+      reply.code(503);
+      return { values: [] };
+    }
+    const result = await pgQuery<{ val: string }>(
+      `SELECT DISTINCT (payload ->> $2) AS val
+       FROM app_records
+       WHERE source_id = $1
+         AND (payload ->> $2) IS NOT NULL
+         AND (payload ->> $2) != ''
+       ORDER BY val
+       LIMIT 500`,
+      [sourceId, fieldId]
+    );
+    return { values: result.rows.map((r) => r.val) };
+  });
+
   app.patch("/api/studio/sources/:sourceId", async (request, reply) => {
     const { sourceId } = request.params as { sourceId: string };
     const body = (request.body as { sourceName?: string; keyFieldId?: string } | undefined) || {};
