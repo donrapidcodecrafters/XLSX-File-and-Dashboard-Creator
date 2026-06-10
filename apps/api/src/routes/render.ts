@@ -343,6 +343,7 @@ export async function registerRenderRoutes(app: FastifyInstance) {
       const rendered = await executeDashboard(dashboard.id, runtimeFilters, { dashboard });
       const renderedWidgets = rendered.tabs.flatMap((tab) => tab.widgets);
       const exportResultsByWidgetId: Record<string, ReportRunResult> = {};
+      const tablesById = Object.fromEntries(objectStore.listTables().map((table) => [table.id, table]));
       const reportProgress = new Map<string, number>();
       const reportMessage = new Map<string, string>();
       const updateOverallProgress = () => {
@@ -365,8 +366,21 @@ export async function registerRenderRoutes(app: FastifyInstance) {
         reportProgress.set(widget.widgetId, 0);
         reportMessage.set(widget.widgetId, `Loading ${report.name}`);
         updateOverallProgress();
+
+        // If this widget needs a separate detail sheet but has no selectedFieldIds,
+        // augment the report so rows are projected with all table fields.
+        const widgetMode = widget.widget.displayMode !== "inherit" ? widget.widget.displayMode : report.view.mode;
+        const needsDetailSheet = widgetMode !== "table" && widget.widget.showDetails;
+        let effectiveReport = report;
+        if (needsDetailSheet && !report.selectedFieldIds.length) {
+          const srcTable = tablesById[report.sourceTableId];
+          if (srcTable?.fields.length) {
+            effectiveReport = { ...report, selectedFieldIds: srcTable.fields.map((f) => String(f.id)) };
+          }
+        }
+
         try {
-          exportResultsByWidgetId[widget.widgetId] = await fetchReportExportBundle(report, filters, (progress, message) => {
+          exportResultsByWidgetId[widget.widgetId] = await fetchReportExportBundle(effectiveReport, filters, (progress, message) => {
             reportProgress.set(widget.widgetId, Math.max(0, Math.min(100, progress)));
             reportMessage.set(widget.widgetId, `${report.name}: ${message}`);
             updateOverallProgress();
@@ -379,7 +393,6 @@ export async function registerRenderRoutes(app: FastifyInstance) {
         }
         updateOverallProgress();
       });
-      const tablesById = Object.fromEntries(objectStore.listTables().map((table) => [table.id, table]));
       update(72, "Building workbook");
       const stream = exportJobStore.createFileStream(jobId);
       if (!stream) {

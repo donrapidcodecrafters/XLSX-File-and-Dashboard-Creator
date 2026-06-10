@@ -3,7 +3,7 @@ import cron from "node-cron"; // fallback only — pg-boss preferred when Postgr
 import sgMail from "@sendgrid/mail";
 import { CronExpressionParser } from "cron-parser";
 import type { FastifyBaseLogger } from "fastify";
-import type { DashboardDefinition, ReportDefinition, TableDefinition } from "@studio/shared";
+import { buildDashboardFilters, type DashboardDefinition, type ReportDefinition, type ReportRunResult, type TableDefinition } from "@studio/shared";
 import { apiConfig, isPostgresEnabled } from "../config/env.js";
 import { pgQuery } from "../db/postgres.js";
 import { studioStore } from "./studio-store.js";
@@ -211,8 +211,27 @@ async function runReportConfig(config: ReportConfigRow, logger: FastifyBaseLogge
     filename = buildDashboardFileName(dashboard);
     const rendered = await executeDashboard(config.object_id, {});
     const tablesById = buildTablesById();
+    const exportResultsByWidgetId: Record<string, ReportRunResult> = {};
+    for (const tab of rendered.tabs) {
+      for (const widget of tab.widgets) {
+        if (!widget.report || widget.status === "failed") continue;
+        try {
+          const filters = buildDashboardFilters(dashboard, widget.report.id, {}, widget.report.sourceTableId);
+          const widgetMode = widget.widget.displayMode !== "inherit" ? widget.widget.displayMode : widget.report.view.mode;
+          const needsDetailSheet = widgetMode !== "table" && widget.widget.showDetails;
+          let effectiveReport = widget.report;
+          if (needsDetailSheet && !widget.report.selectedFieldIds.length) {
+            const srcTable = tablesById[widget.report.sourceTableId];
+            if (srcTable?.fields.length) {
+              effectiveReport = { ...widget.report, selectedFieldIds: srcTable.fields.map((f) => String(f.id)) };
+            }
+          }
+          exportResultsByWidgetId[widget.widgetId] = await fetchReportExportBundle(effectiveReport, filters);
+        } catch { /* use widget.result fallback */ }
+      }
+    }
     buffer = await workbookToBuffer((pass) =>
-      streamDashboardWorkbook(pass, dashboard, rendered, {}, tablesById)
+      streamDashboardWorkbook(pass, dashboard, rendered, exportResultsByWidgetId, tablesById)
     );
   }
 
