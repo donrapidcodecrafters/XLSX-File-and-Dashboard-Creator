@@ -212,11 +212,14 @@ export async function registerStudioRoutes(app: FastifyInstance) {
         return { message: "Workbook file upload is required." };
       }
       const buffer = workbookBuffer;
+      const query = (request.query as { maxRowsPerSheet?: string } | undefined) || {};
+      const maxRowsPerSheet = query.maxRowsPerSheet ? parseInt(query.maxRowsPerSheet, 10) : undefined;
       const current = studioStore.getLiveDocument();
       const imported = await importWorkbookIntoStudioDocument(
         current,
         filename,
-        buffer
+        buffer,
+        { maxRowsPerSheet: maxRowsPerSheet && maxRowsPerSheet > 0 ? maxRowsPerSheet : undefined }
       );
       return {
         document: imported.document,

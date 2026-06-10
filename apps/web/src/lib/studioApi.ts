@@ -632,10 +632,12 @@ export async function peekXlsxFile(file: File): Promise<{
   return body as { filename: string; sheetNames: string[]; sheets: XlsxSheetPeek[]; headers: string[]; rows: Record<string, unknown>[]; rowCount: number; };
 }
 
-export async function importStudioWorkbook(file: File) {
+export async function importStudioWorkbook(file: File, options?: { maxRowsPerSheet?: number }) {
   const formData = new FormData();
   formData.append("file", file, file.name);
-  const response = await fetch(API_BASE + "/api/studio/import/xlsx", {
+  const url = new URL(API_BASE + "/api/studio/import/xlsx", window.location.href);
+  if (options?.maxRowsPerSheet) url.searchParams.set("maxRowsPerSheet", String(options.maxRowsPerSheet));
+  const response = await fetch(url.toString(), {
     method: "POST",
     credentials: "include",
     body: formData

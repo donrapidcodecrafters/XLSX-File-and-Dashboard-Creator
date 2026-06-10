@@ -3972,6 +3972,28 @@ export function StudioPage({
       .catch(() => undefined);
   }, [pendingWorkbookImport?.sourceTableId]);
 
+  // When a data-source import pre-sets sourceTableId but the bundle wasn't ready yet,
+  // rebuild currentObjects once the source table appears in bundle.tables.
+  useEffect(() => {
+    if (!pendingWorkbookImport?.sourceTableId) return;
+    const sourceTable = bundle.tables.find((t) => t.id === pendingWorkbookImport.sourceTableId);
+    if (!sourceTable) return;
+    const needsRemap = Object.values(pendingWorkbookImport.currentObjects).some((obj) => {
+      if (!obj || obj.type !== "report") return false;
+      return Boolean(pendingWorkbookImport.importedTablesById[(obj as ReportDefinition).sourceTableId]);
+    });
+    if (!needsRemap) return;
+    setPendingWorkbookImport((current) => {
+      if (!current) return current;
+      const st = bundle.tables.find((t) => t.id === current.sourceTableId);
+      if (!st) return current;
+      return {
+        ...current,
+        currentObjects: rebuildPendingWorkbookImportObjects(current.baseObjects, current.importedTablesById, st, current.skippedReportIds, current.reportTypeOverrides)
+      };
+    });
+  }, [pendingWorkbookImport?.sourceTableId, bundle.tables]);
+
   async function refreshAllNow() {
     const refreshValidation = getFullRefreshValidation(documentState);
     if (refreshValidation) {
@@ -4131,9 +4153,15 @@ export function StudioPage({
   }
 
   async function handleWorkbookUploadSuccess(result: WorkbookUploadResult) {
-    if (result.mode === "template" && result.workbookImport) {
-      // Follow the same review-modal flow as handleImportXlsx
+    if ((result.mode === "template" || result.mode === "data-source") && result.workbookImport) {
+      // Reload first so bundle.tables has the source table (important for data-source mode)
+      if (result.mode === "data-source" && result.sourceImport) {
+        await loadHostedDocumentIntoState({ resetHistory: false });
+      }
       const response = result.workbookImport;
+      const sourceId = result.mode === "data-source"
+        ? ((result.sourceImport as { sources?: { sourceId: string }[] } | undefined)?.sources?.[0]?.sourceId || "")
+        : "";
       const baseObjects = Object.fromEntries(
         response.importedObjectIds
           .map((objectId) => response.document.bundle.objects[objectId])
@@ -4146,29 +4174,29 @@ export function StudioPage({
           .filter((table): table is TableDefinition => Boolean(table))
           .map((table) => [table.id, clone(table)])
       );
+      const targetTable = sourceId ? bundle.tables.find((table) => table.id === sourceId) || null : null;
       setPendingWorkbookImport({
         review: response.review,
         warnings: response.warnings,
         primaryObjectId: response.primaryObjectId,
         importedObjectIds: response.importedObjectIds,
-        sourceTableId: "",
+        sourceTableId: sourceId,
         skippedReportIds: [],
         reportTypeOverrides: {},
         baseObjects,
-        currentObjects: rebuildPendingWorkbookImportObjects(baseObjects, importedTablesById, null, [], {}),
+        currentObjects: rebuildPendingWorkbookImportObjects(baseObjects, importedTablesById, targetTable, [], {}),
         importedTablesById
       });
       setImportReviewModalOpen(true);
       const importedType = response.review.dashboardCreated ? "dashboard workbook" : response.importedObjectIds.length > 1 ? "workbook" : "sheet";
-      pushToast(`Parsed ${importedType} from workbook. Choose the real source table before creating anything.`);
+      const sourcePart = sourceId ? ` Data imported to "${(result.sourceImport as { sources?: { sourceName: string }[] } | undefined)?.sources?.[0]?.sourceName || "source"}". ` : "";
+      pushToast(`Parsed ${importedType} from workbook.${sourcePart} Review report types and save.`);
     } else if (result.mode === "data-source" && result.sourceImport) {
-      // Reload the document from the server (the API already saved the updated document)
+      // Data-only reimport (recreate=false), no report creation
       await loadHostedDocumentIntoState({ resetHistory: false });
-      const { sources, reports = [], dashboard } = result.sourceImport as typeof result.sourceImport & { reports?: unknown[]; dashboard?: unknown };
+      const { sources } = result.sourceImport as typeof result.sourceImport & { sources: { sourceName: string }[] };
       const sourcePart = sources.length === 1 ? `"${sources[0].sourceName}"` : `${sources.length} data sources`;
-      const reportPart = reports.length ? ` Created ${reports.length} report${reports.length === 1 ? "" : "s"}.` : "";
-      const dashboardPart = dashboard ? " Created dashboard." : "";
-      pushToast(`Imported ${sourcePart}.${reportPart}${dashboardPart}`);
+      pushToast(`Imported ${sourcePart}.`);
     }
   }
 
