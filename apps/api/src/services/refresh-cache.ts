@@ -120,16 +120,24 @@ async function streamQuickbaseTableToPostgres(
         }
         if (!fields.length) return { fields, rowCount: 0 };
         const fieldChunks = chunk(fields.map((f) => f.id).filter(Boolean), 30);
-        const seenIds = new Set<string>();
-        let skip = 0;
+        // Cursor-based pagination: use {3.GT.<lastRecordId>} instead of skip-offset.
+        // QB's skip pagination is unstable for large tables — the same skip position
+        // returns different records across requests, causing duplicates. Cursor-based
+        // pagination is deterministic: each page is anchored to the last seen record ID.
+        let lastRecordId = 0;
         while (true) {
           assertRefreshNotCancelled(options.activeJobId || "", profileIds);
-          // Fetch all field chunks for this page offset and merge into one row per record ID.
+          const whereClause = lastRecordId > 0 ? `{'3'.GT.'${lastRecordId}'}` : "";
+          // Fetch all field chunks for this cursor position and merge into one row per record ID.
           const pageMerged = new Map<string, DataRow>();
           let pageSize = 0;
           for (const fieldChunk of fieldChunks) {
             assertRefreshNotCancelled(options.activeJobId || "", profileIds);
-            const page = await fetchQuickbaseTablePage(quickbase, qbTableId, fieldChunk, { top: PAGE_SIZE, skip, sortBy: [{ fieldId: "3", order: "ASC" }] });
+            const page = await fetchQuickbaseTablePage(quickbase, qbTableId, fieldChunk, {
+              top: PAGE_SIZE,
+              where: whereClause,
+              sortBy: [{ fieldId: "3", order: "ASC" }]
+            });
             if (typeof page.totalRecords === "number" && page.totalRecords > 0) totalRowsHint = page.totalRecords;
             for (const row of page.rows) {
               const id = String(row.__recordId || "");
@@ -141,18 +149,16 @@ async function streamQuickbaseTableToPostgres(
             pageSize = Math.max(pageSize, page.rows.length);
           }
           if (pageMerged.size === 0) break;
-          // Deduplicate: only write records not already written in a previous page.
-          const freshRows = Array.from(pageMerged.values()).filter((row) => {
-            const id = String(row.__recordId || "");
-            return id && !seenIds.has(id);
-          });
-          if (freshRows.length === 0) break; // all records already seen — paging looped or no new data
-          freshRows.forEach((row) => seenIds.add(String(row.__recordId)));
-          await writer.appendRows(freshRows);
-          rowsWritten += freshRows.length;
+          const pageRows = Array.from(pageMerged.values());
+          await writer.appendRows(pageRows);
+          rowsWritten += pageRows.length;
+          // Advance cursor to the highest record ID seen in this page.
+          for (const row of pageRows) {
+            const rid = Number(row.__recordId);
+            if (rid > lastRecordId) lastRecordId = rid;
+          }
           onProgress(rowsWritten, totalRowsHint, `Syncing ${table.name}: ${rowsWritten.toLocaleString()} rows`);
           if (pageSize < PAGE_SIZE) break;
-          skip += PAGE_SIZE;
         }
       }
       return { fields, rowCount: rowsWritten };
