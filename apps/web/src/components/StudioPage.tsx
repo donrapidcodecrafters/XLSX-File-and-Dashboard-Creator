@@ -3910,6 +3910,7 @@ export function StudioPage({
             pushToast(`Refreshed ${response.job.tableCount || 0} tables and cached ${(response.job.rowCount || 0).toLocaleString()} rows.`, "ok");
             setRefreshJob({ ...response.job, status: "running", progress: 99, message: "Loading refreshed data…" });
             await reloadRemote({ showOverlay: false });
+            setDataImportVersion((v) => v + 1);
             setRefreshJob(null);
           } else if (response.job.status === "cancelled") {
             setRefreshingCache(false);
@@ -3938,7 +3939,10 @@ export function StudioPage({
     if (refreshJob.status === "complete") {
       setRefreshingCache(false);
       setRefreshJob({ ...refreshJob, status: "running", progress: 99, message: "Loading refreshed data…" });
-      void reloadRemote({ showOverlay: false }).finally(() => setRefreshJob(null));
+      void reloadRemote({ showOverlay: false }).finally(() => {
+        setDataImportVersion((v) => v + 1);
+        setRefreshJob(null);
+      });
     } else if (refreshJob.status === "cancelled") {
       setRefreshingCache(false);
     } else if (refreshJob.status === "failed") {

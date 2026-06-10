@@ -227,6 +227,7 @@ export function DashboardView({
   );
   const [runtimeFilters, setRuntimeFilters] = useState<Record<string, string>>(mergedDefaults);
   const [filterOptions, setFilterOptions] = useState<Record<string, string[]>>({});
+  const [openFilterId, setOpenFilterId] = useState<string | null>(null);
   const [tabResults, setTabResults] = useState<Record<string, DashboardRunResult["tabs"][number]>>({});
   const [tabLoading, setTabLoading] = useState<Record<string, boolean>>({});
   const [tabErrors, setTabErrors] = useState<Record<string, string>>({});
@@ -263,6 +264,18 @@ export function DashboardView({
   const dashboardLoading = loading || waitingForActiveTab;
   const shouldPreloadRemainingTabs = false;
   const runtimeFiltersKey = useMemo(() => JSON.stringify(runtimeFilters), [runtimeFilters]);
+
+  useEffect(() => {
+    if (!openFilterId) return;
+    function handleClickOutside(e: MouseEvent) {
+      const target = e.target as Element;
+      if (!target.closest(".filter-dropdown-wrap")) {
+        setOpenFilterId(null);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [openFilterId]);
   const exportDashboard = useMemo(
     () => buildDashboardExportDefinition(dashboard, reportDefinitions),
     [dashboard, reportDefinitions]
@@ -821,20 +834,36 @@ export function DashboardView({
                         onChange={(e) => setRuntimeFilters((c) => ({ ...c, [filter.id]: e.target.value }))}
                       />
                     ) : options.length ? (
-                      <select
-                        multiple
-                        className="dashboard-live-filter-multiselect"
-                        value={selectedValues}
-                        size={Math.min(options.length, 6)}
-                        onChange={(e) => {
-                          const selected = Array.from(e.target.selectedOptions).map((o) => o.value);
-                          setRuntimeFilters((c) => ({ ...c, [filter.id]: selected.join("|||") }));
-                        }}
-                      >
-                        {options.map((opt) => (
-                          <option key={opt} value={opt}>{opt}</option>
-                        ))}
-                      </select>
+                      <div className="filter-dropdown-wrap">
+                        <button
+                          type="button"
+                          className="filter-dropdown-trigger"
+                          onClick={() => setOpenFilterId((id) => id === filter.id ? null : filter.id)}
+                        >
+                          <span className="filter-dropdown-trigger-label">
+                            {selectedValues.length === 0
+                              ? "Select…"
+                              : selectedValues.length === 1
+                              ? selectedValues[0]
+                              : `${selectedValues.length} selected`}
+                          </span>
+                          <span className="filter-dropdown-arrow">{openFilterId === filter.id ? "▲" : "▼"}</span>
+                        </button>
+                        {openFilterId === filter.id ? (
+                          <div className="filter-dropdown-menu">
+                            {options.map((opt) => (
+                              <label key={opt} className="filter-dropdown-option">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedValues.includes(opt)}
+                                  onChange={() => toggleMultiValue(opt)}
+                                />
+                                <span>{opt}</span>
+                              </label>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
                     ) : (
                       <input
                         className="dashboard-live-filter-input"
