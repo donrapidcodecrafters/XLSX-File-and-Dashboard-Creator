@@ -667,11 +667,8 @@ export function DashboardView({
                       {isFavorite ? "Unfavorite" : "Favorite"}
                     </button>
                   ) : null}
-                  <button className="ghost-button btn-export" onClick={() => { void beginExport(); }} disabled={!activeTabResult || localExporting || nativeChartExporting}>
-                    {localExporting ? "Generating xlsx…" : preparedExport ? (exportSaved ? "Save again" : "Save xlsx") : "Download xlsx"}
-                  </button>
                   <button className="ghost-button btn-export" onClick={() => { void beginNativeChartExport(); }} disabled={!activeTabResult || localExporting || nativeChartExporting}>
-                    {nativeChartExporting ? "Generating native xlsx..." : "Dev native chart xlsx"}
+                    {nativeChartExporting ? "Generating workbook…" : "Export Workbook"}
                   </button>
                   {onRefresh ? (
                     <button className="ghost-button btn-system" onClick={onRefresh} disabled={dashboardLoading}>
@@ -730,8 +727,8 @@ export function DashboardView({
 
       {nativeChartExporting ? (
         <div className="sync-status">
-          <strong>Generating native chart export</strong>
-          <span>Building native Excel chart objects from hidden workbook ranges.</span>
+          <strong>Generating workbook</strong>
+          <span>Building Excel workbook with charts, summaries, and data from all tabs.</span>
           <div className="progress-meter" aria-hidden="true">
             <div className="progress-meter-fill" style={{ width: "72%" }} />
           </div>
@@ -743,8 +740,13 @@ export function DashboardView({
           <strong>Export ready</strong>
           <span>The workbook is ready. Save it to your machine.</span>
           <div className="card-actions">
-            <button className="ghost-button btn-export" onClick={() => { void beginExport(); }}>
-              {exportSaved ? "Save again" : "Save xlsx"}
+            <button className="ghost-button btn-export" onClick={async () => {
+              const saveTarget = await createExportSaveTarget(preparedExport.filename);
+              if (!saveTarget && typeof (window as typeof window & { showSaveFilePicker?: unknown }).showSaveFilePicker === "function") return;
+              await savePreparedWorkbook(preparedExport.blob, preparedExport.filename, saveTarget);
+              setExportSaved(true);
+            }}>
+              {exportSaved ? "Save again" : "Save workbook"}
             </button>
           </div>
         </div>
@@ -864,9 +866,7 @@ export function DashboardView({
         <div className="card">
           <div className="card-head">
             <strong>{activeTab.name}</strong>
-            {isOverviewTab
-              ? <span className="micro">{activeTab.widgets.length || 0} cards</span>
-              : <span className="micro">{activeTab.widgets[0]?.result?.totalRows ?? 0} rows</span>}
+            <span className="micro">{activeTab.widgets.length || 0} {activeTab.widgets.length === 1 ? "card" : "cards"}</span>
           </div>
           {tabErrors[activeTab.id] ? (
             <div className="sync-status sync-status-warn">
@@ -892,104 +892,131 @@ export function DashboardView({
               </button>
             </div>
           ) : null}
-          {!isOverviewTab ? (() => {
-            const primaryWidget = activeTab.widgets.find((w) => w.widget.showDetails || w.widget.displayMode === "inherit" || w.widget.displayMode === "table") || activeTab.widgets[0] || null;
-            if (!primaryWidget) {
-              return !dashboardLoading ? (
-                <div className="sync-status" style={{ borderLeft: "4px solid var(--border-md, #B0BEC8)" }}>
-                  <strong>This tab has no report configured</strong>
-                  <span>Open this dashboard in the Building area and add a report card to this tab.</span>
-                </div>
-              ) : null;
-            }
-            const pagedResult = widgetPageResults[primaryWidget.widgetId] || primaryWidget.result;
-            const currentPage = widgetPages[primaryWidget.widgetId] || pagedResult.page || 1;
-            const totalPages = pagedResult.totalPages || 1;
-            const pageLoading = widgetPageLoading[primaryWidget.widgetId];
-            const widgetTable = tables?.find((item) => item.id === primaryWidget.report.sourceTableId || item.quickbaseTableId === primaryWidget.report.sourceTableId);
-            return (
-              <div className="stack">
-                {primaryWidget.status === "complete" && pagedResult.crosstab ? (
-                  <div className="pivot-table-shell">
-                    <table className="pivot-table">
-                      <thead><tr>
-                        <th className="pivot-metric-col"></th>
-                        {pagedResult.crosstab.columns.map((col, ci) => (
-                          <th key={ci} className={col === "Grand Total" ? "pivot-grand-total" : ""}>{col || "(blank)"}</th>
-                        ))}
-                      </tr></thead>
-                      <tbody>
-                        {pagedResult.crosstab.rows.map((row) => (
-                          <tr key={row.label}>
-                            <td className="pivot-row-header">{row.label}</td>
-                            {row.formatted.map((val, vi) => (
-                              <td key={vi} className={pagedResult.crosstab!.columns[vi] === "Grand Total" ? "pivot-grand-total" : ""}>{val}</td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : null}
-                {primaryWidget.status === "complete" && widgetShowsChart(primaryWidget.widget, primaryWidget.report) ? (
-                  <div className="chart-scroll-shell" ref={bindChartMeasureRef(primaryWidget.widgetId)}>
-                    {(() => {
-                      const axisLabels = getChartAxisLabels(tables, primaryWidget.report);
-                      const chartBounds = getChartViewportBounds(primaryWidget.report.view.chartType, pagedResult.chartData.length, false);
-                      return (
-                        <div style={{ minWidth: `${chartBounds.minWidth}px`, minHeight: `${chartBounds.minHeight}px`, width: "100%", height: "100%" }}>
-                          <ChartPreview
-                            chartType={primaryWidget.report.view.chartType}
-                            data={pagedResult.chartData.length ? pagedResult.chartData : primaryWidget.result.chartData}
-                            title={primaryWidget.report.view.chartTitle || primaryWidget.widget.title}
-                            decimalPlaces={primaryWidget.report.view.decimalPlaces}
-                            chartColors={primaryWidget.report.view.chartColors}
-                            chartValueColors={primaryWidget.report.view.chartValueColors}
-                            chartSort={primaryWidget.report.view.chartSort}
-                            chartOrientation={primaryWidget.report.view.chartOrientation}
-                            xAxisLabel={axisLabels.xAxisLabel}
-                            yAxisLabel={axisLabels.yAxisLabel}
-                            secondaryYAxisLabel={axisLabels.secondaryYAxisLabel}
-                            secondarySeriesType={primaryWidget.report.view.chartSecondarySeriesType}
-                            showLegend={primaryWidget.report.view.chartShowLegend}
-                            showValues={primaryWidget.report.view.chartShowValues}
-                            viewportHeight={chartBounds.minHeight}
-                            openLinksInNewTab={openLinksInNewTab}
-                          />
-                        </div>
-                      );
-                    })()}
-                  </div>
-                ) : null}
-                {primaryWidget.status === "complete" ? (
-                  <>
-                    <div className="link-toolbar">
-                      <button type="button" className="ghost-button" onClick={() => setFocusedWidgetId(primaryWidget.widgetId)}>Focus report</button>
-                      {currentPage > 1 ? <button className="ghost-button" disabled={pageLoading} onClick={() => { void changeWidgetPage(primaryWidget, currentPage - 1); }}>Previous</button> : null}
-                      <span className="micro">Page {currentPage} of {totalPages} · {pagedResult.totalRows || 0} rows</span>
-                      {pagedResult.hasNextPage ? <button className="ghost-button" disabled={pageLoading} onClick={() => { void changeWidgetPage(primaryWidget, currentPage + 1); }}>Next</button> : null}
-                    </div>
-                    <div className="report-table-scroll-wrap">
-                    <ResizableDataTable
-                      className="report-table-shell"
-                      columns={primaryWidget.report.selectedFieldIds.map((fieldId) => ({
-                        key: fieldId,
-                        label: getFieldLabel(tables, primaryWidget.report, fieldId)
-                      }))}
-                      rows={pagedResult.rows.map((row, index) => ({
-                        key: String(row.__recordId || index),
-                        cells: primaryWidget.report.selectedFieldIds.map((fieldId) =>
-                          widgetTable ? formatReportCellValue(primaryWidget.report, widgetTable, fieldId, row[fieldId]) : String(row[fieldId] ?? "")
-                        )
-                      }))}
-                    />
-                    </div>
-                  </>
-                ) : null}
-                {dashboardLoading && !pagedResult.rows.length ? <div className="empty">Loading…</div> : null}
+          {!isOverviewTab ? (
+            activeTab.widgets.length === 0 && !dashboardLoading ? (
+              <div className="sync-status" style={{ borderLeft: "4px solid var(--border-md, #B0BEC8)" }}>
+                <strong>This tab has no report configured</strong>
+                <span>Open this dashboard in the Building area and add a report card to this tab.</span>
               </div>
-            );
-          })() : null}
+            ) : (
+              <div className="stack">
+                {activeTab.widgets.map((widget) => {
+                  const pagedResult = widgetPageResults[widget.widgetId] || widget.result;
+                  const currentPage = widgetPages[widget.widgetId] || pagedResult.page || 1;
+                  const totalPages = pagedResult.totalPages || 1;
+                  const pageLoading = widgetPageLoading[widget.widgetId];
+                  const widgetTable = tables?.find((item) => item.id === widget.report.sourceTableId || item.quickbaseTableId === widget.report.sourceTableId);
+                  const axisLabels = getChartAxisLabels(tables, widget.report);
+                  const resolvedDisplayMode = resolveWidgetDisplayMode(widget.widget, widget.report.view.mode);
+                  const isSummaryOnly = resolvedDisplayMode === "summary";
+                  const showsTable = (resolvedDisplayMode === "table" || widgetRenderMode(widget.widget, widget.report) === "timeline" || widgetRenderMode(widget.widget, widget.report) === "calendar" || widgetRenderMode(widget.widget, widget.report) === "kanban" || widget.widget.showDetails) && !isSummaryOnly;
+                  const widgetTitle = widget.widget.title || widget.report.name;
+                  return (
+                    <div key={widget.widgetId} className="tab-widget-section">
+                      <div className="tab-widget-section-head">
+                        <strong>{widgetTitle}</strong>
+                        {widget.status === "complete" ? (
+                          <button type="button" className="widget-action-button" onClick={() => setFocusedWidgetId(widget.widgetId)}>Focus</button>
+                        ) : null}
+                      </div>
+                      <div className={`widget-state-banner ${widget.status === "failed" ? "widget-state-banner-failed" : "widget-state-banner-ready"}`}>
+                        <strong>{widget.status === "failed" ? "Widget unavailable" : "Widget ready"}</strong>
+                        <span>{widget.error || widget.message}</span>
+                      </div>
+                      {widget.status === "complete" && (widget.widget.showSummary || isSummaryOnly) && pagedResult.summary.length > 0 ? (
+                        <div className="widget-metrics">
+                          {pagedResult.summary.map((item) => (
+                            <div key={item.label} className="mini-stat">
+                              <strong>{item.value}</strong>
+                              <span>{item.label}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                      {widget.status === "complete" && pagedResult.crosstab ? (
+                        <div className="pivot-table-shell">
+                          <table className="pivot-table">
+                            <thead><tr>
+                              <th className="pivot-metric-col"></th>
+                              {pagedResult.crosstab.columns.map((col, ci) => (
+                                <th key={ci} className={col === "Grand Total" ? "pivot-grand-total" : ""}>{col || "(blank)"}</th>
+                              ))}
+                            </tr></thead>
+                            <tbody>
+                              {pagedResult.crosstab.rows.map((row) => (
+                                <tr key={row.label}>
+                                  <td className="pivot-row-header">{row.label}</td>
+                                  {row.formatted.map((val, vi) => (
+                                    <td key={vi} className={pagedResult.crosstab!.columns[vi] === "Grand Total" ? "pivot-grand-total" : ""}>{val}</td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : null}
+                      {widget.status === "complete" && widgetShowsChart(widget.widget, widget.report) ? (
+                        <div className="chart-scroll-shell" ref={bindChartMeasureRef(widget.widgetId)}>
+                          {(() => {
+                            const chartBounds = getChartViewportBounds(widget.report.view.chartType, pagedResult.chartData.length, false);
+                            return (
+                              <div style={{ minWidth: `${chartBounds.minWidth}px`, minHeight: `${chartBounds.minHeight}px`, width: "100%", height: "100%" }}>
+                                <ChartPreview
+                                  chartType={widget.report.view.chartType}
+                                  data={pagedResult.chartData.length ? pagedResult.chartData : widget.result.chartData}
+                                  title={widget.report.view.chartTitle || widget.widget.title}
+                                  decimalPlaces={widget.report.view.decimalPlaces}
+                                  chartColors={widget.report.view.chartColors}
+                                  chartValueColors={widget.report.view.chartValueColors}
+                                  chartSort={widget.report.view.chartSort}
+                                  chartOrientation={widget.report.view.chartOrientation}
+                                  xAxisLabel={axisLabels.xAxisLabel}
+                                  yAxisLabel={axisLabels.yAxisLabel}
+                                  secondaryYAxisLabel={axisLabels.secondaryYAxisLabel}
+                                  secondarySeriesType={widget.report.view.chartSecondarySeriesType}
+                                  showLegend={widget.report.view.chartShowLegend}
+                                  showValues={widget.report.view.chartShowValues}
+                                  viewportHeight={chartBounds.minHeight}
+                                  openLinksInNewTab={openLinksInNewTab}
+                                />
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      ) : null}
+                      {widget.status === "complete" && showsTable ? (
+                        <>
+                          {(pagedResult.hasNextPage || currentPage > 1) ? (
+                            <div className="link-toolbar">
+                              {currentPage > 1 ? <button className="ghost-button" disabled={pageLoading} onClick={() => { void changeWidgetPage(widget, currentPage - 1); }}>Previous</button> : null}
+                              <span className="micro">Page {currentPage} of {totalPages} · {pagedResult.totalRows || 0} rows</span>
+                              {pagedResult.hasNextPage ? <button className="ghost-button" disabled={pageLoading} onClick={() => { void changeWidgetPage(widget, currentPage + 1); }}>Next</button> : null}
+                            </div>
+                          ) : null}
+                          <div className="report-table-scroll-wrap">
+                            <ResizableDataTable
+                              className="report-table-shell"
+                              columns={widget.report.selectedFieldIds.map((fieldId) => ({
+                                key: fieldId,
+                                label: getFieldLabel(tables, widget.report, fieldId)
+                              }))}
+                              rows={pagedResult.rows.map((row, index) => ({
+                                key: String(row.__recordId || index),
+                                cells: widget.report.selectedFieldIds.map((fieldId) =>
+                                  widgetTable ? formatReportCellValue(widget.report, widgetTable, fieldId, row[fieldId]) : String(row[fieldId] ?? "")
+                                )
+                              }))}
+                            />
+                          </div>
+                        </>
+                      ) : null}
+                      {dashboardLoading && !pagedResult.rows.length && !pagedResult.summary.length && !pagedResult.crosstab ? <div className="empty">Loading…</div> : null}
+                    </div>
+                  );
+                })}
+              </div>
+            )
+          ) : null}
           {isOverviewTab ? <div className="widget-grid dashboard-layout-grid">
             {activeTab.widgets.map((widget) => {
               const pagedResult = widgetPageResults[widget.widgetId] || widget.result;
@@ -1020,7 +1047,7 @@ export function DashboardView({
               const resolvedDisplayMode = resolveWidgetDisplayMode(widget.widget, widget.report.view.mode);
               const isSummaryOnly = resolvedDisplayMode === "summary" || (widget.widget.showSummary && !widget.widget.showDetails);
               const widgetTitle = widget.widget.title || widget.report.name;
-              const displayTitle = isSummaryOnly ? `${widgetTitle} - Summary` : widgetTitle;
+              const displayTitle = widgetTitle;
               return (
               <article className="widget-card dashboard-layout-item" key={widget.widgetId} style={getDashboardWidgetLayoutStyle(widget.widget, activeTabLayout.get(widget.widgetId) || null)}>
                 <div className="widget-head">
@@ -1109,80 +1136,8 @@ export function DashboardView({
                     </div>
                   </div>
                 ) : null}
-                {widget.status === "complete" && (widgetRenderMode(widget.widget, widget.report) === "table" || widgetRenderMode(widget.widget, widget.report) === "timeline" || widgetRenderMode(widget.widget, widget.report) === "calendar" || widgetRenderMode(widget.widget, widget.report) === "kanban" || widget.widget.showDetails) ? (
-                  <div className="compact-table-shell">
-                    <div className="widget-table-toolbar">
-                      {currentPage > 1 ? <button className="ghost-button" disabled={pageLoading} onClick={() => { void changeWidgetPage(widget, currentPage - 1); }}>Previous</button> : null}
-                      <span className="micro">Page {currentPage} of {totalPages} · {pagedResult.totalRows || 0} rows</span>
-                      {pagedResult.hasNextPage ? <button className="ghost-button" disabled={pageLoading} onClick={() => { void changeWidgetPage(widget, currentPage + 1); }}>Next</button> : null}
-                    </div>
-                    {(() => {
-                      const mode = widgetRenderMode(widget.widget, widget.report);
-                      if (mode === "timeline" || mode === "calendar") {
-                        const dateFieldId = mode === "timeline" ? widget.report.view.timelineDateField : widget.report.view.calendarDateField;
-                        const titleFieldId = widget.report.view.titleFieldId || widget.report.selectedFieldIds[0] || "";
-                        return (
-                          <div className="studio-card-grid">
-                            {pagedResult.rows.map((row, index) => (
-                              <article className="studio-mini-card" key={index}>
-                                <strong>{widgetTable ? formatReportCellValue(widget.report, widgetTable, titleFieldId, row[titleFieldId]) : String(row[titleFieldId] ?? "")}</strong>
-                                <span>{widgetTable ? getReportFieldLabel(widget.report, widgetTable, dateFieldId) : "Date"}: {widgetTable ? formatReportCellValue(widget.report, widgetTable, dateFieldId, row[dateFieldId]) : String(row[dateFieldId] ?? "")}</span>
-                                {mode === "timeline" && widget.report.view.timelineEndField ? (
-                                  <span>Ends: {widgetTable ? formatReportCellValue(widget.report, widgetTable, widget.report.view.timelineEndField, row[widget.report.view.timelineEndField]) : String(row[widget.report.view.timelineEndField] ?? "")}</span>
-                                ) : null}
-                              </article>
-                            ))}
-                          </div>
-                        );
-                      }
-                      if (mode === "kanban") {
-                        const fieldId = widget.report.view.kanbanField || widget.report.selectedFieldIds[0] || "";
-                        const titleFieldId = widget.report.view.titleFieldId || widget.report.selectedFieldIds[0] || "";
-                        const columns = new Map<string, typeof pagedResult.rows>();
-                        pagedResult.rows.forEach((row) => {
-                          const key = widgetTable ? formatReportCellValue(widget.report, widgetTable, fieldId, row[fieldId]) : String(row[fieldId] ?? "Unassigned");
-                          columns.set(key || "Unassigned", [...(columns.get(key || "Unassigned") || []), row]);
-                        });
-                        return (
-                          <div className="kanban-board">
-                            {Array.from(columns.entries()).map(([column, columnRows]) => (
-                              <section className="kanban-column" key={column}>
-                                <div className="kanban-head">
-                                  <strong>{column}</strong>
-                                  <span>{columnRows.length}</span>
-                                </div>
-                                <div className="kanban-stack">
-                                  {columnRows.map((row, index) => (
-                                    <article className="studio-mini-card" key={index}>
-                                      <strong>{widgetTable ? formatReportCellValue(widget.report, widgetTable, titleFieldId, row[titleFieldId]) : String(row[titleFieldId] ?? "")}</strong>
-                                      {widget.report.selectedFieldIds.filter((fieldId) => fieldId !== titleFieldId).slice(0, 3).map((fieldId) => (
-                                        <span key={fieldId}>{widgetTable ? formatReportCellValue(widget.report, widgetTable, fieldId, row[fieldId]) : String(row[fieldId] ?? "")}</span>
-                                      ))}
-                                    </article>
-                                  ))}
-                                </div>
-                              </section>
-                            ))}
-                          </div>
-                        );
-                      }
-                      return (
-                        <ResizableDataTable
-                          className="widget-table-shell"
-                          columns={widget.report.selectedFieldIds.slice(0, 6).map((fieldId) => ({
-                            key: fieldId,
-                            label: getFieldLabel(tables, widget.report, fieldId)
-                          }))}
-                          rows={pagedResult.rows.map((row, index) => ({
-                            key: String(row.__recordId || index),
-                            cells: widget.report.selectedFieldIds.slice(0, 6).map((fieldId) =>
-                              widgetTable ? formatReportCellValue(widget.report, widgetTable, fieldId, row[fieldId]) : String(row[fieldId] ?? "")
-                            )
-                          }))}
-                        />
-                      );
-                    })()}
-                  </div>
+                {widget.status === "complete" && !isSummaryOnly && !widgetShowsChart(widget.widget, widget.report) && pagedResult.totalRows > 0 ? (
+                  <span className="micro" style={{ padding: "4px 0", display: "block" }}>{pagedResult.totalRows.toLocaleString()} rows — open tab to view details</span>
                 ) : null}
                 </article>
               );

@@ -322,6 +322,27 @@ function writeSummarySheet(sheet: any, result: ReportRunResult, startRow: number
   return startRow + 3;
 }
 
+function writeCrosstabBlock(sheet: any, crosstab: { columns: string[]; rows: Array<{ label: string; formatted: string[] }> }, startRow: number, startCol: number) {
+  const headerRow = sheet.getRow(startRow);
+  sheet.getCell(startRow, startCol).value = "";
+  crosstab.columns.forEach((col, ci) => {
+    const cell = sheet.getCell(startRow, startCol + ci + 1);
+    cell.value = col || "(blank)";
+    cell.font = { bold: true };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEAF5F1" } };
+  });
+  void headerRow;
+  crosstab.rows.forEach((row, ri) => {
+    const labelCell = sheet.getCell(startRow + ri + 1, startCol);
+    labelCell.value = row.label;
+    labelCell.font = { bold: true };
+    row.formatted.forEach((val, vi) => {
+      sheet.getCell(startRow + ri + 1, startCol + vi + 1).value = val;
+    });
+  });
+  return startRow + crosstab.rows.length + 2;
+}
+
 function writeHiddenChartData(
   dataSheet: any,
   dataSheetName: string,
@@ -644,7 +665,7 @@ export async function exportDashboardNativeChartWorkbook(
   overview.columns = [{ width: 28 }, { width: 28 }, { width: 28 }, { width: 18 }, { width: 24 }];
   overview.getCell("A1").value = dashboard.name;
   overview.getCell("A1").font = { bold: true, size: 18 };
-  overview.getCell("A2").value = "Development export: visible tabs use native Excel chart objects; chart source ranges are on a hidden worksheet.";
+  overview.getCell("A2").value = dashboard.description || "Dashboard export with native Excel charts.";
   overview.mergeCells("A2:E2");
   overview.getRow(4).values = ["Tab", "Card", "Report", "Rows", "Native chart"];
   overview.getRow(4).font = { bold: true };
@@ -681,12 +702,20 @@ export async function exportDashboardNativeChartWorkbook(
       sheet.mergeCells(startRow, startCol, startRow, endCol);
       sheet.getCell(startRow, startCol).value = widget.widget.title || widget.report.name;
       sheet.getCell(startRow, startCol).font = { bold: true, size: 13 };
+      const widgetDisplayMode = resolveWidgetDisplayMode(widget.widget, widget.report.view.mode);
+      const isSummaryMode = widgetDisplayMode === "summary";
       sheet.mergeCells(startRow + 1, startCol, startRow + 1, endCol);
-      sheet.getCell(startRow + 1, startCol).value = `${exportResult.totalRows.toLocaleString()} rows`;
+      sheet.getCell(startRow + 1, startCol).value = isSummaryMode
+        ? (exportResult.summary.length ? `${exportResult.summary.length} metric${exportResult.summary.length !== 1 ? "s" : ""}` : "Summary")
+        : `${exportResult.totalRows.toLocaleString()} rows`;
       sheet.getCell(startRow + 1, startCol).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEAF5F1" } };
-      const contentStartRow = widget.widget.showSummary
-        ? writeSummarySheet(sheet, exportResult, startRow + 3, startCol, endCol)
-        : startRow + 3;
+      let contentRow = startRow + 3;
+      if ((widget.widget.showSummary || isSummaryMode) && exportResult.summary.length) {
+        contentRow = writeSummarySheet(sheet, exportResult, contentRow, startCol, endCol);
+      }
+      if (isSummaryMode && exportResult.crosstab) {
+        contentRow = writeCrosstabBlock(sheet, exportResult.crosstab, contentRow, startCol);
+      }
       const hasChart = widget.status === "complete" && widgetShowsChart(widget.widget, widget.report) && exportResult.chartData.length > 0;
       if (hasChart) {
         const written = writeHiddenChartData(dataSheet, dataSheetName, dataRow, widget.report, exportResult, table, chartId);
@@ -694,15 +723,15 @@ export async function exportDashboardNativeChartWorkbook(
         sheetCharts.push({
           chart: written.source,
           fromCol: startCol - 1,
-          fromRow: contentStartRow - 1,
+          fromRow: contentRow - 1,
           toCol: endCol,
           toRow: endRow
         });
         chartId += 1;
       } else if (widget.status === "complete" && widgetShowsRows(widget.widget, widget.report) && exportResult.rows.length) {
-        writeRowsSheet(sheet, widget.report, table, exportResult, contentStartRow, startCol);
-      } else {
-        sheet.getCell(contentStartRow, startCol).value = widget.error || widget.message || "No chart or row data available.";
+        writeRowsSheet(sheet, widget.report, table, exportResult, contentRow, startCol);
+      } else if (!isSummaryMode && !exportResult.summary.length) {
+        sheet.getCell(contentRow, startCol).value = widget.error || widget.message || "No data available.";
       }
       overview.getCell(overviewRow, 1).value = tab.name;
       overview.getCell(overviewRow, 2).value = widget.widget.title || widget.report.name;
@@ -740,7 +769,7 @@ export async function exportReportNativeChartWorkbook(
   sheet.columns = Array.from({ length: 12 }, () => ({ width: 14 }));
   sheet.getCell("A1").value = report.name;
   sheet.getCell("A1").font = { bold: true, size: 18 };
-  sheet.getCell("A2").value = "Development export: this sheet uses native Excel chart objects; chart source ranges are on a hidden worksheet.";
+  sheet.getCell("A2").value = `${report.description || ""}`.trim() || "";
   sheet.mergeCells("A2:L2");
   sheet.getCell("A4").value = `${result.totalRows.toLocaleString()} rows`;
   sheet.getCell("A4").font = { bold: true };
