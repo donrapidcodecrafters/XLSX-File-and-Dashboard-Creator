@@ -90,6 +90,7 @@ import {
   type QuickbaseSyncResult,
   type StudioWorkbookImportResult,
   fetchStudioRefreshJob,
+  cancelStudioRefreshJob,
   fetchStudioVersions,
   restoreStudioVersion,
   startStudioRefresh,
@@ -5296,7 +5297,7 @@ export function StudioPage({
     return (
       <>
         {refreshJob ? (
-          <RefreshOverlay title={refreshJob.status === "complete" ? "Data sync complete" : refreshJob.status === "failed" ? "Data sync failed" : refreshJob.status === "cancelled" ? "Data sync cancelled" : "Syncing all reports and dashboards"} job={refreshJob} status={refreshJob.status} onDismiss={() => setRefreshJob(null)} />
+          <RefreshOverlay title={refreshJob.status === "complete" ? "Data sync complete" : refreshJob.status === "failed" ? "Data sync failed" : refreshJob.status === "cancelled" ? "Data sync cancelled" : "Syncing all reports and dashboards"} job={refreshJob} status={refreshJob.status} onDismiss={() => setRefreshJob(null)} onCancel={refreshJob.id && (refreshJob.status === "running" || refreshJob.status === "queued") ? () => { void cancelStudioRefreshJob(refreshJob.id).catch(() => {}); } : undefined} />
         ) : null}
         <section className="studio-page studio-page-empty">
           <StudioWorkspaceEmptyState
@@ -5320,7 +5321,7 @@ export function StudioPage({
     return (
       <>
         {refreshJob ? (
-          <RefreshOverlay title={refreshJob.status === "complete" ? "Data sync complete" : refreshJob.status === "failed" ? "Data sync failed" : refreshJob.status === "cancelled" ? "Data sync cancelled" : "Syncing all reports and dashboards"} job={refreshJob} status={refreshJob.status} onDismiss={() => setRefreshJob(null)} />
+          <RefreshOverlay title={refreshJob.status === "complete" ? "Data sync complete" : refreshJob.status === "failed" ? "Data sync failed" : refreshJob.status === "cancelled" ? "Data sync cancelled" : "Syncing all reports and dashboards"} job={refreshJob} status={refreshJob.status} onDismiss={() => setRefreshJob(null)} onCancel={refreshJob.id && (refreshJob.status === "running" || refreshJob.status === "queued") ? () => { void cancelStudioRefreshJob(refreshJob.id).catch(() => {}); } : undefined} />
         ) : null}
         <section className="studio-page studio-page-home">
           <StudioWorkspaceHome
@@ -5407,7 +5408,7 @@ export function StudioPage({
   return (
     <>
       {refreshJob ? (
-        <RefreshOverlay title={refreshJob.status === "complete" ? "Data sync complete" : refreshJob.status === "failed" ? "Data sync failed" : refreshJob.status === "cancelled" ? "Data sync cancelled" : "Syncing all reports and dashboards"} job={refreshJob} status={refreshJob.status} onDismiss={() => setRefreshJob(null)} />
+        <RefreshOverlay title={refreshJob.status === "complete" ? "Data sync complete" : refreshJob.status === "failed" ? "Data sync failed" : refreshJob.status === "cancelled" ? "Data sync cancelled" : "Syncing all reports and dashboards"} job={refreshJob} status={refreshJob.status} onDismiss={() => setRefreshJob(null)} onCancel={refreshJob.id && (refreshJob.status === "running" || refreshJob.status === "queued") ? () => { void cancelStudioRefreshJob(refreshJob.id).catch(() => {}); } : undefined} />
       ) : null}
       <section className={`studio-page ${activeDashboard ? "studio-page-dashboard" : "studio-page-report"}`}>
       <div className={`studio-canvas ${hasActiveObject ? "studio-canvas-active" : ""}`}>

@@ -28,12 +28,14 @@ export function RefreshOverlay({
   indeterminate = false,
   status = "running",
   onDismiss,
+  onCancel,
 }: {
   title: string;
   job: { progress?: number; message?: string; estimatedSecondsRemaining?: number } | null;
   indeterminate?: boolean;
   status?: "queued" | "running" | "complete" | "failed" | "cancelled";
   onDismiss?: () => void;
+  onCancel?: () => void;
 }) {
   if (!job) return null;
 
@@ -188,6 +190,37 @@ export function RefreshOverlay({
             </span>
             <span>{timeHint}</span>
           </div>
+
+          {/* ── cancel button (running state only) ── */}
+          {!terminal && onCancel ? (
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "24px" }}>
+              <button
+                type="button"
+                onClick={onCancel}
+                style={{
+                  padding: "10px 22px",
+                  fontSize: "0.9rem",
+                  fontWeight: 600,
+                  borderRadius: "8px",
+                  border: "1.5px solid #c9d9d0",
+                  background: "#ffffff",
+                  color: "#0d2b20",
+                  cursor: "pointer",
+                  transition: "background 0.15s, border-color 0.15s",
+                }}
+                onMouseEnter={e => {
+                  (e.currentTarget as HTMLButtonElement).style.background = "#f0f6f3";
+                  (e.currentTarget as HTMLButtonElement).style.borderColor = "#9bbdae";
+                }}
+                onMouseLeave={e => {
+                  (e.currentTarget as HTMLButtonElement).style.background = "#ffffff";
+                  (e.currentTarget as HTMLButtonElement).style.borderColor = "#c9d9d0";
+                }}
+              >
+                Cancel sync
+              </button>
+            </div>
+          ) : null}
 
           {/* ── dismiss button (terminal non-complete states) ── */}
           {terminal && status !== "complete" && onDismiss ? (
