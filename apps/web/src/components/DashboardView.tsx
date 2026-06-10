@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { buildDashboardFilters, compactDashboardTabWidgets, formatReportCellValue, getDashboardWidgetLayoutStyle, getDashboardWidgetPlacements, getReportFieldLabel, resolveActiveDashboardTabId, type DashboardDefinition, type DashboardRunResult, type RefreshJobStatus, type ReportDefinition, type ReportRunResult, type TableDefinition } from "@studio/shared";
+import { buildDashboardFilters, compactDashboardTabWidgets, formatReportCellValue, getDashboardWidgetLayoutStyle, getDashboardWidgetPlacements, getReportFieldLabel, repackDashboardTabLayout, resolveActiveDashboardTabId, type DashboardDefinition, type DashboardRunResult, type RefreshJobStatus, type ReportDefinition, type ReportRunResult, type TableDefinition } from "@studio/shared";
 import { createExportSaveTarget, fetchFieldValues, fetchReportExportBundle, renderDashboard, runReportPage, type ExportSaveTarget } from "../lib/api";
 import { LinkToolbar } from "./LinkToolbar";
 import { ChartPreview } from "./ChartPreview";
@@ -258,8 +258,11 @@ export function DashboardView({
   const activeTabResult = tabResults[resolvedActiveTabId] || null;
   const activeTabLayout = useMemo(() => {
     const tab = dashboard.tabs.find((item) => item.id === resolvedActiveTabId);
-    const compactedTab = tab ? (compactDashboardTabWidgets(tab) || tab) : null;
-    return new Map((compactedTab ? getDashboardWidgetPlacements(compactedTab) : []).map((placement) => [placement.widgetId, placement]));
+    // repackDashboardTabLayout sorts widgets by stored (y,x) and reassigns compact
+    // sequential y values starting at 1, preventing corrupted large y values from
+    // creating thousands of empty CSS grid rows.
+    const repackedTab = tab ? (repackDashboardTabLayout(tab) || tab) : null;
+    return new Map((repackedTab ? getDashboardWidgetPlacements(repackedTab) : []).map((placement) => [placement.widgetId, placement]));
   }, [dashboard.tabs, resolvedActiveTabId]);
   const activeTabError = tabErrors[resolvedActiveTabId] || "";
   const loading = Boolean(tabLoading[resolvedActiveTabId]);

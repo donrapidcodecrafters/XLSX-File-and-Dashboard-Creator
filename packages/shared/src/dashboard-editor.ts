@@ -553,6 +553,52 @@ export function compactDashboardTabWidgets(tab: DashboardTabDefinition | null | 
   };
 }
 
+// Re-packs widget y values from scratch, sorting by stored (y,x) and assigning
+// compact sequential rows starting at 1. Fixes corrupted large y values without
+// altering the visual row groupings or changing stored data.
+export function repackDashboardTabLayout(tab: DashboardTabDefinition | null | undefined): DashboardTabDefinition | null {
+  if (!tab?.widgets.length) return tab || null;
+
+  const withLayout = tab.widgets.map((widget) => ({
+    widget,
+    layout: normalizeDashboardWidgetLayout(widget)
+  }));
+
+  // Sort by stored y then x to recover visual order
+  withLayout.sort((a, b) => {
+    const ay = a.layout.y ?? 1;
+    const by = b.layout.y ?? 1;
+    if (ay !== by) return ay - by;
+    return (a.layout.x ?? 1) - (b.layout.x ?? 1);
+  });
+
+  // Group into rows: consecutive widgets sharing the same original y are one row
+  type Row = typeof withLayout;
+  const rows: Row[] = [];
+  let lastY = -1;
+  for (const item of withLayout) {
+    const y = item.layout.y ?? 1;
+    if (y !== lastY) { rows.push([]); lastY = y; }
+    rows[rows.length - 1].push(item);
+  }
+
+  // Assign compact y values to each row group
+  let nextY = 1;
+  const repacked = new Map<string, number>();
+  for (const row of rows) {
+    for (const { widget } of row) repacked.set(widget.id, nextY);
+    nextY += Math.max(...row.map(({ layout }) => layout.h));
+  }
+
+  return {
+    ...tab,
+    widgets: tab.widgets.map((widget) => ({
+      ...widget,
+      layout: { ...widget.layout, y: repacked.get(widget.id) ?? widget.layout.y }
+    }))
+  };
+}
+
 export function balanceDashboardTabLayout(
   dashboard: DashboardDefinition,
   tabId: string
