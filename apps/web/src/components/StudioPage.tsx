@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEve
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   applyDashboardRowPreset as applyDashboardRowPresetInDefinition,
+  buildMergedTableForJoins,
   buildStudioBuilderDraft,
   balanceDashboardLayout as balanceDashboardLayoutInDefinition,
   balanceDashboardRow as balanceDashboardRowInDefinition,
@@ -4813,7 +4814,11 @@ export function StudioPage({
 
                 {activeCreateStep === "filters" && createDraft.type === "report" && createDraftTable ? (
                   <ReportFiltersAndSortsEditor
-                    table={createDraftTable}
+                    table={buildMergedTableForJoins(
+                      createDraftTable,
+                      createDraft.sourceJoins || [],
+                      (createDraft.sourceJoins || []).map((j) => bundle.tables.find((t) => t.id === j.sourceTableId)).filter(Boolean) as import("@studio/shared").TableDefinition[]
+                    )}
                     rows={bundle.data[createDraftTable.id] || []}
                     filterTree={createDraft.filterTree}
                     sorts={createDraft.sorts}
