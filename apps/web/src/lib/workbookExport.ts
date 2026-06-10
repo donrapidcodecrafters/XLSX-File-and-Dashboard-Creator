@@ -1668,21 +1668,39 @@ function layoutDashboardWidgets(
     return a.placement.startCol - b.placement.startCol;
   });
 
-  // Write widgets sequentially — ignore stored y values entirely so corrupted large y values
-  // don't produce thousands of empty rows in the exported workbook.
+  // Group by grid row so side-by-side widgets share the same output startRow
+  const rowGroups: Array<typeof ordered> = [];
+  let currentGridRow = -1;
+  let currentGroup: typeof ordered = [];
+  for (const item of ordered) {
+    if (item.placement.startRow !== currentGridRow) {
+      if (currentGroup.length) rowGroups.push(currentGroup);
+      currentGroup = [item];
+      currentGridRow = item.placement.startRow;
+    } else {
+      currentGroup.push(item);
+    }
+  }
+  if (currentGroup.length) rowGroups.push(currentGroup);
+
+  // Write each row group starting at the same output row; advance by the tallest widget in the group
   let currentRow = startRowOffset;
-  return ordered.map(({ widget, placement }) => {
-    const startRow = currentRow;
-    const endRow = startRow + (placement.height * 7) - 1;
-    currentRow = endRow + 2;
-    return {
-      widget,
-      startCol: placement.startCol,
-      endCol: placement.endCol,
-      startRow,
-      endRow,
-    };
-  });
+  const result: Array<{ widget: (typeof ordered)[number]["widget"]; startCol: number; endCol: number; startRow: number; endRow: number }> = [];
+  for (const group of rowGroups) {
+    const maxHeight = Math.max(...group.map(({ placement }) => placement.height));
+    const groupEndRow = currentRow + (maxHeight * 7) - 1;
+    for (const { widget, placement } of group) {
+      result.push({
+        widget,
+        startCol: placement.startCol,
+        endCol: placement.endCol,
+        startRow: currentRow,
+        endRow: currentRow + (placement.height * 7) - 1,
+      });
+    }
+    currentRow = groupEndRow + 2;
+  }
+  return result;
 }
 
 function writeWidgetTitle(sheet: any, row: number, startCol: number, endCol: number, title: string, subtitle: string) {
