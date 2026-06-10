@@ -407,6 +407,7 @@ export function StudioSettingsPanel({
                   <label className="picker-row" key={table.id}>
                     <input
                       type="checkbox"
+                      className="check-native"
                       checked={selected}
                       onChange={(event) => {
                         const current = new Set(activeQuickbaseProfile?.refreshSource.tableIds || []);

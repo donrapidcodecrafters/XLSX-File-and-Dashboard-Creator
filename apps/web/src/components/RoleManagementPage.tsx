@@ -436,16 +436,13 @@ function PermissionGroupCard({ group, permissions, readOnly, onChange }: Permiss
             >
               <input
                 type="checkbox"
+                className="check-native"
                 checked={granted}
                 disabled={readOnly}
                 onChange={(e) => onChange(perm.key, e.target.checked)}
                 style={{
                   marginTop: 2,
-                  accentColor: PRIMARY,
                   cursor: readOnly ? "not-allowed" : "pointer",
-                  flexShrink: 0,
-                  width: 14,
-                  height: 14,
                 }}
               />
               <div>

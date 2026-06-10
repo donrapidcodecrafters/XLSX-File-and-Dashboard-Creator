@@ -8706,6 +8706,36 @@ html.dark input[type="checkbox"]:checked {
   margin: 0;
 }
 
+/* Native checkbox — row-selection and picker checkboxes that should NOT be pill toggles */
+input[type="checkbox"].check-native {
+  -webkit-appearance: checkbox;
+  -moz-appearance: checkbox;
+  appearance: checkbox;
+  width: 15px !important;
+  height: 15px !important;
+  min-height: 0 !important;
+  background: initial !important;
+  border-radius: 3px !important;
+  border: 1px solid #D1D5DB !important;
+  box-shadow: none !important;
+  transition: none !important;
+  cursor: pointer;
+  vertical-align: middle;
+  flex-shrink: 0;
+  accent-color: var(--brand, #0d7c66);
+}
+input[type="checkbox"].check-native::after {
+  display: none !important;
+}
+html.dark input[type="checkbox"].check-native {
+  background: initial !important;
+  border-color: #475569 !important;
+  accent-color: var(--brand, #0d7c66);
+}
+html.dark input[type="checkbox"].check-native:checked {
+  background: initial !important;
+}
+
 /* ── Overflow fixes ────────────────────────────────────────────────────────── */
 /* Ensure modal backdrops are not clipped by sidebar or body padding */
 .studio-modal-backdrop,

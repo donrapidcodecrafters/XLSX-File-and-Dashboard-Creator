@@ -802,13 +802,13 @@ export function DataManagementPage({ canDelete = false, canImport = true }: Data
                       <th style={{ ...thStyle, width: 40, paddingLeft: 18, paddingRight: 8 }}>
                         <input
                           type="checkbox"
+                          className="check-native"
                           checked={allSelected}
                           ref={(el) => {
                             if (el) el.indeterminate = someSelected;
                           }}
                           onChange={toggleSelectAll}
                           aria-label="Select all"
-                          style={{ accentColor: PRIMARY, cursor: "pointer", width: 14, height: 14 }}
                         />
                       </th>
                     )}
@@ -867,10 +867,10 @@ export function DataManagementPage({ canDelete = false, canImport = true }: Data
                           <td style={{ ...cellStyle, width: 40, paddingLeft: 18, paddingRight: 8 }}>
                             <input
                               type="checkbox"
+                              className="check-native"
                               checked={isSelected}
                               onChange={() => toggleSelect(source.sourceId)}
                               aria-label={`Select ${source.sourceName}`}
-                              style={{ accentColor: PRIMARY, cursor: "pointer", width: 14, height: 14 }}
                             />
                           </td>
                         )}
