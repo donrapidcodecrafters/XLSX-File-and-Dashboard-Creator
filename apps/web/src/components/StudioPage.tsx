@@ -4478,41 +4478,55 @@ export function StudioPage({
                     <div className="micro">Toggle on to create · sorted by tab</div>
                   </div>
                   <div className="import-review-sheet-list">
-                    {[...importReviewSheetOptions]
-                      .sort((a, b) => a.sheetName.localeCompare(b.sheetName, undefined, { numeric: true, sensitivity: "base" }))
-                      .map((item) => (
-                        <div className={`import-review-sheet-row${item.skipped ? " import-review-sheet-row--off" : ""}`} key={item.reportId}>
-                          <label className="import-review-sheet-toggle">
-                            <input
-                              type="checkbox"
-                              checked={!item.skipped}
-                              onChange={(event) => {
-                                const nextSkipped = event.target.checked
-                                  ? pendingWorkbookImport.skippedReportIds.filter((id) => id !== item.reportId)
-                                  : Array.from(new Set([...pendingWorkbookImport.skippedReportIds, item.reportId]));
-                                updatePendingImportSkippedReports(nextSkipped);
-                              }}
-                            />
-                          </label>
-                          <div className="import-review-sheet-info">
-                            <span className="import-review-sheet-tab">{item.sheetName}</span>
-                            <span className="import-review-sheet-name">{item.reportName}</span>
+                    {(() => {
+                      const sorted = [...importReviewSheetOptions].sort((a, b) =>
+                        a.sheetName.localeCompare(b.sheetName, undefined, { numeric: true, sensitivity: "base" })
+                      );
+                      const groups: { sheetName: string; items: typeof sorted }[] = [];
+                      sorted.forEach((item) => {
+                        const last = groups[groups.length - 1];
+                        if (last && last.sheetName === item.sheetName) {
+                          last.items.push(item);
+                        } else {
+                          groups.push({ sheetName: item.sheetName, items: [item] });
+                        }
+                      });
+                      return groups.flatMap(({ sheetName, items }) => [
+                        <div className="import-review-tab-header" key={`tab-${sheetName}`}>{sheetName}</div>,
+                        ...items.map((item) => (
+                          <div className={`import-review-sheet-row${item.skipped ? " import-review-sheet-row--off" : ""}`} key={item.reportId}>
+                            <label className="import-review-sheet-toggle">
+                              <input
+                                type="checkbox"
+                                checked={!item.skipped}
+                                onChange={(event) => {
+                                  const nextSkipped = event.target.checked
+                                    ? pendingWorkbookImport.skippedReportIds.filter((id) => id !== item.reportId)
+                                    : Array.from(new Set([...pendingWorkbookImport.skippedReportIds, item.reportId]));
+                                  updatePendingImportSkippedReports(nextSkipped);
+                                }}
+                              />
+                            </label>
+                            <div className="import-review-sheet-info">
+                              <span className="import-review-sheet-name">{item.reportName}</span>
+                            </div>
+                            {!item.skipped ? (
+                              <select
+                                className="import-review-type-select"
+                                value={item.selectedType}
+                                onChange={(e) => updatePendingImportReportType(item.reportId, e.target.value)}
+                              >
+                                {IMPORT_REPORT_TYPE_OPTIONS.map((opt) => (
+                                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              <span className="import-review-sheet-skip-label">skip</span>
+                            )}
                           </div>
-                          {!item.skipped ? (
-                            <select
-                              className="import-review-type-select"
-                              value={item.selectedType}
-                              onChange={(e) => updatePendingImportReportType(item.reportId, e.target.value)}
-                            >
-                              {IMPORT_REPORT_TYPE_OPTIONS.map((opt) => (
-                                <option key={opt.value} value={opt.value}>{opt.label}</option>
-                              ))}
-                            </select>
-                          ) : (
-                            <span className="import-review-sheet-skip-label">skip</span>
-                          )}
-                        </div>
-                      ))}
+                        ))
+                      ]);
+                    })()}
                   </div>
                 </div>
               ) : null}

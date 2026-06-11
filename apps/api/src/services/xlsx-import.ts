@@ -718,6 +718,24 @@ function buildWorksheetRegions(
             structuredTable: null
           });
         });
+        // Also capture any rows not included in any summary matrix (e.g. the tail of a longer side-by-side table)
+        const capturedRowNums = new Set(summaryMatrixRegions.flat().map((r) => r.rowNumber));
+        const remainingRows = bandRows.filter((r) => !capturedRowNums.has(r.rowNumber));
+        if (remainingRows.length >= 2) {
+          const maxRemaining = remainingRows.reduce(
+            (max, row) => Math.max(max, row.values.filter((v) => !isBlankCell(v)).length),
+            0
+          );
+          if (maxRemaining >= 2) {
+            regions.push({
+              candidateName: "",
+              rows: remainingRows,
+              columnNumbers: Array.from({ length: columnNumbers.length }, (_, offset) => offset + 1),
+              absoluteColumnNumbers: columnNumbers,
+              structuredTable: null
+            });
+          }
+        }
         return;
       }
       const maxNonBlankCells = bandRows.reduce((max, row) => Math.max(max, row.values.filter((value) => !isBlankCell(value)).length), 0);
@@ -1150,9 +1168,7 @@ function buildImportedReport(
     showDetails: true,
     titleFieldId: titleField?.id || selectedFieldIds[0] || ""
   });
-  if (!allowVisualInference) {
-    notes.push("Imported as a detail table because this workbook has no Data sheet to support field inference.");
-  } else {
+  // Summary matrix detection: structural, always runs regardless of visual inference flag
   const compactSummaryFields = summaryMatrixMetricFields(rows, fields, allNumericFields, layoutHints);
 
   if (compactSummaryFields.length) {
@@ -1169,6 +1185,38 @@ function buildImportedReport(
       titleFieldId: titleField?.id || countField?.id || ""
     });
     notes.push(`Imported as a summary report from ${rows.length} compact workbook summary row${rows.length === 1 ? "" : "s"} across ${compactSummaryFields.length} summary value${compactSummaryFields.length === 1 ? "" : "s"}.`);
+  } else if (
+    rows.length >= 1 && rows.length <= 15 && fields.length >= 2
+    && !layoutHints.autoFilterRange && !layoutHints.tableName
+    && fields[0] && rows.every((r) => isHeaderLabelValue(r[fields[0].id] as string | number | boolean | null))
+    && (() => {
+      const vc = fields.slice(1).filter((f) => {
+        const vals = rows.map((r) => r[f.id]).filter((v) => v !== null && String(v ?? "").trim() !== "");
+        return vals.length > 0 && vals.filter((v) => typeof v === "number").length / vals.length >= 0.5;
+      });
+      const nc = fields.slice(1).filter((f) => rows.some((r) => r[f.id] !== null && String(r[f.id] ?? "").trim() !== ""));
+      return vc.length >= 1 && nc.length >= 1 && vc.length / nc.length >= 0.5;
+    })()
+  ) {
+    const pivotValueCols = fields.slice(1).filter((f) => {
+      const vals = rows.map((r) => r[f.id]).filter((v) => v !== null && String(v ?? "").trim() !== "");
+      return vals.length > 0 && vals.filter((v) => typeof v === "number").length / vals.length >= 0.5;
+    }).slice(0, 8);
+    summaryMetrics = pivotValueCols.map((field, index) => ({
+      id: `${reportId}-metric-${index + 1}`,
+      fieldId: field.id,
+      op: "sum" as const,
+      label: field.label
+    }));
+    view = buildDefaultReportView({
+      mode: "summary",
+      showSummary: true,
+      showDetails: false,
+      titleFieldId: fields[0]?.id || countField?.id || ""
+    });
+    notes.push(`Inferred a summary report from ${rows.length} compact row${rows.length === 1 ? "" : "s"} with ${pivotValueCols.length} numeric value column${pivotValueCols.length === 1 ? "" : "s"}.`);
+  } else if (!allowVisualInference) {
+    notes.push("Imported as a detail table because this workbook has no Data sheet to support field inference.");
   } else if (startDateField && endDateField && titleField) {
     view = buildDefaultReportView({
       mode: "timeline",
@@ -1379,7 +1427,6 @@ function buildImportedReport(
   } else {
     notes.push("Imported as a detail table because no stronger chart or board pattern was detected.");
   }
-  } // end allowVisualInference else
 
   if (layoutHints.title) {
     notes.push(`Recovered source sheet title "${layoutHints.title}" from row ${layoutHints.titleRowNumber}.`);

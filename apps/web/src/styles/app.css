@@ -3334,7 +3334,22 @@ th {
 
 .import-review-sheet-list {
   display: grid;
-  gap: 6px;
+  gap: 4px;
+}
+
+.import-review-tab-header {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted, rgba(18, 47, 39, 0.5));
+  padding: 8px 4px 2px;
+  border-bottom: 1px solid var(--line);
+  margin-top: 4px;
+}
+
+.import-review-tab-header:first-child {
+  margin-top: 0;
 }
 
 .import-review-sheet-row {
