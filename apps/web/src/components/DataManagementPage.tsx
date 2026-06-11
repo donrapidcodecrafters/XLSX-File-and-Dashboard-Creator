@@ -251,7 +251,7 @@ function RenameCell({ source, canEdit, onRenamed, onError }: RenameCellProps) {
             lineHeight: 1,
             opacity: 0.45,
             transition: "opacity 120ms, color 120ms",
-            transform: "scaleX(-1) rotate(15deg)",
+            transform: "rotate(-45deg)",
             display: "inline-flex",
             alignItems: "center",
             justifyContent: "center",
