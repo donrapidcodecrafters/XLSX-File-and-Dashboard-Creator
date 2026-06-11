@@ -90,6 +90,7 @@ import {
   type QuickbaseAppSchema,
   type QuickbaseSyncResult,
   type StudioWorkbookImportResult,
+  type StudioWorkbookSourceImportResult,
   fetchStudioRefreshJob,
   cancelStudioRefreshJob,
   fetchStudioVersions,
@@ -766,6 +767,7 @@ interface PendingWorkbookImport {
   primaryObjectId: string;
   importedObjectIds: string[];
   sourceTableId: string;
+  sourceTables: TableDefinition[];
   skippedReportIds: string[];
   reportTypeOverrides: Record<string, string>;
   baseObjects: Record<string, StudioObject>;
@@ -957,21 +959,36 @@ function stripRemovedObjectIds(document: StudioDocument, objectIds: string[]) {
   return removeDeletedReportsFromDashboards(document, objectIds);
 }
 
+function bestMatchTable(importedTable: TableDefinition | null, candidates: TableDefinition[]): TableDefinition | null {
+  if (!importedTable || !candidates.length) return null;
+  const importedLabels = new Set(importedTable.fields.map((f) => f.label.trim().toLowerCase()).filter(Boolean));
+  let best: TableDefinition | null = null;
+  let bestScore = 0;
+  for (const candidate of candidates) {
+    const score = candidate.fields.reduce((n, f) => n + (importedLabels.has(f.label.trim().toLowerCase()) ? 1 : 0), 0);
+    if (score > bestScore) { bestScore = score; best = candidate; }
+  }
+  return bestScore >= 1 ? best : null;
+}
+
 function rebuildPendingWorkbookImportObjects(
   baseObjects: Record<string, StudioObject>,
   importedTablesById: Record<string, TableDefinition>,
   targetTable: TableDefinition | null,
   skippedReportIds: string[] = [],
-  reportTypeOverrides: Record<string, string> = {}
+  reportTypeOverrides: Record<string, string> = {},
+  availableTables: TableDefinition[] = []
 ) {
   const skippedSet = new Set(skippedReportIds);
   const nextObjects: Record<string, StudioObject> = {};
   Object.entries(baseObjects).forEach(([objectId, object]) => {
     if (object.type === "report") {
       if (skippedSet.has(objectId)) return;
-      const remapped = targetTable
-        ? remapImportedReportToSourceTable(object, importedTablesById[object.sourceTableId] || null, targetTable)
-        : remapImportedReportToSourceTable(object, importedTablesById[object.sourceTableId] || null, {
+      const importedTable = importedTablesById[object.sourceTableId] || null;
+      const effectiveTarget = targetTable || bestMatchTable(importedTable, availableTables);
+      const remapped = effectiveTarget
+        ? remapImportedReportToSourceTable(object, importedTable, effectiveTarget)
+        : remapImportedReportToSourceTable(object, importedTable, {
           id: "",
           name: "",
           description: "",
@@ -4155,6 +4172,7 @@ export function StudioPage({
         primaryObjectId: response.primaryObjectId,
         importedObjectIds: response.importedObjectIds,
         sourceTableId,
+        sourceTables: [],
         skippedReportIds: [],
         reportTypeOverrides: {},
         baseObjects,
@@ -4185,9 +4203,12 @@ export function StudioPage({
         await loadHostedDocumentIntoState({ resetHistory: false });
       }
       const response = result.workbookImport;
-      const sourceId = result.mode === "data-source"
-        ? ((result.sourceImport as { sources?: { sourceId: string }[] } | undefined)?.sources?.[0]?.sourceId || "")
-        : "";
+      const sourceTables = result.mode === "data-source"
+        ? ((result.sourceImport as StudioWorkbookSourceImportResult | undefined)?.sources || [])
+            .map((s) => s.table)
+            .filter((t): t is TableDefinition => Boolean(t))
+        : [];
+      const sourceId = sourceTables.length === 1 ? sourceTables[0].id : "";
       const baseObjects = Object.fromEntries(
         response.importedObjectIds
           .map((objectId) => response.document.bundle.objects[objectId])
@@ -4200,17 +4221,18 @@ export function StudioPage({
           .filter((table): table is TableDefinition => Boolean(table))
           .map((table) => [table.id, clone(table)])
       );
-      const targetTable = sourceId ? bundle.tables.find((table) => table.id === sourceId) || null : null;
+      const targetTable = sourceTables.length === 1 ? sourceTables[0] : null;
       setPendingWorkbookImport({
         review: response.review,
         warnings: response.warnings,
         primaryObjectId: response.primaryObjectId,
         importedObjectIds: response.importedObjectIds,
         sourceTableId: sourceId,
+        sourceTables,
         skippedReportIds: [],
         reportTypeOverrides: {},
         baseObjects,
-        currentObjects: rebuildPendingWorkbookImportObjects(baseObjects, importedTablesById, targetTable, [], {}),
+        currentObjects: rebuildPendingWorkbookImportObjects(baseObjects, importedTablesById, targetTable, [], {}, sourceTables),
         importedTablesById
       });
       setImportReviewModalOpen(true);
@@ -4298,14 +4320,18 @@ export function StudioPage({
 
   async function finalizeWorkbookImport(importState: PendingWorkbookImport) {
     const sourceTable = bundle.tables.find((table) => table.id === importState.sourceTableId) || null;
-    if (!sourceTable) {
-      pushToast("Choose the real source table before creating imported reports.", "warn");
-      return;
-    }
     const finalImportedObjectIds = importState.importedObjectIds.filter((objectId) => Boolean(importState.currentObjects[objectId]));
     const finalImportedReports = finalImportedObjectIds
       .map((objectId) => importState.currentObjects[objectId])
       .filter((object): object is ReportDefinition => Boolean(object) && object.type === "report");
+    // For multi-source imports, reports already have individual sourceTableIds set; check those instead
+    const reportsHaveValidTables = finalImportedReports.length > 0 && finalImportedReports.every((r) =>
+      r.sourceTableId && (bundle.tables.some((t) => t.id === r.sourceTableId) || importState.sourceTables.some((t) => t.id === r.sourceTableId))
+    );
+    if (!sourceTable && !reportsHaveValidTables) {
+      pushToast("Choose the real source table before creating imported reports.", "warn");
+      return;
+    }
     if (!finalImportedReports.length) {
       pushToast("Keep at least one imported tab before creating the dashboard.", "warn");
       return;
@@ -4313,7 +4339,8 @@ export function StudioPage({
     const issues = finalImportedObjectIds.flatMap((objectId) => {
       const object = importState.currentObjects[objectId];
       if (!object || object.type !== "report") return [];
-      return collectReportImportIssues(object, sourceTable);
+      const reportTable = sourceTable || bundle.tables.find((t) => t.id === object.sourceTableId) || importState.sourceTables.find((t) => t.id === object.sourceTableId) || null;
+      return collectReportImportIssues(object, reportTable);
     });
     if (issues.length) {
       pushToast("Resolve the remaining imported field issues before creating the workbook objects.", "warn");
@@ -4343,7 +4370,8 @@ export function StudioPage({
     if (nextPrimaryObjectId) {
       navigate(buildHostedRoute(`/studio/${nextPrimaryObjectId}`));
     }
-    pushToast(`Created imported ${importState.review.dashboardCreated ? "dashboard and reports" : "reports"} using ${sourceTable.name}.`);
+    const sourceLabel = sourceTable?.name || (importState.sourceTables.length > 1 ? `${importState.sourceTables.length} data sources` : importState.sourceTables[0]?.name || "source data");
+    pushToast(`Created imported ${importState.review.dashboardCreated ? "dashboard and reports" : "reports"} using ${sourceLabel}.`);
     await persistRemote(nextDocument);
     setDataImportVersion((v) => v + 1);
     fetchStudioSources().then((response) => {
@@ -4379,7 +4407,7 @@ export function StudioPage({
       return {
         ...current,
         skippedReportIds: nextSkippedReportIds,
-        currentObjects: rebuildPendingWorkbookImportObjects(current.baseObjects, current.importedTablesById, sourceTable, nextSkippedReportIds, current.reportTypeOverrides)
+        currentObjects: rebuildPendingWorkbookImportObjects(current.baseObjects, current.importedTablesById, sourceTable, nextSkippedReportIds, current.reportTypeOverrides, current.sourceTables)
       };
     });
   }
@@ -4392,7 +4420,7 @@ export function StudioPage({
       return {
         ...current,
         reportTypeOverrides: nextOverrides,
-        currentObjects: rebuildPendingWorkbookImportObjects(current.baseObjects, current.importedTablesById, sourceTable, current.skippedReportIds, nextOverrides)
+        currentObjects: rebuildPendingWorkbookImportObjects(current.baseObjects, current.importedTablesById, sourceTable, current.skippedReportIds, nextOverrides, current.sourceTables)
       };
     });
   }
