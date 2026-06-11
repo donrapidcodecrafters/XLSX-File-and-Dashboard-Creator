@@ -8598,6 +8598,26 @@ html.dark .nav-sidebar-item:hover {
   color: #E2E8F0;
 }
 
+/* Override global dark-mode button styles for sidebar nav items */
+button.nav-sidebar-item {
+  background: transparent;
+  box-shadow: none;
+}
+
+html.dark button.nav-sidebar-item {
+  background: transparent;
+  color: var(--text-soft, #9CA3AF);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+html.dark button.nav-sidebar-item:hover {
+  background: #273548;
+  color: #E2E8F0;
+  border-color: transparent;
+  box-shadow: none;
+}
+
 /* Sidebar item icon */
 .nav-sidebar-icon {
   width: 22px;
