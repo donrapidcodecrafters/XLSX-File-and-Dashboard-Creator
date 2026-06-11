@@ -948,17 +948,19 @@ function layoutDashboardWidgets(
     return a.placement.startCol - b.placement.startCol;
   });
 
-  // Group by grid row so side-by-side widgets share the same output startRow
+  // Group widgets whose row ranges overlap — handles side-by-side widgets that
+  // have different startRow values (e.g. one dragged slightly lower than the other).
   const rowGroups: WidgetWithPlacement[][] = [];
-  let currentGridRow = -1;
+  let groupMaxEndRow = -1;
   let currentGroup: WidgetWithPlacement[] = [];
   for (const item of ordered) {
-    if (item.placement.startRow !== currentGridRow) {
-      if (currentGroup.length) rowGroups.push(currentGroup);
-      currentGroup = [item];
-      currentGridRow = item.placement.startRow;
-    } else {
+    if (currentGroup.length === 0 || item.placement.startRow <= groupMaxEndRow) {
       currentGroup.push(item);
+      groupMaxEndRow = Math.max(groupMaxEndRow, item.placement.endRow);
+    } else {
+      rowGroups.push(currentGroup);
+      currentGroup = [item];
+      groupMaxEndRow = item.placement.endRow;
     }
   }
   if (currentGroup.length) rowGroups.push(currentGroup);
