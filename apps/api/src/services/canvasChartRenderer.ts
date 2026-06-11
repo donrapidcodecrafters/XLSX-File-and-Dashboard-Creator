@@ -18,7 +18,6 @@
  *   (then npm install in apps/api)
  */
 
-import { createCanvas as nodeCreateCanvas, registerFont } from "canvas";
 import path from "path";
 import { fileURLToPath } from "url";
 import type {
@@ -31,12 +30,27 @@ import type {
   SummaryDatum
 } from "@studio/shared";
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let nodeCreateCanvas: ((width: number, height: number) => any) | null = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let registerFont: ((path: string, opts: { family: string; weight: string }) => void) | null = null;
+
+try {
+  // canvas is an optional native dependency — only available when node-canvas is installed
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const canvasMod = require("canvas") as { createCanvas: typeof nodeCreateCanvas; registerFont: typeof registerFont };
+  nodeCreateCanvas = canvasMod.createCanvas;
+  registerFont = canvasMod.registerFont;
+} catch {
+  // canvas not installed — chart rendering falls back to unavailable
+}
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FONTS_DIR = path.resolve(__dirname, "../../fonts");
 
 function tryRegisterFont(file: string, family: string, weight: string) {
   try {
-    registerFont(path.join(FONTS_DIR, file), { family, weight });
+    registerFont?.(path.join(FONTS_DIR, file), { family, weight });
   } catch {
     // Font file missing — text will fall back to system sans-serif
   }
@@ -258,6 +272,7 @@ function truncateLabel(value: string, max: number) {
 // ─── Canvas creation (node-canvas instead of document.createElement) ──────────
 
 function makeCanvas(width = 1200, height = 720) {
+  if (!nodeCreateCanvas) throw new Error("node-canvas is not installed. Run: npm install canvas");
   return nodeCreateCanvas(width, height);
 }
 
