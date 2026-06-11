@@ -183,8 +183,13 @@ async function resolveBaseSourceName(sourceId: string | undefined, sourceName: s
   return workbookName;
 }
 
-function normalizeBaseSourceId(sourceId: string | undefined, filename: string) {
-  const fallback = `xlsx:${slugify(workbookNameFromFilename(filename)) || "workbook"}`;
+function normalizeBaseSourceId(sourceId: string | undefined, filename: string, sourceName?: string) {
+  // When creating a new source with an explicit name, derive the ID from that name so
+  // each tab in a multi-sheet import gets a distinct, stable ID rather than all sharing
+  // the filename-derived fallback.
+  const fallback = sourceName
+    ? `xlsx:${slugify(sourceName) || "workbook"}`
+    : `xlsx:${slugify(workbookNameFromFilename(filename)) || "workbook"}`;
   const trimmed = String(sourceId || "").trim();
   if (!trimmed) return fallback;
   return trimmed
@@ -257,7 +262,7 @@ export async function ingestXlsxWorkbookSource(options: IngestXlsxSourceOptions)
   const current = studioStore.getLiveDocument();
   const imported = await importWorkbookIntoStudioDocument(current, options.filename, options.buffer);
   const workbookName = workbookNameFromFilename(options.filename);
-  const baseSourceId = normalizeBaseSourceId(options.sourceId, options.filename);
+  const baseSourceId = normalizeBaseSourceId(options.sourceId, options.filename, options.sourceName);
   const baseSourceName = await resolveBaseSourceName(options.sourceId, options.sourceName, workbookName);
   const allImportedTables = imported.importedTableIds
     .map((tableId) => imported.document.bundle.tables.find((table) => table.id === tableId))
@@ -320,7 +325,7 @@ export async function ingestXlsxWorkbookSourceStream(options: IngestXlsxSourceSt
   }
   const current = studioStore.getLiveDocument();
   const workbookName = workbookNameFromFilename(options.filename);
-  const baseSourceId = normalizeBaseSourceId(options.sourceId, options.filename);
+  const baseSourceId = normalizeBaseSourceId(options.sourceId, options.filename, options.sourceName);
   const baseSourceName = await resolveBaseSourceName(options.sourceId, options.sourceName, workbookName);
   const usedSourceIds = new Set<string>();
   const sourceTables: TableDefinition[] = [];
