@@ -219,12 +219,15 @@ function buildSourceTable(table: TableDefinition, sourceId: string, sourceName: 
 
 function upsertSourceTables(document: StudioDocument, tables: TableDefinition[]) {
   const sourceIds = new Set(tables.map((table) => table.id));
+  const sourceNames = new Set(tables.map((table) => table.name.trim().toLowerCase()).filter(Boolean));
   return normalizeStudioDocument({
     ...document,
     bundle: {
       ...document.bundle,
       tables: [
-        ...document.bundle.tables.filter((table) => !sourceIds.has(table.id)),
+        ...document.bundle.tables.filter(
+          (table) => !sourceIds.has(table.id) && !sourceNames.has(table.name.trim().toLowerCase())
+        ),
         ...tables
       ],
       data: Object.fromEntries(
