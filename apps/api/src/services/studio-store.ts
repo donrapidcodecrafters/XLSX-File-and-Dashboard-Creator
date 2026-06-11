@@ -202,7 +202,7 @@ export class StudioStore {
     }
     writeFileSync(CACHE_META_PATH, JSON.stringify(this.cacheMeta || {}, null, 2));
     this.lastReloadedFromDiskAt = Date.now();
-    this.pendingPostgresWrite = saveDocumentToPostgres(document);
+    this.pendingPostgresWrite = this.pendingPostgresWrite.catch(() => {}).then(() => saveDocumentToPostgres(document));
   }
 
   async awaitPendingPostgresWrite(): Promise<void> {

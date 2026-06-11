@@ -4380,6 +4380,9 @@ export function StudioPage({
     const sourceLabel = sourceTable?.name || (importState.sourceTables.length > 1 ? `${importState.sourceTables.length} data sources` : importState.sourceTables[0]?.name || "source data");
     pushToast(`Created imported ${importState.review.dashboardCreated ? "dashboard and reports" : "reports"} using ${sourceLabel}.`);
     await persistRemote(nextDocument);
+    try {
+      await loadHostedDocumentIntoState({ resetHistory: false });
+    } catch (_e) { /* non-fatal — client already has the objects */ }
     setDataImportVersion((v) => v + 1);
     fetchStudioSources().then((response) => {
       const ids = new Set<string>();
