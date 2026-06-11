@@ -87,10 +87,12 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Per-sheet source mapping (used when 2+ data sheets are selected)
-  // Maps sheet name → sourceId ("" = auto/new, "new" = explicit new, or an existing sourceId)
+  // Maps sheet name → sourceId ("" = create new, or an existing sourceId)
   const [sheetSourceMap, setSheetSourceMap] = useState<Record<string, string>>({});
-  // Maps sheet name → new workbook name (when sheetSourceMap[sheet] === "new")
-  const [sheetNewNames, setSheetNewNames] = useState<Record<string, string>>({});
+  // Shared base name applied to all NEW datasources in multi-sheet mode (e.g. "Payments")
+  const [multiSheetBaseName, setMultiSheetBaseName] = useState("");
+  // Per-tab label appended after the base name (e.g. "Sheet1" → "Payments - Sheet1"), editable
+  const [sheetTabLabels, setSheetTabLabels] = useState<Record<string, string>>({});
 
   // Load existing xlsx sources whenever modal opens in data-source mode
   useEffect(() => {
@@ -146,7 +148,7 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
     setFile(null); setPeek(null); setError(""); setImporting(false);
     setDragging(false); setSelectedSourceId(""); setNewWorkbookName("");
     setDropdownOpen(false); setDataSheets([]);
-    setSheetSourceMap({}); setSheetNewNames({});
+    setSheetSourceMap({}); setMultiSheetBaseName(""); setSheetTabLabels({});
   }
 
   function handleClose() {
@@ -184,22 +186,26 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
       if (mode === "data-source") {
         const multiSheetMode = isMultiSheetMode;
         if (multiSheetMode) {
-          // Build import groups: each unique target source gets its own API call
+          // Build import groups: each unique target source gets its own API call.
+          // Multiple sheets can share an existing sourceId (grouped); new sources are always one per tab.
           const groups: { sheets: string[]; sourceId?: string; sourceName?: string }[] = [];
-          const groupIndex = new Map<string, number>(); // key → groups index
+          const groupIndex = new Map<string, number>(); // existing sourceId → groups index
+          const base = multiSheetBaseName.trim();
           for (const sheetName of dataSheets) {
             const sid = sheetSourceMap[sheetName] || "";
-            // Each "new" source is separate; existing sources with same id are grouped
-            const key = (sid === "new" || sid === "") ? `__new__:${sheetName}` : sid;
-            if (groupIndex.has(key)) {
-              groups[groupIndex.get(key)!].sheets.push(sheetName);
+            if (sid) {
+              // Updating an existing source — group by sourceId (name preserved via Postgres lookup)
+              if (groupIndex.has(sid)) {
+                groups[groupIndex.get(sid)!].sheets.push(sheetName);
+              } else {
+                groupIndex.set(sid, groups.length);
+                groups.push({ sheets: [sheetName], sourceId: sid, sourceName: undefined });
+              }
             } else {
-              groupIndex.set(key, groups.length);
-              groups.push({
-                sheets: [sheetName],
-                sourceId: (sid === "new" || sid === "") ? undefined : sid,
-                sourceName: (sid === "new" || sid === "") ? (sheetNewNames[sheetName]?.trim() || sheetName) : undefined,
-              });
+              // Creating a new source — one group per tab, name = "BaseName - TabLabel"
+              const tabLabel = (sheetTabLabels[sheetName] || sheetName).trim();
+              const sourceName = base ? `${base} - ${tabLabel}` : tabLabel;
+              groups.push({ sheets: [sheetName], sourceId: undefined, sourceName });
             }
           }
           // Run all source imports in parallel
@@ -280,12 +286,10 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
   const hasDataSheetSelection = !isData || !multiSheet || dataSheets.length > 0;
   // Multi-sheet mode: file is peeked, 2+ data sheets selected, in data-source mode
   const isMultiSheetMode = isData && Boolean(peek) && dataSheets.length >= 2;
-  const multiSheetCanSubmit = isMultiSheetMode && dataSheets.every((sheet) => {
-    const sid = sheetSourceMap[sheet];
-    if (!sid || sid === "") return true; // "" = auto-create new, always valid
-    if (sid === "new") return (sheetNewNames[sheet] || "").trim().length > 0;
-    return true;
-  });
+  const anyTabCreatingNew = isMultiSheetMode && dataSheets.some((s) => !sheetSourceMap[s]);
+  const multiSheetCanSubmit = isMultiSheetMode && (
+    !anyTabCreatingNew || multiSheetBaseName.trim().length > 0
+  );
   const canSubmit = Boolean(file) && !importing && !peeking && hasDataSheetSelection && (
     !isData ||
     (isMultiSheetMode ? multiSheetCanSubmit : (
@@ -622,6 +626,34 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
                       Selected tabs become database tables. Unselected tabs (summaries, charts, pivot tables) will be recreated as reports and charts using the data tabs as their source.
                     </p>
                   )}
+                  {/* Base name input — shown when creating new datasources in multi-sheet mode */}
+                  {isMultiSheetMode && anyTabCreatingNew && (
+                    <div style={{ marginBottom: 12 }}>
+                      <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: T.brandDeep, marginBottom: 4 }}>
+                        Base datasource name (applied to all new tabs)
+                      </label>
+                      <input
+                        type="text"
+                        value={multiSheetBaseName}
+                        placeholder="e.g. Payments"
+                        disabled={importing}
+                        onChange={(e) => setMultiSheetBaseName(e.target.value)}
+                        style={{
+                          width: "100%", padding: "7px 10px", borderRadius: T.radiusSm,
+                          border: `1px solid ${multiSheetBaseName.trim() ? T.brand : T.borderMd}`,
+                          background: T.bg, fontSize: 13, fontFamily: T.font, color: T.text,
+                          outline: "none", boxSizing: "border-box",
+                        }}
+                        onFocus={(e) => { e.currentTarget.style.borderColor = T.brand; }}
+                        onBlur={(e) => { e.currentTarget.style.borderColor = multiSheetBaseName.trim() ? T.brand : T.borderMd; }}
+                      />
+                      {!multiSheetBaseName.trim() && (
+                        <p style={{ margin: "3px 0 0", fontSize: 11, color: T.errorText }}>
+                          Enter a base name to continue.
+                        </p>
+                      )}
+                    </div>
+                  )}
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     {peek.sheets.map((sheet) => {
                       const isChecked = dataSheets.includes(sheet.name);
@@ -671,7 +703,7 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
                           {isChecked && isMultiSheetMode && (
                             <div style={{ display: "flex", flexDirection: "column", gap: 4, paddingLeft: 22 }}>
                               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                <span style={{ fontSize: 11, color: T.textSoft, flexShrink: 0 }}>→ Import to:</span>
+                                <span style={{ fontSize: 11, color: T.textSoft, flexShrink: 0 }}>→ Target:</span>
                                 <select
                                   value={sheetSid}
                                   disabled={importing}
@@ -684,43 +716,42 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
                                     outline: "none", cursor: "pointer",
                                   }}
                                 >
-                                  <option value="">Auto (create new datasource)</option>
-                                  {xlsxSources.length > 0 && <option disabled>── Existing datasources ──</option>}
+                                  <option value="">Create new datasource</option>
+                                  {xlsxSources.length > 0 && <option disabled>── Update existing ──</option>}
                                   {xlsxSources.map((source) => (
                                     <option key={source.sourceId} value={source.sourceId}>
                                       {source.sourceName} ({source.rowCount.toLocaleString()} rows)
                                     </option>
                                   ))}
-                                  <option value="new">+ New datasource (custom name)…</option>
                                 </select>
                               </div>
-                              {sheetSid === "new" && (
-                                <div style={{ paddingLeft: 64 }}>
+                              {/* Creating new — show editable tab label */}
+                              {!sheetSid && (
+                                <div style={{ paddingLeft: 52, display: "flex", alignItems: "center", gap: 6 }}>
+                                  <span style={{ fontSize: 11, color: T.textSoft, flexShrink: 0 }}>
+                                    {multiSheetBaseName.trim() ? `"${multiSheetBaseName.trim()} -` : "Name:"}
+                                  </span>
                                   <input
                                     type="text"
-                                    value={sheetNewNames[sheet.name] || ""}
-                                    placeholder={`e.g. ${sheet.name} Data`}
+                                    value={sheetTabLabels[sheet.name] ?? sheet.name}
                                     disabled={importing}
-                                    onChange={(e) => setSheetNewNames((prev) => ({ ...prev, [sheet.name]: e.target.value }))}
+                                    onChange={(e) => setSheetTabLabels((prev) => ({ ...prev, [sheet.name]: e.target.value }))}
                                     style={{
-                                      width: "100%", padding: "5px 8px", borderRadius: T.radiusSm,
+                                      flex: 1, padding: "4px 7px", borderRadius: T.radiusSm,
                                       border: `1px solid ${T.borderMd}`, background: T.bg,
                                       fontSize: 12, fontFamily: T.font, color: T.text,
-                                      outline: "none", boxSizing: "border-box",
+                                      outline: "none",
                                     }}
                                     onFocus={(e) => { e.currentTarget.style.borderColor = T.brand; }}
                                     onBlur={(e) => { e.currentTarget.style.borderColor = T.borderMd; }}
                                   />
-                                  {(sheetNewNames[sheet.name] || "").trim() && (
-                                    <p style={{ margin: "2px 0 0", fontSize: 10, color: T.textSoft }}>
-                                      ID: <strong style={{ fontFamily: "monospace" }}>{nameToSourceId(sheetNewNames[sheet.name])}</strong>
-                                    </p>
-                                  )}
+                                  {multiSheetBaseName.trim() && <span style={{ fontSize: 11, color: T.textSoft }}>"</span>}
                                 </div>
                               )}
-                              {sheetSid && sheetSid !== "new" && sheetSource && (
-                                <p style={{ margin: 0, paddingLeft: 64, fontSize: 11, color: T.brandDeep }}>
-                                  Will replace all rows in <strong>{sheetSource.sourceName}</strong>
+                              {/* Updating existing — show confirmation */}
+                              {sheetSid && sheetSource && (
+                                <p style={{ margin: 0, paddingLeft: 52, fontSize: 11, color: T.brandDeep }}>
+                                  Will update <strong>{sheetSource.sourceName}</strong> (name preserved)
                                 </p>
                               )}
                             </div>
