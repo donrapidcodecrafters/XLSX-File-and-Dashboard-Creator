@@ -1402,18 +1402,23 @@ export async function streamDashboardWorkbook(
   overview.getCell(`A${overviewRow}`).value = "Tab";
   overview.getCell(`B${overviewRow}`).value = "Card";
   overview.getCell(`C${overviewRow}`).value = "Report";
-  overview.getCell(`D${overviewRow}`).value = "Status";
-  overview.getCell(`E${overviewRow}`).value = "Rows";
-  overview.getCell(`F${overviewRow}`).value = "Sheet";
-  overview.getCell(`G${overviewRow}`).value = "Applied filters";
-  overview.getCell(`H${overviewRow}`).value = "Exported content";
+  overview.getCell(`D${overviewRow}`).value = "Rows";
+  overview.getCell(`E${overviewRow}`).value = "Sheet";
+  overview.getCell(`F${overviewRow}`).value = "Exported content";
   overview.getRow(overviewRow).font = { bold: true };
   overviewRow += 1;
-  onProgress?.(74, "Writing dashboard overview");
+  onProgress?.(10, "Writing dashboard overview");
 
   const detailSheetNames: Record<string, string> = {};
+  const tabSheetNamesById: Record<string, string> = {};
 
-  // Pass 1: create detail data sheets first so we have their names when writing widget sheets
+  // Pre-create one sheet per tab so names are reserved before detail sheets
+  for (const tab of rendered.tabs) {
+    const sheet = workbook.addWorksheet(safeSheetName(tab.name, usedNames));
+    tabSheetNamesById[tab.id] = sheet.name;
+  }
+
+  // Pass 1: create detail data sheets (for non-table view widgets)
   for (const tab of rendered.tabs) {
     for (const widget of tab.widgets) {
       if (widget.status === "failed") continue;
@@ -1433,23 +1438,11 @@ export async function streamDashboardWorkbook(
     }
   }
 
-  // Pass 2: create per-widget sheets and fill overview index
+  // Pass 2: fill overview index (one row per widget, linking to the tab sheet)
   for (const tab of rendered.tabs) {
+    const tabSheetName = tabSheetNamesById[tab.id] || "";
     for (const widget of tab.widgets) {
-      const table = tablesById[widget.report.sourceTableId];
       const exportResult = resolveWidgetExportResult(widget, exportResultsByWidgetId);
-
-      const widgetSheetName = safeSheetName(`${tab.name} ${widget.widget.title || widget.report.name}`, usedNames);
-      const widgetSheet = workbook.addWorksheet(widgetSheetName);
-
-      // Fill overview index row
-      const runtimeWidgetFilters = table
-        ? buildDashboardFilters(dashboard, widget.report.id, runtimeFilters, widget.report.sourceTableId).map((filter) => describeReportFilter(widget.report, table, filter))
-        : [];
-      const savedFilters = table
-        ? widget.report.filters.map((filter) => describeReportFilter(widget.report, table, filter))
-        : [];
-      const filterSummary = [...savedFilters, ...runtimeWidgetFilters].join("; ") || "No filters";
       const parts = widget.status === "failed"
         ? [`failed: ${widget.error || widget.message || "Widget load failed"}`]
         : [
@@ -1461,25 +1454,28 @@ export async function streamDashboardWorkbook(
       overview.getCell(`A${overviewRow}`).value = tab.name;
       overview.getCell(`B${overviewRow}`).value = widget.widget.title || widget.report.name;
       overview.getCell(`C${overviewRow}`).value = widget.report.name;
-      overview.getCell(`D${overviewRow}`).value = widget.status === "failed" ? (widget.error || widget.message || "Failed") : "Ready";
-      overview.getCell(`E${overviewRow}`).value = exportResult.totalRows;
-      overview.getCell(`F${overviewRow}`).value = {
-        text: widgetSheetName,
-        hyperlink: sheetHyperlink(widgetSheetName)
-      };
-      overview.getCell(`F${overviewRow}`).font = { color: { argb: "FF1F5AA6" }, underline: true };
-      overview.getCell(`G${overviewRow}`).value = filterSummary;
-      overview.getCell(`H${overviewRow}`).value = parts.join(", ") || "skipped";
+      overview.getCell(`D${overviewRow}`).value = exportResult.totalRows;
+      if (tabSheetName) {
+        overview.getCell(`E${overviewRow}`).value = { text: tabSheetName, hyperlink: sheetHyperlink(tabSheetName) };
+        overview.getCell(`E${overviewRow}`).font = { color: { argb: "FF1F5AA6" }, underline: true };
+      } else {
+        overview.getCell(`E${overviewRow}`).value = "None";
+      }
+      overview.getCell(`F${overviewRow}`).value = parts.join(", ") || "metadata only";
       overview.getRow(overviewRow).alignment = { vertical: "top", wrapText: true };
       overviewRow += 1;
-
-      // Write the widget content to its own sheet
-      await writeCompactWidgetSheet(workbook, widgetSheet, tab, widget, tablesById, exportResultsByWidgetId, detailSheetNames, onProgress);
     }
   }
 
-  [1, 2, 3, 4, 5, 6, 7, 8].forEach((index) => {
-    const widths = [18, 24, 26, 18, 12, 28, 44, 20];
+  // Pass 3: write each tab sheet with spatial widget layout (matches manual download)
+  for (const tab of rendered.tabs) {
+    const tabSheet = workbook.getWorksheet(tabSheetNamesById[tab.id]);
+    if (!tabSheet) continue;
+    await writeDashboardTabSheet(workbook, dashboard, tabSheet, tab, tablesById, exportResultsByWidgetId, detailSheetNames, onProgress);
+  }
+
+  [1, 2, 3, 4, 5, 6].forEach((index) => {
+    const widths = [18, 24, 26, 12, 28, 20];
     overview.getColumn(index).width = widths[index - 1];
   });
 
