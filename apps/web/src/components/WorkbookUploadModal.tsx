@@ -86,6 +86,12 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  // Per-sheet source mapping (used when 2+ data sheets are selected)
+  // Maps sheet name → sourceId ("" = auto/new, "new" = explicit new, or an existing sourceId)
+  const [sheetSourceMap, setSheetSourceMap] = useState<Record<string, string>>({});
+  // Maps sheet name → new workbook name (when sheetSourceMap[sheet] === "new")
+  const [sheetNewNames, setSheetNewNames] = useState<Record<string, string>>({});
+
   // Load existing xlsx sources whenever modal opens in data-source mode
   useEffect(() => {
     if (!open || mode !== "data-source") return;
@@ -140,6 +146,7 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
     setFile(null); setPeek(null); setError(""); setImporting(false);
     setDragging(false); setSelectedSourceId(""); setNewWorkbookName("");
     setDropdownOpen(false); setDataSheets([]);
+    setSheetSourceMap({}); setSheetNewNames({});
   }
 
   function handleClose() {
@@ -175,41 +182,82 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
     setImporting(true); setError("");
     try {
       if (mode === "data-source") {
-        // Determine which sourceId / sourceName to pass
-        const isNew = selectedSourceId === "new" || selectedSourceId === "";
-        const sourceIdArg = isNew ? undefined : selectedSourceId;
-        const sourceNameArg = isNew ? (newWorkbookName.trim() || file.name.replace(/\.xlsx$/i, "").trim()) : undefined;
-        // Only send dataSheets when there are multiple sheets and the user made a selection.
-        const multiSheet = (peek?.sheets?.length ?? 0) > 1;
-        const dataSheetsArg = multiSheet && dataSheets.length > 0 ? dataSheets : undefined;
-        const opts = { sourceId: sourceIdArg, sourceName: sourceNameArg, dataSheets: dataSheetsArg };
-
-        if (recreate) {
-          // Import data to Postgres only — report creation happens in the review modal
-          const sourceResult = await importStudioWorkbookSource(file, opts);
-          // Analyze workbook structure for the review modal (cap rows to avoid OOM on large data sheets)
-          const workbookResult = await importStudioWorkbook(file, { maxRowsPerSheet: 500 });
-          const profileId = sourceResult.sources?.[0]?.sourceId ?? sourceIdArg ?? slugify(sourceNameArg || file.name);
-          if (profileId) {
-            void saveWorkbookProfile(profileId, {
-              workbookName: sourceNameArg || profile?.workbookName || file.name.replace(/\.xlsx$/i, ""),
-              dataSheets: dataSheetsArg || dataSheets,
-              sourceIds: sourceResult.sources?.map((s: { sourceId: string }) => s.sourceId) || [],
-              objectIds: []
-            }).catch(() => {});
+        const multiSheetMode = isMultiSheetMode;
+        if (multiSheetMode) {
+          // Build import groups: each unique target source gets its own API call
+          const groups: { sheets: string[]; sourceId?: string; sourceName?: string }[] = [];
+          const groupIndex = new Map<string, number>(); // key → groups index
+          for (const sheetName of dataSheets) {
+            const sid = sheetSourceMap[sheetName] || "";
+            // Each "new" source is separate; existing sources with same id are grouped
+            const key = (sid === "new" || sid === "") ? `__new__:${sheetName}` : sid;
+            if (groupIndex.has(key)) {
+              groups[groupIndex.get(key)!].sheets.push(sheetName);
+            } else {
+              groupIndex.set(key, groups.length);
+              groups.push({
+                sheets: [sheetName],
+                sourceId: (sid === "new" || sid === "") ? undefined : sid,
+                sourceName: (sid === "new" || sid === "") ? (sheetNewNames[sheetName]?.trim() || sheetName) : undefined,
+              });
+            }
           }
-          onSuccess({ mode, recreated: true, sourceImport: sourceResult as typeof sourceResult & { reports: unknown[]; dashboard: unknown | null }, workbookImport: workbookResult });
+          // Run all source imports in parallel
+          const sourceResults = await Promise.all(
+            groups.map(({ sourceId, sourceName, sheets }) =>
+              importStudioWorkbookSource(file, { sourceId, sourceName, dataSheets: sheets })
+            )
+          );
+          // Save a profile per imported source group
+          for (let i = 0; i < groups.length; i++) {
+            const g = groups[i];
+            const r = sourceResults[i];
+            const profileId = r.sources?.[0]?.sourceId ?? g.sourceId ?? slugify(g.sourceName || g.sheets[0]);
+            if (profileId) {
+              void saveWorkbookProfile(profileId, {
+                workbookName: g.sourceName || r.sources?.[0]?.sourceName || g.sheets[0],
+                dataSheets: g.sheets,
+                sourceIds: r.sources?.map((s: { sourceId: string }) => s.sourceId) || [],
+                objectIds: [],
+              }).catch(() => {});
+            }
+          }
+          const allSources = sourceResults.flatMap((r) => r.sources || []);
+          const merged = { ...sourceResults[0], sources: allSources } as typeof sourceResults[0] & { reports: unknown[]; dashboard: unknown | null };
+          onSuccess({ mode, recreated: false, sourceImport: merged });
         } else {
-          const result = await importStudioWorkbookSource(file, opts);
-          // Update profile data sheets on data-only reimport
-          const profileId = sourceIdArg || profile?.id;
-          if (profileId) {
-            void saveWorkbookProfile(profileId, {
-              dataSheets: dataSheetsArg || dataSheets,
-              sourceIds: result.sources?.map((s: { sourceId: string }) => s.sourceId) || profile?.sourceIds || []
-            }).catch(() => {});
+          // Single-target mode (original behavior)
+          const isNew = selectedSourceId === "new" || selectedSourceId === "";
+          const sourceIdArg = isNew ? undefined : selectedSourceId;
+          const sourceNameArg = isNew ? (newWorkbookName.trim() || file.name.replace(/\.xlsx$/i, "").trim()) : undefined;
+          const multiSheet = (peek?.sheets?.length ?? 0) > 1;
+          const dataSheetsArg = multiSheet && dataSheets.length > 0 ? dataSheets : undefined;
+          const opts = { sourceId: sourceIdArg, sourceName: sourceNameArg, dataSheets: dataSheetsArg };
+
+          if (recreate) {
+            const sourceResult = await importStudioWorkbookSource(file, opts);
+            const workbookResult = await importStudioWorkbook(file, { maxRowsPerSheet: 500 });
+            const profileId = sourceResult.sources?.[0]?.sourceId ?? sourceIdArg ?? slugify(sourceNameArg || file.name);
+            if (profileId) {
+              void saveWorkbookProfile(profileId, {
+                workbookName: sourceNameArg || profile?.workbookName || file.name.replace(/\.xlsx$/i, ""),
+                dataSheets: dataSheetsArg || dataSheets,
+                sourceIds: sourceResult.sources?.map((s: { sourceId: string }) => s.sourceId) || [],
+                objectIds: []
+              }).catch(() => {});
+            }
+            onSuccess({ mode, recreated: true, sourceImport: sourceResult as typeof sourceResult & { reports: unknown[]; dashboard: unknown | null }, workbookImport: workbookResult });
+          } else {
+            const result = await importStudioWorkbookSource(file, opts);
+            const profileId = sourceIdArg || profile?.id;
+            if (profileId) {
+              void saveWorkbookProfile(profileId, {
+                dataSheets: dataSheetsArg || dataSheets,
+                sourceIds: result.sources?.map((s: { sourceId: string }) => s.sourceId) || profile?.sourceIds || []
+              }).catch(() => {});
+            }
+            onSuccess({ mode, recreated: false, sourceImport: result as typeof result & { reports: unknown[]; dashboard: unknown | null } });
           }
-          onSuccess({ mode, recreated: false, sourceImport: result as typeof result & { reports: unknown[]; dashboard: unknown | null } });
         }
       } else {
         const result = await importStudioWorkbook(file);
@@ -230,11 +278,21 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
   const isUpdating = Boolean(selectedSource);
   const multiSheet = (peek?.sheets?.length ?? 0) > 1;
   const hasDataSheetSelection = !isData || !multiSheet || dataSheets.length > 0;
+  // Multi-sheet mode: file is peeked, 2+ data sheets selected, in data-source mode
+  const isMultiSheetMode = isData && Boolean(peek) && dataSheets.length >= 2;
+  const multiSheetCanSubmit = isMultiSheetMode && dataSheets.every((sheet) => {
+    const sid = sheetSourceMap[sheet];
+    if (!sid || sid === "") return true; // "" = auto-create new, always valid
+    if (sid === "new") return (sheetNewNames[sheet] || "").trim().length > 0;
+    return true;
+  });
   const canSubmit = Boolean(file) && !importing && !peeking && hasDataSheetSelection && (
     !isData ||
-    selectedSourceId === "" ||
-    (selectedSourceId === "new" && newWorkbookName.trim().length > 0) ||
-    isUpdating
+    (isMultiSheetMode ? multiSheetCanSubmit : (
+      selectedSourceId === "" ||
+      (selectedSourceId === "new" && newWorkbookName.trim().length > 0) ||
+      isUpdating
+    ))
   );
 
   // Label for the picker button
@@ -249,9 +307,11 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
   const submitLabel = importing
     ? "Importing…"
     : isData
-      ? isUpdating
-        ? recreate ? `Update "${selectedSource!.sourceName}" + refresh reports` : `Update "${selectedSource!.sourceName}"`
-        : recreate ? "Import & create reports and dashboard" : "Import as data source"
+      ? isMultiSheetMode
+        ? `Import ${dataSheets.length} data tabs`
+        : isUpdating
+          ? recreate ? `Update "${selectedSource!.sourceName}" + refresh reports` : `Update "${selectedSource!.sourceName}"`
+          : recreate ? "Import & create reports and dashboard" : "Import as data source"
       : "Import report layouts";
 
   return (
@@ -365,8 +425,8 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
             </div>
           </div>
 
-          {/* ── Workbook picker (data-source mode only) ── */}
-          {isData && (
+          {/* ── Workbook picker (data-source mode only, hidden in multi-sheet mode) ── */}
+          {isData && !isMultiSheetMode && (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <label style={{ fontSize: 12, fontWeight: 600, color: T.textSecondary, letterSpacing: "0.01em" }}>
                 Which workbook does this file belong to?
@@ -554,10 +614,10 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
                     </p>
                   ) : (
                     <p style={{ margin: "0 0 10px", fontSize: 13, fontWeight: 700, color: T.brandDeep }}>
-                      Which tabs contain raw data rows?
+                      {isMultiSheetMode ? "Map each data tab to its target datasource:" : "Which tabs contain raw data rows?"}
                     </p>
                   )}
-                  {!profileApplied && (
+                  {!profileApplied && !isMultiSheetMode && (
                     <p style={{ margin: "0 0 12px", fontSize: 12, color: T.textSoft, lineHeight: 1.5 }}>
                       Selected tabs become database tables. Unselected tabs (summaries, charts, pivot tables) will be recreated as reports and charts using the data tabs as their source.
                     </p>
@@ -565,46 +625,107 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     {peek.sheets.map((sheet) => {
                       const isChecked = dataSheets.includes(sheet.name);
+                      const sheetSid = sheetSourceMap[sheet.name] || "";
+                      const sheetSource = xlsxSources.find((s) => s.sourceId === sheetSid);
                       return (
-                        <label
-                          key={sheet.name}
-                          style={{
-                            display: "flex", alignItems: "center", gap: 10,
-                            padding: "9px 12px", borderRadius: T.radiusSm, cursor: "pointer",
-                            border: `1px solid ${isChecked ? T.brand : T.border}`,
-                            background: isChecked ? T.bg : T.bgAlt,
-                            transition: "border-color 100ms, background 100ms",
-                          }}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={() => {
-                              setDataSheets((prev) =>
-                                prev.includes(sheet.name)
-                                  ? prev.filter((n) => n !== sheet.name)
-                                  : [...prev, sheet.name]
-                              );
+                        <div key={sheet.name} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                          <label
+                            style={{
+                              display: "flex", alignItems: "center", gap: 10,
+                              padding: "9px 12px", borderRadius: T.radiusSm, cursor: "pointer",
+                              border: `1px solid ${isChecked ? T.brand : T.border}`,
+                              background: isChecked ? T.bg : T.bgAlt,
+                              transition: "border-color 100ms, background 100ms",
                             }}
-                          />
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 13, fontWeight: 600, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {sheet.name}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {
+                                setDataSheets((prev) =>
+                                  prev.includes(sheet.name)
+                                    ? prev.filter((n) => n !== sheet.name)
+                                    : [...prev, sheet.name]
+                                );
+                              }}
+                            />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {sheet.name}
+                              </div>
+                              <div style={{ fontSize: 11, color: T.textSoft }}>
+                                {sheet.rowCount.toLocaleString()} rows · {sheet.columnCount} columns
+                              </div>
                             </div>
-                            <div style={{ fontSize: 11, color: T.textSoft }}>
-                              {sheet.rowCount.toLocaleString()} rows · {sheet.columnCount} columns
+                            <span style={{
+                              fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 99,
+                              letterSpacing: "0.04em", textTransform: "uppercase", flexShrink: 0,
+                              background: sheet.looksLikeData ? T.brandLight : T.infoBg,
+                              color: sheet.looksLikeData ? T.brandDeep : T.infoText,
+                              border: `1px solid ${sheet.looksLikeData ? T.brandBorder : T.infoBorder}`,
+                            }}>
+                              {sheet.looksLikeData ? "Data" : "Summary / Chart"}
+                            </span>
+                          </label>
+                          {/* Per-sheet source picker — shown when this sheet is a data sheet and multi-sheet mode is active */}
+                          {isChecked && isMultiSheetMode && (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 4, paddingLeft: 22 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                <span style={{ fontSize: 11, color: T.textSoft, flexShrink: 0 }}>→ Import to:</span>
+                                <select
+                                  value={sheetSid}
+                                  disabled={importing}
+                                  onChange={(e) => setSheetSourceMap((prev) => ({ ...prev, [sheet.name]: e.target.value }))}
+                                  style={{
+                                    flex: 1, padding: "5px 8px", borderRadius: T.radiusSm,
+                                    border: `1px solid ${sheetSid ? T.brand : T.borderMd}`,
+                                    background: T.bg, color: T.text,
+                                    fontSize: 12, fontFamily: T.font,
+                                    outline: "none", cursor: "pointer",
+                                  }}
+                                >
+                                  <option value="">Auto (create new datasource)</option>
+                                  {xlsxSources.length > 0 && <option disabled>── Existing datasources ──</option>}
+                                  {xlsxSources.map((source) => (
+                                    <option key={source.sourceId} value={source.sourceId}>
+                                      {source.sourceName} ({source.rowCount.toLocaleString()} rows)
+                                    </option>
+                                  ))}
+                                  <option value="new">+ New datasource (custom name)…</option>
+                                </select>
+                              </div>
+                              {sheetSid === "new" && (
+                                <div style={{ paddingLeft: 64 }}>
+                                  <input
+                                    type="text"
+                                    value={sheetNewNames[sheet.name] || ""}
+                                    placeholder={`e.g. ${sheet.name} Data`}
+                                    disabled={importing}
+                                    onChange={(e) => setSheetNewNames((prev) => ({ ...prev, [sheet.name]: e.target.value }))}
+                                    style={{
+                                      width: "100%", padding: "5px 8px", borderRadius: T.radiusSm,
+                                      border: `1px solid ${T.borderMd}`, background: T.bg,
+                                      fontSize: 12, fontFamily: T.font, color: T.text,
+                                      outline: "none", boxSizing: "border-box",
+                                    }}
+                                    onFocus={(e) => { e.currentTarget.style.borderColor = T.brand; }}
+                                    onBlur={(e) => { e.currentTarget.style.borderColor = T.borderMd; }}
+                                  />
+                                  {(sheetNewNames[sheet.name] || "").trim() && (
+                                    <p style={{ margin: "2px 0 0", fontSize: 10, color: T.textSoft }}>
+                                      ID: <strong style={{ fontFamily: "monospace" }}>{nameToSourceId(sheetNewNames[sheet.name])}</strong>
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+                              {sheetSid && sheetSid !== "new" && sheetSource && (
+                                <p style={{ margin: 0, paddingLeft: 64, fontSize: 11, color: T.brandDeep }}>
+                                  Will replace all rows in <strong>{sheetSource.sourceName}</strong>
+                                </p>
+                              )}
                             </div>
-                          </div>
-                          <span style={{
-                            fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 99,
-                            letterSpacing: "0.04em", textTransform: "uppercase", flexShrink: 0,
-                            background: sheet.looksLikeData ? T.brandLight : T.infoBg,
-                            color: sheet.looksLikeData ? T.brandDeep : T.infoText,
-                            border: `1px solid ${sheet.looksLikeData ? T.brandBorder : T.infoBorder}`,
-                          }}>
-                            {sheet.looksLikeData ? "Data" : "Summary / Chart"}
-                          </span>
-                        </label>
+                          )}
+                        </div>
                       );
                     })}
                   </div>
