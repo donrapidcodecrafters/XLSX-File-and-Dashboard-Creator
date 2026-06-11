@@ -513,7 +513,8 @@ function nativeChartXml(source: NativeChartSource) {
       || (source.chartType === "bar" && source.chartOrientation === "horizontal")
       || (source.chartType === "stacked-bar" && source.chartOrientation === "horizontal");
     const stacked = source.chartType === "stacked-bar" || source.chartType === "stacked-column";
-    plotXml = `<c:barChart><c:barDir val="${horizontal ? "bar" : "col"}"/><c:grouping val="${stacked ? "stacked" : "clustered"}"/><c:varyColors val="0"/>${categorySeriesXml(source)}${dataLabelsXml(source.showValues)}${stacked ? "<c:overlap val=\"100\"/>" : ""}<c:axId val="${catAxisId}"/><c:axId val="${valAxisId}"/></c:barChart>${axesXml(catAxisId, valAxisId, source)}`;
+    const barLabelPos = stacked ? "ctr" : "outEnd";
+    plotXml = `<c:barChart><c:barDir val="${horizontal ? "bar" : "col"}"/><c:grouping val="${stacked ? "stacked" : "clustered"}"/><c:varyColors val="0"/>${categorySeriesXml(source)}${dataLabelsXml(source.showValues, barLabelPos)}${stacked ? "<c:overlap val=\"100\"/>" : ""}<c:axId val="${catAxisId}"/><c:axId val="${valAxisId}"/></c:barChart>${axesXml(catAxisId, valAxisId, source)}`;
   }
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
