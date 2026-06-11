@@ -110,6 +110,9 @@ export async function registerStudioRoutes(app: FastifyInstance) {
     const incomingDocument = body.document;
     const current = studioStore.getLiveDocument();
     const removedObjectIds = Array.isArray(body.removedObjectIds) ? body.removedObjectIds.map(String).filter(Boolean) : [];
+    const incomingObjectIds = Object.keys(incomingDocument.bundle?.objects || {});
+    const incomingOrder = incomingDocument.bundle?.order || [];
+    app.log.info({ incomingObjectCount: incomingObjectIds.length, incomingOrderCount: incomingOrder.length, incomingObjectIds, incomingOrder }, "PUT /api/studio/document received");
     const mergedObjects = {
       ...(current.bundle.objects || {}),
       ...(incomingDocument.bundle?.objects || {})
@@ -148,6 +151,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
     });
     updateRefreshScheduleMetadata(mergedDocument);
     const document = studioStore.saveDocument(mergedDocument);
+    app.log.info({ savedObjectCount: Object.keys(document.bundle.objects).length, savedObjectIds: Object.keys(document.bundle.objects) }, "PUT /api/studio/document saved");
     // Await Postgres write so a PM2 restart right after save can't lose user changes.
     await studioStore.awaitPendingPostgresWrite();
     const sync = { enabled: false, ok: true, message: "", savedObjects: 0, savedSettings: 0, savedVersions: 0, savedStorageConfig: 0 };
