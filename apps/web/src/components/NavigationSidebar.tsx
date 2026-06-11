@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import type { PlatformUser } from "../lib/studioApi";
+import { useReaderToolsNode } from "../contexts/ReaderToolsContext";
 
 const DEVELOPER_EMAIL = "don@rapidcodecrafters.com";
 const SIDEBAR_PINNED_KEY = "sidebar-pinned";
@@ -141,6 +142,7 @@ export function NavigationSidebar({
 
   const itemClass = (isActive: boolean) => `nav-sidebar-item${isActive ? " active" : ""}`;
 
+  const toolsNode = useReaderToolsNode();
   const dashboards = objects.filter((o) => o.type === "dashboard");
   const reports = objects.filter((o) => o.type === "report");
 
@@ -242,6 +244,17 @@ export function NavigationSidebar({
             </div>
           </>
         )}
+
+        {/* Tools — only shown when viewing a report or dashboard */}
+        {toolsNode ? (
+          <>
+            <div className="nav-sidebar-divider" />
+            <div className="nav-sidebar-section">
+              <div className="nav-sidebar-section-label">Tools</div>
+              {toolsNode}
+            </div>
+          </>
+        ) : null}
 
         {/* Manage — only shown if user has at least one management permission */}
         {(can("users.view") || can("roles.view")) && (

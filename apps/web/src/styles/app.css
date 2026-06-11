@@ -8576,6 +8576,12 @@ html.dark .nav-sidebar-badge-dev {
   color: var(--text, #111827);
 }
 
+.nav-sidebar-item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 .nav-sidebar-item.active {
   background: rgba(13, 124, 102, 0.1);
   color: var(--brand-deep, #065F46);

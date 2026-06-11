@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useSetReaderTools } from "../contexts/ReaderToolsContext";
 import { Link } from "react-router-dom";
 import { buildDashboardFilters, compactDashboardTabWidgets, formatReportCellValue, getDashboardWidgetLayoutStyle, getDashboardWidgetPlacements, getReportFieldLabel, repackDashboardTabLayout, resolveActiveDashboardTabId, type DashboardDefinition, type DashboardRunResult, type RefreshJobStatus, type ReportDefinition, type ReportRunResult, type TableDefinition } from "@studio/shared";
 import { createExportSaveTarget, fetchFieldValues, fetchReportExportBundle, renderDashboard, runReportPage, type ExportSaveTarget } from "../lib/api";
-import { LinkToolbar } from "./LinkToolbar";
 import { ChartPreview } from "./ChartPreview";
 import { RefreshOverlay } from "./RefreshOverlay";
 import { ResizableDataTable } from "./ResizableDataTable";
@@ -240,7 +240,6 @@ export function DashboardView({
   const [preparedExport, setPreparedExport] = useState<{ filename: string; blob: Blob } | null>(null);
   const [exportSaved, setExportSaved] = useState(false);
   const autoExportStartedRef = useRef(false);
-  const [toolbarCollapsed, setToolbarCollapsed] = useState(true);
   const [widgetPages, setWidgetPages] = useState<Record<string, number>>({});
   const [widgetPageResults, setWidgetPageResults] = useState<Record<string, ReportRunResult>>({});
   const [widgetPageLoading, setWidgetPageLoading] = useState<Record<string, boolean>>({});
@@ -513,6 +512,101 @@ export function DashboardView({
     setFocusedWidgetId(view.focusedWidgetId || "");
   }
 
+  const setTools = useSetReaderTools();
+  const hasSaveView = !!onSaveView;
+  const hasToggleFavorite = !!onToggleFavorite;
+  const hasRefresh = !!onRefresh;
+
+  useEffect(() => {
+    setTools(
+      <>
+        {hosted.embed ? (
+          <button className="nav-sidebar-item" onClick={() => window.open(fullScreenUrl, "_blank", "noopener,noreferrer")}>
+            <span className="nav-sidebar-icon">↗</span>
+            <span className="nav-sidebar-label">Open full-screen</span>
+          </button>
+        ) : (
+          <>
+            <button className="nav-sidebar-item" onClick={() => window.history.back()}>
+              <span className="nav-sidebar-icon">←</span>
+              <span className="nav-sidebar-label">Back</span>
+            </button>
+            <Link className="nav-sidebar-item" to={buildHostedRoute("/")}>
+              <span className="nav-sidebar-icon">🏠</span>
+              <span className="nav-sidebar-label">Home</span>
+            </Link>
+            <Link className="nav-sidebar-item" to={buildHostedRoute("/help")}>
+              <span className="nav-sidebar-icon">📖</span>
+              <span className="nav-sidebar-label">Open manual</span>
+            </Link>
+            <Link
+              className="nav-sidebar-item"
+              to={buildHostedRoute(`/studio/${dashboard.id}`)}
+              target={openLinksInNewTab ? "_blank" : undefined}
+              rel={openLinksInNewTab ? "noreferrer" : undefined}
+            >
+              <span className="nav-sidebar-icon">🔨</span>
+              <span className="nav-sidebar-label">Open in builder</span>
+            </Link>
+          </>
+        )}
+        <div className="nav-sidebar-divider" />
+        {hasToggleFavorite ? (
+          <button className={`nav-sidebar-item${isFavorite ? " active" : ""}`} onClick={onToggleFavorite}>
+            <span className="nav-sidebar-icon">{isFavorite ? "★" : "☆"}</span>
+            <span className="nav-sidebar-label">{isFavorite ? "Unfavorite" : "Favorite"}</span>
+          </button>
+        ) : null}
+        <button
+          className="nav-sidebar-item"
+          onClick={() => { void beginNativeChartExport(); }}
+          disabled={!activeTabResult || localExporting || nativeChartExporting}
+        >
+          <span className="nav-sidebar-icon">📤</span>
+          <span className="nav-sidebar-label">
+            {nativeChartExporting ? "Generating…" : "Export Workbook"}
+          </span>
+        </button>
+        {hasRefresh ? (
+          <button
+            className="nav-sidebar-item"
+            onClick={onRefresh}
+            disabled={dashboardLoading}
+          >
+            <span className="nav-sidebar-icon">🔄</span>
+            <span className="nav-sidebar-label">{dashboardLoading ? "Refreshing…" : "Refresh"}</span>
+          </button>
+        ) : null}
+        <button className="nav-sidebar-item" onClick={resetView}>
+          <span className="nav-sidebar-icon">↩</span>
+          <span className="nav-sidebar-label">Reset view</span>
+        </button>
+        {hasSaveView ? (
+          <button className="nav-sidebar-item" onClick={saveCurrentView}>
+            <span className="nav-sidebar-icon">💾</span>
+            <span className="nav-sidebar-label">Save view</span>
+          </button>
+        ) : null}
+      </>
+    );
+    return () => setTools(null);
+  }, [
+    hosted.embed,
+    isFavorite,
+    dashboardLoading,
+    localExporting,
+    nativeChartExporting,
+    activeTabResult,
+    hasSaveView,
+    hasToggleFavorite,
+    hasRefresh,
+    dashboard.id,
+    openLinksInNewTab,
+    onRefresh,
+    onToggleFavorite,
+    setTools
+  ]);
+
   async function buildDashboardExportResult() {
     const renderedTabs = await Promise.all(
       dashboard.tabs.map(async (tab) => {
@@ -651,69 +745,11 @@ export function DashboardView({
           <p>{dashboard.description || "Full-screen dashboard view with live filters, summaries, and linked reports."}</p>
         </div>
         <div className="reader-hero-actions">
-          {toolbarCollapsed ? (
-            <button className="ghost-button reader-sidebar-show-btn" onClick={() => setToolbarCollapsed(false)}>
-              Show tools
-            </button>
-          ) : null}
           {headerActions}
         </div>
       </div>
 
-      <div className={`reader-page-shell${toolbarCollapsed ? " sidebar-collapsed" : ""}`}>
-        {toolbarCollapsed ? null : (
-        <aside className="reader-sidebar">
-          <button className="ghost-button reader-sidebar-toggle" onClick={() => setToolbarCollapsed(true)}>
-            {"Hide tools"}
-          </button>
-          <div className="reader-sidebar-stack">
-            <div className="reader-sidebar-section">
-              <strong>Navigation</strong>
-              <div className="reader-sidebar-actions">
-                {hosted.embed ? (
-                  <button className="ghost-button btn-system" onClick={() => window.open(fullScreenUrl, "_blank", "noopener,noreferrer")}>Open full-screen</button>
-                ) : (
-                  <>
-                    <button className="ghost-button btn-neutral" onClick={() => window.history.back()}>Back</button>
-                    <Link className="ghost-button btn-neutral" to={buildHostedRoute("/")}>Home</Link>
-                    <Link className="ghost-button btn-help" to={buildHostedRoute("/help")}>Open manual</Link>
-                    <Link className="ghost-button btn-system" to={buildHostedRoute(`/studio/${dashboard.id}`)} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>Open in building area</Link>
-                  </>
-                )}
-              </div>
-            </div>
-
-            <div className="reader-sidebar-section">
-              <strong>Actions</strong>
-              <div className="reader-sidebar-actions">
-                {onToggleFavorite ? (
-                  <button className="ghost-button" onClick={onToggleFavorite}>
-                    {isFavorite ? "Unfavorite" : "Favorite"}
-                  </button>
-                ) : null}
-                <button className="ghost-button btn-export" onClick={() => { void beginNativeChartExport(); }} disabled={!activeTabResult || localExporting || nativeChartExporting}>
-                  {nativeChartExporting ? "Generating workbook…" : "Export Workbook"}
-                </button>
-                {onRefresh ? (
-                  <button className="ghost-button btn-system" onClick={onRefresh} disabled={dashboardLoading}>
-                    {dashboardLoading ? "Refreshing…" : "Refresh now"}
-                  </button>
-                ) : null}
-                <button className="ghost-button btn-neutral" onClick={resetView}>Reset view</button>
-                {onSaveView ? <button className="ghost-button btn-system" onClick={saveCurrentView}>Save view</button> : null}
-              </div>
-            </div>
-
-            {hosted.embed ? null : (
-              <div className="reader-sidebar-section">
-                <strong>Links</strong>
-                <LinkToolbar type="dashboard" id={dashboard.id} />
-              </div>
-            )}
-          </div>
-        </aside>
-        )}
-
+      <div className="reader-page-shell sidebar-collapsed">
         <div className="reader-page-content">
       {savedViews.length ? (
         <div className="card">

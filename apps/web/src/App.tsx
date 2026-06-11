@@ -47,6 +47,7 @@ import { buildHostedRoute, getHostedContext } from "./lib/embed";
 import { buildQuickbaseHelpdeskTicketUrl, type QuickbaseTableLinkContext } from "./lib/quickbaseLinks";
 import { AuthRequiredError, checkAuth, fetchStudioDocument, fetchStudioRefreshJob, getMyPermissions, getMyProfile, getSessionTtlHours, logoutSession, saveStudioUserSettings, startStudioObjectRefresh, startStudioRefresh, stopImpersonating, updateStudioSession, type PlatformUser } from "./lib/studioApi";
 import { useInactivityLogout } from "./hooks/useInactivityLogout";
+import { ReaderToolsProvider } from "./contexts/ReaderToolsContext";
 
 const SESSION_RECENT_KEY = "studio-session-recent";
 const USER_SETTINGS_PERSIST_DELAY_MS = 500;
@@ -1411,6 +1412,7 @@ export function App() {
   }
 
   return (
+    <ReaderToolsProvider>
     <div className={`app-shell ${hosted.embed ? "embed-shell" : ""} ${readerFullScreen ? "reader-shell" : ""}`}>
       {/* Inactivity warning — rendered above everything else */}
       {showInactivityWarning && (
@@ -1640,5 +1642,6 @@ export function App() {
       </div>
       </div>{/* end app-content-with-sidebar */}
     </div>
+    </ReaderToolsProvider>
   );
 }

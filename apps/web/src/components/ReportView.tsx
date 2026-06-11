@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
+import { useSetReaderTools } from "../contexts/ReaderToolsContext";
 import { formatReportCellValue, getReportFieldLabel, type ReportDefinition, type ReportFocusMode, type ReportRunResult, type TableDefinition } from "@studio/shared";
-import { LinkToolbar } from "./LinkToolbar";
 import { ChartPreview } from "./ChartPreview";
 import { RefreshOverlay } from "./RefreshOverlay";
 import { ResizableDataTable } from "./ResizableDataTable";
@@ -216,7 +216,6 @@ export function ReportView({
   const [exportError, setExportError] = useState("");
   const [preparedExport, setPreparedExport] = useState<{ filename: string; blob: Blob } | null>(null);
   const [exportSaved, setExportSaved] = useState(false);
-  const [toolbarCollapsed, setToolbarCollapsed] = useState(true);
   const autoExportStartedRef = useRef(false);
   const summaryAvailable = reportShowsSummary(report) && Boolean(result?.summary?.length);
   const chartAvailable = reportShowsChart(report) && (loading || Boolean(result?.chartData?.length));
@@ -396,6 +395,130 @@ export function ReportView({
     setFocusMode(normalizeReportFocusMode(report, view.focusMode, { summaryAvailable, chartAvailable, detailsAvailable }));
     setFocusedSection(view.focusedSection || "");
   }
+
+  const setTools = useSetReaderTools();
+  const hasSaveView = !!onSaveView;
+  const hasToggleFavorite = !!onToggleFavorite;
+
+  useEffect(() => {
+    setTools(
+      <>
+        {hosted.embed ? (
+          <button className="nav-sidebar-item" onClick={() => window.open(fullScreenUrl, "_blank", "noopener,noreferrer")}>
+            <span className="nav-sidebar-icon">↗</span>
+            <span className="nav-sidebar-label">Open full-screen</span>
+          </button>
+        ) : (
+          <>
+            <button className="nav-sidebar-item" onClick={() => window.history.back()}>
+              <span className="nav-sidebar-icon">←</span>
+              <span className="nav-sidebar-label">Back</span>
+            </button>
+            <Link className="nav-sidebar-item" to={buildHostedRoute("/")}>
+              <span className="nav-sidebar-icon">🏠</span>
+              <span className="nav-sidebar-label">Home</span>
+            </Link>
+            <Link className="nav-sidebar-item" to={buildHostedRoute("/help")}>
+              <span className="nav-sidebar-icon">📖</span>
+              <span className="nav-sidebar-label">Open manual</span>
+            </Link>
+            <Link
+              className="nav-sidebar-item"
+              to={buildHostedRoute(`/studio/${report.id}`)}
+              target={openLinksInNewTab ? "_blank" : undefined}
+              rel={openLinksInNewTab ? "noreferrer" : undefined}
+            >
+              <span className="nav-sidebar-icon">🔨</span>
+              <span className="nav-sidebar-label">Open in builder</span>
+            </Link>
+          </>
+        )}
+        <div className="nav-sidebar-divider" />
+        {hasToggleFavorite ? (
+          <button className={`nav-sidebar-item${isFavorite ? " active" : ""}`} onClick={onToggleFavorite}>
+            <span className="nav-sidebar-icon">{isFavorite ? "★" : "☆"}</span>
+            <span className="nav-sidebar-label">{isFavorite ? "Unfavorite" : "Favorite"}</span>
+          </button>
+        ) : null}
+        <button
+          className="nav-sidebar-item"
+          onClick={() => { void beginExport(); }}
+          disabled={!result || localExporting || nativeChartExporting}
+        >
+          <span className="nav-sidebar-icon">📥</span>
+          <span className="nav-sidebar-label">
+            {localExporting ? "Generating…" : preparedExport ? (exportSaved ? "Save again" : "Save xlsx") : "Download xlsx"}
+          </span>
+        </button>
+        <button
+          className="nav-sidebar-item"
+          onClick={() => { void beginNativeChartExport(); }}
+          disabled={!result || localExporting || nativeChartExporting}
+        >
+          <span className="nav-sidebar-icon">🔬</span>
+          <span className="nav-sidebar-label">
+            {nativeChartExporting ? "Generating…" : "Native chart xlsx"}
+          </span>
+        </button>
+        <button
+          className="nav-sidebar-item"
+          onClick={onRefresh}
+          disabled={loading}
+        >
+          <span className="nav-sidebar-icon">🔄</span>
+          <span className="nav-sidebar-label">{loading ? "Refreshing…" : "Refresh"}</span>
+        </button>
+        <button className="nav-sidebar-item" onClick={resetView}>
+          <span className="nav-sidebar-icon">↩</span>
+          <span className="nav-sidebar-label">Reset view</span>
+        </button>
+        {hasSaveView ? (
+          <button className="nav-sidebar-item" onClick={saveCurrentView}>
+            <span className="nav-sidebar-icon">💾</span>
+            <span className="nav-sidebar-label">Save view</span>
+          </button>
+        ) : null}
+        {focusModes.length > 1 ? (
+          <>
+            <div className="nav-sidebar-divider" />
+            {focusModes.map((mode) => (
+              <button
+                key={mode}
+                className={`nav-sidebar-item${resolvedFocusMode === mode ? " active" : ""}`}
+                onClick={() => setFocusMode(mode)}
+              >
+                <span className="nav-sidebar-icon">
+                  {mode === "default" ? "⊞" : mode === "summary" ? "Σ" : mode === "chart" ? "📊" : "☰"}
+                </span>
+                <span className="nav-sidebar-label">
+                  {mode === "default" ? "Default layout" : mode === "summary" ? "Summary" : mode === "chart" ? "Chart" : "Details"}
+                </span>
+              </button>
+            ))}
+          </>
+        ) : null}
+      </>
+    );
+    return () => setTools(null);
+  }, [
+    hosted.embed,
+    isFavorite,
+    loading,
+    localExporting,
+    nativeChartExporting,
+    result,
+    preparedExport,
+    exportSaved,
+    resolvedFocusMode,
+    focusModes,
+    hasSaveView,
+    hasToggleFavorite,
+    report.id,
+    openLinksInNewTab,
+    onRefresh,
+    onToggleFavorite,
+    setTools
+  ]);
 
   function renderDetailContent(tableShellClassName = "report-table-shell") {
     if (!result) return null;
@@ -579,88 +702,11 @@ export function ReportView({
             <p>{report.description || "Full-screen report view with live data, summaries, charts, and detail rows."}</p>
           </div>
           <div className="reader-hero-actions">
-            {!hosted.embed ? (
-              <button className="ghost-button btn-neutral" onClick={() => window.history.back()}>Back</button>
-            ) : null}
-            {toolbarCollapsed ? (
-              <button className="ghost-button reader-sidebar-show-btn" onClick={() => setToolbarCollapsed(false)}>Show tools</button>
-            ) : null}
             {headerActions}
           </div>
         </div>
 
-        <div className={`reader-page-shell${toolbarCollapsed ? " sidebar-collapsed" : ""}`}>
-          {toolbarCollapsed ? null : (
-          <aside className="reader-sidebar">
-            <button className="ghost-button reader-sidebar-toggle" onClick={() => setToolbarCollapsed(true)}>
-              Hide tools
-            </button>
-            <div className="reader-sidebar-stack">
-                <div className="reader-sidebar-section">
-                  <strong>Navigation</strong>
-                  <div className="reader-sidebar-actions">
-                    {hosted.embed ? (
-                      <button className="ghost-button btn-system" onClick={() => window.open(fullScreenUrl, "_blank", "noopener,noreferrer")}>Open full-screen</button>
-                    ) : (
-                      <>
-                        <button className="ghost-button btn-neutral" onClick={() => window.history.back()}>Back</button>
-                        <Link className="ghost-button btn-neutral" to={buildHostedRoute("/")}>Home</Link>
-                        <Link className="ghost-button btn-help" to={buildHostedRoute("/help")}>Open manual</Link>
-                        <Link className="ghost-button btn-system" to={buildHostedRoute(`/studio/${report.id}`)} target={openLinksInNewTab ? "_blank" : undefined} rel={openLinksInNewTab ? "noreferrer" : undefined}>Open in building area</Link>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                <div className="reader-sidebar-section">
-                  <strong>Actions</strong>
-                  <div className="reader-sidebar-actions">
-                    {onToggleFavorite ? (
-                      <button className="ghost-button" onClick={onToggleFavorite}>
-                        {isFavorite ? "Unfavorite" : "Favorite"}
-                      </button>
-                    ) : null}
-                    <button className="ghost-button btn-export" onClick={() => { void beginExport(); }} disabled={!result || localExporting || nativeChartExporting}>
-                      {localExporting ? "Generating xlsx…" : preparedExport ? (exportSaved ? "Save again" : "Save xlsx") : "Download xlsx"}
-                    </button>
-                    <button className="ghost-button btn-export" onClick={() => { void beginNativeChartExport(); }} disabled={!result || localExporting || nativeChartExporting}>
-                      {nativeChartExporting ? "Generating native xlsx..." : "Dev native chart xlsx"}
-                    </button>
-                    <button className="ghost-button btn-system" onClick={onRefresh} disabled={loading}>
-                      {loading ? "Refreshing…" : "Refresh now"}
-                    </button>
-                    <button className="ghost-button btn-neutral" onClick={resetView}>Reset view</button>
-                    {onSaveView ? <button className="ghost-button" onClick={saveCurrentView}>Save view</button> : null}
-                  </div>
-                </div>
-
-                {focusModes.length > 1 ? (
-                  <div className="reader-sidebar-section">
-                    <strong>View</strong>
-                    <div className="reader-sidebar-actions">
-                      {focusModes.map((mode) => (
-                        <button
-                          key={mode}
-                          className={`ghost-button ${resolvedFocusMode === mode ? "active-tab" : ""}`}
-                          onClick={() => setFocusMode(mode)}
-                        >
-                          {mode === "default" ? "Default layout" : mode === "summary" ? "Summary" : mode === "chart" ? "Chart" : "Details"}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-
-                {hosted.embed ? null : (
-                  <div className="reader-sidebar-section">
-                    <strong>Links</strong>
-                    <LinkToolbar type="report" id={report.id} />
-                  </div>
-                )}
-              </div>
-          </aside>
-          )}
-
+        <div className="reader-page-shell sidebar-collapsed">
           <div className="reader-page-content">
       {savedViews.length ? (
         <div className="card">
