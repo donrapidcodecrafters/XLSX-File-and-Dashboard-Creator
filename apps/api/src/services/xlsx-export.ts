@@ -921,32 +921,70 @@ function mergeRowRange(sheet: ExcelJS.Worksheet, row: number, startCol: number, 
 function layoutDashboardWidgets(
   dashboard: DashboardDefinition,
   tabId: string,
-  widgets: DashboardRunResult["tabs"][number]["widgets"]
+  widgets: DashboardRunResult["tabs"][number]["widgets"],
+  startRowOffset = 4
 ) {
   const dashboardTab = dashboard.tabs.find((tab) => tab.id === tabId);
   if (!dashboardTab) return [];
   const placementsById = new Map(
     getDashboardWidgetPlacements(dashboardTab).map((placement) => [placement.widgetId, placement])
   );
-  return widgets
+
+  type WidgetWithPlacement = {
+    widget: DashboardRunResult["tabs"][number]["widgets"][number];
+    placement: ReturnType<typeof getDashboardWidgetPlacements>[number];
+  };
+
+  const ordered: WidgetWithPlacement[] = widgets
     .map((widget) => {
       const placement = placementsById.get(widget.widgetId);
-      if (!placement) return null;
-      return {
+      return placement ? { widget, placement } : null;
+    })
+    .filter((item): item is WidgetWithPlacement => item !== null);
+
+  ordered.sort((a, b) => {
+    if (a.placement.startRow !== b.placement.startRow) return a.placement.startRow - b.placement.startRow;
+    return a.placement.startCol - b.placement.startCol;
+  });
+
+  // Group by grid row so side-by-side widgets share the same output startRow
+  const rowGroups: WidgetWithPlacement[][] = [];
+  let currentGridRow = -1;
+  let currentGroup: WidgetWithPlacement[] = [];
+  for (const item of ordered) {
+    if (item.placement.startRow !== currentGridRow) {
+      if (currentGroup.length) rowGroups.push(currentGroup);
+      currentGroup = [item];
+      currentGridRow = item.placement.startRow;
+    } else {
+      currentGroup.push(item);
+    }
+  }
+  if (currentGroup.length) rowGroups.push(currentGroup);
+
+  let currentRow = startRowOffset;
+  const result: Array<{
+    widget: DashboardRunResult["tabs"][number]["widgets"][number];
+    startCol: number;
+    endCol: number;
+    startRow: number;
+    endRow: number;
+  }> = [];
+  for (const group of rowGroups) {
+    const maxHeight = Math.max(...group.map(({ placement }) => placement.height));
+    const groupEndRow = currentRow + (maxHeight * 7) - 1;
+    for (const { widget, placement } of group) {
+      result.push({
         widget,
         startCol: placement.startCol,
         endCol: placement.endCol,
-        startRow: ((placement.startRow - 1) * 7) + 1,
-        endRow: (((placement.endRow - placement.startRow + 1) * 7) + ((placement.startRow - 1) * 7)) - 1
-      };
-    })
-    .filter((placement): placement is {
-      widget: DashboardRunResult["tabs"][number]["widgets"][number];
-      startCol: number;
-      endCol: number;
-      startRow: number;
-      endRow: number;
-    } => Boolean(placement));
+        startRow: currentRow,
+        endRow: currentRow + (placement.height * 7) - 1,
+      });
+    }
+    currentRow = groupEndRow + 2;
+  }
+  return result;
 }
 
 function writeWidgetTitle(sheet: ExcelJS.Worksheet, row: number, startCol: number, endCol: number, title: string, subtitle: string) {
