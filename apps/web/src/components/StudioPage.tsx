@@ -1750,6 +1750,7 @@ export function StudioPage({
   const [liveReportLoading, setLiveReportLoading] = useState(false);
   const [postgresReportResult, setPostgresReportResult] = useState<ReportRunResult | null>(null);
   const [liveDashboardPreviewResult, setLiveDashboardPreviewResult] = useState<DashboardRunResult | null>(null);
+  const dashboardRenderVersionRef = useRef(0);
   const [postgresReportLoading, setPostgresReportLoading] = useState(false);
   const [dataImportVersion, setDataImportVersion] = useState(0);
   const [previewPage, setPreviewPage] = useState(1);
@@ -2625,9 +2626,10 @@ export function StudioPage({
   const activeDashboardId = activeDashboard?.id;
   useEffect(() => {
     if (!activeDashboardId) { setLiveDashboardPreviewResult(null); return; }
+    const version = ++dashboardRenderVersionRef.current;
     renderDashboard(activeDashboardId, {})
-      .then((result) => setLiveDashboardPreviewResult(result))
-      .catch(() => setLiveDashboardPreviewResult(null));
+      .then((result) => { if (version === dashboardRenderVersionRef.current) setLiveDashboardPreviewResult(result); })
+      .catch(() => { if (version === dashboardRenderVersionRef.current) setLiveDashboardPreviewResult(null); });
   }, [activeDashboardId, dataImportVersion]);
 
   const dashboardResult = useMemo(() => {
@@ -4374,15 +4376,13 @@ export function StudioPage({
     const nextPrimaryObjectId = importState.currentObjects[importState.primaryObjectId]
       ? importState.primaryObjectId
       : finalImportedObjectIds[0] || "";
+    const sourceLabel = sourceTable?.name || (importState.sourceTables.length > 1 ? `${importState.sourceTables.length} data sources` : importState.sourceTables[0]?.name || "source data");
+    pushToast(`Created imported ${importState.review.dashboardCreated ? "dashboard and reports" : "reports"} using ${sourceLabel}.`);
+    // Save FIRST — navigate after so the render fires with objects already on the server
+    await persistRemote(nextDocument);
     if (nextPrimaryObjectId) {
       navigate(buildHostedRoute(`/studio/${nextPrimaryObjectId}`));
     }
-    const sourceLabel = sourceTable?.name || (importState.sourceTables.length > 1 ? `${importState.sourceTables.length} data sources` : importState.sourceTables[0]?.name || "source data");
-    pushToast(`Created imported ${importState.review.dashboardCreated ? "dashboard and reports" : "reports"} using ${sourceLabel}.`);
-    await persistRemote(nextDocument);
-    try {
-      await loadHostedDocumentIntoState({ resetHistory: false });
-    } catch (_e) { /* non-fatal — client already has the objects */ }
     setDataImportVersion((v) => v + 1);
     fetchStudioSources().then((response) => {
       const ids = new Set<string>();
