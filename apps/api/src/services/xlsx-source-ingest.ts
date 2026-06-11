@@ -2,7 +2,7 @@ import { Readable } from "node:stream";
 import ExcelJS from "exceljs";
 import { normalizeStudioDocument, type DashboardDefinition, type DataRow, type FieldDefinition, type FieldType, type ReportDefinition, type StudioDocument, type TableDefinition } from "@studio/shared";
 import { isPostgresEnabled } from "../config/env.js";
-import { replaceSourceRecords, replaceSourceRecordsFromBatches, type SourceRecordSummary } from "./eav-record-store.js";
+import { getSourceRecordSummary, replaceSourceRecords, replaceSourceRecordsFromBatches, type SourceRecordSummary } from "./eav-record-store.js";
 import { studioStore } from "./studio-store.js";
 import { importWorkbookIntoStudioDocument } from "./xlsx-import.js";
 
@@ -172,6 +172,17 @@ function workbookNameFromFilename(filename: string) {
   return filename.replace(/\.xlsx$/i, "").trim() || "Imported Workbook";
 }
 
+async function resolveBaseSourceName(sourceId: string | undefined, sourceName: string | undefined, workbookName: string): Promise<string> {
+  const explicit = String(sourceName || "").trim();
+  if (explicit) return explicit;
+  // When updating an existing source with no explicit name, preserve the name already in Postgres.
+  if (sourceId) {
+    const existing = await getSourceRecordSummary([sourceId]);
+    if (existing?.sourceName) return existing.sourceName;
+  }
+  return workbookName;
+}
+
 function normalizeBaseSourceId(sourceId: string | undefined, filename: string) {
   const fallback = `xlsx:${slugify(workbookNameFromFilename(filename)) || "workbook"}`;
   const trimmed = String(sourceId || "").trim();
@@ -247,7 +258,7 @@ export async function ingestXlsxWorkbookSource(options: IngestXlsxSourceOptions)
   const imported = await importWorkbookIntoStudioDocument(current, options.filename, options.buffer);
   const workbookName = workbookNameFromFilename(options.filename);
   const baseSourceId = normalizeBaseSourceId(options.sourceId, options.filename);
-  const baseSourceName = String(options.sourceName || workbookName).trim() || workbookName;
+  const baseSourceName = await resolveBaseSourceName(options.sourceId, options.sourceName, workbookName);
   const allImportedTables = imported.importedTableIds
     .map((tableId) => imported.document.bundle.tables.find((table) => table.id === tableId))
     .filter((table): table is TableDefinition => Boolean(table));
@@ -310,7 +321,7 @@ export async function ingestXlsxWorkbookSourceStream(options: IngestXlsxSourceSt
   const current = studioStore.getLiveDocument();
   const workbookName = workbookNameFromFilename(options.filename);
   const baseSourceId = normalizeBaseSourceId(options.sourceId, options.filename);
-  const baseSourceName = String(options.sourceName || workbookName).trim() || workbookName;
+  const baseSourceName = await resolveBaseSourceName(options.sourceId, options.sourceName, workbookName);
   const usedSourceIds = new Set<string>();
   const sourceTables: TableDefinition[] = [];
   const sources: IngestedXlsxSource[] = [];
