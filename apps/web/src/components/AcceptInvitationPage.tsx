@@ -30,6 +30,7 @@ export function AcceptInvitationPage() {
   const navigate = useNavigate();
 
   const [status, setStatus] = useState<"loading" | "valid" | "invalid" | "success">("loading");
+  const [invalidReason, setInvalidReason] = useState<"canceled" | "expired" | "accepted" | "unknown">("unknown");
   const [invitation, setInvitation] = useState<PendingInvitation | null>(null);
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
@@ -38,14 +39,18 @@ export function AcceptInvitationPage() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!token) { setStatus("invalid"); return; }
+    if (!token) { setInvalidReason("unknown"); setStatus("invalid"); return; }
     getInvitation(token)
       .then((result) => {
         setInvitation(result.invitation);
         setDisplayName(result.invitation.displayName || "");
         setStatus("valid");
       })
-      .catch(() => setStatus("invalid"));
+      .catch((err) => {
+        const reason = (err as { reason?: string } | undefined)?.reason;
+        setInvalidReason(reason === "expired" ? "expired" : reason === "accepted" ? "accepted" : "canceled");
+        setStatus("invalid");
+      });
   }, [token]);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -87,13 +92,23 @@ export function AcceptInvitationPage() {
           {/* Invalid */}
           {status === "invalid" && (
             <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 40, marginBottom: 16 }}>⚠️</div>
-              <h2 style={{ margin: "0 0 8px", fontSize: "1.25rem", fontWeight: 700, color: T.text }}>Invitation not valid</h2>
+              <div style={{ fontSize: 40, marginBottom: 16 }}>
+                {invalidReason === "expired" ? "⏰" : invalidReason === "accepted" ? "✅" : "🚫"}
+              </div>
+              <h2 style={{ margin: "0 0 8px", fontSize: "1.25rem", fontWeight: 700, color: T.text }}>
+                {invalidReason === "expired" && "Invitation expired"}
+                {invalidReason === "accepted" && "Already accepted"}
+                {invalidReason === "canceled" && "Invitation canceled"}
+                {invalidReason === "unknown" && "Invitation not found"}
+              </h2>
               <p style={{ margin: "0 0 20px", fontSize: 13, color: T.textSoft, lineHeight: 1.6 }}>
-                This invitation link has expired or has already been used. Ask your administrator to send a new invitation.
+                {invalidReason === "expired" && "This invitation link has expired. Please contact your administrator to send a new invitation."}
+                {invalidReason === "accepted" && "This invitation has already been used to create an account. If that was you, sign in below."}
+                {invalidReason === "canceled" && "This invitation has been canceled by an administrator. Please reach out to them if you still need access."}
+                {invalidReason === "unknown" && "This invitation link is invalid or was not found. Ask your administrator to send a new invitation."}
               </p>
               <button onClick={() => { window.location.href = "/"; }} style={{ padding: "10px 20px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: T.font }}>
-                Go to sign-in
+                {invalidReason === "accepted" ? "Go to sign-in" : "Back to sign-in"}
               </button>
             </div>
           )}

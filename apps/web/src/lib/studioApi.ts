@@ -545,8 +545,15 @@ export async function getSessionTtlHours(): Promise<number> {
 
 // ── Invitations ───────────────────────────────────────────────────────────────
 
-export function getInvitation(token: string) {
-  return request<{ invitation: PendingInvitation }>(`/api/invitations/${encodeURIComponent(token)}`);
+export async function getInvitation(token: string) {
+  const response = await fetch(API_BASE + `/api/invitations/${encodeURIComponent(token)}`, { credentials: "include" });
+  const body = await response.json() as { invitation?: PendingInvitation; message?: string; reason?: string };
+  if (!response.ok) {
+    const err = new Error(body?.message || `Request failed with status ${response.status}`) as Error & { reason?: string };
+    err.reason = body?.reason;
+    throw err;
+  }
+  return body as { invitation: PendingInvitation };
 }
 
 export function acceptInvitation(token: string, payload: { displayName: string; password: string }) {

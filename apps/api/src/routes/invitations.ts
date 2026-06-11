@@ -27,19 +27,26 @@ export async function registerInvitationRoutes(app: FastifyInstance) {
 
     const { token } = request.params as { token: string };
 
-    const result = await pgQuery<InvitationRow>(
-      `SELECT id, email, role, display_name, invited_by, expires_at
+    // Fetch the row regardless of status so we can give a specific reason.
+    const result = await pgQuery<InvitationRow & { accepted_at: Date | null }>(
+      `SELECT id, email, role, display_name, invited_by, expires_at, accepted_at
        FROM user_invitations
-       WHERE token = $1
-         AND accepted_at IS NULL
-         AND expires_at > now()`,
+       WHERE token = $1`,
       [token]
     );
 
     const invitation = result.rows[0];
     if (!invitation) {
       reply.code(404);
-      return { message: "Invitation not found, already accepted, or expired." };
+      return { message: "This invitation has been canceled or does not exist.", reason: "canceled" };
+    }
+    if (invitation.accepted_at) {
+      reply.code(410);
+      return { message: "This invitation has already been accepted.", reason: "accepted" };
+    }
+    if (new Date(invitation.expires_at) <= new Date()) {
+      reply.code(410);
+      return { message: "This invitation has expired.", reason: "expired" };
     }
 
     return {
