@@ -274,6 +274,7 @@ async function resolveExecutionTable(report: ReportDefinition, extraFilters: Fil
 }
 
 function collectReportFieldIds(report: ReportDefinition, extraFilters: FilterDefinition[] = []) {
+  const view = report.view || {};
   return Array.from(new Set(
     [
       ...(report.selectedFieldIds || []),
@@ -282,15 +283,15 @@ function collectReportFieldIds(report: ReportDefinition, extraFilters: FilterDef
       ...(report.groups || []).map((item) => item.fieldId),
       ...(report.sorts || []).map((item) => item.fieldId),
       ...((report.summaryMetrics || []).map((item) => item.fieldId)),
-      report.view.chartFieldId,
-      report.view.chartSeriesFieldId,
-      report.view.chartValueFieldId,
-      report.view.chartSecondaryValueFieldId,
-      report.view.timelineDateField,
-      report.view.timelineEndField,
-      report.view.calendarDateField,
-      report.view.kanbanField,
-      report.view.titleFieldId
+      view.chartFieldId,
+      view.chartSeriesFieldId,
+      view.chartValueFieldId,
+      view.chartSecondaryValueFieldId,
+      view.timelineDateField,
+      view.timelineEndField,
+      view.calendarDateField,
+      view.kanbanField,
+      view.titleFieldId
     ].filter(Boolean).map(String)
   ));
 }
@@ -506,6 +507,7 @@ function getTableCacheVersion(table: TableDefinition): string {
 }
 
 function buildReportExecutionShape(report: ReportDefinition) {
+  const view = report.view || {} as ReportDefinition["view"];
   return {
     sourceTableId: report.sourceTableId,
     selectedFieldIds: report.selectedFieldIds || [],
@@ -515,27 +517,27 @@ function buildReportExecutionShape(report: ReportDefinition) {
     sorts: (report.sorts || []).map((sort) => [sort.fieldId, sort.direction]),
     summaryMetrics: (report.summaryMetrics || []).map((metric) => [metric.fieldId, metric.op, metric.label]),
     view: {
-      mode: report.view.mode,
-      showChartInTable: report.view.showChartInTable,
-      showSummary: report.view.showSummary,
-      showDetails: report.view.showDetails,
-      chartType: report.view.chartType,
-      chartOrientation: report.view.chartOrientation,
-      chartFieldId: report.view.chartFieldId,
-      chartSeriesFieldId: report.view.chartSeriesFieldId,
-      chartValueFieldId: report.view.chartValueFieldId,
-      chartAggregation: report.view.chartAggregation,
-      chartSecondaryValueFieldId: report.view.chartSecondaryValueFieldId,
-      chartSecondaryAggregation: report.view.chartSecondaryAggregation,
-      chartUseSecondaryAxis: report.view.chartUseSecondaryAxis,
-      chartSecondarySeriesType: report.view.chartSecondarySeriesType,
-      chartTopN: report.view.chartTopN,
-      chartSort: report.view.chartSort,
-      timelineDateField: report.view.timelineDateField,
-      timelineEndField: report.view.timelineEndField,
-      calendarDateField: report.view.calendarDateField,
-      kanbanField: report.view.kanbanField,
-      titleFieldId: report.view.titleFieldId
+      mode: view.mode,
+      showChartInTable: view.showChartInTable,
+      showSummary: view.showSummary,
+      showDetails: view.showDetails,
+      chartType: view.chartType,
+      chartOrientation: view.chartOrientation,
+      chartFieldId: view.chartFieldId,
+      chartSeriesFieldId: view.chartSeriesFieldId,
+      chartValueFieldId: view.chartValueFieldId,
+      chartAggregation: view.chartAggregation,
+      chartSecondaryValueFieldId: view.chartSecondaryValueFieldId,
+      chartSecondaryAggregation: view.chartSecondaryAggregation,
+      chartUseSecondaryAxis: view.chartUseSecondaryAxis,
+      chartSecondarySeriesType: view.chartSecondarySeriesType,
+      chartTopN: view.chartTopN,
+      chartSort: view.chartSort,
+      timelineDateField: view.timelineDateField,
+      timelineEndField: view.timelineEndField,
+      calendarDateField: view.calendarDateField,
+      kanbanField: view.kanbanField,
+      titleFieldId: view.titleFieldId
     }
   };
 }
@@ -1442,7 +1444,49 @@ export async function executeReportPage(report: ReportDefinition, extraFilters: 
   return paginateReportResult(full, options, "full");
 }
 
+function ensureReportView(report: ReportDefinition): ReportDefinition {
+  if (report.view) return report;
+  return {
+    ...report,
+    view: {
+      mode: "table",
+      showChartInTable: false,
+      showSummary: true,
+      showDetails: true,
+      chartTitle: "",
+      decimalPlaces: 2,
+      chartType: "bar",
+      chartOrientation: "vertical",
+      chartFieldId: "",
+      chartSeriesFieldId: "",
+      chartValueFieldId: "",
+      chartAggregation: "count",
+      chartSecondaryValueFieldId: "",
+      chartSecondaryAggregation: "sum",
+      chartUseSecondaryAxis: false,
+      chartSecondarySeriesType: "line",
+      chartTopN: 12,
+      chartSort: "value-desc",
+      chartColors: [],
+      chartValueColors: {},
+      chartShowLegend: true,
+      chartShowValues: true,
+      chartXAxisLabel: "",
+      chartYAxisLabel: "",
+      chartSecondaryYAxisLabel: "",
+      timelineDateField: "",
+      timelineEndField: "",
+      calendarDateField: "",
+      kanbanField: "",
+      titleFieldId: "",
+      chartPercentMode: undefined,
+      chartBarDirection: undefined
+    } as ReportDefinition["view"]
+  };
+}
+
 export async function fetchReportPage(report: ReportDefinition, extraFilters: FilterDefinition[] = [], options: ExecuteReportOptions = {}): Promise<ReportRunResult> {
+  report = ensureReportView(report);
   const table = await resolveExecutionTable(report, extraFilters);
   if (!table) {
     throw new Error("Table not found for report " + report.id + ".");
@@ -1492,6 +1536,7 @@ export async function fetchReportExportBundle(
   onProgress?: ExportProgressCallback,
   options: ExecuteReportOptions = {}
 ): Promise<ReportRunResult> {
+  report = ensureReportView(report);
   const table = await resolveExecutionTable(report, extraFilters);
   if (!table) {
     throw new Error("Table not found for report " + report.id + ".");
