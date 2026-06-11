@@ -9242,3 +9242,7 @@ html.dark .nav-accordion-item:hover {
 
 /* ── Import review top gradient ─────────────────────────────────────────── */
 /* (already added above, this is a guard repeat — CSS takes last rule, OK) */
+
+/* ── Datasource rename button — show brighter on row hover ──────────────── */
+tr:hover .rename-btn { opacity: 0.75 !important; }
+tr:hover .rename-btn:hover { opacity: 1 !important; color: var(--brand, #0d7c66) !important; }

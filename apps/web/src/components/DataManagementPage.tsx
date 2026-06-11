@@ -241,22 +241,23 @@ function RenameCell({ source, canEdit, onRenamed, onError }: RenameCellProps) {
       {canEdit && (
         <button
           type="button"
-          title="Rename"
+          title="Click to rename"
           onClick={startEdit}
           style={{
             background: "none",
             border: "none",
             cursor: "pointer",
             color: "var(--text-muted, #9CA3AF)",
-            fontSize: 12,
-            padding: "1px 4px",
+            fontSize: 13,
+            padding: "2px 5px",
             borderRadius: 4,
             lineHeight: 1,
-            opacity: 0,
+            opacity: 0.45,
+            transition: "opacity 120ms, color 120ms",
           }}
           className="rename-btn"
           onMouseEnter={(e) => { e.currentTarget.style.opacity = "1"; e.currentTarget.style.color = PRIMARY; }}
-          onMouseLeave={(e) => { e.currentTarget.style.opacity = "0"; e.currentTarget.style.color = "#9CA3AF"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.opacity = "0.45"; e.currentTarget.style.color = "var(--text-muted, #9CA3AF)"; }}
         >
           ✏
         </button>
