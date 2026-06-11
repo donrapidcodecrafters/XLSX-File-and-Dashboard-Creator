@@ -521,18 +521,18 @@ function isNumericSummaryValue(value: string | number | boolean | null) {
 
 function looksLikeSummaryMatrixHeaderRow(row: WorksheetRowSnapshot) {
   const entries = rowNonBlankEntries(row);
-  if (entries.length < 3) return false;
+  if (entries.length < 2) return false;
   const numericCount = entries.filter((entry) => isNumericSummaryValue(entry.value)).length;
   return numericCount <= Math.max(1, Math.floor(entries.length * 0.2));
 }
 
 function looksLikeSummaryMatrixDataRow(row: WorksheetRowSnapshot) {
   const entries = rowNonBlankEntries(row);
-  if (entries.length < 3) return false;
+  if (entries.length < 2) return false;
   const label = entries[0]?.value;
   if (!isHeaderLabelValue(label)) return false;
   const numericCount = entries.slice(1).filter((entry) => isNumericSummaryValue(entry.value)).length;
-  return numericCount >= Math.max(2, Math.ceil((entries.length - 1) * 0.6));
+  return numericCount >= Math.max(1, Math.ceil((entries.length - 1) * 0.6));
 }
 
 function splitSummaryMatrixRowBand(rows: WorksheetRowSnapshot[]) {
@@ -694,7 +694,7 @@ function buildWorksheetRegions(
         .map((value, index) => (!isBlankCell(value) ? index + 1 : 0))
         .filter((columnNumber) => columnNumber > 0)
     );
-    const columnBands = splitNumberSeriesIntoBands(occupiedColumns, 2);
+    const columnBands = splitNumberSeriesIntoBands(occupiedColumns, 1);
     columnBands.forEach((band) => {
       const columnNumbers = Array.from(
         { length: band.end - band.start + 1 },

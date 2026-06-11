@@ -4479,20 +4479,23 @@ export function StudioPage({
                   </div>
                   <div className="import-review-sheet-list">
                     {(() => {
+                      const tabKey = (name: string) => name.includes(" · ") ? name.split(" · ")[0] : name;
+                      const reportDisplayName = (name: string) => name.includes(" · ") ? name.split(" · ").slice(1).join(" · ") : name;
                       const sorted = [...importReviewSheetOptions].sort((a, b) =>
                         a.sheetName.localeCompare(b.sheetName, undefined, { numeric: true, sensitivity: "base" })
                       );
-                      const groups: { sheetName: string; items: typeof sorted }[] = [];
+                      const groups: { tabName: string; items: typeof sorted }[] = [];
                       sorted.forEach((item) => {
+                        const itemTabName = tabKey(item.sheetName);
                         const last = groups[groups.length - 1];
-                        if (last && last.sheetName === item.sheetName) {
+                        if (last && last.tabName === itemTabName) {
                           last.items.push(item);
                         } else {
-                          groups.push({ sheetName: item.sheetName, items: [item] });
+                          groups.push({ tabName: itemTabName, items: [item] });
                         }
                       });
-                      return groups.flatMap(({ sheetName, items }) => [
-                        <div className="import-review-tab-header" key={`tab-${sheetName}`}>{sheetName}</div>,
+                      return groups.flatMap(({ tabName, items }) => [
+                        <div className="import-review-tab-header" key={`tab-${tabName}`}>{tabName}</div>,
                         ...items.map((item) => (
                           <div className={`import-review-sheet-row${item.skipped ? " import-review-sheet-row--off" : ""}`} key={item.reportId}>
                             <label className="import-review-sheet-toggle">
@@ -4508,7 +4511,7 @@ export function StudioPage({
                               />
                             </label>
                             <div className="import-review-sheet-info">
-                              <span className="import-review-sheet-name">{item.reportName}</span>
+                              <span className="import-review-sheet-name">{reportDisplayName(item.reportName)}</span>
                             </div>
                             {!item.skipped ? (
                               <select
