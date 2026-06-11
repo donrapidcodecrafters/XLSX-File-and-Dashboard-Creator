@@ -350,6 +350,14 @@ export class StudioStore {
     return this.getDocument();
   }
 
+  // Atomic read-modify-write: reads the current document and immediately saves the
+  // result of modifier(current) without any awaits between the two operations.
+  // Safe under concurrent async requests because Node.js is single-threaded — no other
+  // code can run between getLiveDocument() and saveDocument() in the same tick.
+  updateDocument(modifier: (current: StudioDocument) => StudioDocument, options: { markSavedAt?: boolean } = {}) {
+    return this.saveDocument(modifier(this.getLiveDocument()), options);
+  }
+
   saveSession(session: StudioDocument["session"], options: { persist?: boolean } = {}) {
     this.document = normalizeStudioDocument({
       ...this.document,

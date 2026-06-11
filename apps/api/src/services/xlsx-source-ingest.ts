@@ -259,8 +259,8 @@ export async function ingestXlsxWorkbookSource(options: IngestXlsxSourceOptions)
   if (!isPostgresEnabled()) {
     throw new Error("DATABASE_URL or POSTGRES_URL is required before importing Excel files as durable sources.");
   }
-  const current = studioStore.getLiveDocument();
-  const imported = await importWorkbookIntoStudioDocument(current, options.filename, options.buffer);
+  const importBase = studioStore.getLiveDocument();
+  const imported = await importWorkbookIntoStudioDocument(importBase, options.filename, options.buffer);
   const workbookName = workbookNameFromFilename(options.filename);
   const baseSourceId = normalizeBaseSourceId(options.sourceId, options.filename, options.sourceName);
   const baseSourceName = await resolveBaseSourceName(options.sourceId, options.sourceName, workbookName);
@@ -310,7 +310,7 @@ export async function ingestXlsxWorkbookSource(options: IngestXlsxSourceOptions)
     });
   }
 
-  const document = studioStore.saveDocument(upsertSourceTables(current, sourceTables), { markSavedAt: false });
+  const document = studioStore.updateDocument((c) => upsertSourceTables(c, sourceTables), { markSavedAt: false });
   return {
     document,
     sources,
@@ -323,7 +323,6 @@ export async function ingestXlsxWorkbookSourceStream(options: IngestXlsxSourceSt
   if (!isPostgresEnabled()) {
     throw new Error("DATABASE_URL or POSTGRES_URL is required before importing Excel files as durable sources.");
   }
-  const current = studioStore.getLiveDocument();
   const workbookName = workbookNameFromFilename(options.filename);
   const baseSourceId = normalizeBaseSourceId(options.sourceId, options.filename, options.sourceName);
   const baseSourceName = await resolveBaseSourceName(options.sourceId, options.sourceName, workbookName);
@@ -454,7 +453,7 @@ export async function ingestXlsxWorkbookSourceStream(options: IngestXlsxSourceSt
     throw new Error(warnings[0] || "No importable sheets were found in this workbook.");
   }
 
-  const document = studioStore.saveDocument(upsertSourceTables(current, sourceTables), { markSavedAt: false });
+  const document = studioStore.updateDocument((c) => upsertSourceTables(c, sourceTables), { markSavedAt: false });
   return {
     document,
     sources,

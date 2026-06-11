@@ -4222,6 +4222,13 @@ export function StudioPage({
           .map((table) => [table.id, clone(table)])
       );
       const targetTable = sourceTables.length === 1 ? sourceTables[0] : null;
+      if (sourceTables.length > 0) {
+        setPostgresSourceIds((prev) => {
+          const updated = new Set(prev);
+          for (const t of sourceTables) updated.add(t.id);
+          return updated;
+        });
+      }
       setPendingWorkbookImport({
         review: response.review,
         warnings: response.warnings,
