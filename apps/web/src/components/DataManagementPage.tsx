@@ -235,9 +235,6 @@ function RenameCell({ source, canEdit, onRenamed, onError }: RenameCellProps) {
 
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-      <span style={{ fontWeight: 600, color: "var(--text, #111827)", fontSize: 13 }}>
-        {source.sourceName}
-      </span>
       {canEdit && (
         <button
           type="button"
@@ -249,11 +246,15 @@ function RenameCell({ source, canEdit, onRenamed, onError }: RenameCellProps) {
             cursor: "pointer",
             color: "var(--text-muted, #9CA3AF)",
             fontSize: 13,
-            padding: "2px 5px",
+            padding: "2px 4px",
             borderRadius: 4,
             lineHeight: 1,
             opacity: 0.45,
             transition: "opacity 120ms, color 120ms",
+            transform: "scaleX(-1) rotate(15deg)",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
           }}
           className="rename-btn"
           onMouseEnter={(e) => { e.currentTarget.style.opacity = "1"; e.currentTarget.style.color = PRIMARY; }}
@@ -262,6 +263,9 @@ function RenameCell({ source, canEdit, onRenamed, onError }: RenameCellProps) {
           ✏
         </button>
       )}
+      <span style={{ fontWeight: 600, color: "var(--text, #111827)", fontSize: 13 }}>
+        {source.sourceName}
+      </span>
     </div>
   );
 }
