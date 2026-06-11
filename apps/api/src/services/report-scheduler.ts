@@ -12,9 +12,15 @@ import { fetchReportExportBundle, executeDashboard } from "./report-runner.js";
 import {
   streamReportWorkbook,
   streamDashboardWorkbook,
+  streamDashboardWorkbookCanvas,
   buildReportFileName,
   buildDashboardFileName
 } from "./xlsx-export.js";
+
+// Set CANVAS_CHARTS_ENABLED=true in .env to use server-side canvas chart rendering
+// (identical output to the manual download). Leave unset or false to keep the
+// current QuickChart.io path while canvas rendering is being verified.
+const useCanvasCharts = process.env.CANVAS_CHARTS_ENABLED === "true";
 
 interface ReportConfigRow {
   id: string;
@@ -230,8 +236,9 @@ async function runReportConfig(config: ReportConfigRow, logger: FastifyBaseLogge
         } catch { /* use widget.result fallback */ }
       }
     }
+    const dashboardStreamFn = useCanvasCharts ? streamDashboardWorkbookCanvas : streamDashboardWorkbook;
     buffer = await workbookToBuffer((pass) =>
-      streamDashboardWorkbook(pass, dashboard, rendered, exportResultsByWidgetId, tablesById)
+      dashboardStreamFn(pass, dashboard, rendered, exportResultsByWidgetId, tablesById)
     );
   }
 

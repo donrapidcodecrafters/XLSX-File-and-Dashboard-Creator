@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 import type { Stream } from "node:stream";
+import { renderChartImageCanvas } from "./canvasChartRenderer.js";
 import {
   buildDashboardFilters,
   filterNeedsValue,
@@ -1132,6 +1133,13 @@ function writeDetailSheet(
   });
 }
 
+type ChartRendererFn = (
+  report: ReportDefinition,
+  subtitle: string,
+  chartData: ChartDatum[],
+  summary: SummaryDatum[]
+) => Promise<{ base64: string; width: number; height: number } | null>;
+
 async function writeDashboardTabSheet(
   workbook: ExcelJS.Workbook,
   dashboard: DashboardDefinition,
@@ -1140,7 +1148,8 @@ async function writeDashboardTabSheet(
   tablesById: Record<string, TableDefinition>,
   exportResultsByWidgetId: Record<string, ReportRunResult>,
   detailSheetNames: Record<string, string>,
-  onProgress?: ExportProgressCallback
+  onProgress?: ExportProgressCallback,
+  chartRenderer: ChartRendererFn = renderChartImage
 ) {
   const singleWidgetPlacement = tab.widgets.length === 1
     ? layoutDashboardWidgets(dashboard, tab.id, tab.widgets)[0]
@@ -1188,7 +1197,7 @@ async function writeDashboardTabSheet(
       contentRow = writeWidgetSummaryBlock(sheet, exportResult, contentRow, startCol, endCol) + 1;
     }
     if (widgetShowsChart(widget.widget, widget.report)) {
-      const image = await renderChartImage(widget.report, tab.name, exportResult.chartData, exportResult.summary);
+      const image = await chartRenderer(widget.report, tab.name, exportResult.chartData, exportResult.summary);
       if (image) {
         const imageId = workbook.addImage({ base64: image.base64, extension: "png" });
         sheet.addImage(imageId, {
@@ -1472,6 +1481,122 @@ export async function streamDashboardWorkbook(
     const tabSheet = workbook.getWorksheet(tabSheetNamesById[tab.id]);
     if (!tabSheet) continue;
     await writeDashboardTabSheet(workbook, dashboard, tabSheet, tab, tablesById, exportResultsByWidgetId, detailSheetNames, onProgress);
+  }
+
+  [1, 2, 3, 4, 5, 6].forEach((index) => {
+    const widths = [18, 24, 26, 12, 28, 20];
+    overview.getColumn(index).width = widths[index - 1];
+  });
+
+  await workbook.xlsx.write(output);
+  onProgress?.(100, "Export ready");
+}
+
+// ─── Canvas-based dashboard export (dev / opt-in via CANVAS_CHARTS_ENABLED) ──
+// Identical to streamDashboardWorkbook except charts are rendered server-side
+// using node-canvas (same code as the browser manual download) instead of
+// QuickChart.io. Switch on with CANVAS_CHARTS_ENABLED=true in .env.
+
+export async function streamDashboardWorkbookCanvas(
+  output: Stream,
+  dashboard: DashboardDefinition,
+  rendered: DashboardRunResult,
+  exportResultsByWidgetId: Record<string, ReportRunResult>,
+  tablesById: Record<string, TableDefinition>,
+  onProgress?: ExportProgressCallback,
+  runtimeFilters: Record<string, string> = {}
+) {
+  const workbook = new ExcelJS.Workbook();
+  const usedNames = new Set<string>();
+  workbook.creator = "Cadence Reporting Portal";
+  workbook.created = new Date();
+
+  const overview = workbook.addWorksheet(safeSheetName(`${dashboard.name} Overview`, usedNames));
+  writeOverviewHeader(overview, dashboard.name, dashboard.description || "Dashboard export");
+  let overviewRow = writeMetadataRows(overview, 4, [
+    { label: "Generated", value: formatTimestamp(workbook.created) },
+    { label: "Tabs exported", value: rendered.tabs.length },
+    {
+      label: "Cards exported",
+      value: rendered.tabs.reduce((sum, tab) => sum + tab.widgets.length, 0)
+    }
+  ]);
+  overviewRow = writeTextListSection(
+    overview,
+    overviewRow + 1,
+    "Runtime filters",
+    dashboard.runtimeFilters.map((filter) => describeRuntimeFilter(dashboard, filter, tablesById, runtimeFilters)),
+    "No dashboard runtime filters"
+  );
+  overview.getCell(`A${overviewRow}`).value = "Tab";
+  overview.getCell(`B${overviewRow}`).value = "Card";
+  overview.getCell(`C${overviewRow}`).value = "Report";
+  overview.getCell(`D${overviewRow}`).value = "Rows";
+  overview.getCell(`E${overviewRow}`).value = "Sheet";
+  overview.getCell(`F${overviewRow}`).value = "Exported content";
+  overview.getRow(overviewRow).font = { bold: true };
+  overviewRow += 1;
+  onProgress?.(10, "Writing dashboard overview");
+
+  const detailSheetNames: Record<string, string> = {};
+  const tabSheetNamesById: Record<string, string> = {};
+
+  for (const tab of rendered.tabs) {
+    const sheet = workbook.addWorksheet(safeSheetName(tab.name, usedNames));
+    tabSheetNamesById[tab.id] = sheet.name;
+  }
+
+  for (const tab of rendered.tabs) {
+    for (const widget of tab.widgets) {
+      if (widget.status === "failed") continue;
+      const table = tablesById[widget.report.sourceTableId];
+      const exportResult = resolveWidgetExportResult(widget, exportResultsByWidgetId);
+      if (!widgetNeedsSeparateDetailSheet(widget.widget, widget.report)) continue;
+      if (!table || !exportResult.totalRows) continue;
+      const detailSheetName = safeSheetName(`${tab.name} ${widget.report.name} Data`, usedNames);
+      detailSheetNames[widget.widgetId] = detailSheetName;
+      const detailSheet = workbook.addWorksheet(detailSheetName);
+      const widgetFilters = buildDashboardFilters(dashboard, widget.report.id, runtimeFilters, widget.report.sourceTableId);
+      const filterDescriptions = [
+        ...widget.report.filters.map((filter) => describeReportFilter(widget.report, table, filter)),
+        ...widgetFilters.map((filter) => describeReportFilter(widget.report, table, filter))
+      ];
+      writeDetailSheet(detailSheet, widget.report, table, exportResult, filterDescriptions);
+    }
+  }
+
+  for (const tab of rendered.tabs) {
+    const tabSheetName = tabSheetNamesById[tab.id] || "";
+    for (const widget of tab.widgets) {
+      const exportResult = resolveWidgetExportResult(widget, exportResultsByWidgetId);
+      const parts = widget.status === "failed"
+        ? [`failed: ${widget.error || widget.message || "Widget load failed"}`]
+        : [
+            widgetShowsSummary(widget.widget, widget.report, exportResult) ? "summary" : "",
+            widgetShowsChart(widget.widget, widget.report) ? "chart" : "",
+            widgetShowsDetails(widget.widget, widget.report) && widgetDisplayMode(widget.widget, widget.report) === "table" ? "table rows" : "",
+            detailSheetNames[widget.widgetId] ? "detail sheet" : ""
+          ].filter(Boolean);
+      overview.getCell(`A${overviewRow}`).value = tab.name;
+      overview.getCell(`B${overviewRow}`).value = widget.widget.title || widget.report.name;
+      overview.getCell(`C${overviewRow}`).value = widget.report.name;
+      overview.getCell(`D${overviewRow}`).value = exportResult.totalRows;
+      if (tabSheetName) {
+        overview.getCell(`E${overviewRow}`).value = { text: tabSheetName, hyperlink: sheetHyperlink(tabSheetName) };
+        overview.getCell(`E${overviewRow}`).font = { color: { argb: "FF1F5AA6" }, underline: true };
+      } else {
+        overview.getCell(`E${overviewRow}`).value = "None";
+      }
+      overview.getCell(`F${overviewRow}`).value = parts.join(", ") || "metadata only";
+      overview.getRow(overviewRow).alignment = { vertical: "top", wrapText: true };
+      overviewRow += 1;
+    }
+  }
+
+  for (const tab of rendered.tabs) {
+    const tabSheet = workbook.getWorksheet(tabSheetNamesById[tab.id]);
+    if (!tabSheet) continue;
+    await writeDashboardTabSheet(workbook, dashboard, tabSheet, tab, tablesById, exportResultsByWidgetId, detailSheetNames, onProgress, renderChartImageCanvas);
   }
 
   [1, 2, 3, 4, 5, 6].forEach((index) => {
