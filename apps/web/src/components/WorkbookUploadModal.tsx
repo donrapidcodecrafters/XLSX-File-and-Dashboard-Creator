@@ -208,12 +208,13 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
               groups.push({ sheets: [sheetName], sourceId: undefined, sourceName });
             }
           }
-          // Run all source imports in parallel
-          const sourceResults = await Promise.all(
-            groups.map(({ sourceId, sourceName, sheets }) =>
+          // Run all source imports + optional workbook analysis in parallel
+          const [workbookResult, sourceResults] = await Promise.all([
+            recreate ? importStudioWorkbook(file, { maxRowsPerSheet: 500 }) : Promise.resolve(undefined),
+            Promise.all(groups.map(({ sourceId, sourceName, sheets }) =>
               importStudioWorkbookSource(file, { sourceId, sourceName, dataSheets: sheets })
-            )
-          );
+            ))
+          ]);
           // Save a profile per imported source group
           for (let i = 0; i < groups.length; i++) {
             const g = groups[i];
@@ -230,7 +231,11 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
           }
           const allSources = sourceResults.flatMap((r) => r.sources || []);
           const merged = { ...sourceResults[0], sources: allSources } as typeof sourceResults[0] & { reports: unknown[]; dashboard: unknown | null };
-          onSuccess({ mode, recreated: false, sourceImport: merged });
+          if (recreate && workbookResult) {
+            onSuccess({ mode, recreated: true, sourceImport: merged, workbookImport: workbookResult });
+          } else {
+            onSuccess({ mode, recreated: false, sourceImport: merged });
+          }
         } else {
           // Single-target mode (original behavior)
           const isNew = selectedSourceId === "new" || selectedSourceId === "";
