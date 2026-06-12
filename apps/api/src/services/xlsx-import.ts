@@ -1566,7 +1566,7 @@ function buildImportedDashboard(
     mode: "linked" as const,
     displayMode: "summary" as const,
     showDetails: false,
-    showSummary: true,
+    showSummary: false,
     reportId: report.id
   }));
   const overviewSpotlights = overviewReports

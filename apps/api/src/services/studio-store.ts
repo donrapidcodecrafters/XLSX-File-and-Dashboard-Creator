@@ -196,6 +196,35 @@ export class StudioStore {
     reconcileRefreshStatusWithCache(this.document, this.cacheMeta);
     this.lastHydratedAt = Date.parse(this.document.sync?.lastLoadedAt || "") || 0;
     this.lastReloadedFromDiskAt = Date.now();
+    // Schema v2: showSummary and showDetails should always default to false.
+    // Reset all existing reports and dashboard widgets that have them set to true.
+    if (this.document.schemaVersion < 2) {
+      let changed = false;
+      Object.values(this.document.bundle.objects || {}).forEach((obj) => {
+        if (!obj) return;
+        if (obj.type === "report") {
+          if (obj.view.showSummary || obj.view.showDetails) {
+            obj.view.showSummary = false;
+            obj.view.showDetails = false;
+            changed = true;
+          }
+        } else if (obj.type === "dashboard") {
+          (obj.tabs || []).forEach((tab) => {
+            (tab.widgets || []).forEach((widget) => {
+              if (widget.showSummary || widget.showDetails) {
+                widget.showSummary = false;
+                widget.showDetails = false;
+                changed = true;
+              }
+            });
+          });
+        }
+      });
+      this.document.schemaVersion = 2;
+      if (changed) {
+        this.persist(this.document, { skipCacheWrite: true });
+      }
+    }
   }
 
   private load(): StudioDocument {
