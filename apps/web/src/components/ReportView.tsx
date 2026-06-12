@@ -217,6 +217,10 @@ export function ReportView({
   const [preparedExport, setPreparedExport] = useState<{ filename: string; blob: Blob } | null>(null);
   const [exportSaved, setExportSaved] = useState(false);
   const autoExportStartedRef = useRef(false);
+  // Track whether a load has ever started so we don't flash the "unavailable"
+  // error during the initial render before the first fetch begins.
+  const hasAttemptedLoadRef = useRef(loading);
+  if (loading) hasAttemptedLoadRef.current = true;
   const summaryAvailable = reportShowsSummary(report) && Boolean(result?.summary?.length);
   const chartAvailable = reportShowsChart(report) && (loading || Boolean(result?.chartData?.length));
   const detailsAvailable = reportShowsDetails(report) && (
@@ -780,7 +784,7 @@ export function ReportView({
         </div>
       ) : null}
 
-      {!loading && !result ? (
+      {!loading && !result && hasAttemptedLoadRef.current ? (
         <div className="sync-status sync-status-warn">
           <strong>Report results unavailable</strong>
           <span>{loadError || "This report did not return results. Try `Refresh now`, then reopen the report."}</span>
