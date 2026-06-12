@@ -1015,22 +1015,43 @@ export function DashboardView({
                       {widget.status === "complete" && pagedResult.crosstab ? (
                         <div className="pivot-table-shell">
                           <table className="pivot-table">
-                            <thead><tr>
-                              <th className="pivot-metric-col"></th>
-                              {pagedResult.crosstab.columns.map((col, ci) => (
-                                <th key={ci} className={col === "Grand Total" ? "pivot-grand-total" : ""}>{col || "(blank)"}</th>
-                              ))}
-                            </tr></thead>
-                            <tbody>
-                              {pagedResult.crosstab.rows.map((row) => (
-                                <tr key={row.label}>
-                                  <td className="pivot-row-header">{row.label}</td>
-                                  {row.formatted.map((val, vi) => (
-                                    <td key={vi} className={pagedResult.crosstab!.columns[vi] === "Grand Total" ? "pivot-grand-total" : ""}>{val}</td>
+                            {widget.report.view.pivotOrientation === "vertical" ? (
+                              <>
+                                <thead><tr>
+                                  <th className="pivot-metric-col"></th>
+                                  {pagedResult.crosstab.rows.map((row, i) => <th key={i}>{row.label}</th>)}
+                                </tr></thead>
+                                <tbody>
+                                  {pagedResult.crosstab.columns.map((col, ci) => (
+                                    <tr key={ci} className={col === "Grand Total" ? "pivot-grand-total" : ""}>
+                                      <td className="pivot-row-header">{col || "(blank)"}</td>
+                                      {pagedResult.crosstab!.rows.map((row, ri) => (
+                                        <td key={ri}>{row.formatted[ci]}</td>
+                                      ))}
+                                    </tr>
                                   ))}
-                                </tr>
-                              ))}
-                            </tbody>
+                                </tbody>
+                              </>
+                            ) : (
+                              <>
+                                <thead><tr>
+                                  <th className="pivot-metric-col"></th>
+                                  {pagedResult.crosstab.columns.map((col, ci) => (
+                                    <th key={ci} className={col === "Grand Total" ? "pivot-grand-total" : ""}>{col || "(blank)"}</th>
+                                  ))}
+                                </tr></thead>
+                                <tbody>
+                                  {pagedResult.crosstab.rows.map((row) => (
+                                    <tr key={row.label}>
+                                      <td className="pivot-row-header">{row.label}</td>
+                                      {row.formatted.map((val, vi) => (
+                                        <td key={vi} className={pagedResult.crosstab!.columns[vi] === "Grand Total" ? "pivot-grand-total" : ""}>{val}</td>
+                                      ))}
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </>
+                            )}
                           </table>
                         </div>
                       ) : null}
@@ -1156,22 +1177,43 @@ export function DashboardView({
                 {widget.status === "complete" && crosstabData ? (
                   <div className="pivot-table-shell">
                     <table className="pivot-table">
-                      <thead><tr>
-                        <th className="pivot-metric-col"></th>
-                        {crosstabData.columns.map((col, ci) => (
-                          <th key={ci} className={col === "Grand Total" ? "pivot-grand-total" : ""}>{col || "(blank)"}</th>
-                        ))}
-                      </tr></thead>
-                      <tbody>
-                        {crosstabData.rows.map((row) => (
-                          <tr key={row.label}>
-                            <td className="pivot-row-header">{row.label}</td>
-                            {row.formatted.map((val, vi) => (
-                              <td key={vi} className={crosstabData.columns[vi] === "Grand Total" ? "pivot-grand-total" : ""}>{val}</td>
+                      {widget.report.view.pivotOrientation === "vertical" ? (
+                        <>
+                          <thead><tr>
+                            <th className="pivot-metric-col"></th>
+                            {crosstabData.rows.map((row, i) => <th key={i}>{row.label}</th>)}
+                          </tr></thead>
+                          <tbody>
+                            {crosstabData.columns.map((col, ci) => (
+                              <tr key={ci} className={col === "Grand Total" ? "pivot-grand-total" : ""}>
+                                <td className="pivot-row-header">{col || "(blank)"}</td>
+                                {crosstabData.rows.map((row, ri) => (
+                                  <td key={ri}>{row.formatted[ci]}</td>
+                                ))}
+                              </tr>
                             ))}
-                          </tr>
-                        ))}
-                      </tbody>
+                          </tbody>
+                        </>
+                      ) : (
+                        <>
+                          <thead><tr>
+                            <th className="pivot-metric-col"></th>
+                            {crosstabData.columns.map((col, ci) => (
+                              <th key={ci} className={col === "Grand Total" ? "pivot-grand-total" : ""}>{col || "(blank)"}</th>
+                            ))}
+                          </tr></thead>
+                          <tbody>
+                            {crosstabData.rows.map((row) => (
+                              <tr key={row.label}>
+                                <td className="pivot-row-header">{row.label}</td>
+                                {row.formatted.map((val, vi) => (
+                                  <td key={vi} className={crosstabData.columns[vi] === "Grand Total" ? "pivot-grand-total" : ""}>{val}</td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </>
+                      )}
                     </table>
                   </div>
                 ) : null}
@@ -1286,22 +1328,43 @@ export function DashboardView({
             {focusedWidget.result.crosstab ? (
               <div className="pivot-table-shell">
                 <table className="pivot-table">
-                  <thead><tr>
-                    <th className="pivot-metric-col"></th>
-                    {focusedWidget.result.crosstab.columns.map((col, ci) => (
-                      <th key={ci} className={col === "Grand Total" ? "pivot-grand-total" : ""}>{col || "(blank)"}</th>
-                    ))}
-                  </tr></thead>
-                  <tbody>
-                    {focusedWidget.result.crosstab.rows.map((row) => (
-                      <tr key={row.label}>
-                        <td className="pivot-row-header">{row.label}</td>
-                        {row.formatted.map((val, vi) => (
-                          <td key={vi} className={focusedWidget.result.crosstab!.columns[vi] === "Grand Total" ? "pivot-grand-total" : ""}>{val}</td>
+                  {focusedWidget.report.view.pivotOrientation === "vertical" ? (
+                    <>
+                      <thead><tr>
+                        <th className="pivot-metric-col"></th>
+                        {focusedWidget.result.crosstab.rows.map((row, i) => <th key={i}>{row.label}</th>)}
+                      </tr></thead>
+                      <tbody>
+                        {focusedWidget.result.crosstab.columns.map((col, ci) => (
+                          <tr key={ci} className={col === "Grand Total" ? "pivot-grand-total" : ""}>
+                            <td className="pivot-row-header">{col || "(blank)"}</td>
+                            {focusedWidget.result.crosstab!.rows.map((row, ri) => (
+                              <td key={ri}>{row.formatted[ci]}</td>
+                            ))}
+                          </tr>
                         ))}
-                      </tr>
-                    ))}
-                  </tbody>
+                      </tbody>
+                    </>
+                  ) : (
+                    <>
+                      <thead><tr>
+                        <th className="pivot-metric-col"></th>
+                        {focusedWidget.result.crosstab.columns.map((col, ci) => (
+                          <th key={ci} className={col === "Grand Total" ? "pivot-grand-total" : ""}>{col || "(blank)"}</th>
+                        ))}
+                      </tr></thead>
+                      <tbody>
+                        {focusedWidget.result.crosstab.rows.map((row) => (
+                          <tr key={row.label}>
+                            <td className="pivot-row-header">{row.label}</td>
+                            {row.formatted.map((val, vi) => (
+                              <td key={vi} className={focusedWidget.result.crosstab!.columns[vi] === "Grand Total" ? "pivot-grand-total" : ""}>{val}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </>
+                  )}
                 </table>
               </div>
             ) : null}

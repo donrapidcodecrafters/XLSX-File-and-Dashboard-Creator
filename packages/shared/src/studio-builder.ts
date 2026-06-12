@@ -120,7 +120,8 @@ export function buildStudioBuilderDraft(
       timelineEndField: "",
       calendarDateField: "",
       kanbanField: "",
-      titleFieldId: ""
+      titleFieldId: "",
+      pivotOrientation: "horizontal"
     },
     displayLabels: {
       fields: {},

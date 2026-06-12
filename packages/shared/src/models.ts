@@ -197,6 +197,7 @@ export interface ReportViewDefinition {
   calendarDateField: string;
   kanbanField: string;
   titleFieldId: string;
+  pivotOrientation?: "horizontal" | "vertical";
 }
 
 export interface ReportDisplayLabels {

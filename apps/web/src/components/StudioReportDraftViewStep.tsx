@@ -158,6 +158,16 @@ export function StudioReportDraftViewStep({
                   }))}
                 />
               </label>
+              <label className="field">
+                <span>Table orientation</span>
+                <select
+                  value={createDraft.view.pivotOrientation || "horizontal"}
+                  onChange={(event) => setCreateDraft((current) => ({ ...current, view: { ...current.view, pivotOrientation: event.target.value as "horizontal" | "vertical" } }))}
+                >
+                  <option value="horizontal">Horizontal — groups as columns</option>
+                  <option value="vertical">Vertical — groups as rows</option>
+                </select>
+              </label>
             </div>
           </section>
         ) : (

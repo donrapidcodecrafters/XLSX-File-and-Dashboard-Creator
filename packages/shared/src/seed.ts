@@ -53,6 +53,7 @@ function buildReportView(overrides: Partial<ReportViewDefinition> = {}): ReportV
     calendarDateField: "",
     kanbanField: "",
     titleFieldId: "",
+    pivotOrientation: "horizontal",
     ...overrides
   };
 }

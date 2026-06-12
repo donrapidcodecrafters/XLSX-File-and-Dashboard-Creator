@@ -65,24 +65,47 @@ export function StudioReportPreview({
     result.crosstab ? (
       <div className="pivot-table-shell">
         <table className="pivot-table">
-          <thead>
-            <tr>
-              <th className="pivot-metric-col"></th>
-              {result.crosstab.columns.map((col, i) => (
-                <th key={i} className={col === "Grand Total" ? "pivot-grand-total" : ""}>{col || "(blank)"}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {result.crosstab.rows.map((row) => (
-              <tr key={row.label}>
-                <td className="pivot-row-header">{row.label}</td>
-                {row.formatted.map((val, i) => (
-                  <td key={i} className={result.crosstab!.columns[i] === "Grand Total" ? "pivot-grand-total" : ""}>{val}</td>
+          {report.view.pivotOrientation === "vertical" ? (
+            <>
+              <thead>
+                <tr>
+                  <th className="pivot-metric-col"></th>
+                  {result.crosstab.rows.map((row, i) => <th key={i}>{row.label}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {result.crosstab.columns.map((col, ci) => (
+                  <tr key={ci} className={col === "Grand Total" ? "pivot-grand-total" : ""}>
+                    <td className="pivot-row-header">{col || "(blank)"}</td>
+                    {result.crosstab!.rows.map((row, ri) => (
+                      <td key={ri}>{row.formatted[ci]}</td>
+                    ))}
+                  </tr>
                 ))}
-              </tr>
-            ))}
-          </tbody>
+              </tbody>
+            </>
+          ) : (
+            <>
+              <thead>
+                <tr>
+                  <th className="pivot-metric-col"></th>
+                  {result.crosstab.columns.map((col, i) => (
+                    <th key={i} className={col === "Grand Total" ? "pivot-grand-total" : ""}>{col || "(blank)"}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {result.crosstab.rows.map((row) => (
+                  <tr key={row.label}>
+                    <td className="pivot-row-header">{row.label}</td>
+                    {row.formatted.map((val, i) => (
+                      <td key={i} className={result.crosstab!.columns[i] === "Grand Total" ? "pivot-grand-total" : ""}>{val}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </>
+          )}
         </table>
       </div>
     ) : (
