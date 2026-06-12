@@ -770,6 +770,7 @@ interface PendingWorkbookImport {
   sourceTables: TableDefinition[];
   skippedReportIds: string[];
   reportTypeOverrides: Record<string, string>;
+  reportSourceTableOverrides: Record<string, string>;
   baseObjects: Record<string, StudioObject>;
   currentObjects: Record<string, StudioObject>;
   importedTablesById: Record<string, TableDefinition>;
@@ -977,7 +978,9 @@ function rebuildPendingWorkbookImportObjects(
   targetTable: TableDefinition | null,
   skippedReportIds: string[] = [],
   reportTypeOverrides: Record<string, string> = {},
-  availableTables: TableDefinition[] = []
+  availableTables: TableDefinition[] = [],
+  reportSourceTableOverrides: Record<string, string> = {},
+  allTables: TableDefinition[] = []
 ) {
   const skippedSet = new Set(skippedReportIds);
   const nextObjects: Record<string, StudioObject> = {};
@@ -985,7 +988,11 @@ function rebuildPendingWorkbookImportObjects(
     if (object.type === "report") {
       if (skippedSet.has(objectId)) return;
       const importedTable = importedTablesById[object.sourceTableId] || null;
-      const effectiveTarget = targetTable || bestMatchTable(importedTable, availableTables);
+      const overrideTableId = reportSourceTableOverrides[objectId];
+      const overrideTable = overrideTableId
+        ? (allTables.find((t) => t.id === overrideTableId) || availableTables.find((t) => t.id === overrideTableId) || null)
+        : null;
+      const effectiveTarget = overrideTable || targetTable || bestMatchTable(importedTable, availableTables);
       const remapped = effectiveTarget
         ? remapImportedReportToSourceTable(object, importedTable, effectiveTarget)
         : remapImportedReportToSourceTable(object, importedTable, {
@@ -4069,7 +4076,7 @@ export function StudioPage({
       if (!st) return current;
       return {
         ...current,
-        currentObjects: rebuildPendingWorkbookImportObjects(current.baseObjects, current.importedTablesById, st, current.skippedReportIds, current.reportTypeOverrides)
+        currentObjects: rebuildPendingWorkbookImportObjects(current.baseObjects, current.importedTablesById, st, current.skippedReportIds, current.reportTypeOverrides, current.sourceTables, current.reportSourceTableOverrides, bundle.tables)
       };
     });
   }, [pendingWorkbookImport?.sourceTableId, bundle.tables]);
@@ -4212,6 +4219,7 @@ export function StudioPage({
         sourceTables: [],
         skippedReportIds: [],
         reportTypeOverrides: {},
+        reportSourceTableOverrides: {},
         baseObjects,
         currentObjects: rebuildPendingWorkbookImportObjects(baseObjects, importedTablesById, targetTable, [], {}),
         importedTablesById
@@ -4275,6 +4283,7 @@ export function StudioPage({
         sourceTables,
         skippedReportIds: [],
         reportTypeOverrides: {},
+        reportSourceTableOverrides: {},
         baseObjects,
         currentObjects: rebuildPendingWorkbookImportObjects(baseObjects, importedTablesById, targetTable, [], {}, sourceTables),
         importedTablesById
@@ -4451,6 +4460,7 @@ export function StudioPage({
       return {
         ...current,
         sourceTableId: tableId,
+        reportSourceTableOverrides: {},
         currentObjects: rebuildPendingWorkbookImportObjects(current.baseObjects, current.importedTablesById, targetTable, current.skippedReportIds, current.reportTypeOverrides)
       };
     });
@@ -4464,7 +4474,7 @@ export function StudioPage({
       return {
         ...current,
         skippedReportIds: nextSkippedReportIds,
-        currentObjects: rebuildPendingWorkbookImportObjects(current.baseObjects, current.importedTablesById, sourceTable, nextSkippedReportIds, current.reportTypeOverrides, current.sourceTables)
+        currentObjects: rebuildPendingWorkbookImportObjects(current.baseObjects, current.importedTablesById, sourceTable, nextSkippedReportIds, current.reportTypeOverrides, current.sourceTables, current.reportSourceTableOverrides, bundle.tables)
       };
     });
   }
@@ -4477,7 +4487,29 @@ export function StudioPage({
       return {
         ...current,
         reportTypeOverrides: nextOverrides,
-        currentObjects: rebuildPendingWorkbookImportObjects(current.baseObjects, current.importedTablesById, sourceTable, current.skippedReportIds, nextOverrides, current.sourceTables)
+        currentObjects: rebuildPendingWorkbookImportObjects(current.baseObjects, current.importedTablesById, sourceTable, current.skippedReportIds, nextOverrides, current.sourceTables, current.reportSourceTableOverrides, bundle.tables)
+      };
+    });
+  }
+
+  function updatePendingImportReportSourceTable(reportId: string, tableId: string) {
+    const targetTable = bundle.tables.find((table) => table.id === tableId) || null;
+    setPendingWorkbookImport((current) => {
+      if (!current) return current;
+      const baseReport = current.baseObjects[reportId];
+      if (!baseReport || baseReport.type !== "report") return current;
+      const importedTable = current.importedTablesById[(baseReport as ReportDefinition).sourceTableId] || null;
+      const remapped = targetTable
+        ? remapImportedReportToSourceTable(baseReport as ReportDefinition, importedTable, targetTable)
+        : remapImportedReportToSourceTable(baseReport as ReportDefinition, importedTable, { id: "", name: "", description: "", fields: [] });
+      const typeOverride = current.reportTypeOverrides[reportId];
+      const withType = typeOverride
+        ? applyImportTypeKeyToReport(remapped as ReportDefinition, typeOverride)
+        : remapped;
+      return {
+        ...current,
+        reportSourceTableOverrides: { ...current.reportSourceTableOverrides, [reportId]: tableId },
+        currentObjects: { ...current.currentObjects, [reportId]: withType }
       };
     });
   }
@@ -4644,6 +4676,21 @@ export function StudioPage({
                           {issues.length ? `${issues.length} need review` : `${matchedReferencedCount}/${Math.max(referencedFieldIds.length, matchedReferencedCount || 1)} matched`}
                         </span>
                       </div>
+
+                      {pendingWorkbookImport && (pendingWorkbookImport.sourceTables || []).length > 1 ? (
+                        <div className="filter-grid compact-grid">
+                          <label className="field">
+                            <span>Source table</span>
+                            <SearchableSelect
+                              value={report.sourceTableId}
+                              options={bundle.tables.map((t) => ({ value: t.id, label: t.name, keywords: [t.description] }))}
+                              allowEmpty
+                              emptyOptionLabel="Choose a platform table"
+                              onChange={(tableId) => updatePendingImportReportSourceTable(report.id, tableId)}
+                            />
+                          </label>
+                        </div>
+                      ) : null}
 
                       {issues.length ? (
                         <div className="sync-status sync-status-warn">

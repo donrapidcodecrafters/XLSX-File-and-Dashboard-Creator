@@ -1164,8 +1164,8 @@ function buildImportedReport(
   ];
   let view = buildDefaultReportView({
     mode: "table",
-    showSummary: true,
-    showDetails: true,
+    showSummary: false,
+    showDetails: false,
     titleFieldId: titleField?.id || selectedFieldIds[0] || ""
   });
   // Summary matrix detection: structural, always runs regardless of visual inference flag

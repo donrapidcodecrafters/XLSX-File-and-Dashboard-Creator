@@ -201,6 +201,7 @@ export async function registerSessionAuth(app: FastifyInstance) {
     secret: apiConfig.auth.sessionSecret,
     cookieName: apiConfig.auth.sessionCookieName,
     saveUninitialized: false,
+    rolling: true,
     store: isPostgresEnabled() ? new PostgresSessionStore() : undefined,
     cookie: {
       httpOnly: true,
