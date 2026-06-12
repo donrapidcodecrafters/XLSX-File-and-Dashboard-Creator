@@ -3349,11 +3349,10 @@ export function StudioPage({
           .filter((object): object is ReportDefinition => Boolean(object) && object.type === "report")
           .filter((candidate) => collectReportImportIssues(candidate, bundle.tables.find((tableDefinition) => tableDefinition.id === nextImportState.sourceTableId) || null).length > 0);
         if (!remainingReports.length) {
-          void finalizeWorkbookImport(nextImportState);
-          pushToast("Imported report saved. Opening the dashboard and applying the workbook.");
-          return;
+          pushToast("All reports are ready. Click Save to create the dashboard and reports.");
+        } else {
+          pushToast(`Imported report saved. ${remainingReports.length} report${remainingReports.length === 1 ? "" : "s"} still need review.`);
         }
-        pushToast(`Imported report saved. ${remainingReports.length} report${remainingReports.length === 1 ? "" : "s"} still need review.`);
         return;
       }
       pushToast("Imported report setup updated.");
