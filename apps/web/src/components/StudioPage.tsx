@@ -3563,7 +3563,7 @@ export function StudioPage({
     pushToast("Reapplied change.");
   }
 
-  async function persistRemote(nextDocument: StudioDocument, options?: { removedObjectIds?: string[] }) {
+  async function persistRemote(nextDocument: StudioDocument, options?: { removedObjectIds?: string[]; silent?: boolean }): Promise<boolean> {
     setSavingRemote(true);
     try {
       const response = await saveStudioDocument(nextDocument, { removedObjectIds: options?.removedObjectIds || [] });
@@ -3577,15 +3577,18 @@ export function StudioPage({
       setDocumentState(scopedPersistedDocument);
       notifyWorkspaceUpdated();
       setLastQuickbaseSync(response.sync || null);
-      if (response.sync?.enabled) {
-        if (response.sync.ok) {
-          pushToast(`${response.sync.message} ${response.sync.savedObjects} objects · ${response.sync.savedSettings} settings · ${response.sync.savedVersions} versions.`, "ok");
+      if (!options?.silent) {
+        if (response.sync?.enabled) {
+          if (response.sync.ok) {
+            pushToast(`${response.sync.message} ${response.sync.savedObjects} objects · ${response.sync.savedSettings} settings · ${response.sync.savedVersions} versions.`, "ok");
+          } else {
+            pushToast(response.sync.message, "warn");
+          }
         } else {
-          pushToast(response.sync.message, "warn");
+          pushToast("Hosted studio saved.");
         }
-      } else {
-        pushToast("Hosted studio saved.");
       }
+      return true;
     } catch (error) {
       setLastQuickbaseSync({
         enabled: true,
@@ -3597,6 +3600,7 @@ export function StudioPage({
         savedStorageConfig: 0
       });
       pushToast(error instanceof Error ? error.message : "Save failed.", "danger");
+      return false;
     } finally {
       setSavingRemote(false);
     }
@@ -4403,9 +4407,17 @@ export function StudioPage({
       ? importState.primaryObjectId
       : finalImportedObjectIds[0] || "";
     const sourceLabel = sourceTable?.name || (importState.sourceTables.length > 1 ? `${importState.sourceTables.length} data sources` : importState.sourceTables[0]?.name || "source data");
-    pushToast(`Created imported ${importState.review.dashboardCreated ? "dashboard and reports" : "reports"} using ${sourceLabel}.`);
-    // Save FIRST — navigate after so the render fires with objects already on the server
-    await persistRemote(nextDocument);
+    // Save FIRST — navigate after so the render fires with objects already on the server.
+    // Retry once on failure; if still failing, navigate anyway (local state is intact).
+    let saved = await persistRemote(nextDocument, { silent: true });
+    if (!saved) {
+      saved = await persistRemote(nextDocument, { silent: true });
+    }
+    if (saved) {
+      pushToast(`Created imported ${importState.review.dashboardCreated ? "dashboard and reports" : "reports"} using ${sourceLabel}.`);
+    } else {
+      pushToast(`Created imported ${importState.review.dashboardCreated ? "dashboard and reports" : "reports"} using ${sourceLabel} — could not save to server, will retry on next load.`, "warn");
+    }
     if (nextPrimaryObjectId) {
       navigate(buildHostedRoute(`/studio/${nextPrimaryObjectId}`));
     }

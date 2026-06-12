@@ -537,7 +537,11 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
                   <input
                     type="text"
                     value={newWorkbookName}
-                    onChange={(e) => setNewWorkbookName(e.target.value)}
+                    onChange={(e) => {
+                      setNewWorkbookName(e.target.value);
+                      // Auto-populate base datasource name when user hasn't manually edited it
+                      setMultiSheetBaseName((prev) => prev === newWorkbookName || prev === "" ? e.target.value : prev);
+                    }}
                     placeholder="e.g. Sales Data, Claims Report, Employee List"
                     disabled={importing}
                     autoFocus

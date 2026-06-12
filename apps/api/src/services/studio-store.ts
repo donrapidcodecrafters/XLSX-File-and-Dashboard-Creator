@@ -186,9 +186,12 @@ export class StudioStore {
   private load(): StudioDocument {
     const persisted = loadPersistedDocument();
     if (persisted) return persisted;
-    const seed = buildStudioDocument();
-    this.persist(seed);
-    return seed;
+    // Disk file missing or corrupt — return an in-memory seed WITHOUT persisting it.
+    // initializeFromPostgres() will recover the real document from Postgres on the
+    // first request and write it back to disk. Calling persist() here would queue a
+    // Postgres overwrite of the empty seed, permanently destroying any document that
+    // survived in Postgres (e.g. after a crash mid-disk-write).
+    return buildStudioDocument();
   }
 
   private persist(document: StudioDocument, options: { skipCacheWrite?: boolean } = {}) {

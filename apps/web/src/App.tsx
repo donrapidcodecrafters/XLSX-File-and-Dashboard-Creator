@@ -541,8 +541,14 @@ function ObjectPage({
         setRefreshNonce(0);
         setRefreshJob(null);
         onObjectViewed(scopedObjectFromDocument.id);
+        // Keep loading=true for reports so the runReport effect below takes over without
+        // a "no results" flash during the gap between this effect and the next one firing.
+        if (scopedObjectFromDocument.type !== "report") {
+          setLoading(false);
+        }
+      } else {
+        setLoading(false);
       }
-      setLoading(false);
       return;
     }
     let active = true;
