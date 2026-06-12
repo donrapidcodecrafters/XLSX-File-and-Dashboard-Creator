@@ -9028,6 +9028,10 @@ html.dark input[type="checkbox"].check-native:checked {
 }
 
 /* ── Dark mode scrollbar ───────────────────────────────────────────────────── */
+html.dark * {
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+
 html.dark ::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.18);
   border-radius: 999px;
@@ -9042,6 +9046,40 @@ html.dark ::-webkit-scrollbar-thumb:hover {
 
 html.dark ::-webkit-scrollbar-track {
   background: transparent;
+}
+
+html.dark .table-shell {
+  scrollbar-color: rgba(255, 255, 255, 0.22) rgba(255, 255, 255, 0.06);
+}
+
+html.dark .table-shell::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+html.dark .table-shell::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+}
+
+html.dark .table-shell::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.38);
+}
+
+html.dark .chart-scroll-shell {
+  scrollbar-color: rgba(255, 255, 255, 0.22) rgba(255, 255, 255, 0.06);
+}
+
+html.dark .chart-scroll-shell::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+html.dark .chart-scroll-shell::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+}
+
+html.dark .chart-scroll-shell::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.38);
 }
 
 .studio-builder-dock-inner {
