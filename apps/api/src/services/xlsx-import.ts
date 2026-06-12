@@ -946,8 +946,8 @@ function buildDefaultReportView(overrides: Partial<ReportViewDefinition> = {}): 
   return {
     mode,
     showChartInTable: false,
-    showSummary: overrides.showSummary ?? (mode === "table" || mode === "summary" || mode === "chart"),
-    showDetails: overrides.showDetails ?? (mode === "table" || mode === "timeline" || mode === "calendar" || mode === "kanban"),
+    showSummary: overrides.showSummary ?? false,
+    showDetails: overrides.showDetails ?? false,
     chartTitle: "",
     decimalPlaces: 2,
     chartType: "bar",
@@ -1180,7 +1180,7 @@ function buildImportedReport(
     }));
     view = buildDefaultReportView({
       mode: "summary",
-      showSummary: true,
+      showSummary: false,
       showDetails: false,
       titleFieldId: titleField?.id || countField?.id || ""
     });
@@ -1190,8 +1190,8 @@ function buildImportedReport(
   } else if (startDateField && endDateField && titleField) {
     view = buildDefaultReportView({
       mode: "timeline",
-      showSummary: true,
-      showDetails: true,
+      showSummary: false,
+      showDetails: false,
       titleFieldId: titleField.id,
       timelineDateField: startDateField.id,
       timelineEndField: endDateField.id
@@ -1201,7 +1201,7 @@ function buildImportedReport(
     const gaugeField = percentLikeNumericFields[0];
     view = buildDefaultReportView({
       mode: "chart",
-      showSummary: true,
+      showSummary: false,
       showDetails: false,
       chartType: "gauge",
       chartFieldId: titleField?.id || countField?.id || gaugeField.id,
@@ -1216,8 +1216,8 @@ function buildImportedReport(
   } else if (numericFields.length >= 2 && categoricalField && lowCategoryCount && looksLikeTargetField(numericFields[1].id)) {
     view = buildDefaultReportView({
       mode: "chart",
-      showSummary: true,
-      showDetails: true,
+      showSummary: false,
+      showDetails: false,
       chartType: "bullet",
       chartFieldId: categoricalField.id,
       chartValueFieldId: numericFields[0].id,
@@ -1237,8 +1237,8 @@ function buildImportedReport(
   } else if (numericFields.length >= 1 && categoricalField && (titleField?.id || "") === categoricalField.id && looksLikeFunnelCategory(categoricalField.id) && isDescendingField(numericFields[0].id)) {
     view = buildDefaultReportView({
       mode: "chart",
-      showSummary: true,
-      showDetails: true,
+      showSummary: false,
+      showDetails: false,
       chartType: "funnel",
       chartFieldId: categoricalField.id,
       chartValueFieldId: numericFields[0].id,
@@ -1252,8 +1252,8 @@ function buildImportedReport(
   } else if (statusField && titleField) {
     view = buildDefaultReportView({
       mode: "kanban",
-      showSummary: true,
-      showDetails: true,
+      showSummary: false,
+      showDetails: false,
       titleFieldId: titleField.id,
       kanbanField: statusField.id
     });
@@ -1261,8 +1261,8 @@ function buildImportedReport(
   } else if (numericFields.length >= 1 && categoricalField && seriesField && distinctCount(categoricalField.id) <= 12 && distinctCount(seriesField.id) <= 12 && rows.length <= 144) {
     view = buildDefaultReportView({
       mode: "chart",
-      showSummary: true,
-      showDetails: true,
+      showSummary: false,
+      showDetails: false,
       chartType: "heatmap",
       chartFieldId: categoricalField.id,
       chartSeriesFieldId: seriesField.id,
@@ -1280,8 +1280,8 @@ function buildImportedReport(
     const progressField = percentLikeNumericFields[0];
     view = buildDefaultReportView({
       mode: "chart",
-      showSummary: true,
-      showDetails: true,
+      showSummary: false,
+      showDetails: false,
       chartType: distinctCount(categoricalField.id) <= 5 ? "radial-bar" : "progress-bar",
       chartFieldId: categoricalField.id,
       chartValueFieldId: progressField.id,
@@ -1295,8 +1295,8 @@ function buildImportedReport(
   } else if (numericFields.length >= 1 && categoricalField && looksLikePeriodicCategory(categoricalField.id)) {
     view = buildDefaultReportView({
       mode: "chart",
-      showSummary: true,
-      showDetails: true,
+      showSummary: false,
+      showDetails: false,
       chartType: "radar",
       chartFieldId: categoricalField.id,
       chartSeriesFieldId: seriesField?.id || "",
@@ -1311,8 +1311,8 @@ function buildImportedReport(
   } else if (numericFields.length >= 1 && categoricalField && hasMixedDirectionField(numericFields[0].id) && lowCategoryCount) {
     view = buildDefaultReportView({
       mode: "chart",
-      showSummary: true,
-      showDetails: true,
+      showSummary: false,
+      showDetails: false,
       chartType: "waterfall",
       chartFieldId: categoricalField.id,
       chartValueFieldId: numericFields[0].id,
@@ -1326,8 +1326,8 @@ function buildImportedReport(
   } else if (numericFields.length >= 3) {
     view = buildDefaultReportView({
       mode: "chart",
-      showSummary: true,
-      showDetails: true,
+      showSummary: false,
+      showDetails: false,
       chartType: "bubble",
       chartFieldId: numericFields[0].id,
       chartValueFieldId: numericFields[1].id,
@@ -1348,8 +1348,8 @@ function buildImportedReport(
     const dateLikeCategory = categoricalField.type === "date" || categoricalField.type === "datetime";
     view = buildDefaultReportView({
       mode: "chart",
-      showSummary: true,
-      showDetails: true,
+      showSummary: false,
+      showDetails: false,
       chartType: dateLikeCategory ? "line" : "line-bar",
       chartFieldId: categoricalField.id,
       chartValueFieldId: numericFields[0].id,
@@ -1376,8 +1376,8 @@ function buildImportedReport(
     const lowCategoryCount = distinctCount(categoricalField.id) <= 6 && rows.length <= 12;
     view = buildDefaultReportView({
       mode: "chart",
-      showSummary: true,
-      showDetails: true,
+      showSummary: false,
+      showDetails: false,
       chartType: dateLikeCategory ? "line" : (lowCategoryCount ? "donut" : "bar"),
       chartFieldId: categoricalField.id,
       chartSeriesFieldId: !dateLikeCategory && seriesField ? seriesField.id : "",
@@ -1625,7 +1625,7 @@ function buildImportedDashboard(
           mode: "linked",
           displayMode: "summary",
           showDetails: false,
-          showSummary: true,
+          showSummary: false,
           reportId: report.id
         });
       };
@@ -1648,7 +1648,7 @@ function buildImportedDashboard(
           layout,
           mode: "linked",
           displayMode: "table",
-          showDetails: true,
+          showDetails: false,
           showSummary: false,
           reportId: report.id
         });
@@ -1734,7 +1734,7 @@ function buildImportedDashboard(
           layout: { w: 12, h: 4, x: 1, y: nextY },
           mode: "linked",
           displayMode: "table",
-          showDetails: true,
+          showDetails: false,
           showSummary: false,
           reportId: supportReport.id
         });

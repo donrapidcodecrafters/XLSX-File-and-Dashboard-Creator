@@ -25,8 +25,8 @@ function buildReportView(overrides: Partial<ReportViewDefinition> = {}): ReportV
   return {
     mode,
     showChartInTable: false,
-    showSummary: overrides.showSummary ?? (mode === "table" || mode === "summary" || mode === "chart"),
-    showDetails: overrides.showDetails ?? (mode === "table" || mode === "timeline" || mode === "calendar" || mode === "kanban"),
+    showSummary: overrides.showSummary ?? false,
+    showDetails: overrides.showDetails ?? false,
     chartTitle: "",
     decimalPlaces: 2,
     chartType: "bar",
@@ -198,7 +198,7 @@ function createWidget(input: Partial<WidgetDefinition> & Pick<WidgetDefinition, 
     mode: input.mode,
     displayMode: input.displayMode || "inherit",
     showDetails: input.showDetails ?? false,
-    showSummary: input.showSummary ?? true,
+    showSummary: input.showSummary ?? false,
     reportId: input.reportId,
     layout: {
       w: input.layout?.w || 6,
@@ -716,7 +716,7 @@ export function normalizeStudioDocument(input: Partial<StudioDocument> | null | 
             mode: widget.mode === "copied" ? "copied" : "linked",
             displayMode: widget.displayMode === "table" || widget.displayMode === "summary" || widget.displayMode === "chart" ? widget.displayMode : "inherit",
             showDetails: widget.showDetails === true,
-            showSummary: widget.showSummary !== false,
+            showSummary: widget.showSummary === true,
             reportId: String(widget.reportId || ""),
             zIndex: Number.isFinite(Number(widget.zIndex)) ? Math.max(0, Math.round(Number(widget.zIndex))) : 0,
             filterBehavior: widget.filterBehavior === "ignore-dashboard-filters"
