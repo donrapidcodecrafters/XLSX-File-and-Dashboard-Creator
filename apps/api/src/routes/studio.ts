@@ -184,6 +184,11 @@ export async function registerStudioRoutes(app: FastifyInstance) {
     });
     updateRefreshScheduleMetadata(mergedDocument);
     const document = studioStore.saveDocument(mergedDocument);
+    if (!studioStore.diskWriteOk) {
+      app.log.error({ incomingObjectCount: incomingObjectIds.length }, "PUT /api/studio/document disk write failed — returning 500 so client retries");
+      reply.code(500);
+      return { message: "Document could not be written to disk. Please try saving again." };
+    }
     app.log.info({ savedObjectCount: Object.keys(document.bundle.objects).length, savedObjectIds: Object.keys(document.bundle.objects) }, "PUT /api/studio/document saved");
     // Await Postgres write so a PM2 restart right after save can't lose user changes.
     await studioStore.awaitPendingPostgresWrite();

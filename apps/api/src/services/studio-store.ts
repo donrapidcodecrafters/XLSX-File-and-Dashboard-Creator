@@ -181,6 +181,7 @@ export class StudioStore {
   private lastReloadedFromDiskAt = 0;
   private pgInitialized = false;
   private pendingPostgresWrite: Promise<void> = Promise.resolve();
+  private _lastDiskWriteOk = true;
 
   constructor() {
     // Load config from disk, then xlsx data from cache — xlsx data is loaded ONCE
@@ -208,12 +209,17 @@ export class StudioStore {
     return buildStudioDocument();
   }
 
+  get diskWriteOk(): boolean {
+    return this._lastDiskWriteOk;
+  }
+
   private persist(document: StudioDocument, options: { skipCacheWrite?: boolean } = {}) {
     reconcileRefreshStatusWithCache(document, this.cacheMeta);
 
     // Write config-only document file (no xlsx rows) — keeps the file small (~100KB)
     // regardless of how much data is imported, preventing JSON.stringify OOM spikes.
     // Xlsx rows are kept separately in CACHE_PATH and merged back on load.
+    this._lastDiskWriteOk = false;
     try {
       mkdirSync(dirname(STORAGE_PATH), { recursive: true });
       const stripped = stripCachedRows(document);
@@ -221,6 +227,7 @@ export class StudioStore {
       const tmpPath = STORAGE_PATH + ".tmp";
       writeFileSync(tmpPath, JSON.stringify(configOnly));
       renameSync(tmpPath, STORAGE_PATH);
+      this._lastDiskWriteOk = true;
     } catch (err) {
       console.error("[studio-store] document file write failed:", err);
     }

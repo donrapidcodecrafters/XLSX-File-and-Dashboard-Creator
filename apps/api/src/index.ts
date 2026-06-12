@@ -22,6 +22,7 @@ import { checkAndTriggerScheduledRefreshes, startRefreshScheduler } from "./serv
 import { processDueConfigs, startReportScheduler } from "./services/report-scheduler.js";
 import { startJobQueue, stopJobQueue } from "./services/job-queue.js";
 import { recoverExportJobsOnStartup } from "./services/export-jobs.js";
+import { studioStore } from "./services/studio-store.js";
 
 const app = Fastify({
   logger: true,
@@ -286,6 +287,7 @@ async function shutdown(signal: string) {
   app.log.info(`Received ${signal}; shutting down API.`);
   await app.close();
   await stopJobQueue(app.log);
+  await studioStore.awaitPendingPostgresWrite();
   await closePgPool();
 }
 

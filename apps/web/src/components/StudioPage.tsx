@@ -4406,19 +4406,23 @@ export function StudioPage({
       ? importState.primaryObjectId
       : finalImportedObjectIds[0] || "";
     const sourceLabel = sourceTable?.name || (importState.sourceTables.length > 1 ? `${importState.sourceTables.length} data sources` : importState.sourceTables[0]?.name || "source data");
-    // Save FIRST — navigate after so the render fires with objects already on the server.
-    // Retry once on failure; if still failing, navigate anyway (local state is intact).
+    // Save FIRST — only navigate after confirmed server save so the portal sees the
+    // new objects immediately. Retry once on failure. If still failing, stay on the
+    // current page so the user can retry via the Save button; do NOT navigate because
+    // the dashboard builder would appear correct from local state but vanish on reload.
     let saved = await persistRemote(nextDocument, { silent: true });
     if (!saved) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 2000));
       saved = await persistRemote(nextDocument, { silent: true });
     }
     if (saved) {
       pushToast(`Created imported ${importState.review.dashboardCreated ? "dashboard and reports" : "reports"} using ${sourceLabel}.`);
+      if (nextPrimaryObjectId) {
+        navigate(buildHostedRoute(`/studio/${nextPrimaryObjectId}`));
+      }
     } else {
-      pushToast(`Created imported ${importState.review.dashboardCreated ? "dashboard and reports" : "reports"} using ${sourceLabel} — could not save to server, will retry on next load.`, "warn");
-    }
-    if (nextPrimaryObjectId) {
-      navigate(buildHostedRoute(`/studio/${nextPrimaryObjectId}`));
+      pushToast(`Import created but could not save to server. Use the Save button to retry — do not reload until saved.`, "danger");
+      // Do not navigate — user stays on the page with the dirty indicator visible.
     }
     setDataImportVersion((v) => v + 1);
     fetchStudioSources().then((response) => {
