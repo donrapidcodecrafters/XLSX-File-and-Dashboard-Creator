@@ -21,6 +21,28 @@ import { isPostgresEnabled } from "../config/env.js";
 
 const STALE_REFRESH_JOB_MS = 3 * 60 * 1000;
 
+// Cache source attribute lookups so every GET /api/studio/document doesn't
+// run a full JOIN query. Cache is invalidated after any xlsx ingest or source delete.
+let sourceAttributeCache: Map<string, import("@studio/shared").FieldDefinition[]> | null = null;
+let sourceAttributeCacheAt = 0;
+const SOURCE_ATTRIBUTE_CACHE_TTL_MS = 30_000;
+
+export function invalidateSourceAttributeCache() {
+  sourceAttributeCache = null;
+  sourceAttributeCacheAt = 0;
+}
+
+async function getCachedSourceAttributes(): Promise<Map<string, import("@studio/shared").FieldDefinition[]>> {
+  const now = Date.now();
+  if (sourceAttributeCache && now - sourceAttributeCacheAt < SOURCE_ATTRIBUTE_CACHE_TTL_MS) {
+    return sourceAttributeCache;
+  }
+  const result = await loadAllSourceAttributes().catch(() => new Map<string, import("@studio/shared").FieldDefinition[]>());
+  sourceAttributeCache = result;
+  sourceAttributeCacheAt = now;
+  return result;
+}
+
 // Limit concurrent Excel parses to 1 to prevent OOM kills on large files.
 // Three simultaneous ExcelJS parses can spike to 2.4GB+ and OOM-kill the process.
 let xlsxParseSemaphore = Promise.resolve();
@@ -44,11 +66,13 @@ export async function registerStudioRoutes(app: FastifyInstance) {
     updateRefreshScheduleMetadata(current);
     // Clear any stale running=true left by a crash or restart — no-op if a real job is active.
     getActiveRefreshJob();
-    const document = studioStore.flushCurrent({ markSavedAt: false });
+    // Read-only: do NOT flush/persist here — writing the xlsx cache file on every GET
+    // added 1-3 seconds of disk I/O to every page load.
+    const document = studioStore.getDocument();
 
     // Enrich bundle.tables with authoritative field definitions from Postgres (app_attributes).
-    // This ensures the field picker always shows columns from the data source, not from QB schema.
-    const sourceFieldsBySourceId = await loadAllSourceAttributes().catch(() => new Map<string, import("@studio/shared").FieldDefinition[]>());
+    // Result is cached in-process for 30s so every page load doesn't hit Postgres.
+    const sourceFieldsBySourceId = await getCachedSourceAttributes();
     const enrichedTables = sourceFieldsBySourceId.size > 0
       ? document.bundle.tables.map((table) => {
           const fields = sourceFieldsBySourceId.get(table.id)
@@ -364,6 +388,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
         dataSheets: dataSheets.length > 0 ? dataSheets : undefined
       }));
       invalidateSourceCaches(...result.sources.map((s) => s.sourceId));
+      invalidateSourceAttributeCache();
       void logAuditEvent("source.import.recreate", { userEmail: (request as unknown as { session?: { userEmail?: string } }).session?.userEmail, objectType: "source", metadata: { filename, sourceCount: result.sources.length } });
       return {
         document: result.document,
@@ -420,6 +445,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
         });
       });
       invalidateSourceCaches(...ingested.sources.map((s) => s.sourceId));
+      invalidateSourceAttributeCache();
       void logAuditEvent("source.import", { userEmail: (request as unknown as { session?: { userEmail?: string } }).session?.userEmail, objectType: "source", metadata: { filename, sourceCount: ingested.sources.length } });
       return {
         document: ingested.document,
@@ -708,6 +734,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
       }));
     }
     invalidateSourceCaches(sourceId);
+    invalidateSourceAttributeCache();
     void logAuditEvent("source.delete", {
       userEmail: (request as unknown as { session?: { userEmail?: string } }).session?.userEmail,
       objectType: "source",

@@ -72,13 +72,8 @@ function loadPersistedCacheMeta(): Record<string, PersistedCacheMetaEntry> {
 function loadPersistedDocument(): StudioDocument | null {
   try {
     const raw = readFileSync(STORAGE_PATH, "utf8");
-    const doc = normalizeStudioDocument(JSON.parse(raw) as StudioDocument);
-    // Restore xlsx data rows from the cache file — the document file stores config only.
-    const cached = loadPersistedCache();
-    if (Object.keys(cached).length > 0) {
-      doc.bundle.data = { ...cached, ...doc.bundle.data };
-    }
-    return doc;
+    // Config only — xlsx data is merged in separately by the caller.
+    return normalizeStudioDocument(JSON.parse(raw) as StudioDocument);
   } catch {
     return null;
   }
@@ -91,13 +86,8 @@ async function loadDocumentFromPostgres(): Promise<StudioDocument | null> {
       "SELECT document FROM studio_document WHERE id = 1"
     );
     if (!result.rows[0]) return null;
-    const doc = normalizeStudioDocument(result.rows[0].document as StudioDocument);
-    // Restore xlsx data rows from the cache file — Postgres stores config only.
-    const cached = loadPersistedCache();
-    if (Object.keys(cached).length > 0) {
-      doc.bundle.data = { ...cached, ...doc.bundle.data };
-    }
-    return doc;
+    // Config only — xlsx data is merged in separately by the caller.
+    return normalizeStudioDocument(result.rows[0].document as StudioDocument);
   } catch {
     return null;
   }
@@ -193,7 +183,14 @@ export class StudioStore {
   private pendingPostgresWrite: Promise<void> = Promise.resolve();
 
   constructor() {
+    // Load config from disk, then xlsx data from cache — xlsx data is loaded ONCE
+    // at startup and kept in memory. reloadFromDisk() preserves in-memory xlsx data
+    // across config reloads, so the cache file is never re-read during normal operation.
     this.document = this.load();
+    const initialCache = loadPersistedCache();
+    if (Object.keys(initialCache).length > 0) {
+      this.document.bundle.data = { ...initialCache, ...this.document.bundle.data };
+    }
     this.cacheMeta = loadPersistedCacheMeta();
     reconcileRefreshStatusWithCache(this.document, this.cacheMeta);
     this.lastHydratedAt = Date.parse(this.document.sync?.lastLoadedAt || "") || 0;
@@ -262,7 +259,13 @@ export class StudioStore {
     const persisted = loadPersistedDocument();
     this.lastReloadedFromDiskAt = Date.now();
     if (!persisted) return;
+    // Preserve in-memory xlsx data — the cache file is only read once at startup.
+    // Reloading it on every disk-reload would parse 5-10MB of JSON on every request.
+    const xlsxData = this.document.bundle.data;
     this.document = persisted;
+    if (Object.keys(xlsxData).length > 0) {
+      this.document.bundle.data = xlsxData;
+    }
     this.cacheMeta = loadPersistedCacheMeta();
     reconcileRefreshStatusWithCache(this.document, this.cacheMeta);
     this.lastHydratedAt = Date.parse(this.document.sync?.lastLoadedAt || "") || this.lastHydratedAt;
@@ -301,7 +304,17 @@ export class StudioStore {
       const pgSavedAt = Date.parse(pgDoc.sync?.lastSavedAt || "");
       const usePostgres = !diskSavedAt || pgSavedAt >= diskSavedAt;
       if (usePostgres) {
+        // Preserve in-memory xlsx data when switching to the Postgres config doc.
+        const xlsxData = this.document.bundle.data;
         this.document = pgDoc;
+        if (Object.keys(xlsxData).length > 0) {
+          this.document.bundle.data = xlsxData;
+        } else {
+          const cached = loadPersistedCache();
+          if (Object.keys(cached).length > 0) {
+            this.document.bundle.data = cached;
+          }
+        }
         this.cacheMeta = loadPersistedCacheMeta();
         reconcileRefreshStatusWithCache(this.document, this.cacheMeta);
         this.lastHydratedAt = Date.parse(this.document.sync?.lastLoadedAt || "") || this.lastHydratedAt;
