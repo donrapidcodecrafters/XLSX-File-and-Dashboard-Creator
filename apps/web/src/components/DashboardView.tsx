@@ -1123,7 +1123,8 @@ export function DashboardView({
                   .filter((filterId) => String(runtimeFilters[filterId] || "").trim())
               ));
               const resolvedDisplayMode = resolveWidgetDisplayMode(widget.widget, widget.report.view.mode);
-              const isSummaryOnly = resolvedDisplayMode === "summary";
+              const crosstabData = pagedResult.crosstab || widget.result.crosstab;
+              const isSummaryOnly = resolvedDisplayMode === "summary" && !crosstabData;
               const widgetTitle = widget.report.name || widget.widget.title;
               const displayTitle = isSummaryOnly ? `${widgetTitle} - Summary` : widgetTitle;
               return (
@@ -1149,6 +1150,28 @@ export function DashboardView({
                         <span>{item.label}</span>
                       </div>
                     ))}
+                  </div>
+                ) : null}
+                {widget.status === "complete" && crosstabData ? (
+                  <div className="pivot-table-shell">
+                    <table className="pivot-table">
+                      <thead><tr>
+                        <th className="pivot-metric-col"></th>
+                        {crosstabData.columns.map((col, ci) => (
+                          <th key={ci} className={col === "Grand Total" ? "pivot-grand-total" : ""}>{col || "(blank)"}</th>
+                        ))}
+                      </tr></thead>
+                      <tbody>
+                        {crosstabData.rows.map((row) => (
+                          <tr key={row.label}>
+                            <td className="pivot-row-header">{row.label}</td>
+                            {row.formatted.map((val, vi) => (
+                              <td key={vi} className={crosstabData.columns[vi] === "Grand Total" ? "pivot-grand-total" : ""}>{val}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 ) : null}
                 {widget.status === "complete" && crossFilterOptions.length ? (
@@ -1238,7 +1261,8 @@ export function DashboardView({
             <div className="card-head">
               <strong>{(() => {
                 const base = focusedWidget.widget.title || focusedWidget.report.name;
-                const focusedIsSummaryOnly = resolveWidgetDisplayMode(focusedWidget.widget, focusedWidget.report.view.mode) === "summary";
+                const focusedResolvedMode = resolveWidgetDisplayMode(focusedWidget.widget, focusedWidget.report.view.mode);
+                const focusedIsSummaryOnly = focusedResolvedMode === "summary" && !focusedWidget.result.crosstab;
                 return focusedIsSummaryOnly ? `${base} - Summary` : base;
               })()}</strong>
               <div className="link-toolbar">
@@ -1248,7 +1272,7 @@ export function DashboardView({
                 <button className="ghost-button" onClick={() => setFocusedWidgetId("")}>Close</button>
               </div>
             </div>
-            {(focusedWidget.widget.showSummary || resolveWidgetDisplayMode(focusedWidget.widget, focusedWidget.report.view.mode) === "summary") && focusedWidget.result.summary.length > 0 ? (
+            {(focusedWidget.widget.showSummary || (resolveWidgetDisplayMode(focusedWidget.widget, focusedWidget.report.view.mode) === "summary" && !focusedWidget.result.crosstab)) && focusedWidget.result.summary.length > 0 ? (
               <div className="widget-metrics">
                 {focusedWidget.result.summary.map((item) => (
                   <div key={item.label} className="mini-stat">
@@ -1256,6 +1280,28 @@ export function DashboardView({
                     <span>{item.label}</span>
                   </div>
                 ))}
+              </div>
+            ) : null}
+            {focusedWidget.result.crosstab ? (
+              <div className="pivot-table-shell">
+                <table className="pivot-table">
+                  <thead><tr>
+                    <th className="pivot-metric-col"></th>
+                    {focusedWidget.result.crosstab.columns.map((col, ci) => (
+                      <th key={ci} className={col === "Grand Total" ? "pivot-grand-total" : ""}>{col || "(blank)"}</th>
+                    ))}
+                  </tr></thead>
+                  <tbody>
+                    {focusedWidget.result.crosstab.rows.map((row) => (
+                      <tr key={row.label}>
+                        <td className="pivot-row-header">{row.label}</td>
+                        {row.formatted.map((val, vi) => (
+                          <td key={vi} className={focusedWidget.result.crosstab!.columns[vi] === "Grand Total" ? "pivot-grand-total" : ""}>{val}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             ) : null}
             {focusedWidgetCrossFilterOptions.length ? (
