@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { buildStudioDocument, normalizeStudioDocument, type StudioDocument, type StudioObject, type StudioVersionRecord } from "@studio/shared";
 import { isPostgresEnabled } from "../config/env.js";
@@ -72,7 +72,13 @@ function loadPersistedCacheMeta(): Record<string, PersistedCacheMetaEntry> {
 function loadPersistedDocument(): StudioDocument | null {
   try {
     const raw = readFileSync(STORAGE_PATH, "utf8");
-    return normalizeStudioDocument(JSON.parse(raw) as StudioDocument);
+    const doc = normalizeStudioDocument(JSON.parse(raw) as StudioDocument);
+    // Restore xlsx data rows from the cache file — the document file stores config only.
+    const cached = loadPersistedCache();
+    if (Object.keys(cached).length > 0) {
+      doc.bundle.data = { ...cached, ...doc.bundle.data };
+    }
+    return doc;
   } catch {
     return null;
   }
@@ -85,7 +91,13 @@ async function loadDocumentFromPostgres(): Promise<StudioDocument | null> {
       "SELECT document FROM studio_document WHERE id = 1"
     );
     if (!result.rows[0]) return null;
-    return normalizeStudioDocument(result.rows[0].document as StudioDocument);
+    const doc = normalizeStudioDocument(result.rows[0].document as StudioDocument);
+    // Restore xlsx data rows from the cache file — Postgres stores config only.
+    const cached = loadPersistedCache();
+    if (Object.keys(cached).length > 0) {
+      doc.bundle.data = { ...cached, ...doc.bundle.data };
+    }
+    return doc;
   } catch {
     return null;
   }
@@ -94,11 +106,16 @@ async function loadDocumentFromPostgres(): Promise<StudioDocument | null> {
 async function saveDocumentToPostgres(document: StudioDocument): Promise<void> {
   if (!isPostgresEnabled()) return;
   try {
+    // Strip ALL data rows — Postgres stores config only (objects, tables, settings).
+    // Xlsx rows live in studio-cache.json; QB rows are fetched on demand.
+    // This keeps the Postgres payload small (~100KB) regardless of how much data is imported.
+    const stripped = stripCachedRows(document);
+    const configOnly = { ...stripped, bundle: { ...stripped.bundle, data: {} } };
     await pgQuery(
       `INSERT INTO studio_document (id, document, updated_at)
        VALUES (1, $1::jsonb, now())
        ON CONFLICT (id) DO UPDATE SET document = EXCLUDED.document, updated_at = now()`,
-      [JSON.stringify(stripCachedRows(document))]
+      [JSON.stringify(configOnly)]
     );
   } catch {
     // Non-blocking — disk is fallback
@@ -195,21 +212,47 @@ export class StudioStore {
   }
 
   private persist(document: StudioDocument, options: { skipCacheWrite?: boolean } = {}) {
-    mkdirSync(dirname(STORAGE_PATH), { recursive: true });
     reconcileRefreshStatusWithCache(document, this.cacheMeta);
-    writeFileSync(STORAGE_PATH, JSON.stringify(stripCachedRows(document), null, 2));
-    if (!options.skipCacheWrite) {
-      // Only cache xlsx-imported rows — QB rows are large and fetched from Postgres on demand
-      const xlsxOnlyData = stripCachedRows(document).bundle.data;
-      writeFileSync(CACHE_PATH, JSON.stringify(xlsxOnlyData, null, 2));
+
+    // Write config-only document file (no xlsx rows) — keeps the file small (~100KB)
+    // regardless of how much data is imported, preventing JSON.stringify OOM spikes.
+    // Xlsx rows are kept separately in CACHE_PATH and merged back on load.
+    try {
+      mkdirSync(dirname(STORAGE_PATH), { recursive: true });
+      const stripped = stripCachedRows(document);
+      const configOnly = { ...stripped, bundle: { ...stripped.bundle, data: {} } };
+      const tmpPath = STORAGE_PATH + ".tmp";
+      writeFileSync(tmpPath, JSON.stringify(configOnly));
+      renameSync(tmpPath, STORAGE_PATH);
+    } catch (err) {
+      console.error("[studio-store] document file write failed:", err);
     }
-    writeFileSync(CACHE_META_PATH, JSON.stringify(this.cacheMeta || {}, null, 2));
+
+    if (!options.skipCacheWrite) {
+      try {
+        mkdirSync(dirname(CACHE_PATH), { recursive: true });
+        const xlsxOnlyData = stripCachedRows(document).bundle.data;
+        const cacheTmpPath = CACHE_PATH + ".tmp";
+        writeFileSync(cacheTmpPath, JSON.stringify(xlsxOnlyData));
+        renameSync(cacheTmpPath, CACHE_PATH);
+      } catch (err) {
+        console.error("[studio-store] cache file write failed:", err);
+      }
+    }
+
+    try {
+      writeFileSync(CACHE_META_PATH, JSON.stringify(this.cacheMeta || {}));
+    } catch (err) {
+      console.error("[studio-store] cache-meta file write failed:", err);
+    }
+
     this.lastReloadedFromDiskAt = Date.now();
     this.pendingPostgresWrite = this.pendingPostgresWrite.catch(() => {}).then(() => saveDocumentToPostgres(document));
   }
 
   async awaitPendingPostgresWrite(): Promise<void> {
-    await this.pendingPostgresWrite.catch(() => {});
+    const timeout = new Promise<void>((resolve) => setTimeout(resolve, 8000));
+    await Promise.race([this.pendingPostgresWrite.catch(() => {}), timeout]);
   }
 
   private reloadFromDisk(force = false) {
@@ -265,7 +308,11 @@ export class StudioStore {
         this.lastReloadedFromDiskAt = Date.now();
         try {
           mkdirSync(dirname(STORAGE_PATH), { recursive: true });
-          writeFileSync(STORAGE_PATH, JSON.stringify(stripCachedRows(pgDoc), null, 2));
+          const stripped = stripCachedRows(pgDoc);
+          const configOnly = { ...stripped, bundle: { ...stripped.bundle, data: {} } };
+          const tmpPath = STORAGE_PATH + ".tmp";
+          writeFileSync(tmpPath, JSON.stringify(configOnly));
+          renameSync(tmpPath, STORAGE_PATH);
         } catch {
           // Non-fatal
         }
