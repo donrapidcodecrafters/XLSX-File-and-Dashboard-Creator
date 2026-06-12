@@ -208,13 +208,16 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
               groups.push({ sheets: [sheetName], sourceId: undefined, sourceName });
             }
           }
-          // Run all source imports + optional workbook analysis in parallel
-          const [workbookResult, sourceResults] = await Promise.all([
-            recreate ? importStudioWorkbook(file, { maxRowsPerSheet: 500 }) : Promise.resolve(undefined),
-            Promise.all(groups.map(({ sourceId, sourceName, sheets }) =>
-              importStudioWorkbookSource(file, { sourceId, sourceName, dataSheets: sheets })
-            ))
-          ]);
+          // Import data tabs first (datasource creation) — all tabs can run in parallel
+          // with each other since they write to separate Postgres tables.
+          // Only start workbook analysis for the review AFTER all datasources are saved,
+          // so the two heavy operations don't compete for memory at the same time.
+          const sourceResults = await Promise.all(groups.map(({ sourceId, sourceName, sheets }) =>
+            importStudioWorkbookSource(file, { sourceId, sourceName, dataSheets: sheets })
+          ));
+          const workbookResult = recreate
+            ? await importStudioWorkbook(file, { maxRowsPerSheet: 500 })
+            : undefined;
           // Save a profile per imported source group
           for (let i = 0; i < groups.length; i++) {
             const g = groups[i];
