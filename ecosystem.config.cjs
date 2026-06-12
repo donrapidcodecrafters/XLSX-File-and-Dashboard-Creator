@@ -4,6 +4,7 @@ module.exports = {
       name: "quickbase-reporting-api",
       cwd: __dirname,
       script: "apps/api/dist/index.js",
+      node_args: "--max-old-space-size=1400",
       exec_mode: "fork",
       instances: 1,
       max_memory_restart: "1500M",

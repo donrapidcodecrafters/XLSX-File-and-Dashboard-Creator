@@ -21,6 +21,15 @@ import { isPostgresEnabled } from "../config/env.js";
 
 const STALE_REFRESH_JOB_MS = 3 * 60 * 1000;
 
+// Limit concurrent Excel parses to 1 to prevent OOM kills on large files.
+// Three simultaneous ExcelJS parses can spike to 2.4GB+ and OOM-kill the process.
+let xlsxParseSemaphore = Promise.resolve();
+function withXlsxSemaphore<T>(fn: () => Promise<T>): Promise<T> {
+  const result: Promise<T> = xlsxParseSemaphore.then(fn);
+  xlsxParseSemaphore = result.then(() => {}, () => {});
+  return result;
+}
+
 function isRefreshJobStale(job: { status?: string; updatedAt?: string; createdAt?: string } | null) {
   if (!job || (job.status !== "queued" && job.status !== "running")) return false;
   const updatedAt = Date.parse(String(job.updatedAt || job.createdAt || ""));
@@ -221,12 +230,12 @@ export async function registerStudioRoutes(app: FastifyInstance) {
       const query = (request.query as { maxRowsPerSheet?: string } | undefined) || {};
       const maxRowsPerSheet = query.maxRowsPerSheet ? parseInt(query.maxRowsPerSheet, 10) : undefined;
       const current = studioStore.getLiveDocument();
-      const imported = await importWorkbookIntoStudioDocument(
+      const imported = await withXlsxSemaphore(() => importWorkbookIntoStudioDocument(
         current,
         filename,
         buffer,
         { maxRowsPerSheet: maxRowsPerSheet && maxRowsPerSheet > 0 ? maxRowsPerSheet : undefined }
-      );
+      ));
       return {
         document: imported.document,
         primaryObjectId: imported.primaryObjectId,
@@ -347,13 +356,13 @@ export async function registerStudioRoutes(app: FastifyInstance) {
         reply.code(400);
         return { message: "Workbook file upload is required." };
       }
-      const result = await ingestXlsxWorkbookSourceAndRecreate({
+      const result = await withXlsxSemaphore(() => ingestXlsxWorkbookSourceAndRecreate({
         filename,
         buffer: workbookBuffer as Buffer,
         sourceId,
         sourceName,
         dataSheets: dataSheets.length > 0 ? dataSheets : undefined
-      });
+      }));
       invalidateSourceCaches(...result.sources.map((s) => s.sourceId));
       void logAuditEvent("source.import.recreate", { userEmail: (request as unknown as { session?: { userEmail?: string } }).session?.userEmail, objectType: "source", metadata: { filename, sourceCount: result.sources.length } });
       return {
@@ -375,7 +384,6 @@ export async function registerStudioRoutes(app: FastifyInstance) {
       const query = (request.query as { sourceId?: string; sourceName?: string; dataSheets?: string } | undefined) || {};
       let filename = "";
       let workbookBuffer: Buffer | null = null;
-      let streamImport: ReturnType<typeof ingestXlsxWorkbookSourceStream> | null = null;
       let sourceId = String(query.sourceId || "").trim();
       let sourceName = String(query.sourceName || "").trim();
       const dataSheets = String(query.dataSheets || "").split(",").map((s) => s.trim()).filter(Boolean);
@@ -383,13 +391,9 @@ export async function registerStudioRoutes(app: FastifyInstance) {
         const file = await request.file();
         if (file) {
           filename = file.filename || "";
-          streamImport = ingestXlsxWorkbookSourceStream({
-            filename,
-            stream: file.file,
-            sourceId,
-            sourceName,
-            dataSheets: dataSheets.length > 0 ? dataSheets : undefined
-          });
+          // Buffer the file first so concurrent requests don't all parse simultaneously.
+          // After buffering, a semaphore serializes the CPU/memory-intensive ExcelJS parse.
+          workbookBuffer = await file.toBuffer();
         }
       } else {
         const body = (request.body as { filename?: string; base64?: string; sourceId?: string; sourceName?: string } | undefined) || {};
@@ -400,19 +404,21 @@ export async function registerStudioRoutes(app: FastifyInstance) {
         sourceId = sourceId || String(body.sourceId || "").trim();
         sourceName = sourceName || String(body.sourceName || "").trim();
       }
-      if (!filename || (!workbookBuffer && !streamImport)) {
+      if (!filename || !workbookBuffer) {
         reply.code(400);
         return { message: "Workbook file upload is required." };
       }
-      const ingested = streamImport
-        ? await streamImport
-        : await ingestXlsxWorkbookSource({
-            filename,
-            buffer: workbookBuffer as Buffer,
-            sourceId,
-            sourceName,
-            dataSheets: dataSheets.length > 0 ? dataSheets : undefined
-          });
+      const buf = workbookBuffer;
+      const ingested = await withXlsxSemaphore(async () => {
+        const { Readable } = await import("stream");
+        return ingestXlsxWorkbookSourceStream({
+          filename,
+          stream: Readable.from(buf),
+          sourceId,
+          sourceName,
+          dataSheets: dataSheets.length > 0 ? dataSheets : undefined
+        });
+      });
       invalidateSourceCaches(...ingested.sources.map((s) => s.sourceId));
       void logAuditEvent("source.import", { userEmail: (request as unknown as { session?: { userEmail?: string } }).session?.userEmail, objectType: "source", metadata: { filename, sourceCount: ingested.sources.length } });
       return {
