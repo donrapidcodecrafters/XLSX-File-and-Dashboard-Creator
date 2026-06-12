@@ -29,7 +29,8 @@ import {
   type ReportRunResult,
   type SummaryDatum,
   type SummaryMetric,
-  type TableDefinition
+  type TableDefinition,
+  type WidgetDefinition
 } from "@studio/shared";
 import { apiConfig } from "../config/env.js";
 import { ExecutionCache } from "./execution-cache.js";
@@ -58,6 +59,7 @@ interface ExecuteDashboardOptions {
   activeTabId?: string;
   forceLive?: boolean;
   dashboard?: DashboardDefinition;
+  reportOverrides?: Record<string, ReportDefinition>;
 }
 
 interface ExportProgressCallback {
@@ -1749,11 +1751,20 @@ async function executeDashboardUncached(
   // Without this, concurrent widgets that share a source table each try to load
   // all rows simultaneously, causing OOM crashes on large datasets (e.g. 46k rows).
   // After the pre-load, objectStore cache hits are instant for all subsequent widgets.
+  const resolveReport = (widget: WidgetDefinition): ReportDefinition | undefined => {
+    const fromStore = objectStore.resolveWidgetReport(widget);
+    if (fromStore) return fromStore;
+    if (options.reportOverrides && widget.reportId && options.reportOverrides[widget.reportId]) {
+      return options.reportOverrides[widget.reportId];
+    }
+    return undefined;
+  };
+
   if (!options.forceLive) {
     const uniqueTableIds = new Set<string>();
     for (const tab of tabsToRender) {
       for (const widget of tab.widgets) {
-        const rep = objectStore.resolveWidgetReport(widget);
+        const rep = resolveReport(widget);
         if (rep?.sourceTableId) uniqueTableIds.add(rep.sourceTableId);
       }
     }
@@ -1773,7 +1784,7 @@ async function executeDashboardUncached(
     widgetJobs,
     DASHBOARD_WIDGET_CONCURRENCY,
     async ({ widget }) => {
-        const report = objectStore.resolveWidgetReport(widget);
+        const report = resolveReport(widget);
         if (!report) {
           const message = "Widget report not found.";
           const fallbackReport = createFallbackWidgetReport(widget, message);

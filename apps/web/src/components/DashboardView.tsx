@@ -400,7 +400,7 @@ export function DashboardView({
         tabLoadGenerationRef.current === requestGeneration
         && tabRequestSequenceRef.current[tabId] === requestSequence;
       try {
-        const next = await renderDashboard(dashboard.id, runtimeFilters, tabId, { forceLive, dashboard });
+        const next = await renderDashboard(dashboard.id, runtimeFilters, tabId, { forceLive, dashboard, reportOverrides: reportDefinitions });
         if (!requestIsCurrent()) return;
         if (next.refreshJob) {
           onRefreshJobDetectedRef.current?.(next.refreshJob);
@@ -438,7 +438,7 @@ export function DashboardView({
         const requestSequence = (tabRequestSequenceRef.current[tabId] || 0) + 1;
         tabRequestSequenceRef.current[tabId] = requestSequence;
         setTabLoading((current) => ({ ...current, [tabId]: true }));
-        renderDashboard(dashboard.id, runtimeFilters, tabId, { forceLive, dashboard })
+        renderDashboard(dashboard.id, runtimeFilters, tabId, { forceLive, dashboard, reportOverrides: reportDefinitions })
           .then((next) => {
             if (tabRequestSequenceRef.current[tabId] !== requestSequence) return;
             const renderedTab = next.tabs.find((tab) => tab.id === tabId) || next.tabs[0];
@@ -614,7 +614,8 @@ export function DashboardView({
         if (cached?.widgets.length) return cached;
         const rendered = await renderDashboard(dashboard.id, runtimeFilters, tab.id, {
           forceLive,
-          dashboard: exportDashboard
+          dashboard: exportDashboard,
+          reportOverrides: reportDefinitions
         });
         return rendered.tabs.find((item) => item.id === tab.id) || { id: tab.id, name: tab.name, widgets: [] };
       })

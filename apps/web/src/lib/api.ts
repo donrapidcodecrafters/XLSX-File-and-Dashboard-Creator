@@ -235,7 +235,7 @@ export function renderDashboard(
   id: string,
   runtimeFilters: Record<string, string>,
   activeTabId = "",
-  options: { forceLive?: boolean; dashboard?: unknown } = {}
+  options: { forceLive?: boolean; dashboard?: unknown; reportOverrides?: Record<string, unknown> } = {}
 ) {
   return request<DashboardRunResult>("/api/dashboards/" + encodeURIComponent(id) + "/render", {
     method: "POST",
@@ -243,7 +243,8 @@ export function renderDashboard(
       runtimeFilters,
       activeTabId,
       forceLive: options.forceLive === true,
-      dashboard: options.dashboard
+      dashboard: options.dashboard,
+      reportOverrides: options.reportOverrides
     }),
     timeoutMs: DASHBOARD_RENDER_TIMEOUT_MS
   });

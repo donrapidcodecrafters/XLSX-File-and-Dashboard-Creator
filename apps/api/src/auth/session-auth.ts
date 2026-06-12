@@ -512,9 +512,9 @@ export async function registerSessionAuth(app: FastifyInstance) {
 
     if (isPostgresEnabled() && effectiveUserId) {
       const [userRow, roleRow, prefRow] = await Promise.all([
-        pgQuery<{ display_name: string }>("SELECT display_name FROM users WHERE id = $1", [effectiveUserId]),
-        pgQuery<{ role: string }>("SELECT role FROM user_roles WHERE user_id = $1 LIMIT 1", [effectiveUserId]),
-        pgQuery<{ theme: string }>("SELECT theme FROM user_preferences WHERE user_id = $1", [effectiveUserId])
+        pgQuery<{ display_name: string }>("SELECT display_name FROM users WHERE id = $1", [effectiveUserId]).catch(() => ({ rows: [] })),
+        pgQuery<{ role: string }>("SELECT role FROM user_roles WHERE user_id = $1 LIMIT 1", [effectiveUserId]).catch(() => ({ rows: [] })),
+        pgQuery<{ theme: string }>("SELECT theme FROM user_preferences WHERE user_id = $1", [effectiveUserId]).catch(() => ({ rows: [] }))
       ]);
       displayName = userRow.rows[0]?.display_name ?? "";
       effectiveRole = roleRow.rows[0]?.role || effectiveRole;

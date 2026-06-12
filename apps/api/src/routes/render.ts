@@ -276,6 +276,7 @@ export async function registerRenderRoutes(app: FastifyInstance) {
       activeTabId?: string;
       forceLive?: boolean;
       dashboard?: DashboardDefinition;
+      reportOverrides?: Record<string, unknown>;
     } | undefined) || {};
     try {
       const dashboard = body.dashboard?.id === id
@@ -288,7 +289,8 @@ export async function registerRenderRoutes(app: FastifyInstance) {
       return executeDashboard(id, body.runtimeFilters || {}, {
         activeTabId: body.activeTabId || "",
         forceLive: body.forceLive === true,
-        dashboard
+        dashboard,
+        reportOverrides: body.reportOverrides as Record<string, ReportDefinition> | undefined
       });
     } catch (error) {
       reply.code(404);
