@@ -2273,14 +2273,40 @@ export function StudioPage({
   useEffect(() => {
     let active = true;
     setLoadingRemote(true);
+    // Capture localStorage snapshot before the async fetch so we can detect objects the server
+    // lost (e.g. a crash between the disk write and the Postgres write completing).
+    const localSnapshot = loadLocalDocument();
     fetchStudioDocument()
       .then((response) => {
         if (!active) return;
         const next = scopeDocument(normalizeStudioDocument(response.document));
         next.sync.lastLoadedAt = new Date().toISOString();
+        // If the server is missing objects that localStorage has (server lost state after a
+        // restart), merge those objects back in so the next user action re-persists them.
+        const serverObjectIds = new Set(Object.keys(next.bundle.objects));
+        const localObjects = localSnapshot.bundle.objects || {};
+        const lostIds = Object.keys(localObjects).filter(id => !serverObjectIds.has(id));
+        // Record the server's snapshot BEFORE merging lost objects so the dirty indicator
+        // correctly shows that the merged state hasn't been pushed to the server yet.
         lastRemoteSnapshotKeyRef.current = buildWorkspaceSnapshotSignature(next);
+        let toRepush: StudioDocument | null = null;
+        if (lostIds.length > 0) {
+          const mergedObjects = { ...localObjects, ...next.bundle.objects };
+          const lostOrderItems = (localSnapshot.bundle.order || []).filter(id => lostIds.includes(id));
+          next.bundle = {
+            ...next.bundle,
+            objects: mergedObjects,
+            order: [...new Set([...next.bundle.order, ...lostOrderItems])].filter(id => Boolean(mergedObjects[id]))
+          };
+          toRepush = scopeDocument(next);
+        }
         setSharedWorkspaceDirtyState(false);
-        setDocumentState(next);
+        setDocumentState(toRepush || next);
+        // Auto-repair: push the merged state back to the server so the recovered objects
+        // are durable again. Fire-and-forget; a toast will confirm when complete.
+        if (toRepush != null) {
+          void persistRemote(toRepush);
+        }
       })
       .catch(() => {
         if (active) pushToast("Using local studio data because the hosted studio document could not be loaded.", "warn");
