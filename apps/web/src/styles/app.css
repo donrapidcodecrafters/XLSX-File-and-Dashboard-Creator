@@ -949,7 +949,7 @@ input {
   box-shadow: 0 1px 3px rgba(0,0,0,0.08);
 }
 .pivot-table {
-  width: 100%;
+  min-width: 100%;
   border-collapse: collapse;
   font-size: 13px;
 }
@@ -4210,7 +4210,8 @@ th {
 .widget-card .compact-table-shell,
 .widget-card .table-shell,
 .widget-card .mini-chart,
-.widget-card .widget-metrics {
+.widget-card .widget-metrics,
+.widget-card .pivot-table-shell {
   min-width: 0;
 }
 
