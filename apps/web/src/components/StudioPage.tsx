@@ -4726,7 +4726,7 @@ export function StudioPage({
                       <select value={dashboardWidgetDraft.displayMode} onChange={(event) => setDashboardWidgetDraft((current) => ({ ...current, displayMode: event.target.value as DashboardWidgetBuilderDraft["displayMode"] }))}>
                         <option value="inherit">Inherit report view</option>
                         <option value="table">Table</option>
-                        <option value="summary">Summary</option>
+                        <option value="summary">Metrics / KPI</option>
                         <option value="chart">Chart</option>
                       </select>
                     </label>
@@ -5798,7 +5798,7 @@ export function StudioPage({
                       <select value={selectedDashboardWidget.displayMode} onChange={(event) => updateActiveDashboardWidget(activeDashboardTab.id, selectedDashboardWidget.id, (widget) => ({ ...widget, displayMode: event.target.value as "inherit" | "table" | "summary" | "chart" }))}>
                         <option value="inherit">Inherit report</option>
                         <option value="table">Table</option>
-                        <option value="summary">Summary</option>
+                        <option value="summary">Metrics / KPI</option>
                         <option value="chart">Chart</option>
                       </select>
                     </label>

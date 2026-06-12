@@ -1123,7 +1123,7 @@ export function DashboardView({
                   .filter((filterId) => String(runtimeFilters[filterId] || "").trim())
               ));
               const resolvedDisplayMode = resolveWidgetDisplayMode(widget.widget, widget.report.view.mode);
-              const isSummaryOnly = resolvedDisplayMode === "summary" || (widget.widget.showSummary && !widget.widget.showDetails);
+              const isSummaryOnly = resolvedDisplayMode === "summary";
               const widgetTitle = widget.report.name || widget.widget.title;
               const displayTitle = isSummaryOnly ? `${widgetTitle} - Summary` : widgetTitle;
               return (
@@ -1238,7 +1238,7 @@ export function DashboardView({
             <div className="card-head">
               <strong>{(() => {
                 const base = focusedWidget.widget.title || focusedWidget.report.name;
-                const focusedIsSummaryOnly = resolveWidgetDisplayMode(focusedWidget.widget, focusedWidget.report.view.mode) === "summary" || (focusedWidget.widget.showSummary && !focusedWidget.widget.showDetails);
+                const focusedIsSummaryOnly = resolveWidgetDisplayMode(focusedWidget.widget, focusedWidget.report.view.mode) === "summary";
                 return focusedIsSummaryOnly ? `${base} - Summary` : base;
               })()}</strong>
               <div className="link-toolbar">
