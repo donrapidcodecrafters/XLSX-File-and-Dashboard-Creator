@@ -1802,8 +1802,14 @@ export function StudioPage({
       .filter((object): object is ReportDefinition => Boolean(object) && object.type === "report")
       .map((report) => ({
         report,
+        // For single-source imports, use the shared importReviewSourceTable.
+        // For multi-source imports (importReviewSourceTable is null because sourceTableId is ""),
+        // fall back to each report's individual sourceTableId so issues are checked correctly.
         table: pendingWorkbookImport
-          ? importReviewSourceTable
+          ? (importReviewSourceTable
+             || bundle.tables.find((table) => table.id === report.sourceTableId)
+             || (pendingWorkbookImport.sourceTables || []).find((table) => table.id === report.sourceTableId)
+             || null)
           : bundle.tables.find((table) => table.id === report.sourceTableId) || null
       })),
     [bundle.tables, importReviewObjectIds, importReviewObjects, importReviewSourceTable, pendingWorkbookImport]
@@ -4530,7 +4536,7 @@ export function StudioPage({
                 </div>
               ) : null}
 
-              {pendingWorkbookImport ? (
+              {pendingWorkbookImport && (pendingWorkbookImport.sourceTables || []).length <= 1 ? (
                 <div className="card">
                   <div className="filter-grid compact-grid">
                     <label className="field">
@@ -4546,6 +4552,12 @@ export function StudioPage({
                   </div>
                   <div className="micro">
                     Imported workbooks no longer create placeholder tables. Every imported report and dashboard card will be tied to this existing platform table.
+                  </div>
+                </div>
+              ) : pendingWorkbookImport && (pendingWorkbookImport.sourceTables || []).length > 1 ? (
+                <div className="card">
+                  <div className="micro">
+                    Each imported report has been automatically matched to its corresponding data source ({pendingWorkbookImport.sourceTables.length} sources imported). Review the matches below and click Save when ready.
                   </div>
                 </div>
               ) : null}
@@ -4625,7 +4637,7 @@ export function StudioPage({
                         <div>
                           <strong>{report.name}</strong>
                           <div className="micro">
-                            {report.view.mode === "chart" ? report.view.chartType : report.view.mode} · {table?.name || (pendingWorkbookImport ? "Select a source table above" : "No source table")}
+                            {report.view.mode === "chart" ? report.view.chartType : report.view.mode} · {table?.name || (pendingWorkbookImport ? ((pendingWorkbookImport.sourceTables || []).length > 1 ? "No matching source found" : "Select a source table above") : "No source table")}
                           </div>
                         </div>
                         <span className={`badge${issues.length ? "" : " brand"}`}>
@@ -4688,7 +4700,13 @@ export function StudioPage({
                   <button
                     type="button"
                     onClick={() => void applyPendingWorkbookImport()}
-                    disabled={!pendingWorkbookImport.sourceTableId || pendingImportedReviewReports.length > 0}
+                    disabled={
+                      // For multi-source imports each report already has its own source table set;
+                      // don't require a top-level sourceTableId. For single-source or template
+                      // imports, the user must pick a table before saving.
+                      ((pendingWorkbookImport.sourceTables || []).length <= 1 && !pendingWorkbookImport.sourceTableId) ||
+                      pendingImportedReviewReports.length > 0
+                    }
                   >
                     {pendingImportActionLabel}
                   </button>
