@@ -181,9 +181,23 @@ function getQuickbaseLinkContextForTable(table: TableDefinition | undefined, stu
 }
 
 function useCatalog() {
-  const [objects, setObjects] = useState<CatalogSummaryItem[]>([]);
-  const [folders, setFolders] = useState<FolderDefinition[]>([]);
-  const [tables, setTables] = useState<TableDefinition[]>([]);
+  // Every one of these must seed from the SAME cached document studioDocument uses below —
+  // otherwise objects/folders render as empty on first paint regardless of what's cached,
+  // and only catch up once the (slow, multi-second on a real document) live fetch resolves.
+  // That's exactly what caused folders and their contents to vanish for several seconds on
+  // every load/reload even after the cache itself was fixed to stay fresh.
+  const [objects, setObjects] = useState<CatalogSummaryItem[]>(() => {
+    const cached = loadCachedStudioDocument();
+    return cached ? buildCatalogItemsFromDocument(cached) : [];
+  });
+  const [folders, setFolders] = useState<FolderDefinition[]>(() => {
+    const cached = loadCachedStudioDocument();
+    return cached ? Object.values(cached.bundle.folders || {}) : [];
+  });
+  const [tables, setTables] = useState<TableDefinition[]>(() => {
+    const cached = loadCachedStudioDocument();
+    return cached ? cached.bundle.tables || [] : [];
+  });
   const [studioDocument, setStudioDocument] = useState<StudioDocument | null>(() => loadCachedStudioDocument());
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalogError, setCatalogError] = useState("");
