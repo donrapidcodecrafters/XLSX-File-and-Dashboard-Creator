@@ -222,10 +222,11 @@ export function NavigationSidebar({
   const itemClass = (isActive: boolean) => `nav-sidebar-item${isActive ? " active" : ""}`;
 
   const toolsNode = useReaderToolsNode();
-  // Unfoldered only — items that belong to a folder show once, under the Folders
-  // section below, instead of being duplicated here too.
-  const dashboards = objects.filter((o) => o.type === "dashboard" && !o.folderId);
-  const reports = objects.filter((o) => o.type === "report" && !o.folderId);
+  // Every dashboard/report shows here regardless of folder membership — the Folders
+  // section below is an additional way to browse by folder, not a replacement for
+  // finding something by its type.
+  const dashboards = objects.filter((o) => o.type === "dashboard");
+  const reports = objects.filter((o) => o.type === "report");
 
   return (
     <nav className={`nav-sidebar${pinned ? " pinned" : ""}`} aria-label="Main navigation">

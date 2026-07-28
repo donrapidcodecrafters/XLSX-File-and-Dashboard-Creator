@@ -1,17 +1,17 @@
 import { useEffect, useState } from "react";
 
-const FOLDER_COLLAPSE_KEY_PREFIX = "folder-collapsed:";
+const FOLDER_EXPANDED_KEY_PREFIX = "folder-expanded:";
 
 /**
  * Per-folder expand/collapse state, persisted to localStorage (same convention as the
  * sidebar's own pin state) so it survives reloads. scopeKey namespaces storage per surface
- * (e.g. "nav-sidebar" vs "studio-library") so collapsing a folder in one list doesn't affect
- * another. Default (nothing stored yet) is "expanded" — matches the always-visible behavior
- * these lists had before folders existed.
+ * (e.g. "nav-sidebar" vs "studio-home") so expanding a folder in one list doesn't affect
+ * another. Default (nothing stored yet) is collapsed — a folder's contents only show once
+ * a user explicitly opens it.
  */
 export function useFolderCollapseState(scopeKey: string) {
-  const storageKey = FOLDER_COLLAPSE_KEY_PREFIX + scopeKey;
-  const [collapsedIds, setCollapsedIds] = useState<Set<string>>(() => {
+  const storageKey = FOLDER_EXPANDED_KEY_PREFIX + scopeKey;
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => {
     try {
       const raw = window.localStorage.getItem(storageKey);
       return new Set(raw ? (JSON.parse(raw) as string[]) : []);
@@ -22,14 +22,14 @@ export function useFolderCollapseState(scopeKey: string) {
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(storageKey, JSON.stringify(Array.from(collapsedIds)));
+      window.localStorage.setItem(storageKey, JSON.stringify(Array.from(expandedIds)));
     } catch {
-      // Non-fatal — collapse state just won't persist this session.
+      // Non-fatal — expand state just won't persist this session.
     }
-  }, [collapsedIds, storageKey]);
+  }, [expandedIds, storageKey]);
 
   function toggleFolder(folderId: string) {
-    setCollapsedIds((current) => {
+    setExpandedIds((current) => {
       const next = new Set(current);
       if (next.has(folderId)) next.delete(folderId);
       else next.add(folderId);
@@ -38,7 +38,7 @@ export function useFolderCollapseState(scopeKey: string) {
   }
 
   function isCollapsed(folderId: string) {
-    return collapsedIds.has(folderId);
+    return !expandedIds.has(folderId);
   }
 
   return { toggleFolder, isCollapsed };
