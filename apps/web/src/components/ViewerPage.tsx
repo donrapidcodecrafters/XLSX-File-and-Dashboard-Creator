@@ -18,6 +18,7 @@ export function ViewerPage({
   onRefreshComplete,
   onToggleFavorite,
   onMoveToFolder,
+  onCopyToFolder,
   onCreateFolder
 }: {
   objects: CatalogSummaryItem[];
@@ -29,6 +30,7 @@ export function ViewerPage({
   onRefreshComplete: (options?: { skipWhenLocalDirty?: boolean }) => Promise<void>;
   onToggleFavorite: (objectId: string) => Promise<void>;
   onMoveToFolder?: (objectId: string, folderId: string) => void | Promise<void>;
+  onCopyToFolder?: (objectId: string, folderId: string) => unknown;
   onCreateFolder?: (name: string) => Promise<string | undefined>;
 }) {
   const [query, setQuery] = useState("");
@@ -304,6 +306,7 @@ export function ViewerPage({
               onToggleFavorite={onToggleFavorite}
               folders={folders}
               onMoveToFolder={onMoveToFolder}
+              onCopyToFolder={onCopyToFolder}
             />
           ))}
         </div>
@@ -320,6 +323,7 @@ export function ViewerPage({
               onToggleFavorite={onToggleFavorite}
               folders={folders}
               onMoveToFolder={onMoveToFolder}
+              onCopyToFolder={onCopyToFolder}
             />
           ))}
         </div>

@@ -49,6 +49,7 @@ export function CatalogCard({
   onToggleFavorite,
   folders,
   onMoveToFolder,
+  onCopyToFolder,
   className
 }: {
   object: CatalogSummaryItem;
@@ -58,6 +59,7 @@ export function CatalogCard({
   onToggleFavorite?: (objectId: string) => void | Promise<void>;
   folders?: FolderDefinition[];
   onMoveToFolder?: (objectId: string, folderId: string) => void | Promise<void>;
+  onCopyToFolder?: (objectId: string, folderId: string) => unknown;
   className: string;
 }) {
   const appLabels = getProfileLabelsForCatalogItem(object, studioDocument).slice(0, 2);
@@ -112,6 +114,7 @@ export function CatalogCard({
                 padding: 4
               }}
             >
+              <div style={{ padding: "4px 10px 2px", fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--text-soft)" }}>Move to</div>
               <button
                 type="button"
                 className="folder-menu-item"
@@ -131,6 +134,23 @@ export function CatalogCard({
                   {folder.name}
                 </button>
               ))}
+              {onCopyToFolder && folders.length ? (
+                <>
+                  <div style={{ borderTop: "1px solid rgba(23,49,38,0.08)", margin: "4px 0" }} />
+                  <div style={{ padding: "4px 10px 2px", fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--text-soft)" }}>Copy to</div>
+                  {folders.map((folder) => (
+                    <button
+                      key={`copy-${folder.id}`}
+                      type="button"
+                      className="folder-menu-item"
+                      style={{ display: "block", width: "100%", textAlign: "left", padding: "6px 10px", border: "none", background: "transparent", cursor: "pointer", fontSize: "0.8rem" }}
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); void onCopyToFolder(object.id, folder.id); setFolderMenuOpen(false); }}
+                    >
+                      {folder.name}
+                    </button>
+                  ))}
+                </>
+              ) : null}
             </div>
           ) : null}
         </div>

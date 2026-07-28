@@ -79,7 +79,15 @@ function loadCachedStudioDocument() {
 function saveCachedStudioDocument(document: StudioDocument | null) {
   if (!document) return;
   try {
-    window.localStorage.setItem(CACHED_STUDIO_DOCUMENT_KEY, JSON.stringify(document));
+    // Cached table rows can be tens of thousands of records — large enough on a real
+    // production document to blow past the browser's ~5-10MB localStorage quota. That
+    // failure is caught and swallowed below, which used to leave this cache frozen on
+    // whatever last fit (often long before the most recent folder/edit), so every reload
+    // flashed that stale snapshot until the live fetch replaced it. Stripping bundle.data —
+    // the same thing buildSavePayload() already strips before sending to the server — keeps
+    // this cache small and reliably fresh; row data itself is re-fetched live when needed.
+    const cacheable: StudioDocument = { ...document, bundle: { ...document.bundle, data: {} } };
+    window.localStorage.setItem(CACHED_STUDIO_DOCUMENT_KEY, JSON.stringify(cacheable));
   } catch {}
 }
 
@@ -1168,25 +1176,65 @@ export function App() {
 
   // Lightweight folder mutators for surfaces (nav sidebar, viewing page) that only hold the
   // read-mostly useCatalog() document, not the Studio builder's full editing machinery. Each
-  // one clones the ALREADY-COMPLETE fetched document before patching it — never hand-build a
-  // partial document — because the PUT /api/studio/document merge falls back to seed defaults
-  // (not current server state) for any top-level field the client omits.
+  // one starts from the ALREADY-COMPLETE fetched document and shallow-spreads only the levels
+  // that actually change — never hand-build a partial document — because the PUT
+  // /api/studio/document merge falls back to seed defaults (not current server state) for any
+  // top-level field the client omits. Deliberately NOT a JSON.parse(JSON.stringify(...)) deep
+  // clone: on a real document (tens of thousands of cached Quickbase rows in bundle.data), that
+  // serialize/parse round-trip is slow enough to visibly stall the UI for a folder-only edit.
+  // Shallow spreads reuse bundle.data (and every untouched object) by reference — cheap, and
+  // still correct immutability for React.
   const moveObjectToFolder = useCallback(async (objectId: string, folderId: string) => {
     if (!studioDocument) return;
     const object = studioDocument.bundle.objects[objectId];
     if (!object) return;
-    const next: StudioDocument = JSON.parse(JSON.stringify(studioDocument));
-    next.bundle.objects[objectId] = { ...object, folderId, updatedAt: new Date().toISOString() };
+    const next: StudioDocument = {
+      ...studioDocument,
+      bundle: {
+        ...studioDocument.bundle,
+        objects: {
+          ...studioDocument.bundle.objects,
+          [objectId]: { ...object, folderId, updatedAt: new Date().toISOString() }
+        }
+      }
+    };
     setStudioDocument(next);
     await saveStudioDocument(next);
+  }, [studioDocument, setStudioDocument]);
+
+  const copyObjectToFolder = useCallback(async (objectId: string, folderId: string) => {
+    if (!studioDocument) return undefined;
+    const object = studioDocument.bundle.objects[objectId];
+    if (!object) return undefined;
+    const newId = `${object.type}-${Math.random().toString(36).slice(2, 10)}`;
+    const now = new Date().toISOString();
+    // Cloning a single object (not the whole document) is cheap — it never carries row data.
+    const copy = { ...(JSON.parse(JSON.stringify(object)) as typeof object), id: newId, name: `${object.name} Copy`, folderId, updatedAt: now };
+    const next: StudioDocument = {
+      ...studioDocument,
+      bundle: {
+        ...studioDocument.bundle,
+        objects: { ...studioDocument.bundle.objects, [newId]: copy },
+        order: [newId, ...studioDocument.bundle.order]
+      }
+    };
+    setStudioDocument(next);
+    await saveStudioDocument(next);
+    return newId;
   }, [studioDocument, setStudioDocument]);
 
   const createFolder = useCallback(async (name: string) => {
     if (!studioDocument) return undefined;
     const id = `folder-${Math.random().toString(36).slice(2, 10)}`;
-    const next: StudioDocument = JSON.parse(JSON.stringify(studioDocument));
     const now = new Date().toISOString();
-    next.bundle.folders[id] = { id, name: name.trim() || "New folder", description: "", parentFolderId: null, createdAt: now, updatedAt: now };
+    const folder = { id, name: name.trim() || "New folder", description: "", parentFolderId: null, createdAt: now, updatedAt: now };
+    const next: StudioDocument = {
+      ...studioDocument,
+      bundle: {
+        ...studioDocument.bundle,
+        folders: { ...studioDocument.bundle.folders, [id]: folder }
+      }
+    };
     setStudioDocument(next);
     await saveStudioDocument(next);
     return id;
@@ -1196,21 +1244,36 @@ export function App() {
     if (!studioDocument) return;
     const folder = studioDocument.bundle.folders[folderId];
     if (!folder) return;
-    const next: StudioDocument = JSON.parse(JSON.stringify(studioDocument));
-    next.bundle.folders[folderId] = { ...folder, name: name.trim() || folder.name, updatedAt: new Date().toISOString() };
+    const next: StudioDocument = {
+      ...studioDocument,
+      bundle: {
+        ...studioDocument.bundle,
+        folders: {
+          ...studioDocument.bundle.folders,
+          [folderId]: { ...folder, name: name.trim() || folder.name, updatedAt: new Date().toISOString() }
+        }
+      }
+    };
     setStudioDocument(next);
     await saveStudioDocument(next);
   }, [studioDocument, setStudioDocument]);
 
   const deleteFolder = useCallback(async (folderId: string) => {
     if (!studioDocument) return;
-    const next: StudioDocument = JSON.parse(JSON.stringify(studioDocument));
-    delete next.bundle.folders[folderId];
+    const nextFolders = { ...studioDocument.bundle.folders };
+    delete nextFolders[folderId];
     // Never touches bundle.objects' keys — members just become unfoldered, structurally
     // incapable of deleting a report or dashboard as a side effect.
-    Object.values(next.bundle.objects).forEach((object) => {
-      if (object.folderId === folderId) object.folderId = "";
+    const nextObjects = { ...studioDocument.bundle.objects };
+    Object.keys(nextObjects).forEach((id) => {
+      if (nextObjects[id].folderId === folderId) {
+        nextObjects[id] = { ...nextObjects[id], folderId: "" };
+      }
     });
+    const next: StudioDocument = {
+      ...studioDocument,
+      bundle: { ...studioDocument.bundle, folders: nextFolders, objects: nextObjects }
+    };
     setStudioDocument(next);
     await saveStudioDocument(next, { removedFolderIds: [folderId] });
   }, [studioDocument, setStudioDocument]);
@@ -1671,7 +1734,7 @@ export function App() {
           ) : (
             <Routes>
               <Route path="/" element={<HomePage objects={visibleObjects} studioDocument={displayDocument} recentIds={recentIds} openLinksInNewTab={openLinksInNewTab} onRefreshComplete={reloadCatalog} onToggleFavorite={toggleFavorite} />} />
-              <Route path="/viewer" element={<ViewerPage objects={visibleObjects} folders={folders} studioDocument={displayDocument} recentIds={recentIds} openLinksInNewTab={openLinksInNewTab} onRefreshComplete={reloadCatalog} onToggleFavorite={toggleFavorite} onMoveToFolder={moveObjectToFolder} onCreateFolder={createFolder} />} />
+              <Route path="/viewer" element={<ViewerPage objects={visibleObjects} folders={folders} studioDocument={displayDocument} recentIds={recentIds} openLinksInNewTab={openLinksInNewTab} onRefreshComplete={reloadCatalog} onToggleFavorite={toggleFavorite} onMoveToFolder={moveObjectToFolder} onCopyToFolder={copyObjectToFolder} onCreateFolder={createFolder} />} />
               <Route path="/help" element={<HelpPage />} />
               <Route path="/studio" element={hasPerm("building.view") ? <StudioPage openSettingsSignal={studioSettingsSignal} userPermissions={userPermissions} launchContext={hosted} /> : <Navigate to={buildHostedRoute("/")} replace />} />
               <Route path="/studio/:objectId" element={hasPerm("building.view") ? <StudioPage openSettingsSignal={studioSettingsSignal} userPermissions={userPermissions} launchContext={hosted} /> : <Navigate to={buildHostedRoute("/")} replace />} />

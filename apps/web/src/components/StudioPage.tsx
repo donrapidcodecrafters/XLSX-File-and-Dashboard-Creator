@@ -2743,19 +2743,59 @@ export function StudioPage({
     writeObject(nextObject);
   }
 
-  function createFolder(name: string) {
+  // Persists immediately (like deleteFolder/deleteObject/createFromDraft already do) rather
+  // than waiting for an explicit "Save" click like writeObject's other callers — a created
+  // folder or a move should stick right away, not silently sit as an unsaved local change
+  // that a page refresh (or another tab) can't see yet.
+  async function createFolder(name: string) {
     const id = uid("folder");
     const now = new Date().toISOString();
-    applyDocumentUpdate((draft) => {
-      draft.bundle.folders[id] = { id, name: name.trim() || "New folder", description: "", parentFolderId: null, createdAt: now, updatedAt: now };
-    });
-    return Promise.resolve(id);
+    const nextDocument = clone(documentState);
+    nextDocument.bundle.folders[id] = { id, name: name.trim() || "New folder", description: "", parentFolderId: null, createdAt: now, updatedAt: now };
+    setHistory((previous) => [clone(documentState), ...previous].slice(0, 60));
+    setFuture([]);
+    setDocumentState(nextDocument);
+    try {
+      await persistRemote(nextDocument);
+    } catch (error) {
+      pushToast(error instanceof Error ? error.message : "Folder save failed after local creation.", "danger");
+    }
+    return id;
   }
 
-  function moveObjectToFolder(objectId: string, folderId: string) {
+  async function moveObjectToFolder(objectId: string, folderId: string) {
     const object = bundle.objects[objectId];
     if (!object) return;
-    writeObject({ ...object, folderId });
+    const nextDocument = clone(documentState);
+    nextDocument.bundle.objects[objectId] = { ...object, folderId, updatedAt: new Date().toISOString() };
+    setHistory((previous) => [clone(documentState), ...previous].slice(0, 60));
+    setFuture([]);
+    setDocumentState(nextDocument);
+    try {
+      await persistRemote(nextDocument);
+    } catch (error) {
+      pushToast(error instanceof Error ? error.message : "Move failed to save.", "danger");
+    }
+  }
+
+  async function copyObjectToFolder(objectId: string, folderId: string) {
+    const object = bundle.objects[objectId];
+    if (!object) return undefined;
+    const newId = uid(object.type);
+    const now = new Date().toISOString();
+    const copy = { ...clone(object), id: newId, name: `${object.name} Copy`, folderId, updatedAt: now };
+    const nextDocument = clone(documentState);
+    nextDocument.bundle.objects[newId] = copy;
+    nextDocument.bundle.order.unshift(newId);
+    setHistory((previous) => [clone(documentState), ...previous].slice(0, 60));
+    setFuture([]);
+    setDocumentState(nextDocument);
+    try {
+      await persistRemote(nextDocument);
+    } catch (error) {
+      pushToast(error instanceof Error ? error.message : "Copy failed to save.", "danger");
+    }
+    return newId;
   }
 
   async function deleteFolder(folderId: string) {
