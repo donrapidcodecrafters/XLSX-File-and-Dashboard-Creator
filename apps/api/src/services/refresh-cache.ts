@@ -1002,6 +1002,39 @@ export function updateRefreshScheduleMetadata(document: StudioDocument) {
   document.sync.refreshStatus.nextRunAt = nextRuns.sort()[0] || "";
 }
 
+// Non-destructive counterpart to updateRefreshScheduleMetadata: only fills in nextRunAt
+// when it's missing/invalid (schedule just enabled) or clears it (schedule disabled).
+// An existing nextRunAt — even one in the past — is left untouched so isScheduleDue() can
+// still see it as due. Recomputing unconditionally (as updateRefreshScheduleMetadata does)
+// pushes nextRunAt strictly into the future every time it runs, which is correct right after
+// a refresh actually starts/completes, but is fatal when called from a due-check itself: the
+// due-check would always find a nextRunAt that was just reset to be after "now" and never fire.
+export function ensureRefreshScheduleNextRun(document: StudioDocument) {
+  const nextRuns: string[] = [];
+  document.quickbaseProfiles = (document.quickbaseProfiles || []).map((profile) => {
+    const existing = profile.refreshStatus.nextRunAt;
+    const hasValidExisting = Boolean(existing) && !Number.isNaN(Date.parse(existing));
+    const nextRunAt = !profile.refreshSchedule.enabled
+      ? ""
+      : hasValidExisting
+        ? existing
+        : computeNextRunAt(profile.refreshSchedule);
+    return {
+      ...profile,
+      refreshStatus: {
+        ...profile.refreshStatus,
+        nextRunAt
+      }
+    };
+  });
+  document.quickbaseProfiles.forEach((profile) => {
+    if (profile.refreshStatus.nextRunAt) {
+      nextRuns.push(profile.refreshStatus.nextRunAt);
+    }
+  });
+  document.sync.refreshStatus.nextRunAt = nextRuns.sort()[0] || "";
+}
+
 function syncProfileRefreshStatus(
   document: StudioDocument,
   profileId: string,
@@ -1566,7 +1599,7 @@ export async function checkAndTriggerScheduledRefreshes(logger?: FastifyBaseLogg
   getActiveRefreshJob(); // clears stale running=true before schedule checks
   await studioStore.hydrateFromQuickbase();
   const document = studioStore.getLiveDocument();
-  updateRefreshScheduleMetadata(document);
+  ensureRefreshScheduleNextRun(document);
   updateLegacyActiveQuickbase(document);
   studioStore.flushDocument(document, { markSavedAt: false });
   const now = new Date();

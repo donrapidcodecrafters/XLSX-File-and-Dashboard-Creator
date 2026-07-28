@@ -8,7 +8,7 @@ import {
   primeRefreshJob,
   refreshAllCachedDataWithProgress,
   refreshObjectCachedDataWithProgress,
-  updateRefreshScheduleMetadata
+  ensureRefreshScheduleNextRun
 } from "../services/refresh-cache.js";
 import { refreshJobStore } from "../services/refresh-jobs.js";
 import { listSourceRecordSummaries, loadAllSourceAttributes } from "../services/eav-record-store.js";
@@ -63,7 +63,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
   app.get("/api/studio/document", async () => {
     await studioStore.initializeFromPostgres();
     const current = studioStore.getLiveDocument();
-    updateRefreshScheduleMetadata(current);
+    ensureRefreshScheduleNextRun(current);
     // Clear any stale running=true left by a crash or restart — no-op if a real job is active.
     getActiveRefreshJob();
     // Read-only: do NOT flush/persist here — writing the xlsx cache file on every GET
@@ -182,7 +182,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
         };
       })
     });
-    updateRefreshScheduleMetadata(mergedDocument);
+    ensureRefreshScheduleNextRun(mergedDocument);
     const document = studioStore.saveDocument(mergedDocument);
     if (!studioStore.diskWriteOk) {
       app.log.error({ incomingObjectCount: incomingObjectIds.length }, "PUT /api/studio/document disk write failed — returning 500 so client retries");
