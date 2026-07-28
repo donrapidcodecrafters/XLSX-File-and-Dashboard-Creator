@@ -291,7 +291,7 @@ export function ViewerPage({
             )
           ) : null}
           {folders.map((folder) => (
-            <FolderTile key={folder.id} folder={folder} itemCount={byFolderId[folder.id]?.length || 0} onOpen={() => setOpenFolderId(folder.id)} />
+            <FolderTile key={folder.id} folder={folder} itemCount={byFolderId[folder.id]?.length || 0} onOpen={() => setOpenFolderId(folder.id)} onMoveToFolder={onMoveToFolder} />
           ))}
           {unfoldered.map((object) => (
             <CatalogCard

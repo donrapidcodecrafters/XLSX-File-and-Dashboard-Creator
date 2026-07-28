@@ -9,19 +9,30 @@ const DRAG_OBJECT_ID_MIME = "application/x-studio-object-id";
 export function FolderTile({
   folder,
   itemCount,
-  onOpen
+  onOpen,
+  onMoveToFolder
 }: {
   folder: FolderDefinition;
   itemCount: number;
   onOpen: () => void;
+  onMoveToFolder?: (objectId: string, folderId: string) => void | Promise<void>;
 }) {
+  const [isDropTarget, setIsDropTarget] = useState(false);
   return (
     <button
       type="button"
-      className="viewer-card folder-tile"
+      className={`viewer-card folder-tile${isDropTarget ? " is-drop-target" : ""}`}
       onClick={onOpen}
-      onDragOver={(event) => event.preventDefault()}
-      style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 6, padding: 16, textAlign: "left" }}
+      onDragOver={(event) => { if (onMoveToFolder) event.preventDefault(); }}
+      onDragEnter={(event) => { if (onMoveToFolder) { event.preventDefault(); setIsDropTarget(true); } }}
+      onDragLeave={() => setIsDropTarget(false)}
+      onDrop={(event) => {
+        event.preventDefault();
+        setIsDropTarget(false);
+        const objectId = event.dataTransfer.getData(DRAG_OBJECT_ID_MIME);
+        if (objectId) void onMoveToFolder?.(objectId, folder.id);
+      }}
+      style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 6, padding: 16, textAlign: "left", outline: isDropTarget ? "2px dashed var(--brand, #0d7c66)" : undefined }}
     >
       <span style={{ fontSize: "1.4rem" }}>📁</span>
       <strong style={{ fontSize: "0.925rem", color: "var(--text)" }}>{folder.name}</strong>
