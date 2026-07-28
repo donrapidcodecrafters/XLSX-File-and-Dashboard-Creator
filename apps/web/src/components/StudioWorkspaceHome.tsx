@@ -94,6 +94,7 @@ export function StudioWorkspaceHome({
   const { toggleFolder, isCollapsed } = useFolderCollapseState("studio-home");
   const { unfoldered, byFolderId } = groupStudioLibraryItemsByFolder(filteredObjects);
   const [creatingFolder, setCreatingFolder] = useState(false);
+  const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
   const [newFolderName, setNewFolderName] = useState("");
 
   function renderObjectCard(object: StudioObject) {
@@ -211,12 +212,40 @@ export function StudioWorkspaceHome({
             <strong>Your reports and dashboards</strong>
             <div className="micro">Click any item to open and edit it.</div>
           </div>
-          {visibleReports.length ? (
+          {visibleReports.length || onCreateFolder ? (
             <div className="studio-actions">
-              <span className="micro">{selectedReportIds.length} selected</span>
-              <button type="button" className="ghost-button" onClick={onSelectAllVisibleReports}>Select visible reports</button>
-              <button type="button" className="ghost-button" onClick={onClearReportSelection} disabled={!selectedReportIds.length}>Clear</button>
-              <button type="button" className="btn-danger" onClick={onDeleteSelectedReports} disabled={!selectedReportIds.length}>Delete selected reports</button>
+              {visibleReports.length ? (
+                <>
+                  <span className="micro">{selectedReportIds.length} selected</span>
+                  <button type="button" className="ghost-button" onClick={onSelectAllVisibleReports}>Select visible reports</button>
+                  <button type="button" className="ghost-button" onClick={onClearReportSelection} disabled={!selectedReportIds.length}>Clear</button>
+                  <button type="button" className="btn-danger" onClick={onDeleteSelectedReports} disabled={!selectedReportIds.length}>Delete selected reports</button>
+                </>
+              ) : null}
+              {onCreateFolder ? (
+                creatingFolder ? (
+                  <form
+                    className="new-folder-inline-form"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      const name = newFolderName.trim();
+                      if (name) void onCreateFolder(name);
+                      setNewFolderName("");
+                      setCreatingFolder(false);
+                    }}
+                  >
+                    <input
+                      autoFocus
+                      value={newFolderName}
+                      onChange={(event) => setNewFolderName(event.target.value)}
+                      onBlur={() => { if (!newFolderName.trim()) setCreatingFolder(false); }}
+                      placeholder="Folder name"
+                    />
+                  </form>
+                ) : (
+                  <button type="button" className="ghost-button" onClick={() => setCreatingFolder(true)}>+ New folder</button>
+                )
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -276,30 +305,6 @@ export function StudioWorkspaceHome({
             <span>Personal items stay out of the default library until you switch the scope filter.</span>
           </div>
         ) : null}
-        {onCreateFolder ? (
-          creatingFolder ? (
-            <form
-              className="filter-grid compact-grid"
-              onSubmit={(event) => {
-                event.preventDefault();
-                const name = newFolderName.trim();
-                if (name) void onCreateFolder(name);
-                setNewFolderName("");
-                setCreatingFolder(false);
-              }}
-            >
-              <input
-                autoFocus
-                value={newFolderName}
-                onChange={(event) => setNewFolderName(event.target.value)}
-                onBlur={() => { if (!newFolderName.trim()) setCreatingFolder(false); }}
-                placeholder="Folder name"
-              />
-            </form>
-          ) : (
-            <button type="button" className="ghost-button" style={{ alignSelf: "flex-start" }} onClick={() => setCreatingFolder(true)}>+ New folder</button>
-          )
-        ) : null}
         {filteredObjects.length ? (
           <div className="studio-home-object-grid">
             {folders.map((folder) => {
@@ -310,17 +315,21 @@ export function StudioWorkspaceHome({
                 <div key={folderId} style={{ gridColumn: "1 / -1" }}>
                   <button
                     type="button"
-                    className="nav-accordion-folder"
+                    className={`studio-home-folder-header${dragOverFolderId === folderId ? " is-drop-target" : ""}`}
                     onClick={() => toggleFolder(folderId)}
                     onDragOver={(event) => { if (onMoveToFolder) event.preventDefault(); }}
+                    onDragEnter={(event) => { if (onMoveToFolder) { event.preventDefault(); setDragOverFolderId(folderId); } }}
+                    onDragLeave={() => setDragOverFolderId((current) => (current === folderId ? null : current))}
                     onDrop={(event) => {
+                      setDragOverFolderId(null);
                       const objectId = event.dataTransfer.getData(DRAG_OBJECT_ID_MIME);
                       if (objectId) onMoveToFolder?.(objectId, folderId);
                     }}
                   >
-                    <span className="nav-accordion-group-chevron">{collapsed ? "▸" : "▾"}</span>
-                    <span>{foldersById[folderId]?.name || "Untitled folder"}</span>
-                    <span className="nav-accordion-group-count">{folderItems.length}</span>
+                    <span className="studio-home-folder-header-chevron">{collapsed ? "▸" : "▾"}</span>
+                    <span className="folder-tile-icon" style={{ fontSize: "1rem" }}>📁</span>
+                    <span className="studio-home-folder-header-name">{foldersById[folderId]?.name || "Untitled folder"}</span>
+                    <span className="studio-home-folder-header-count">{folderItems.length} item{folderItems.length === 1 ? "" : "s"}</span>
                   </button>
                   {!collapsed ? (
                     <div className="studio-home-object-grid">

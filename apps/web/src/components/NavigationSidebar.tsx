@@ -25,60 +25,31 @@ export interface NavigationSidebarProps {
   objects?: NavObject[];
   folders?: FolderDefinition[];
   onMoveToFolder?: (objectId: string, folderId: string) => void;
-  onCreateFolder?: (name: string) => Promise<string | undefined>;
   /** When false (auth disabled / dev mode) show all nav items regardless of role */
   authRequired?: boolean;
   /** Effective permission map for this user — used to hide inaccessible nav items */
   permissions?: Record<string, boolean>;
 }
 
-// ── Accordion sub-group (Dashboards / Reports) ───────────────────────────────
+// ── Accordion sub-group (Dashboards / Reports) — unfoldered items only; items
+// that belong to a folder show up once, under the dedicated Folders section
+// below, instead of being duplicated here too. ──────────────────────────────
 function AccordionGroup({
   label,
   items,
-  folders,
-  foldersById,
-  scopeKey,
   openLinksInNewTab,
-  onMoveToFolder,
+  draggable,
 }: {
   label: string;
   items: NavObject[];
-  folders: FolderDefinition[];
-  foldersById: Record<string, FolderDefinition>;
-  scopeKey: string;
   openLinksInNewTab: boolean;
-  onMoveToFolder?: (objectId: string, folderId: string) => void;
+  draggable: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const { toggleFolder, isCollapsed } = useFolderCollapseState(scopeKey);
   if (!items.length) return null;
-
-  const { unfoldered, byFolderId } = groupStudioLibraryItemsByFolder(items);
-
-  function renderItem(obj: NavObject) {
-    return (
-      <Link
-        key={obj.id}
-        to={`/${obj.type}/${obj.id}`}
-        className="nav-accordion-item"
-        target={openLinksInNewTab ? "_blank" : undefined}
-        rel={openLinksInNewTab ? "noreferrer" : undefined}
-        title={obj.name}
-        draggable={Boolean(onMoveToFolder)}
-        onDragStart={(event) => event.dataTransfer.setData(DRAG_OBJECT_ID_MIME, obj.id)}
-      >
-        <span className="nav-accordion-item-name">{obj.name}</span>
-        {obj.category && (
-          <span className="nav-accordion-item-meta">{obj.category}</span>
-        )}
-      </Link>
-    );
-  }
 
   return (
     <div className="nav-accordion-group">
-      {/* Sub-group toggle */}
       <button
         type="button"
         className="nav-accordion-group-toggle"
@@ -90,36 +61,110 @@ function AccordionGroup({
         <span className="nav-accordion-group-count">{items.length}</span>
       </button>
 
-      {/* Items — animated via grid trick */}
+      <div className={`nav-accordion-group-body${open ? " open" : ""}`}>
+        <div>
+          {items.map((obj) => (
+            <Link
+              key={obj.id}
+              to={`/${obj.type}/${obj.id}`}
+              className="nav-accordion-item"
+              target={openLinksInNewTab ? "_blank" : undefined}
+              rel={openLinksInNewTab ? "noreferrer" : undefined}
+              title={obj.name}
+              draggable={draggable}
+              onDragStart={(event) => event.dataTransfer.setData(DRAG_OBJECT_ID_MIME, obj.id)}
+            >
+              <span className="nav-accordion-item-name">{obj.name}</span>
+              {obj.category && (
+                <span className="nav-accordion-item-meta">{obj.category}</span>
+              )}
+            </Link>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Folders section — one row per folder, each expandable to reveal its own
+// mixed reports/dashboards. Lives as its own section below Reports, never
+// nested inside Dashboards/Reports (a folder can hold both, so nesting it
+// under either one was both duplicative and confusing). ────────────────────
+function FoldersGroup({
+  objects,
+  folders,
+  openLinksInNewTab,
+  onMoveToFolder,
+}: {
+  objects: NavObject[];
+  folders: FolderDefinition[];
+  openLinksInNewTab: boolean;
+  onMoveToFolder?: (objectId: string, folderId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const { toggleFolder, isCollapsed } = useFolderCollapseState("nav-folders");
+  const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
+  if (!folders.length) return null;
+
+  const { byFolderId } = groupStudioLibraryItemsByFolder(objects);
+
+  return (
+    <div className="nav-accordion-group">
+      <button
+        type="button"
+        className="nav-accordion-group-toggle"
+        onClick={() => setOpen((o) => !o)}
+        title={`${open ? "Collapse" : "Expand"} Folders`}
+      >
+        <span className="nav-accordion-group-chevron">{open ? "▾" : "▸"}</span>
+        <span className="nav-accordion-group-label">Folders</span>
+        <span className="nav-accordion-group-count">{folders.length}</span>
+      </button>
+
       <div className={`nav-accordion-group-body${open ? " open" : ""}`}>
         <div>
           {folders.map((folder) => {
-            const folderId = folder.id;
-            const folderName = foldersById[folderId]?.name || "Untitled folder";
-            const collapsed = isCollapsed(folderId);
-            const folderItems = byFolderId[folderId] || [];
+            const collapsed = isCollapsed(folder.id);
+            const items = byFolderId[folder.id] || [];
             return (
-              <div key={folderId}>
+              <div key={folder.id}>
                 <button
                   type="button"
-                  className="nav-accordion-folder"
-                  onClick={() => toggleFolder(folderId)}
+                  className={`nav-accordion-subfolder-toggle${dragOverFolderId === folder.id ? " is-drop-target" : ""}`}
+                  onClick={() => toggleFolder(folder.id)}
                   onDragOver={(event) => { if (onMoveToFolder) event.preventDefault(); }}
+                  onDragEnter={(event) => { if (onMoveToFolder) { event.preventDefault(); setDragOverFolderId(folder.id); } }}
+                  onDragLeave={() => setDragOverFolderId((current) => (current === folder.id ? null : current))}
                   onDrop={(event) => {
+                    setDragOverFolderId(null);
                     const objectId = event.dataTransfer.getData(DRAG_OBJECT_ID_MIME);
-                    if (objectId) onMoveToFolder?.(objectId, folderId);
+                    if (objectId) onMoveToFolder?.(objectId, folder.id);
                   }}
-                  title={`${collapsed ? "Expand" : "Collapse"} ${folderName}`}
+                  title={`${collapsed ? "Expand" : "Collapse"} ${folder.name}`}
                 >
                   <span className="nav-accordion-group-chevron">{collapsed ? "▸" : "▾"}</span>
-                  <span>{folderName}</span>
-                  <span className="nav-accordion-group-count">{folderItems.length}</span>
+                  <span className="nav-accordion-subfolder-icon">📁</span>
+                  <span className="nav-accordion-subfolder-name">{folder.name}</span>
+                  <span className="nav-accordion-group-count">{items.length}</span>
                 </button>
-                {!collapsed && folderItems.map(renderItem)}
+                {!collapsed ? items.map((obj) => (
+                  <Link
+                    key={obj.id}
+                    to={`/${obj.type}/${obj.id}`}
+                    className="nav-accordion-item"
+                    target={openLinksInNewTab ? "_blank" : undefined}
+                    rel={openLinksInNewTab ? "noreferrer" : undefined}
+                    title={obj.name}
+                  >
+                    <span className="nav-accordion-item-name">{obj.name}</span>
+                    {obj.category && (
+                      <span className="nav-accordion-item-meta">{obj.category}</span>
+                    )}
+                  </Link>
+                )) : null}
               </div>
             );
           })}
-          {unfoldered.map(renderItem)}
         </div>
       </div>
     </div>
@@ -135,7 +180,6 @@ export function NavigationSidebar({
   objects = [],
   folders = [],
   onMoveToFolder,
-  onCreateFolder,
   authRequired = true,
   permissions = {},
 }: NavigationSidebarProps) {
@@ -178,11 +222,10 @@ export function NavigationSidebar({
   const itemClass = (isActive: boolean) => `nav-sidebar-item${isActive ? " active" : ""}`;
 
   const toolsNode = useReaderToolsNode();
-  const dashboards = objects.filter((o) => o.type === "dashboard");
-  const reports = objects.filter((o) => o.type === "report");
-  const foldersById = Object.fromEntries(folders.map((folder) => [folder.id, folder]));
-  const [newFolderName, setNewFolderName] = useState("");
-  const [creatingFolder, setCreatingFolder] = useState(false);
+  // Unfoldered only — items that belong to a folder show once, under the Folders
+  // section below, instead of being duplicated here too.
+  const dashboards = objects.filter((o) => o.type === "dashboard" && !o.folderId);
+  const reports = objects.filter((o) => o.type === "report" && !o.folderId);
 
   return (
     <nav className={`nav-sidebar${pinned ? " pinned" : ""}`} aria-label="Main navigation">
@@ -249,38 +292,13 @@ export function NavigationSidebar({
           {/* Accordion body — expands vertically */}
           <div className={`nav-sidebar-accordion-body${contentOpen ? " open" : ""}`}>
             <div>
-              {onCreateFolder ? (
-                creatingFolder ? (
-                  <form
-                    className="nav-new-folder-form"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      const name = newFolderName.trim();
-                      if (name) void onCreateFolder(name);
-                      setNewFolderName("");
-                      setCreatingFolder(false);
-                    }}
-                  >
-                    <input
-                      autoFocus
-                      value={newFolderName}
-                      onChange={(event) => setNewFolderName(event.target.value)}
-                      onBlur={() => { if (!newFolderName.trim()) setCreatingFolder(false); }}
-                      placeholder="Folder name"
-                    />
-                  </form>
-                ) : (
-                  <button type="button" className="nav-accordion-new-folder" onClick={() => setCreatingFolder(true)}>
-                    + New folder
-                  </button>
-                )
-              ) : null}
               {!objects.length ? (
                 <div className="nav-accordion-empty">No content yet</div>
               ) : (
                 <>
-                  <AccordionGroup label="Dashboards" items={dashboards} folders={folders} foldersById={foldersById} scopeKey="nav-dashboards" openLinksInNewTab={false} onMoveToFolder={onMoveToFolder} />
-                  <AccordionGroup label="Reports" items={reports} folders={folders} foldersById={foldersById} scopeKey="nav-reports" openLinksInNewTab={false} onMoveToFolder={onMoveToFolder} />
+                  <AccordionGroup label="Dashboards" items={dashboards} openLinksInNewTab={false} draggable={Boolean(onMoveToFolder)} />
+                  <AccordionGroup label="Reports" items={reports} openLinksInNewTab={false} draggable={Boolean(onMoveToFolder)} />
+                  <FoldersGroup objects={objects} folders={folders} openLinksInNewTab={false} onMoveToFolder={onMoveToFolder} />
                 </>
               )}
             </div>

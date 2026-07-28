@@ -267,8 +267,7 @@ export function ViewerPage({
           {onCreateFolder ? (
             creatingFolder ? (
               <form
-                className="viewer-card"
-                style={{ display: "flex", flexDirection: "column", gap: 8, padding: 16 }}
+                className="viewer-card new-folder-tile"
                 onSubmit={(event) => {
                   event.preventDefault();
                   const name = newFolderName.trim();
@@ -286,8 +285,8 @@ export function ViewerPage({
                 />
               </form>
             ) : (
-              <button type="button" className="viewer-card folder-tile" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, padding: 16 }} onClick={() => setCreatingFolder(true)}>
-                <span style={{ fontSize: "1.4rem" }}>+</span>
+              <button type="button" className="viewer-card new-folder-tile" onClick={() => setCreatingFolder(true)}>
+                <span className="new-folder-tile-icon">+</span>
                 <span className="micro">New folder</span>
               </button>
             )

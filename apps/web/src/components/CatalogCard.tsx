@@ -32,11 +32,10 @@ export function FolderTile({
         const objectId = event.dataTransfer.getData(DRAG_OBJECT_ID_MIME);
         if (objectId) void onMoveToFolder?.(objectId, folder.id);
       }}
-      style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 6, padding: 16, textAlign: "left", outline: isDropTarget ? "2px dashed var(--brand, #0d7c66)" : undefined }}
     >
-      <span style={{ fontSize: "1.4rem" }}>📁</span>
-      <strong style={{ fontSize: "0.925rem", color: "var(--text)" }}>{folder.name}</strong>
-      <span style={{ fontSize: "0.75rem", color: "var(--text-soft)" }}>{itemCount} item{itemCount === 1 ? "" : "s"}</span>
+      <span className="folder-tile-icon">📁</span>
+      <strong className="folder-tile-name">{folder.name}</strong>
+      <span className="folder-tile-count">{itemCount} item{itemCount === 1 ? "" : "s"}</span>
     </button>
   );
 }
@@ -79,46 +78,19 @@ export function CatalogCard({
         <div style={{ position: "absolute", top: 12, right: onToggleFavorite ? 44 : 12 }}>
           <button
             type="button"
+            className="folder-menu-trigger"
             aria-label="Move to folder"
             title="Move to folder"
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); setFolderMenuOpen((current) => !current); }}
-            style={{
-              minHeight: 0,
-              width: 28,
-              height: 28,
-              padding: 0,
-              border: "none",
-              background: "transparent",
-              boxShadow: "none",
-              fontSize: "1rem",
-              color: "rgba(23,49,38,0.35)",
-              cursor: "pointer",
-              borderRadius: "50%"
-            }}
           >
             ⋯
           </button>
           {folderMenuOpen ? (
-            <div
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                position: "absolute",
-                top: 30,
-                right: 0,
-                zIndex: 10,
-                minWidth: 160,
-                background: "var(--panel, #fff)",
-                border: "1px solid rgba(23,49,38,0.12)",
-                borderRadius: 8,
-                boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
-                padding: 4
-              }}
-            >
-              <div style={{ padding: "4px 10px 2px", fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--text-soft)" }}>Move to</div>
+            <div className="folder-menu" onClick={(e) => e.stopPropagation()}>
+              <div className="folder-menu-section-label">Move to</div>
               <button
                 type="button"
                 className="folder-menu-item"
-                style={{ display: "block", width: "100%", textAlign: "left", padding: "6px 10px", border: "none", background: "transparent", cursor: "pointer", fontSize: "0.8rem" }}
                 onClick={(e) => { e.preventDefault(); e.stopPropagation(); void onMoveToFolder(object.id, ""); setFolderMenuOpen(false); }}
               >
                 No folder
@@ -128,7 +100,6 @@ export function CatalogCard({
                   key={folder.id}
                   type="button"
                   className="folder-menu-item"
-                  style={{ display: "block", width: "100%", textAlign: "left", padding: "6px 10px", border: "none", background: "transparent", cursor: "pointer", fontSize: "0.8rem" }}
                   onClick={(e) => { e.preventDefault(); e.stopPropagation(); void onMoveToFolder(object.id, folder.id); setFolderMenuOpen(false); }}
                 >
                   {folder.name}
@@ -136,14 +107,13 @@ export function CatalogCard({
               ))}
               {onCopyToFolder && folders.length ? (
                 <>
-                  <div style={{ borderTop: "1px solid rgba(23,49,38,0.08)", margin: "4px 0" }} />
-                  <div style={{ padding: "4px 10px 2px", fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--text-soft)" }}>Copy to</div>
+                  <div className="folder-menu-divider" />
+                  <div className="folder-menu-section-label">Copy to</div>
                   {folders.map((folder) => (
                     <button
                       key={`copy-${folder.id}`}
                       type="button"
                       className="folder-menu-item"
-                      style={{ display: "block", width: "100%", textAlign: "left", padding: "6px 10px", border: "none", background: "transparent", cursor: "pointer", fontSize: "0.8rem" }}
                       onClick={(e) => { e.preventDefault(); e.stopPropagation(); void onCopyToFolder(object.id, folder.id); setFolderMenuOpen(false); }}
                     >
                       {folder.name}

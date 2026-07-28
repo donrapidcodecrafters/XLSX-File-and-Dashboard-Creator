@@ -5665,15 +5665,15 @@ export function StudioPage({
         {activeReport && canDo("building.delete") ? <button className="btn-danger" onClick={() => deleteObject(activeReport.id)}>Delete report</button> : null}
         <button onClick={() => toggleFavorite(activeObject.id)}>{documentState.favorites.includes(activeObject.id) ? "Unfavorite" : "Favorite"}</button>
         <button onClick={() => cloneObject(activeObject)}>Clone</button>
-        <label className="field compact-field" style={{ display: "inline-flex" }}>
-          <span className="micro">Folder</span>
-          <select value={activeObject.folderId} onChange={(event) => moveObjectToFolder(activeObject.id, event.target.value)}>
+        <span className="toolbar-folder-select">
+          <span className="micro">📁</span>
+          <select value={activeObject.folderId} onChange={(event) => moveObjectToFolder(activeObject.id, event.target.value)} title="Folder">
             <option value="">No folder</option>
             {Object.values(bundle.folders).map((folder) => (
               <option key={folder.id} value={folder.id}>{folder.name}</option>
             ))}
           </select>
-        </label>
+        </span>
         <button onClick={undo} disabled={!history.length}>Undo</button>
         <button onClick={redo} disabled={!future.length}>Redo</button>
         <button onClick={() => setDrawer("share")}>Share</button>
@@ -5845,15 +5845,15 @@ export function StudioPage({
                 <button type="button" onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save to server"}</button>
                 <button type="button" onClick={() => toggleFavorite(activeDashboard.id)}>{documentState.favorites.includes(activeDashboard.id) ? "Unfavorite" : "Favorite"}</button>
                 <button type="button" onClick={() => cloneObject(activeDashboard)}>Clone dashboard</button>
-                <label className="field compact-field" style={{ display: "inline-flex" }}>
-                  <span className="micro">Folder</span>
-                  <select value={activeDashboard.folderId} onChange={(event) => moveObjectToFolder(activeDashboard.id, event.target.value)}>
+                <span className="toolbar-folder-select">
+                  <span className="micro">📁</span>
+                  <select value={activeDashboard.folderId} onChange={(event) => moveObjectToFolder(activeDashboard.id, event.target.value)} title="Folder">
                     <option value="">No folder</option>
                     {Object.values(bundle.folders).map((folder) => (
                       <option key={folder.id} value={folder.id}>{folder.name}</option>
                     ))}
                   </select>
-                </label>
+                </span>
                 {canDo("building.delete") && <button type="button" className="btn-danger" onClick={() => deleteObject(activeDashboard.id)}>Delete dashboard</button>}
                 <button type="button" onClick={undo} disabled={!history.length}>Undo</button>
                 <button type="button" onClick={redo} disabled={!future.length}>Redo</button>

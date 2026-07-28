@@ -1586,7 +1586,6 @@ export function App() {
         objects={visibleObjects}
         folders={folders}
         onMoveToFolder={moveObjectToFolder}
-        onCreateFolder={createFolder}
         authRequired={authRequired}
         permissions={userPermissions}
       />

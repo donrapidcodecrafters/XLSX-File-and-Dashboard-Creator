@@ -637,6 +637,83 @@ input {
   color: var(--text-soft);
 }
 
+/* Folders section — one row per folder, nested one level deeper than the
+   Dashboards/Reports group toggles above it. Reuses the same visual language
+   (uppercase label, count pill, chevron) so it reads as part of the same list. */
+.nav-accordion-subfolder-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: calc(100% - 8px);
+  padding: 5px 8px 5px 24px;
+  margin: 1px 4px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  transition: background 80ms;
+}
+
+.nav-accordion-subfolder-toggle:hover {
+  background: var(--surface-hover);
+}
+
+.nav-accordion-subfolder-icon {
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.nav-accordion-subfolder-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nav-accordion-subfolder-toggle.is-drop-target {
+  background: var(--brand-light);
+  outline: 1px dashed var(--brand);
+  outline-offset: -1px;
+}
+
+/* New-folder inline creation — appears in the sidebar's Content section header,
+   Viewing page grid, and Studio builder home as a small on-brand action, not a
+   full-width bar. */
+.new-folder-inline-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  margin: 2px 4px 4px;
+}
+
+.new-folder-inline-form input {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.new-folder-tile input {
+  width: 100%;
+  font-size: 0.85rem;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  text-align: center;
+}
+
 /* Hide accordion content when sidebar is collapsed (icon-only mode) */
 .nav-sidebar:not(.pinned):not(:hover) .nav-sidebar-accordion-body {
   grid-template-rows: 0fr !important;
@@ -2394,6 +2471,121 @@ th {
   transform: translateY(-2px);
 }
 
+/* Folder tile — a .viewer-card variant for the Viewing page's folder-grouped view. */
+.folder-tile {
+  align-items: flex-start;
+  text-align: left;
+  font: inherit;
+}
+
+.folder-tile-icon {
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+.folder-tile-name {
+  font-size: 0.925rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.folder-tile-count {
+  font-size: 0.75rem;
+  color: var(--text-soft);
+}
+
+.folder-tile.is-drop-target {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 2px var(--brand-light);
+}
+
+.new-folder-tile {
+  display: flex !important;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--text-soft);
+  background: var(--surface-alt);
+  border-style: dashed;
+}
+
+.new-folder-tile:hover {
+  color: var(--text);
+  border-color: var(--border-md);
+}
+
+.new-folder-tile-icon {
+  font-size: 1.4rem;
+}
+
+/* Move/copy-to-folder popover menu — anchored top-right of a CatalogCard. */
+.folder-menu-trigger {
+  min-height: 0;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  font-size: 1rem;
+  color: var(--text-soft);
+  cursor: pointer;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.folder-menu-trigger:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.folder-menu {
+  position: absolute;
+  top: 30px;
+  right: 0;
+  z-index: 10;
+  min-width: 170px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-md, 0 8px 24px rgba(0,0,0,0.16));
+  padding: 4px;
+}
+
+.folder-menu-section-label {
+  padding: 6px 10px 2px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-soft);
+}
+
+.folder-menu-divider {
+  border-top: 1px solid var(--border);
+  margin: 4px 0;
+}
+
+.folder-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 10px;
+  border: none;
+  background: transparent;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: var(--text);
+}
+
+.folder-menu-item:hover {
+  background: var(--surface-hover);
+}
+
 .viewer-card strong,
 .viewer-card span {
   min-width: 0;
@@ -2894,6 +3086,27 @@ th {
   flex: 0 0 auto;
 }
 
+/* Folder picker inside the floating builder toolbar — a plain select styled to match
+   the surrounding buttons' height/shape, with a non-wrapping icon label instead of the
+   stacked .field layout (which forced the "Folder" label to wrap to two lines here). */
+.toolbar-folder-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.toolbar-folder-select select {
+  height: 100%;
+  font: inherit;
+  color: inherit;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  padding: 0 10px;
+  max-width: 160px;
+}
+
 .active-card {
   border-color: rgba(13, 124, 102, 0.4);
   box-shadow: 0 12px 28px rgba(13, 124, 102, 0.12);
@@ -3142,6 +3355,57 @@ th {
 .studio-home-object-card-actions {
   display: flex;
   justify-content: flex-end;
+}
+
+/* Folder section header inside the Studio builder home's wide object grid —
+   spans the full grid width via inline grid-column: 1 / -1 on the wrapper. */
+.studio-home-folder-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text);
+  text-align: left;
+}
+
+.studio-home-folder-header:hover {
+  border-color: var(--border-md);
+}
+
+.studio-home-folder-header.is-drop-target {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 2px var(--brand-light);
+}
+
+.studio-home-folder-header-chevron {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  color: var(--text-soft);
+}
+
+.studio-home-folder-header-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.studio-home-folder-header-count {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-soft);
+  background: var(--surface-hover);
+  border-radius: 8px;
+  padding: 2px 8px;
 }
 
 .studio-inspector {
