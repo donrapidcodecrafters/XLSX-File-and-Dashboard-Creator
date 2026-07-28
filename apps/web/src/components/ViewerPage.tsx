@@ -290,13 +290,9 @@ export function ViewerPage({
               </button>
             )
           ) : null}
-          {Object.keys(byFolderId).map((folderId) => {
-            const folder = folders.find((item) => item.id === folderId);
-            if (!folder) return null;
-            return (
-              <FolderTile key={folderId} folder={folder} itemCount={byFolderId[folderId].length} onOpen={() => setOpenFolderId(folderId)} />
-            );
-          })}
+          {folders.map((folder) => (
+            <FolderTile key={folder.id} folder={folder} itemCount={byFolderId[folder.id]?.length || 0} onOpen={() => setOpenFolderId(folder.id)} />
+          ))}
           {unfoldered.map((object) => (
             <CatalogCard
               key={object.id}

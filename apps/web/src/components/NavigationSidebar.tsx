@@ -36,6 +36,7 @@ export interface NavigationSidebarProps {
 function AccordionGroup({
   label,
   items,
+  folders,
   foldersById,
   scopeKey,
   openLinksInNewTab,
@@ -43,6 +44,7 @@ function AccordionGroup({
 }: {
   label: string;
   items: NavObject[];
+  folders: FolderDefinition[];
   foldersById: Record<string, FolderDefinition>;
   scopeKey: string;
   openLinksInNewTab: boolean;
@@ -53,7 +55,6 @@ function AccordionGroup({
   if (!items.length) return null;
 
   const { unfoldered, byFolderId } = groupStudioLibraryItemsByFolder(items);
-  const folderIds = Object.keys(byFolderId);
 
   function renderItem(obj: NavObject) {
     return (
@@ -92,9 +93,11 @@ function AccordionGroup({
       {/* Items — animated via grid trick */}
       <div className={`nav-accordion-group-body${open ? " open" : ""}`}>
         <div>
-          {folderIds.map((folderId) => {
+          {folders.map((folder) => {
+            const folderId = folder.id;
             const folderName = foldersById[folderId]?.name || "Untitled folder";
             const collapsed = isCollapsed(folderId);
+            const folderItems = byFolderId[folderId] || [];
             return (
               <div key={folderId}>
                 <button
@@ -110,9 +113,9 @@ function AccordionGroup({
                 >
                   <span className="nav-accordion-group-chevron">{collapsed ? "▸" : "▾"}</span>
                   <span>{folderName}</span>
-                  <span className="nav-accordion-group-count">{byFolderId[folderId].length}</span>
+                  <span className="nav-accordion-group-count">{folderItems.length}</span>
                 </button>
-                {!collapsed && byFolderId[folderId].map(renderItem)}
+                {!collapsed && folderItems.map(renderItem)}
               </div>
             );
           })}
@@ -276,8 +279,8 @@ export function NavigationSidebar({
                 <div className="nav-accordion-empty">No content yet</div>
               ) : (
                 <>
-                  <AccordionGroup label="Dashboards" items={dashboards} foldersById={foldersById} scopeKey="nav-dashboards" openLinksInNewTab={false} onMoveToFolder={onMoveToFolder} />
-                  <AccordionGroup label="Reports" items={reports} foldersById={foldersById} scopeKey="nav-reports" openLinksInNewTab={false} onMoveToFolder={onMoveToFolder} />
+                  <AccordionGroup label="Dashboards" items={dashboards} folders={folders} foldersById={foldersById} scopeKey="nav-dashboards" openLinksInNewTab={false} onMoveToFolder={onMoveToFolder} />
+                  <AccordionGroup label="Reports" items={reports} folders={folders} foldersById={foldersById} scopeKey="nav-reports" openLinksInNewTab={false} onMoveToFolder={onMoveToFolder} />
                 </>
               )}
             </div>

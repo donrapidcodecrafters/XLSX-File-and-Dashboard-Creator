@@ -302,8 +302,10 @@ export function StudioWorkspaceHome({
         ) : null}
         {filteredObjects.length ? (
           <div className="studio-home-object-grid">
-            {Object.keys(byFolderId).map((folderId) => {
+            {folders.map((folder) => {
+              const folderId = folder.id;
               const collapsed = isCollapsed(folderId);
+              const folderItems = byFolderId[folderId] || [];
               return (
                 <div key={folderId} style={{ gridColumn: "1 / -1" }}>
                   <button
@@ -318,11 +320,11 @@ export function StudioWorkspaceHome({
                   >
                     <span className="nav-accordion-group-chevron">{collapsed ? "▸" : "▾"}</span>
                     <span>{foldersById[folderId]?.name || "Untitled folder"}</span>
-                    <span className="nav-accordion-group-count">{byFolderId[folderId].length}</span>
+                    <span className="nav-accordion-group-count">{folderItems.length}</span>
                   </button>
                   {!collapsed ? (
                     <div className="studio-home-object-grid">
-                      {byFolderId[folderId].map(renderObjectCard)}
+                      {folderItems.map(renderObjectCard)}
                     </div>
                   ) : null}
                 </div>

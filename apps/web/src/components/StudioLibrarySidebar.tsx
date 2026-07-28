@@ -179,8 +179,10 @@ export function StudioLibrarySidebar({
         <div className="nav-list">
           {filteredObjects.length ? (
             <>
-              {Object.keys(byFolderId).map((folderId) => {
+              {folders.map((folder) => {
+                const folderId = folder.id;
                 const collapsed = isCollapsed(folderId);
+                const folderItems = byFolderId[folderId] || [];
                 return (
                   <div key={folderId}>
                     <button
@@ -195,9 +197,9 @@ export function StudioLibrarySidebar({
                     >
                       <span className="nav-accordion-group-chevron">{collapsed ? "▸" : "▾"}</span>
                       <span>{foldersById[folderId]?.name || "Untitled folder"}</span>
-                      <span className="nav-accordion-group-count">{byFolderId[folderId].length}</span>
+                      <span className="nav-accordion-group-count">{folderItems.length}</span>
                     </button>
-                    {!collapsed && byFolderId[folderId].map(renderObjectCard)}
+                    {!collapsed && folderItems.map(renderObjectCard)}
                   </div>
                 );
               })}
