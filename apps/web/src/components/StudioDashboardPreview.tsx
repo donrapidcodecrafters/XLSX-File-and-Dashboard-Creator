@@ -10,7 +10,7 @@ import {
   previewDashboardWidgetPlacementsToTabEnd,
   formatReportCellValue,
   getReportFieldLabel,
-  resolveDashboardWidgetDisplayMode,
+  resolveDashboardWidgetRenderMode,
   type DashboardWidgetPlacement,
   type DashboardWidgetDropPosition,
   type DashboardWidgetRowEdge,
@@ -33,8 +33,8 @@ function formatCell(value: unknown, report: ReportDefinition, table: TableDefini
 }
 
 function shouldShowWidgetChart(widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], report: ReportDefinition) {
-  return resolveDashboardWidgetDisplayMode(widget) === "chart"
-    || (resolveDashboardWidgetDisplayMode(widget) === "table" && report.view.showChartInTable);
+  const displayMode = resolveDashboardWidgetRenderMode(widget, report.view.mode);
+  return displayMode === "chart" || (displayMode === "table" && report.view.showChartInTable);
 }
 
 function resolveDropPosition(event: ReactDragEvent<HTMLElement>): DashboardWidgetDropPosition {
@@ -553,7 +553,7 @@ export function StudioDashboardPreview({
                       <strong>{widget.status === "failed" ? "Card unavailable" : "Preview ready"}</strong>
                       <span>{widget.error || widget.message}</span>
                     </div>
-                    {widget.status === "complete" && widget.widget.showSummary ? (
+                    {widget.status === "complete" && (widget.widget.showSummary || resolveDashboardWidgetRenderMode(widget.widget, widget.report.view.mode) === "summary") ? (
                       <div className="widget-metrics">
                         {widget.result.summary.map((item) => (
                           <div className="mini-stat" key={item.label}>
@@ -599,7 +599,7 @@ export function StudioDashboardPreview({
                         })()}
                       </div>
                     ) : null}
-                    {widget.status === "complete" && (resolveDashboardWidgetDisplayMode(widget.widget) === "table" || widget.widget.showDetails) ? (
+                    {widget.status === "complete" && (resolveDashboardWidgetRenderMode(widget.widget, widget.report.view.mode) === "table" || widget.widget.showDetails) ? (
                       <div className="compact-table-shell">
                         <ResizableDataTable
                           className="preview-widget-table-shell"

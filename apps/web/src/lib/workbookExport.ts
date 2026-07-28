@@ -8,6 +8,7 @@ import {
   DataRow,
   getDashboardWidgetPlacements,
   getReportFieldLabel,
+  resolveDashboardWidgetRenderMode,
   ReportDefinition,
   ReportRunResult,
   SummaryDatum,
@@ -1467,9 +1468,7 @@ function widgetBaseMode(widget: DashboardRunResult["tabs"][number]["widgets"][nu
 }
 
 function resolveWidgetDisplayMode(widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], report: ReportDefinition) {
-  const mode = widgetBaseMode(widget, report);
-  if (mode === "summary" || mode === "chart" || mode === "table") return mode;
-  return "table";
+  return resolveDashboardWidgetRenderMode(widget, report.view.mode);
 }
 
 function widgetShowsChart(widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], report: ReportDefinition) {

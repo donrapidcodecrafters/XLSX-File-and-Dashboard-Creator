@@ -8,6 +8,7 @@ import {
   type DataRow,
   getDashboardWidgetPlacements,
   getReportFieldLabel,
+  resolveDashboardWidgetRenderMode,
   type ReportDefinition,
   type ReportRunResult,
   type TableDefinition
@@ -63,20 +64,13 @@ const DRAWING_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.draw
 const DRAWING_RELATIONSHIP_TYPE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing";
 const MAX_NATIVE_CHART_SERIES = 32;
 
-function resolveWidgetDisplayMode(widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], reportMode: string) {
-  if (widget.displayMode !== "inherit") return widget.displayMode;
-  if (reportMode === "summary") return "summary";
-  if (reportMode === "chart") return "chart";
-  return "table";
-}
-
 function widgetShowsChart(widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], report: ReportDefinition) {
-  const displayMode = resolveWidgetDisplayMode(widget, report.view.mode);
+  const displayMode = resolveDashboardWidgetRenderMode(widget, report.view.mode);
   return displayMode === "chart" || (displayMode === "table" && report.view.showChartInTable);
 }
 
 function widgetShowsRows(widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], report: ReportDefinition) {
-  const displayMode = resolveWidgetDisplayMode(widget, report.view.mode);
+  const displayMode = resolveDashboardWidgetRenderMode(widget, report.view.mode);
   return ["table", "timeline", "calendar", "kanban"].includes(displayMode) || widget.showDetails;
 }
 
@@ -751,7 +745,7 @@ export async function exportDashboardNativeChartWorkbook(
         const exportResult = resolveWidgetResult(widget, exportResultsByWidgetId);
         const table = options.tablesById?.[widget.report.sourceTableId];
         const widgetTitle = widget.report.name || widget.widget.title;
-        const widgetDisplayMode = resolveWidgetDisplayMode(widget.widget, widget.report.view.mode);
+        const widgetDisplayMode = resolveDashboardWidgetRenderMode(widget.widget, widget.report.view.mode);
         const isSummaryMode = widgetDisplayMode === "summary";
 
         let widgetCursor = groupStartRow;

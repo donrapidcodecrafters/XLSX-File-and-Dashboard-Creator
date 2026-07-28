@@ -14,6 +14,7 @@ import {
   matchesFilterNode,
   mergeJoinedRows,
   normalizeChartAggregation,
+  resolveDashboardWidgetRenderMode,
   runReport,
   type ChartAggregation,
   type DashboardDefinition,
@@ -1665,10 +1666,7 @@ export async function executeReport(report: ReportDefinition, extraFilters: Filt
 }
 
 function resolveDashboardWidgetDisplayMode(report: ReportDefinition, widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"]) {
-  if (widget.displayMode !== "inherit") return widget.displayMode;
-  if (report.view.mode === "summary") return "summary";
-  if (report.view.mode === "chart") return "chart";
-  return "table";
+  return resolveDashboardWidgetRenderMode(widget, report.view.mode);
 }
 
 function widgetNeedsAggregates(report: ReportDefinition, widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"]) {

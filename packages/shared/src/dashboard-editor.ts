@@ -66,6 +66,22 @@ export function resolveDashboardWidgetDisplayMode(widget: WidgetDefinition) {
   return "chart" as const;
 }
 
+/**
+ * Canonical "what does this widget actually render" resolver — respects the source
+ * report's own view.mode when the widget is left as "inherit", instead of guessing.
+ * This is what the live dashboard, both Excel export paths, and the server's own
+ * dashboard-execution logic all use; the builder preview must use this too (rather
+ * than resolveDashboardWidgetDisplayMode, which only picks layout-sizing defaults and
+ * has no report context) so a widget never shows a chart while building that then
+ * silently fails to appear on the live dashboard.
+ */
+export function resolveDashboardWidgetRenderMode(widget: Pick<WidgetDefinition, "displayMode">, reportMode: string) {
+  if (widget.displayMode !== "inherit") return widget.displayMode;
+  if (reportMode === "summary") return "summary" as const;
+  if (reportMode === "chart") return "chart" as const;
+  return "table" as const;
+}
+
 export function getDashboardWidgetLayoutBounds(widget: WidgetDefinition) {
   const displayMode = resolveDashboardWidgetDisplayMode(widget);
   if (displayMode === "summary") {

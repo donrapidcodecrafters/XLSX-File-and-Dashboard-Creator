@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useSetReaderTools } from "../contexts/ReaderToolsContext";
 import { Link } from "react-router-dom";
-import { buildDashboardFilters, compactDashboardTabWidgets, formatReportCellValue, getDashboardWidgetLayoutStyle, getDashboardWidgetPlacements, getReportFieldLabel, repackDashboardTabLayout, resolveActiveDashboardTabId, type DashboardDefinition, type DashboardRunResult, type RefreshJobStatus, type ReportDefinition, type ReportRunResult, type TableDefinition } from "@studio/shared";
+import { buildDashboardFilters, compactDashboardTabWidgets, formatReportCellValue, getDashboardWidgetLayoutStyle, getDashboardWidgetPlacements, getReportFieldLabel, repackDashboardTabLayout, resolveActiveDashboardTabId, resolveDashboardWidgetRenderMode, type DashboardDefinition, type DashboardRunResult, type RefreshJobStatus, type ReportDefinition, type ReportRunResult, type TableDefinition } from "@studio/shared";
 import { createExportSaveTarget, fetchFieldValues, fetchReportExportBundle, renderDashboard, runReportPage, type ExportSaveTarget } from "../lib/api";
 import { ChartPreview } from "./ChartPreview";
 import { RefreshOverlay } from "./RefreshOverlay";
@@ -46,15 +46,8 @@ interface DashboardViewProps {
   headerActions?: ReactNode;
 }
 
-function resolveWidgetDisplayMode(widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], reportMode: string) {
-  if (widget.displayMode !== "inherit") return widget.displayMode;
-  if (reportMode === "summary") return "summary";
-  if (reportMode === "chart") return "chart";
-  return "table";
-}
-
 function widgetShowsChart(widget: DashboardRunResult["tabs"][number]["widgets"][number]["widget"], report: DashboardRunResult["tabs"][number]["widgets"][number]["report"]) {
-  const displayMode = resolveWidgetDisplayMode(widget, report.view.mode);
+  const displayMode = resolveDashboardWidgetRenderMode(widget, report.view.mode);
   return displayMode === "chart" || (displayMode === "table" && report.view.showChartInTable);
 }
 
@@ -986,7 +979,7 @@ export function DashboardView({
                   const pageLoading = widgetPageLoading[widget.widgetId];
                   const widgetTable = tables?.find((item) => item.id === widget.report.sourceTableId || item.quickbaseTableId === widget.report.sourceTableId);
                   const axisLabels = getChartAxisLabels(tables, widget.report);
-                  const resolvedDisplayMode = resolveWidgetDisplayMode(widget.widget, widget.report.view.mode);
+                  const resolvedDisplayMode = resolveDashboardWidgetRenderMode(widget.widget, widget.report.view.mode);
                   const isSummaryOnly = resolvedDisplayMode === "summary";
                   const showsTable = (resolvedDisplayMode === "table" || widgetRenderMode(widget.widget, widget.report) === "timeline" || widgetRenderMode(widget.widget, widget.report) === "calendar" || widgetRenderMode(widget.widget, widget.report) === "kanban" || widget.widget.showDetails) && !isSummaryOnly;
                   const widgetTitle = widget.report.name || widget.widget.title;
@@ -1144,7 +1137,7 @@ export function DashboardView({
                   .map((option) => option.filterId)
                   .filter((filterId) => String(runtimeFilters[filterId] || "").trim())
               ));
-              const resolvedDisplayMode = resolveWidgetDisplayMode(widget.widget, widget.report.view.mode);
+              const resolvedDisplayMode = resolveDashboardWidgetRenderMode(widget.widget, widget.report.view.mode);
               const crosstabData = pagedResult.crosstab || widget.result.crosstab;
               const isSummaryOnly = resolvedDisplayMode === "summary" && !crosstabData;
               const widgetTitle = widget.report.name || widget.widget.title;
@@ -1304,7 +1297,7 @@ export function DashboardView({
             <div className="card-head">
               <strong>{(() => {
                 const base = focusedWidget.widget.title || focusedWidget.report.name;
-                const focusedResolvedMode = resolveWidgetDisplayMode(focusedWidget.widget, focusedWidget.report.view.mode);
+                const focusedResolvedMode = resolveDashboardWidgetRenderMode(focusedWidget.widget, focusedWidget.report.view.mode);
                 const focusedIsSummaryOnly = focusedResolvedMode === "summary" && !focusedWidget.result.crosstab;
                 return focusedIsSummaryOnly ? `${base} - Summary` : base;
               })()}</strong>
@@ -1315,7 +1308,7 @@ export function DashboardView({
                 <button className="ghost-button" onClick={() => setFocusedWidgetId("")}>Close</button>
               </div>
             </div>
-            {(focusedWidget.widget.showSummary || (resolveWidgetDisplayMode(focusedWidget.widget, focusedWidget.report.view.mode) === "summary" && !focusedWidget.result.crosstab)) && focusedWidget.result.summary.length > 0 ? (
+            {(focusedWidget.widget.showSummary || (resolveDashboardWidgetRenderMode(focusedWidget.widget, focusedWidget.report.view.mode) === "summary" && !focusedWidget.result.crosstab)) && focusedWidget.result.summary.length > 0 ? (
               <div className="widget-metrics">
                 {focusedWidget.result.summary.map((item) => (
                   <div key={item.label} className="mini-stat">
