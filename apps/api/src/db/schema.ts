@@ -144,6 +144,9 @@ CREATE TABLE IF NOT EXISTS report_configs (
 
 CREATE INDEX IF NOT EXISTS report_configs_enabled_next_run_idx ON report_configs (enabled, next_run_at);
 
+-- Track who created each scheduled email so failure notifications can reach them directly.
+ALTER TABLE report_configs ADD COLUMN IF NOT EXISTS created_by text NOT NULL DEFAULT '';
+
 CREATE TABLE IF NOT EXISTS export_jobs (
   id text PRIMARY KEY,
   object_id text NOT NULL,

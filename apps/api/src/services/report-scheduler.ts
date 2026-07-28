@@ -8,6 +8,7 @@ import { apiConfig, isPostgresEnabled } from "../config/env.js";
 import { pgQuery } from "../db/postgres.js";
 import { studioStore } from "./studio-store.js";
 import { logAuditEvent } from "./audit-log.js";
+import { sendSystemNotification } from "./notification-service.js";
 import { fetchReportExportBundle, executeDashboard } from "./report-runner.js";
 import {
   streamReportWorkbook,
@@ -35,6 +36,7 @@ interface ReportConfigRow {
   config: Record<string, unknown>;
   email_subject: string;
   email_body: string;
+  created_by: string;
   last_run_at: Date | null;
   next_run_at: Date | null;
 }
@@ -181,15 +183,15 @@ function buildScheduledReportHtml(opts: {
 }
 
 async function runReportConfig(config: ReportConfigRow, logger: FastifyBaseLogger) {
-  // Guard: recipients and SendGrid key must be present before doing any expensive work
+  // Guard: recipients and SendGrid key must be present before doing any expensive work.
+  // These throw (rather than silently returning) so processDueConfigs treats them as real
+  // failures — notifying and retrying next cycle instead of marking last_run_at as a success.
   const recipients = (config.send_to || []).filter(Boolean);
   if (!recipients.length) {
-    logger.warn({ configId: config.id }, "report-scheduler: no recipients configured, skipping");
-    return;
+    throw new Error("No recipients configured for this scheduled report.");
   }
   if (!apiConfig.automation.sendgridApiKey) {
-    logger.warn({ configId: config.id }, "report-scheduler: SENDGRID_API_KEY not set, skipping");
-    return;
+    throw new Error("SENDGRID_API_KEY is not set — scheduled report emails cannot be sent.");
   }
 
   // Ensure the studio document is fresh before reading objects
@@ -352,12 +354,31 @@ export async function processDueConfigs(logger: FastifyBaseLogger) {
         [nextRunAt || null, config.id]
       );
     } catch (error) {
-      logger.error({ configId: config.id, objectId: config.object_id, error: error instanceof Error ? error.message : error }, "report-scheduler: config run failed");
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error({ configId: config.id, objectId: config.object_id, error: errorMessage }, "report-scheduler: config run failed");
       const nextRunAt = computeNextCronRun(config.cron_expression || "0 * * * *", config.time_zone || "UTC");
       await pgQuery(
         `UPDATE report_configs SET next_run_at = $1, updated_at = now() WHERE id = $2`,
         [nextRunAt || null, config.id]
       ).catch(() => {});
+      const obj = resolveObject(config.object_id);
+      void sendSystemNotification(
+        {
+          type: "scheduled_email_failed",
+          title: "Scheduled Email Report Failed",
+          status: "error",
+          summary: `The scheduled ${config.object_type} email "${obj?.name || config.object_id}" failed to send.`,
+          errors: [errorMessage],
+          occurredAt: new Date().toISOString(),
+          triggeredBy: "Scheduled email",
+          details: [
+            { label: "Object", value: obj?.name || config.object_id },
+            { label: "Recipients", value: (config.send_to || []).join(", ") || "(none configured)" },
+            { label: "Schedule", value: describeScheduleExpr(config.cron_expression) }
+          ]
+        },
+        config.created_by ? [config.created_by] : []
+      );
     }
   }
 }

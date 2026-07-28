@@ -10,7 +10,8 @@ export type SystemEventType =
   | "scheduled_refresh_complete"
   | "scheduled_refresh_failed"
   | "export_complete"
-  | "export_failed";
+  | "export_failed"
+  | "scheduled_email_failed";
 
 export interface SystemEventPayload {
   type: SystemEventType;
@@ -176,12 +177,18 @@ async function getNotificationRecipients(): Promise<string[]> {
   }
 }
 
-export async function sendSystemNotification(event: SystemEventPayload): Promise<void> {
+/**
+ * @param extraRecipients Always notified regardless of their system_notifications_enabled
+ * preference — e.g. the person who created the scheduled item that just failed, so they
+ * find out even if they haven't opted into general system notifications.
+ */
+export async function sendSystemNotification(event: SystemEventPayload, extraRecipients: string[] = []): Promise<void> {
   const key = apiConfig.automation?.sendgridApiKey || "";
   const from = apiConfig.automation?.sendgridFromEmail || "";
   if (!key || !from) return;
 
-  const recipients = await getNotificationRecipients();
+  const broadcastRecipients = await getNotificationRecipients();
+  const recipients = Array.from(new Set([...broadcastRecipients, ...extraRecipients.filter(Boolean)]));
   if (!recipients.length) return;
 
   let platformName = "Enterprise Platform";

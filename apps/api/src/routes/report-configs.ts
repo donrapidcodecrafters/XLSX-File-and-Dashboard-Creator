@@ -17,6 +17,7 @@ export interface ReportConfigRow {
   config: Record<string, unknown>;
   email_subject: string;
   email_body: string;
+  created_by: string;
   last_run_at: string | null;
   next_run_at: string | null;
   created_at: string;
@@ -66,18 +67,20 @@ export async function registerReportConfigRoutes(app: FastifyInstance) {
     const timeZone = String(body.time_zone || "UTC").trim() || "UTC";
     const sendTo = sanitizeRecipients(body.send_to);
     const enabled = body.enabled === true;
+    const createdBy = request.session.userEmail || "";
     const result = await pgQuery<ReportConfigRow>(
       `INSERT INTO report_configs (
         id, object_id, object_type, enabled, cron_expression, time_zone,
-        send_to, sendgrid_template_id, export_format, config, email_subject, email_body
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12)
+        send_to, sendgrid_template_id, export_format, config, email_subject, email_body, created_by
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13)
       RETURNING *`,
       [
         id, objectId, objectType, enabled, cronExpression, timeZone,
         sendTo, String(body.sendgrid_template_id || ""),
         "xlsx", JSON.stringify(body.config || {}),
         String(body.email_subject || "").trim(),
-        String(body.email_body || "").trim()
+        String(body.email_body || "").trim(),
+        createdBy
       ]
     );
     return { config: result.rows[0] };
