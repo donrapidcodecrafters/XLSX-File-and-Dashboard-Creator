@@ -102,7 +102,7 @@ import {
   updateSourceKeyField
 } from "../lib/studioApi";
 import { createExportSaveTarget, downloadExportJob, fetchExportJobStatus, fetchExportJobs, renderDashboard, startDashboardExportJob, startReportExportJob, runReport as runReportFromServer } from "../lib/api";
-import { applyLaunchScopeToDocument } from "../lib/catalog";
+import { applyLaunchScopeToDocument, resolveFolderName } from "../lib/catalog";
 import { buildDashboardExportDefinition } from "../lib/dashboardExport";
 import { buildHostedHashUrl, buildHostedRoute } from "../lib/embed";
 import { ChartPreview } from "./ChartPreview";
@@ -276,6 +276,7 @@ function buildDraftFromReport(report: ReportDefinition, table?: TableDefinition 
     type: "report",
     name: report.name,
     description: report.description,
+    folderId: report.folderId,
     scope: report.scope,
     ownerUserId: report.ownerUserId || "",
     sharedUserIds: clone(report.sharedUserIds || []),
@@ -1186,7 +1187,7 @@ function createUnavailableDashboardReport(widget: DashboardDefinition["tabs"][nu
     schemaVersion: 1,
     name: widget.title || "Unavailable report",
     description: message,
-    folder: "Unavailable",
+    folderId: "",
     category: "Unavailable",
     tags: [],
     scope: "global",
@@ -1860,7 +1861,7 @@ export function StudioPage({
       .map((report) => ({
         value: report.id,
         label: report.name,
-        keywords: [report.folder, report.category, ...(report.tags || [])]
+        keywords: [resolveFolderName(report.folderId, bundle.folders), report.category, ...(report.tags || [])]
       }))
       .sort((left, right) => left.label.localeCompare(right.label, undefined, { numeric: true, sensitivity: "base" })),
     [objects]
@@ -1979,7 +1980,7 @@ export function StudioPage({
       schemaVersion: existingPreviewReport?.schemaVersion || 1,
       name: createDraft.name || "Draft report",
       description: createDraft.description,
-      folder: "Custom",
+      folderId: createDraft.folderId,
       category: "Reporting",
       tags: [],
       scope: createDraft.scope,
@@ -2742,6 +2743,40 @@ export function StudioPage({
     writeObject(nextObject);
   }
 
+  function createFolder(name: string) {
+    const id = uid("folder");
+    const now = new Date().toISOString();
+    applyDocumentUpdate((draft) => {
+      draft.bundle.folders[id] = { id, name: name.trim() || "New folder", description: "", parentFolderId: null, createdAt: now, updatedAt: now };
+    });
+    return Promise.resolve(id);
+  }
+
+  function moveObjectToFolder(objectId: string, folderId: string) {
+    const object = bundle.objects[objectId];
+    if (!object) return;
+    writeObject({ ...object, folderId });
+  }
+
+  async function deleteFolder(folderId: string) {
+    const nextDocument = clone(documentState);
+    delete nextDocument.bundle.folders[folderId];
+    // Only clears folderId on member objects — never touches bundle.objects' keys, so this
+    // structurally cannot delete a report or dashboard as a side effect.
+    Object.values(nextDocument.bundle.objects).forEach((object) => {
+      if (object.folderId === folderId) object.folderId = "";
+    });
+    setHistory((previous) => [clone(documentState), ...previous].slice(0, 60));
+    setFuture([]);
+    setDocumentState(nextDocument);
+    pushToast("Folder removed. Its contents were kept and moved to the top level.", "warn");
+    try {
+      await persistRemote(nextDocument, { removedFolderIds: [folderId] });
+    } catch (error) {
+      pushToast(error instanceof Error ? error.message : "Delete save failed after local removal.", "danger");
+    }
+  }
+
   function updateRuntimeFilter(filterId: string, updater: (filter: DashboardDefinition["runtimeFilters"][number]) => DashboardDefinition["runtimeFilters"][number]) {
     if (!activeDashboard) return;
     updateObject({
@@ -3270,7 +3305,7 @@ export function StudioPage({
         schemaVersion: 1,
         name: createDraft.name.trim() || "New Dashboard",
         description: createDraft.description.trim(),
-        folder: "Custom",
+        folderId: createDraft.folderId,
         category: "Dashboard",
         tags: [],
         scope: sharing.scope,
@@ -3321,7 +3356,7 @@ export function StudioPage({
       schemaVersion: existingReport?.schemaVersion || 1,
       name: createDraft.name.trim() || "New Report",
       description: createDraft.description.trim(),
-      folder: existingReport?.folder || "Custom",
+      folderId: existingReport?.folderId ?? createDraft.folderId,
       category: existingReport?.category || "Reporting",
       tags: existingReport?.tags || [],
       scope: sharing.scope,
@@ -3575,10 +3610,10 @@ export function StudioPage({
     pushToast("Reapplied change.");
   }
 
-  async function persistRemote(nextDocument: StudioDocument, options?: { removedObjectIds?: string[]; silent?: boolean }): Promise<boolean> {
+  async function persistRemote(nextDocument: StudioDocument, options?: { removedObjectIds?: string[]; removedFolderIds?: string[]; silent?: boolean }): Promise<boolean> {
     setSavingRemote(true);
     try {
-      const response = await saveStudioDocument(nextDocument, { removedObjectIds: options?.removedObjectIds || [] });
+      const response = await saveStudioDocument(nextDocument, { removedObjectIds: options?.removedObjectIds || [], removedFolderIds: options?.removedFolderIds || [] });
       const persistedDocument = mergeRefreshSourceFallback(nextDocument, normalizeStudioDocument(response.document));
       if (options?.removedObjectIds?.length) {
         stripRemovedObjectIds(persistedDocument, options.removedObjectIds);
@@ -5145,6 +5180,18 @@ export function StudioPage({
                       <span>Description</span>
                       <input value={createDraft.description} onChange={(event) => setCreateDraft((current) => ({ ...current, description: event.target.value }))} />
                     </label>
+                    <label className="field">
+                      <span>Folder</span>
+                      <select
+                        value={createDraft.folderId}
+                        onChange={(event) => setCreateDraft((current) => ({ ...current, folderId: event.target.value }))}
+                      >
+                        <option value="">No folder</option>
+                        {Object.values(bundle.folders).map((folder) => (
+                          <option key={folder.id} value={folder.id}>{folder.name}</option>
+                        ))}
+                      </select>
+                    </label>
                     <SharingScopeEditor
                       scope={createDraft.scope}
                       ownerUserId={createDraft.ownerUserId}
@@ -5523,6 +5570,9 @@ export function StudioPage({
             hasPersonalObjects={visibleObjects.some((object) => object.scope === "personal")}
             filteredObjects={filteredObjects}
             selectedReportIds={selectedHomeReportIds}
+            folders={Object.values(bundle.folders)}
+            onMoveToFolder={moveObjectToFolder}
+            onCreateFolder={createFolder}
             templates={[...documentState.templates.layouts, ...documentState.templates.yaml]}
             openLinksInNewTab={openLinksInNewTab}
             onSave={saveRemote}
@@ -5575,6 +5625,15 @@ export function StudioPage({
         {activeReport && canDo("building.delete") ? <button className="btn-danger" onClick={() => deleteObject(activeReport.id)}>Delete report</button> : null}
         <button onClick={() => toggleFavorite(activeObject.id)}>{documentState.favorites.includes(activeObject.id) ? "Unfavorite" : "Favorite"}</button>
         <button onClick={() => cloneObject(activeObject)}>Clone</button>
+        <label className="field compact-field" style={{ display: "inline-flex" }}>
+          <span className="micro">Folder</span>
+          <select value={activeObject.folderId} onChange={(event) => moveObjectToFolder(activeObject.id, event.target.value)}>
+            <option value="">No folder</option>
+            {Object.values(bundle.folders).map((folder) => (
+              <option key={folder.id} value={folder.id}>{folder.name}</option>
+            ))}
+          </select>
+        </label>
         <button onClick={undo} disabled={!history.length}>Undo</button>
         <button onClick={redo} disabled={!future.length}>Redo</button>
         <button onClick={() => setDrawer("share")}>Share</button>
@@ -5746,6 +5805,15 @@ export function StudioPage({
                 <button type="button" onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save to server"}</button>
                 <button type="button" onClick={() => toggleFavorite(activeDashboard.id)}>{documentState.favorites.includes(activeDashboard.id) ? "Unfavorite" : "Favorite"}</button>
                 <button type="button" onClick={() => cloneObject(activeDashboard)}>Clone dashboard</button>
+                <label className="field compact-field" style={{ display: "inline-flex" }}>
+                  <span className="micro">Folder</span>
+                  <select value={activeDashboard.folderId} onChange={(event) => moveObjectToFolder(activeDashboard.id, event.target.value)}>
+                    <option value="">No folder</option>
+                    {Object.values(bundle.folders).map((folder) => (
+                      <option key={folder.id} value={folder.id}>{folder.name}</option>
+                    ))}
+                  </select>
+                </label>
                 {canDo("building.delete") && <button type="button" className="btn-danger" onClick={() => deleteObject(activeDashboard.id)}>Delete dashboard</button>}
                 <button type="button" onClick={undo} disabled={!history.length}>Undo</button>
                 <button type="button" onClick={redo} disabled={!future.length}>Redo</button>

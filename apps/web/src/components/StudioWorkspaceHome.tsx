@@ -1,8 +1,12 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
-import { type StudioObject, type StudioTemplateRecord } from "@studio/shared";
-import { typeLabel } from "../lib/catalog";
+import { groupStudioLibraryItemsByFolder, type FolderDefinition, type StudioObject, type StudioTemplateRecord } from "@studio/shared";
+import { buildFolderMap, resolveFolderName, typeLabel } from "../lib/catalog";
 import { buildHostedRoute } from "../lib/embed";
+import { useFolderCollapseState } from "../lib/folders";
 import { ClearableInputField } from "./ClearableInputField";
+
+const DRAG_OBJECT_ID_MIME = "application/x-studio-object-id";
 
 type LibraryFilter = "all" | "report" | "dashboard";
 type LibraryScopeFilter = "all" | "global" | "selected" | "personal";
@@ -26,6 +30,9 @@ export function StudioWorkspaceHome({
   hasPersonalObjects,
   filteredObjects,
   selectedReportIds,
+  folders = [],
+  onMoveToFolder,
+  onCreateFolder,
   templates,
   openLinksInNewTab = false,
   onSave,
@@ -61,6 +68,9 @@ export function StudioWorkspaceHome({
   hasPersonalObjects: boolean;
   filteredObjects: StudioObject[];
   selectedReportIds: string[];
+  folders?: FolderDefinition[];
+  onMoveToFolder?: (objectId: string, folderId: string) => void;
+  onCreateFolder?: (name: string) => Promise<string | undefined>;
   templates: StudioTemplateRecord[];
   openLinksInNewTab?: boolean;
   onSave: () => void;
@@ -80,6 +90,51 @@ export function StudioWorkspaceHome({
   onLibrarySortChange?: (value: LibrarySort) => void;
 }) {
   const visibleReports = filteredObjects.filter((object) => object.type === "report");
+  const foldersById = buildFolderMap(folders);
+  const { toggleFolder, isCollapsed } = useFolderCollapseState("studio-home");
+  const { unfoldered, byFolderId } = groupStudioLibraryItemsByFolder(filteredObjects);
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+
+  function renderObjectCard(object: StudioObject) {
+    return (
+      <article
+        key={object.id}
+        className={`nav-card studio-home-object-card${object.type === "report" && selectedReportIds.includes(object.id) ? " is-selected" : ""}`}
+        draggable={Boolean(onMoveToFolder)}
+        onDragStart={(event) => { if (onMoveToFolder) event.dataTransfer.setData(DRAG_OBJECT_ID_MIME, object.id); }}
+      >
+        <div className="studio-home-object-card-head">
+          <div className="studio-home-card-badges">
+            <span className="badge">{typeLabel(object.type)}</span>
+            <span className="badge">{object.scope === "personal" ? "Personal" : object.scope === "selected" ? "Selected users" : "Shared"}</span>
+          </div>
+          {object.type === "report" ? (
+            <label className="toggle-row studio-home-select-toggle">
+              <input
+                type="checkbox"
+                checked={selectedReportIds.includes(object.id)}
+                onChange={(event) => onToggleReportSelection(object.id, event.target.checked)}
+              />
+              Select
+            </label>
+          ) : null}
+        </div>
+        <strong>{object.name}</strong>
+        <span>{object.description || "Open this item to edit its setup, layout, and output."}</span>
+        <span className="micro">{resolveFolderName(object.folderId, foldersById) || "Workspace"} · {object.category || (object.type === "report" ? "Reporting" : "Dashboard")}</span>
+        <div className="studio-home-object-card-actions">
+          <Link
+            className="ghost-button btn-system"
+            to={buildHostedRoute(`/studio/${object.id}`)}
+          >
+            Open
+          </Link>
+        </div>
+      </article>
+    );
+  }
+
   const quickStartActions = [
     ...(canCreate !== false ? [{
       id: "new-report",
@@ -221,42 +276,59 @@ export function StudioWorkspaceHome({
             <span>Personal items stay out of the default library until you switch the scope filter.</span>
           </div>
         ) : null}
+        {onCreateFolder ? (
+          creatingFolder ? (
+            <form
+              className="filter-grid compact-grid"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const name = newFolderName.trim();
+                if (name) void onCreateFolder(name);
+                setNewFolderName("");
+                setCreatingFolder(false);
+              }}
+            >
+              <input
+                autoFocus
+                value={newFolderName}
+                onChange={(event) => setNewFolderName(event.target.value)}
+                onBlur={() => { if (!newFolderName.trim()) setCreatingFolder(false); }}
+                placeholder="Folder name"
+              />
+            </form>
+          ) : (
+            <button type="button" className="ghost-button" style={{ alignSelf: "flex-start" }} onClick={() => setCreatingFolder(true)}>+ New folder</button>
+          )
+        ) : null}
         {filteredObjects.length ? (
           <div className="studio-home-object-grid">
-            {filteredObjects.map((object) => (
-              <article
-                key={object.id}
-                className={`nav-card studio-home-object-card${object.type === "report" && selectedReportIds.includes(object.id) ? " is-selected" : ""}`}
-              >
-                <div className="studio-home-object-card-head">
-                  <div className="studio-home-card-badges">
-                    <span className="badge">{typeLabel(object.type)}</span>
-                    <span className="badge">{object.scope === "personal" ? "Personal" : object.scope === "selected" ? "Selected users" : "Shared"}</span>
-                  </div>
-                  {object.type === "report" ? (
-                    <label className="toggle-row studio-home-select-toggle">
-                      <input
-                        type="checkbox"
-                        checked={selectedReportIds.includes(object.id)}
-                        onChange={(event) => onToggleReportSelection(object.id, event.target.checked)}
-                      />
-                      Select
-                    </label>
+            {Object.keys(byFolderId).map((folderId) => {
+              const collapsed = isCollapsed(folderId);
+              return (
+                <div key={folderId} style={{ gridColumn: "1 / -1" }}>
+                  <button
+                    type="button"
+                    className="nav-accordion-folder"
+                    onClick={() => toggleFolder(folderId)}
+                    onDragOver={(event) => { if (onMoveToFolder) event.preventDefault(); }}
+                    onDrop={(event) => {
+                      const objectId = event.dataTransfer.getData(DRAG_OBJECT_ID_MIME);
+                      if (objectId) onMoveToFolder?.(objectId, folderId);
+                    }}
+                  >
+                    <span className="nav-accordion-group-chevron">{collapsed ? "▸" : "▾"}</span>
+                    <span>{foldersById[folderId]?.name || "Untitled folder"}</span>
+                    <span className="nav-accordion-group-count">{byFolderId[folderId].length}</span>
+                  </button>
+                  {!collapsed ? (
+                    <div className="studio-home-object-grid">
+                      {byFolderId[folderId].map(renderObjectCard)}
+                    </div>
                   ) : null}
                 </div>
-                <strong>{object.name}</strong>
-                <span>{object.description || "Open this item to edit its setup, layout, and output."}</span>
-                <span className="micro">{object.folder || "Workspace"} · {object.category || (object.type === "report" ? "Reporting" : "Dashboard")}</span>
-                <div className="studio-home-object-card-actions">
-                  <Link
-                    className="ghost-button btn-system"
-                    to={buildHostedRoute(`/studio/${object.id}`)}
-                  >
-                    Open
-                  </Link>
-                </div>
-              </article>
-            ))}
+              );
+            })}
+            {unfoldered.map(renderObjectCard)}
           </div>
         ) : (
           <div className="empty-hint" style={{ textAlign: "center", padding: "2rem" }}>

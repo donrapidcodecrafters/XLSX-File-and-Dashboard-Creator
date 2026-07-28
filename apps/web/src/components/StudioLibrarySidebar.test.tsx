@@ -30,7 +30,7 @@ function SidebarHarness() {
     .filter((object) => libraryScopeFilter === "all" || object.scope === libraryScopeFilter)
     .filter((object) => {
       if (!libraryQuery.trim()) return true;
-      return `${object.name} ${object.description} ${object.folder} ${object.category}`.toLowerCase().includes(libraryQuery.toLowerCase());
+      return `${object.name} ${object.description} ${object.category}`.toLowerCase().includes(libraryQuery.toLowerCase());
     });
   const templates: StudioTemplateRecord[] = [...document.templates.layouts, ...document.templates.yaml];
 

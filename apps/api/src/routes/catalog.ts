@@ -12,7 +12,8 @@ export async function registerCatalogRoutes(app: FastifyInstance) {
   app.get("/api/catalog", async () => {
     return {
       app: objectStore.getAppInfo(),
-      objects: objectStore.listCatalog()
+      objects: objectStore.listCatalog(),
+      folders: objectStore.listFolders()
     };
   });
 

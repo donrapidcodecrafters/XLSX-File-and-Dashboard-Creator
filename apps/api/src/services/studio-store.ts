@@ -225,6 +225,13 @@ export class StudioStore {
         this.persist(this.document, { skipCacheWrite: true });
       }
     }
+    // Schema v3: folders introduced. normalizeStudioDocument() already declaratively defaults
+    // bundle.folders to {} and drops the old free-text folder string on every object, so no
+    // imperative migration is needed here — just record that this document has passed v3.
+    if (this.document.schemaVersion < 3) {
+      this.document.schemaVersion = 3;
+      this.persist(this.document, { skipCacheWrite: true });
+    }
   }
 
   private load(): StudioDocument {

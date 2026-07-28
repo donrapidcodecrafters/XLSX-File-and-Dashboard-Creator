@@ -792,7 +792,7 @@ function createFallbackWidgetReport(widget: DashboardDefinition["tabs"][number][
     schemaVersion: 1,
     name: widget.title || "Unavailable report",
     description: message,
-    folder: "Unavailable",
+    folderId: "",
     category: "Unavailable",
     tags: [],
     scope: "global",

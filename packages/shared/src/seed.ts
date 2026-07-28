@@ -170,7 +170,7 @@ function createReport(input: Partial<ReportDefinition> & Pick<ReportDefinition, 
     schemaVersion: input.schemaVersion || 1,
     name: input.name,
     description: input.description || "",
-    folder: input.folder || "Operations",
+    folderId: input.folderId || "",
     category: input.category || "Reporting",
     tags: input.tags || [],
     scope: input.scope || "global",
@@ -217,7 +217,7 @@ function createDashboard(input: Partial<DashboardDefinition> & Pick<DashboardDef
     schemaVersion: input.schemaVersion || 1,
     name: input.name,
     description: input.description || "",
-    folder: input.folder || "Executive",
+    folderId: input.folderId || "",
     category: input.category || "Dashboard",
     tags: input.tags || [],
     scope: input.scope || "global",
@@ -427,7 +427,8 @@ export function buildSeedBundle(): SeedBundle {
     tables,
     data,
     objects,
-    order: [dashboard.id, projects.id, tasks.id, invoices.id, personalProjects.id]
+    order: [dashboard.id, projects.id, tasks.id, invoices.id, personalProjects.id],
+    folders: {}
   };
 }
 
@@ -680,6 +681,9 @@ export function normalizeStudioDocument(input: Partial<StudioDocument> | null | 
         return [id, {
           ...object,
           schemaVersion: Number(object.schemaVersion || 1),
+          // Legacy documents carried a free-text `folder` string; it's dropped here in favor
+          // of folderId referencing a real FolderDefinition in bundle.folders (or "" = unfoldered).
+          folderId: String(object.folderId || ""),
           scope: ((object.scope || "global") as StudioObjectScope),
           createdByUserId: String(object.createdByUserId || ""),
           ownerUserId: String(object.ownerUserId || ""),
@@ -696,6 +700,7 @@ export function normalizeStudioDocument(input: Partial<StudioDocument> | null | 
       return [id, {
         ...object,
         schemaVersion: Number(object.schemaVersion || 1),
+        folderId: String(object.folderId || ""),
         scope: ((object.scope || "global") as StudioObjectScope),
         createdByUserId: String(object.createdByUserId || ""),
         ownerUserId: String(object.ownerUserId || ""),
@@ -784,7 +789,20 @@ export function normalizeStudioDocument(input: Partial<StudioDocument> | null | 
       })),
       data: source.bundle?.data || defaults.bundle.data,
       objects: normalizedObjects,
-      order: source.bundle?.order || defaults.bundle.order
+      order: source.bundle?.order || defaults.bundle.order,
+      folders: Object.fromEntries(
+        Object.entries(source.bundle?.folders || defaults.bundle.folders).map(([id, folder]) => [
+          String(id),
+          {
+            id: String(folder?.id || id),
+            name: String(folder?.name || "Untitled folder"),
+            description: String(folder?.description || ""),
+            parentFolderId: null,
+            createdAt: String(folder?.createdAt || new Date().toISOString()),
+            updatedAt: String(folder?.updatedAt || new Date().toISOString())
+          }
+        ])
+      )
     },
     personalOverrides: {
       dashboards: Object.fromEntries(

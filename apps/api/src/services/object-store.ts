@@ -1,6 +1,7 @@
 import {
   type CatalogSummaryItem,
   type DashboardDefinition,
+  type FolderDefinition,
   type ReportDefinition,
   type StudioObject,
   type TableDefinition,
@@ -51,7 +52,8 @@ export class ObjectStore {
         schemaVersion: object.schemaVersion,
         name: object.name,
         description: object.description,
-        folder: object.folder,
+        folderId: object.folderId,
+        folderName: bundle.folders[object.folderId]?.name || "",
         category: object.category,
         tags: object.tags,
         scope: object.scope,
@@ -60,6 +62,10 @@ export class ObjectStore {
         sharedUserIds: object.sharedUserIds,
         updatedAt: object.updatedAt
       }));
+  }
+
+  listFolders(): FolderDefinition[] {
+    return Object.values(studioStore.getBundle().folders || {});
   }
 
   getObject(id: string): StudioObject | undefined {

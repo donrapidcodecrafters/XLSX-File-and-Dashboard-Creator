@@ -3,10 +3,16 @@ import type { CatalogSummaryItem, StudioObject, StudioObjectScope, StudioObjectT
 export type StudioLibraryScopeFilter = "all" | StudioObjectScope;
 export type StudioLibraryTypeFilter = "all" | StudioObjectType;
 
+// folderName is optional (unlike on CatalogSummaryItem) so this also accepts raw StudioObject
+// values, which only carry folderId — the builder filters full StudioObjects directly, not
+// the denormalized catalog projection.
 type StudioLibraryItem = Pick<
   CatalogSummaryItem,
-  "id" | "type" | "name" | "description" | "folder" | "category" | "tags" | "scope" | "ownerUserId" | "sharedUserIds"
->;
+  "id" | "type" | "name" | "description" | "folderId" | "category" | "tags" | "scope" | "ownerUserId" | "sharedUserIds"
+> & { folderName?: string };
+
+/** "all" = no folder filtering, "unfoldered" = only items with no folder, otherwise a specific folder id. */
+export type StudioLibraryFolderFilter = "all" | "unfoldered" | string;
 
 export interface FilterStudioLibraryItemsOptions<T extends StudioLibraryItem> {
   currentUserId?: string;
@@ -15,6 +21,7 @@ export interface FilterStudioLibraryItemsOptions<T extends StudioLibraryItem> {
   query?: string;
   typeFilter?: StudioLibraryTypeFilter;
   scopeFilter?: StudioLibraryScopeFilter;
+  folderFilter?: StudioLibraryFolderFilter;
   favoritesOnly?: boolean;
   recentOnly?: boolean;
   includeItem?: (item: T) => boolean;
@@ -51,6 +58,7 @@ export function filterStudioLibraryItems<T extends StudioLibraryItem>(
     query = "",
     typeFilter = "all",
     scopeFilter = "all",
+    folderFilter = "all",
     favoritesOnly = false,
     recentOnly = false,
     includeItem,
@@ -61,15 +69,43 @@ export function filterStudioLibraryItems<T extends StudioLibraryItem>(
     if (!isStudioItemVisibleToCurrentUser(item, currentUserId)) return false;
     if (typeFilter !== "all" && item.type !== typeFilter) return false;
     if (scopeFilter !== "all" && item.scope !== scopeFilter) return false;
+    if (folderFilter === "unfoldered" && item.folderId) return false;
+    if (folderFilter !== "all" && folderFilter !== "unfoldered" && item.folderId !== folderFilter) return false;
     if (favoritesOnly && !favorites.includes(item.id)) return false;
     if (recentOnly && !recentIds.includes(item.id)) return false;
     if (includeItem && !includeItem(item)) return false;
     if (!normalizedQuery) return true;
     const searchText = resolveSearchText
       ? resolveSearchText(item)
-      : [item.name, item.description, item.folder, item.category, item.tags.join(" ")].join(" ");
+      : [item.name, item.description, item.folderName || "", item.category, item.tags.join(" ")].join(" ");
     return searchText.toLowerCase().includes(normalizedQuery);
   });
+}
+
+export interface StudioLibraryFolderGroup<T> {
+  unfoldered: T[];
+  byFolderId: Record<string, T[]>;
+}
+
+/**
+ * Splits an already-filtered/visible item list into unfoldered items and items grouped by
+ * folder id. Used by every surface that shows reports/dashboards organized into folders
+ * (nav sidebar, viewing page, studio builder lists) so the grouping logic lives in one place.
+ */
+export function groupStudioLibraryItemsByFolder<T extends Pick<StudioLibraryItem, "folderId">>(
+  items: T[]
+): StudioLibraryFolderGroup<T> {
+  const unfoldered: T[] = [];
+  const byFolderId: Record<string, T[]> = {};
+  items.forEach((item) => {
+    if (!item.folderId) {
+      unfoldered.push(item);
+      return;
+    }
+    if (!byFolderId[item.folderId]) byFolderId[item.folderId] = [];
+    byFolderId[item.folderId].push(item);
+  });
+  return { unfoldered, byFolderId };
 }
 
 export function buildStudioCatalogItemLookup(
@@ -86,7 +122,10 @@ export function buildStudioCatalogItemLookup(
       schemaVersion: object.schemaVersion,
       name: object.name,
       description: object.description,
-      folder: object.folder,
+      folderId: object.folderId,
+      // Folder name isn't resolvable here without a folder map in scope — acceptable since
+      // this fallback path only fires for items missing from the already-hydrated `items` array.
+      folderName: "",
       category: object.category,
       tags: object.tags,
       scope: object.scope,

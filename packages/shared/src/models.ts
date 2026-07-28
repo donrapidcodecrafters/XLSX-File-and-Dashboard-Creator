@@ -211,13 +211,27 @@ export interface BaseStudioObject {
   schemaVersion: number;
   name: string;
   description: string;
-  folder: string;
+  folderId: string;
   category: string;
   tags: string[];
   scope: StudioObjectScope;
   createdByUserId?: string;
   ownerUserId: string;
   sharedUserIds: string[];
+  updatedAt: string;
+}
+
+/**
+ * A user-created container for reports/dashboards. Flat for now (parentFolderId is
+ * always null) — reserved so nesting can be added later without another shape change.
+ * Global visibility only: no scope/owner/sharedUserIds, unlike StudioObject.
+ */
+export interface FolderDefinition {
+  id: string;
+  name: string;
+  description: string;
+  parentFolderId: string | null;
+  createdAt: string;
   updatedAt: string;
 }
 
@@ -512,7 +526,9 @@ export interface CatalogSummaryItem {
   schemaVersion: number;
   name: string;
   description: string;
-  folder: string;
+  folderId: string;
+  /** Resolved display name for folderId, computed at projection time — never stored on the object. */
+  folderName: string;
   category: string;
   tags: string[];
   scope: StudioObjectScope;
@@ -531,6 +547,7 @@ export interface SeedBundle {
   data: Record<string, DataRow[]>;
   objects: Record<string, StudioObject>;
   order: string[];
+  folders: Record<string, FolderDefinition>;
 }
 
 export type StudioTemplateType = "layout" | "yaml" | "upload";

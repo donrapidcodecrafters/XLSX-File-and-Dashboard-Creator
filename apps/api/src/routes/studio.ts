@@ -135,7 +135,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
   });
 
   app.put("/api/studio/document", async (request, reply) => {
-    const body = request.body as { document?: StudioDocument; removedObjectIds?: string[] } | undefined;
+    const body = request.body as { document?: StudioDocument; removedObjectIds?: string[]; removedFolderIds?: string[] } | undefined;
     if (!body?.document) {
       reply.code(400);
       return { message: "Document payload is required." };
@@ -143,6 +143,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
     const incomingDocument = body.document;
     const current = studioStore.getLiveDocument();
     const removedObjectIds = Array.isArray(body.removedObjectIds) ? body.removedObjectIds.map(String).filter(Boolean) : [];
+    const removedFolderIds = Array.isArray(body.removedFolderIds) ? body.removedFolderIds.map(String).filter(Boolean) : [];
     const incomingObjectIds = Object.keys(incomingDocument.bundle?.objects || {});
     const incomingOrder = incomingDocument.bundle?.order || [];
     app.log.info({ incomingObjectCount: incomingObjectIds.length, incomingOrderCount: incomingOrder.length, incomingObjectIds, incomingOrder }, "PUT /api/studio/document received");
@@ -157,6 +158,13 @@ export async function registerStudioRoutes(app: FastifyInstance) {
       ...((incomingDocument.bundle?.order || []).filter((id) => !removedObjectIds.includes(id))),
       ...(current.bundle.order || []).filter((id) => !removedObjectIds.includes(id) && !((incomingDocument.bundle?.order || []).includes(id)))
     ].filter((id, index, list) => Boolean(mergedObjects[id]) && list.indexOf(id) === index);
+    const mergedFolders = {
+      ...(current.bundle.folders || {}),
+      ...(incomingDocument.bundle?.folders || {})
+    };
+    removedFolderIds.forEach((folderId) => {
+      delete mergedFolders[folderId];
+    });
     const mergedDocument: StudioDocument = normalizeStudioDocument({
       ...incomingDocument,
       // Version history and export jobs stay on the server; the browser does not upload them on save.
@@ -166,6 +174,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
         ...incomingDocument.bundle,
         objects: mergedObjects,
         order: mergedOrder,
+        folders: mergedFolders,
         // Keep server-side cached rows instead of requiring the browser to upload them on every save.
         data: current.bundle.data
       },

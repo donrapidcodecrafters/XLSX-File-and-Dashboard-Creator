@@ -2,6 +2,7 @@ import type {
   CatalogSummaryItem,
   DashboardRunResult,
   ExportJobStatus,
+  FolderDefinition,
   ReportRunResult,
   StudioObject,
   TableDefinition
@@ -141,7 +142,7 @@ export function fetchFieldValues(sourceId: string, fieldId: string) {
 }
 
 export function fetchCatalog() {
-  return request<{ app: { id: string; name: string }; objects: CatalogSummaryItem[] }>("/api/catalog");
+  return request<{ app: { id: string; name: string }; objects: CatalogSummaryItem[]; folders: FolderDefinition[] }>("/api/catalog");
 }
 
 export function fetchTables() {

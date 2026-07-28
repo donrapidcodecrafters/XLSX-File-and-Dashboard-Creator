@@ -585,10 +585,14 @@ export function fetchStudioDocument(options: { dedupe?: boolean } = {}) {
   return requestPromise;
 }
 
-export function saveStudioDocument(document: StudioDocument, options?: { removedObjectIds?: string[] }) {
+export function saveStudioDocument(document: StudioDocument, options?: { removedObjectIds?: string[]; removedFolderIds?: string[] }) {
   return request<{ document: StudioDocument; sync?: QuickbaseSyncResult }>("/api/studio/document", {
     method: "PUT",
-    body: JSON.stringify({ document: buildSavePayload(document), removedObjectIds: options?.removedObjectIds || [] })
+    body: JSON.stringify({
+      document: buildSavePayload(document),
+      removedObjectIds: options?.removedObjectIds || [],
+      removedFolderIds: options?.removedFolderIds || []
+    })
   });
 }
 

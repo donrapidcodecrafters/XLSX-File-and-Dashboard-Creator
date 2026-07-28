@@ -1,36 +1,46 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { filterStudioLibraryItems, type CatalogSummaryItem, type StudioDocument } from "@studio/shared";
+import { filterStudioLibraryItems, groupStudioLibraryItemsByFolder, type CatalogSummaryItem, type FolderDefinition, type StudioDocument } from "@studio/shared";
 import { fetchStudioRefreshJob, startStudioRefresh } from "../lib/studioApi";
 import { getProfileIdsForCatalogItem, getProfileLabelsForCatalogItem } from "../lib/catalog";
 import { buildHostedRoute } from "../lib/embed";
-import { CatalogCard } from "./CatalogCard";
+import { CatalogCard, FolderTile } from "./CatalogCard";
 import { ClearableInputField } from "./ClearableInputField";
 import { RefreshOverlay } from "./RefreshOverlay";
 
 export function ViewerPage({
   objects,
+  folders = [],
   studioDocument,
   recentIds,
   refreshAllSignal = 0,
   openLinksInNewTab = false,
   onRefreshComplete,
-  onToggleFavorite
+  onToggleFavorite,
+  onMoveToFolder,
+  onCreateFolder
 }: {
   objects: CatalogSummaryItem[];
+  folders?: FolderDefinition[];
   studioDocument: StudioDocument | null;
   recentIds: string[];
   refreshAllSignal?: number;
   openLinksInNewTab?: boolean;
   onRefreshComplete: (options?: { skipWhenLocalDirty?: boolean }) => Promise<void>;
   onToggleFavorite: (objectId: string) => Promise<void>;
+  onMoveToFolder?: (objectId: string, folderId: string) => void | Promise<void>;
+  onCreateFolder?: (name: string) => Promise<string | undefined>;
 }) {
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<"all" | "report" | "dashboard">("all");
   const [scopeFilter, setScopeFilter] = useState<"all" | "global" | "selected" | "personal">("all");
   const [profileFilter, setProfileFilter] = useState("all");
+  const [folderFilter, setFolderFilter] = useState("all");
+  const [openFolderId, setOpenFolderId] = useState<string | null>(null);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [recentOnly, setRecentOnly] = useState(false);
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
   const [refreshJob, setRefreshJob] = useState<any>(null);
   const [startingRefresh, setStartingRefresh] = useState(false);
   const [refreshFeedback, setRefreshFeedback] = useState<{ tone: "warn" | "danger"; message: string } | null>(null);
@@ -46,7 +56,8 @@ export function ViewerPage({
           .filter((item): item is NonNullable<typeof item> => Boolean(item))
           .map((object) => ({
             id: object.id, type: object.type, schemaVersion: object.schemaVersion,
-            name: object.name, description: object.description, folder: object.folder,
+            name: object.name, description: object.description, folderId: object.folderId,
+            folderName: studioDocument.bundle.folders[object.folderId]?.name || "",
             category: object.category, tags: object.tags, scope: object.scope,
             ownerUserId: object.ownerUserId, sharedUserIds: object.sharedUserIds,
             updatedAt: object.updatedAt
@@ -62,15 +73,25 @@ export function ViewerPage({
 
   const filtered = useMemo(() => {
     return filterStudioLibraryItems(visibleObjects, {
-      currentUserId, favorites, recentIds, query, typeFilter, scopeFilter, favoritesOnly, recentOnly,
+      currentUserId, favorites, recentIds, query, typeFilter, scopeFilter, folderFilter, favoritesOnly, recentOnly,
       includeItem: (object) => profileFilter === "all" || getProfileIdsForCatalogItem(object, studioDocument).includes(profileFilter),
       resolveSearchText: (object) =>
-        [object.name, object.description, object.folder, object.category, object.tags.join(" "), getProfileLabelsForCatalogItem(object, studioDocument).join(" ")].join(" ")
+        [object.name, object.description, object.folderName, object.category, object.tags.join(" "), getProfileLabelsForCatalogItem(object, studioDocument).join(" ")].join(" ")
     });
-  }, [currentUserId, favorites, favoritesOnly, profileFilter, query, recentIds, recentOnly, scopeFilter, studioDocument, typeFilter, visibleObjects]);
+  }, [currentUserId, favorites, favoritesOnly, folderFilter, profileFilter, query, recentIds, recentOnly, scopeFilter, studioDocument, typeFilter, visibleObjects]);
 
   const profileOptions = studioDocument?.quickbaseProfiles || [];
-  const isFiltered = query || typeFilter !== "all" || scopeFilter !== "all" || profileFilter !== "all" || favoritesOnly || recentOnly;
+  const isFiltered = query || typeFilter !== "all" || scopeFilter !== "all" || profileFilter !== "all" || folderFilter !== "all" || favoritesOnly || recentOnly;
+  // The moment there's a search term or an explicit folder filter, show the flat, fully-searched
+  // grid — no folder grouping/drill-down. This is what makes "search finds it even inside a
+  // folder" true: filtered already searches the full catalog regardless of folder membership.
+  const showFolderGrouping = !query.trim() && folderFilter === "all";
+  const { unfoldered, byFolderId } = useMemo(() => groupStudioLibraryItemsByFolder(filtered), [filtered]);
+  const openFolder = openFolderId ? folders.find((folder) => folder.id === openFolderId) || null : null;
+
+  useEffect(() => {
+    if (query.trim()) setOpenFolderId(null);
+  }, [query]);
 
   useEffect(() => {
     if (!refreshJob || ["complete", "failed", "cancelled"].includes(refreshJob.status)) return;
@@ -197,6 +218,21 @@ export function ViewerPage({
             </select>
           </label>
         )}
+        {folders.length > 0 && (
+          <label className="field compact-field">
+            <span>Folder</span>
+            <select
+              value={folderFilter}
+              onChange={(e) => { setFolderFilter(e.target.value); setOpenFolderId(null); }}
+            >
+              <option value="all">All folders</option>
+              <option value="unfoldered">No folder</option>
+              {folders.map((folder) => (
+                <option key={folder.id} value={folder.id}>{folder.name}</option>
+              ))}
+            </select>
+          </label>
+        )}
         <label className="toggle-row">
           <input type="checkbox" checked={favoritesOnly} onChange={(e) => setFavoritesOnly(e.target.checked)} />
           Favorites only
@@ -215,20 +251,83 @@ export function ViewerPage({
         </div>
       ) : null}
 
+      {/* Folder breadcrumb — only when drilled into a folder */}
+      {showFolderGrouping && openFolder ? (
+        <div className="link-toolbar">
+          <button className="ghost-button" onClick={() => setOpenFolderId(null)}>← All folders</button>
+          <span className="micro">{openFolder.name}</span>
+        </div>
+      ) : null}
+
       {/* ── Results grid ── */}
-      <div className="viewer-grid">
-        {filtered.map((object) => (
-          <CatalogCard
-            key={object.id}
-            className="viewer-card"
-            object={object}
-            studioDocument={studioDocument}
-            openLinksInNewTab={openLinksInNewTab}
-            isFavorite={favorites.includes(object.id)}
-            onToggleFavorite={onToggleFavorite}
-          />
-        ))}
-      </div>
+      {showFolderGrouping && !openFolder ? (
+        <div className="viewer-grid">
+          {onCreateFolder ? (
+            creatingFolder ? (
+              <form
+                className="viewer-card"
+                style={{ display: "flex", flexDirection: "column", gap: 8, padding: 16 }}
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const name = newFolderName.trim();
+                  if (name) void onCreateFolder(name);
+                  setNewFolderName("");
+                  setCreatingFolder(false);
+                }}
+              >
+                <input
+                  autoFocus
+                  value={newFolderName}
+                  onChange={(event) => setNewFolderName(event.target.value)}
+                  onBlur={() => { if (!newFolderName.trim()) setCreatingFolder(false); }}
+                  placeholder="Folder name"
+                />
+              </form>
+            ) : (
+              <button type="button" className="viewer-card folder-tile" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, padding: 16 }} onClick={() => setCreatingFolder(true)}>
+                <span style={{ fontSize: "1.4rem" }}>+</span>
+                <span className="micro">New folder</span>
+              </button>
+            )
+          ) : null}
+          {Object.keys(byFolderId).map((folderId) => {
+            const folder = folders.find((item) => item.id === folderId);
+            if (!folder) return null;
+            return (
+              <FolderTile key={folderId} folder={folder} itemCount={byFolderId[folderId].length} onOpen={() => setOpenFolderId(folderId)} />
+            );
+          })}
+          {unfoldered.map((object) => (
+            <CatalogCard
+              key={object.id}
+              className="viewer-card"
+              object={object}
+              studioDocument={studioDocument}
+              openLinksInNewTab={openLinksInNewTab}
+              isFavorite={favorites.includes(object.id)}
+              onToggleFavorite={onToggleFavorite}
+              folders={folders}
+              onMoveToFolder={onMoveToFolder}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="viewer-grid">
+          {(showFolderGrouping && openFolder ? byFolderId[openFolder.id] || [] : filtered).map((object) => (
+            <CatalogCard
+              key={object.id}
+              className="viewer-card"
+              object={object}
+              studioDocument={studioDocument}
+              openLinksInNewTab={openLinksInNewTab}
+              isFavorite={favorites.includes(object.id)}
+              onToggleFavorite={onToggleFavorite}
+              folders={folders}
+              onMoveToFolder={onMoveToFolder}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Empty state */}
       {!filtered.length ? (
@@ -245,7 +344,7 @@ export function ViewerPage({
           {isFiltered ? (
             <button
               className="ghost-button btn-neutral"
-              onClick={() => { setQuery(""); setTypeFilter("all"); setScopeFilter("all"); setProfileFilter("all"); setFavoritesOnly(false); setRecentOnly(false); }}
+              onClick={() => { setQuery(""); setTypeFilter("all"); setScopeFilter("all"); setProfileFilter("all"); setFolderFilter("all"); setOpenFolderId(null); setFavoritesOnly(false); setRecentOnly(false); }}
             >
               Clear all filters
             </button>

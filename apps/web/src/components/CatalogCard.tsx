@@ -1,7 +1,34 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
-import { getStudioObjectScopeLabel, type CatalogSummaryItem, type StudioDocument } from "@studio/shared";
+import { getStudioObjectScopeLabel, type CatalogSummaryItem, type FolderDefinition, type StudioDocument } from "@studio/shared";
 import { getProfileLabelsForCatalogItem, typeLabel } from "../lib/catalog";
 import { buildHostedRoute } from "../lib/embed";
+
+const DRAG_OBJECT_ID_MIME = "application/x-studio-object-id";
+
+export function FolderTile({
+  folder,
+  itemCount,
+  onOpen
+}: {
+  folder: FolderDefinition;
+  itemCount: number;
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="viewer-card folder-tile"
+      onClick={onOpen}
+      onDragOver={(event) => event.preventDefault()}
+      style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 6, padding: 16, textAlign: "left" }}
+    >
+      <span style={{ fontSize: "1.4rem" }}>📁</span>
+      <strong style={{ fontSize: "0.925rem", color: "var(--text)" }}>{folder.name}</strong>
+      <span style={{ fontSize: "0.75rem", color: "var(--text-soft)" }}>{itemCount} item{itemCount === 1 ? "" : "s"}</span>
+    </button>
+  );
+}
 
 export function CatalogCard({
   object,
@@ -9,6 +36,8 @@ export function CatalogCard({
   openLinksInNewTab = false,
   isFavorite = false,
   onToggleFavorite,
+  folders,
+  onMoveToFolder,
   className
 }: {
   object: CatalogSummaryItem;
@@ -16,17 +45,86 @@ export function CatalogCard({
   openLinksInNewTab?: boolean;
   isFavorite?: boolean;
   onToggleFavorite?: (objectId: string) => void | Promise<void>;
+  folders?: FolderDefinition[];
+  onMoveToFolder?: (objectId: string, folderId: string) => void | Promise<void>;
   className: string;
 }) {
   const appLabels = getProfileLabelsForCatalogItem(object, studioDocument).slice(0, 2);
   const scope = getStudioObjectScopeLabel(object);
   const isDashboard = object.type === "dashboard";
+  const [folderMenuOpen, setFolderMenuOpen] = useState(false);
 
   return (
     <article
       className={className}
       style={{ display: "flex", flexDirection: "column", gap: 0, position: "relative" }}
+      draggable={Boolean(onMoveToFolder)}
+      onDragStart={(event) => { if (onMoveToFolder) event.dataTransfer.setData(DRAG_OBJECT_ID_MIME, object.id); }}
     >
+      {/* Move-to-folder menu — top-right, left of the favorite star */}
+      {onMoveToFolder && folders ? (
+        <div style={{ position: "absolute", top: 12, right: onToggleFavorite ? 44 : 12 }}>
+          <button
+            type="button"
+            aria-label="Move to folder"
+            title="Move to folder"
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setFolderMenuOpen((current) => !current); }}
+            style={{
+              minHeight: 0,
+              width: 28,
+              height: 28,
+              padding: 0,
+              border: "none",
+              background: "transparent",
+              boxShadow: "none",
+              fontSize: "1rem",
+              color: "rgba(23,49,38,0.35)",
+              cursor: "pointer",
+              borderRadius: "50%"
+            }}
+          >
+            ⋯
+          </button>
+          {folderMenuOpen ? (
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: "absolute",
+                top: 30,
+                right: 0,
+                zIndex: 10,
+                minWidth: 160,
+                background: "var(--panel, #fff)",
+                border: "1px solid rgba(23,49,38,0.12)",
+                borderRadius: 8,
+                boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
+                padding: 4
+              }}
+            >
+              <button
+                type="button"
+                className="folder-menu-item"
+                style={{ display: "block", width: "100%", textAlign: "left", padding: "6px 10px", border: "none", background: "transparent", cursor: "pointer", fontSize: "0.8rem" }}
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); void onMoveToFolder(object.id, ""); setFolderMenuOpen(false); }}
+              >
+                No folder
+              </button>
+              {folders.map((folder) => (
+                <button
+                  key={folder.id}
+                  type="button"
+                  className="folder-menu-item"
+                  style={{ display: "block", width: "100%", textAlign: "left", padding: "6px 10px", border: "none", background: "transparent", cursor: "pointer", fontSize: "0.8rem" }}
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); void onMoveToFolder(object.id, folder.id); setFolderMenuOpen(false); }}
+                >
+                  {folder.name}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       {/* Favorite button — top-right */}
       {onToggleFavorite ? (
         <button
@@ -148,9 +246,9 @@ export function CatalogCard({
         ) : null}
 
         {/* Folder / category */}
-        {(object.folder || object.category) ? (
+        {(object.folderName || object.category) ? (
           <span style={{ fontSize: "0.72rem", color: "rgba(23,49,38,0.35)", marginTop: "auto", paddingTop: 4 }}>
-            {[object.folder, object.category].filter(Boolean).join(" · ")}
+            {[object.folderName, object.category].filter(Boolean).join(" · ")}
           </span>
         ) : null}
       </Link>

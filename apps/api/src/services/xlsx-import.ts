@@ -1473,7 +1473,7 @@ function buildImportedReport(
       layoutHints.headerFooterText ? `Recovered page header/footer: ${layoutHints.headerFooterText}.` : "",
       layoutHints.imageCount ? `Source sheet included ${layoutHints.imageCount} placed image${layoutHints.imageCount === 1 ? "" : "s"}.` : ""
     ].filter(Boolean).join(" "),
-    folder: "Imported Workbooks",
+    folderId: "",
     category: "Imported",
     tags: ["xlsx-import"],
     scope,
@@ -1755,7 +1755,7 @@ function buildImportedDashboard(
     schemaVersion: 1,
     name: workbookName,
     description: `Imported from workbook "${workbookName}".`,
-    folder: "Imported Workbooks",
+    folderId: "",
     category: "Imported",
     tags: ["xlsx-import"],
     scope,
@@ -3180,7 +3180,7 @@ export async function importWorkbookIntoStudioDocument(
       description: chart.sourceKind === "image-chart"
         ? `Imported from picture/screenshot chart "${chart.chartName || chart.imagePath || chart.path}" on worksheet "${chart.displaySheetName}".`
         : `Imported from native Excel chart "${chart.chartName || chart.path}" on worksheet "${chart.displaySheetName}".`,
-      folder: "Imported Workbooks",
+      folderId: "",
       category: "Imported",
       tags: ["xlsx-import", "native-chart"],
       scope,

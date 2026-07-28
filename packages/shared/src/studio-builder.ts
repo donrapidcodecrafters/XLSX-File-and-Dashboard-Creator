@@ -17,6 +17,7 @@ export interface StudioBuilderDraft {
   type: StudioBuilderObjectType;
   name: string;
   description: string;
+  folderId: string;
   scope: StudioObjectScope;
   ownerUserId: string;
   sharedUserIds: string[];
@@ -81,6 +82,7 @@ export function buildStudioBuilderDraft(
     type,
     name: type === "report" ? "New Report" : "New Dashboard",
     description: "",
+    folderId: "",
     ...normalizeStudioBuilderScopeOwner("global", currentUserId),
     tableId: table?.id || "",
     sourceJoins: [],

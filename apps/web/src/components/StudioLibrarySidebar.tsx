@@ -1,9 +1,12 @@
-import { type ChangeEvent, type RefObject } from "react";
+import { type ChangeEvent, type RefObject, useState } from "react";
 import { Link } from "react-router-dom";
-import { type StudioObject, type StudioTemplateRecord } from "@studio/shared";
-import { typeLabel } from "../lib/catalog";
+import { groupStudioLibraryItemsByFolder, type FolderDefinition, type StudioObject, type StudioTemplateRecord } from "@studio/shared";
+import { buildFolderMap, resolveFolderName, typeLabel } from "../lib/catalog";
 import { buildHostedRoute } from "../lib/embed";
+import { useFolderCollapseState } from "../lib/folders";
 import { ClearableInputField } from "./ClearableInputField";
+
+const DRAG_OBJECT_ID_MIME = "application/x-studio-object-id";
 
 type LibraryFilter = "all" | "report" | "dashboard";
 type LibraryScopeFilter = "all" | "global" | "selected" | "personal";
@@ -25,6 +28,9 @@ export function StudioLibrarySidebar({
   hasPersonalObjects,
   filteredObjects,
   activeObjectId,
+  folders = [],
+  onMoveToFolder,
+  onCreateFolder,
   templates,
   xlsxImporting,
   importInputRef,
@@ -52,6 +58,9 @@ export function StudioLibrarySidebar({
   hasPersonalObjects: boolean;
   filteredObjects: StudioObject[];
   activeObjectId?: string;
+  folders?: FolderDefinition[];
+  onMoveToFolder?: (objectId: string, folderId: string) => void;
+  onCreateFolder?: (name: string) => Promise<string | undefined>;
   templates: StudioTemplateRecord[];
   xlsxImporting: boolean;
   importInputRef: RefObject<HTMLInputElement>;
@@ -63,6 +72,31 @@ export function StudioLibrarySidebar({
   onOpenCreateDashboard: () => void;
   onOpenTemplates: () => void;
 }) {
+  const foldersById = buildFolderMap(folders);
+  const { toggleFolder, isCollapsed } = useFolderCollapseState("studio-library");
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const { unfoldered, byFolderId } = groupStudioLibraryItemsByFolder(filteredObjects);
+
+  function renderObjectCard(object: StudioObject) {
+    return (
+      <Link
+        key={object.id}
+        className={`nav-card${object.id === activeObjectId ? " active-card" : ""}`}
+        to={buildHostedRoute(`/studio/${object.id}`)}
+        target={openLinksInNewTab ? "_blank" : undefined}
+        rel={openLinksInNewTab ? "noreferrer" : undefined}
+        draggable={Boolean(onMoveToFolder)}
+        onDragStart={(event) => { if (onMoveToFolder) event.dataTransfer.setData(DRAG_OBJECT_ID_MIME, object.id); }}
+      >
+        <span className="badge">{typeLabel(object.type)}</span>
+        <span className="badge">{object.scope === "personal" ? "Personal" : object.scope === "selected" ? "Selected users" : "Shared"}</span>
+        <strong>{object.name}</strong>
+        <span className="micro">{[resolveFolderName(object.folderId, foldersById), object.category].filter(Boolean).join(" · ")}</span>
+      </Link>
+    );
+  }
+
   return (
     <aside className="studio-library">
       <div className="surface stack">
@@ -74,8 +108,29 @@ export function StudioLibrarySidebar({
           <div className="studio-actions">
             <button onClick={onOpenCreateReport}>New report</button>
             <button onClick={onOpenCreateDashboard}>New dashboard</button>
+            {onCreateFolder ? <button onClick={() => setCreatingFolder(true)}>New folder</button> : null}
           </div>
         </div>
+        {creatingFolder ? (
+          <form
+            className="filter-grid compact-grid"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const name = newFolderName.trim();
+              if (name) void onCreateFolder?.(name);
+              setNewFolderName("");
+              setCreatingFolder(false);
+            }}
+          >
+            <input
+              autoFocus
+              value={newFolderName}
+              onChange={(event) => setNewFolderName(event.target.value)}
+              onBlur={() => { if (!newFolderName.trim()) setCreatingFolder(false); }}
+              placeholder="Folder name"
+            />
+          </form>
+        ) : null}
         <ClearableInputField
           label="Search"
           id="studio-library-search"
@@ -122,20 +177,33 @@ export function StudioLibrarySidebar({
           </div>
         ) : null}
         <div className="nav-list">
-          {filteredObjects.length ? filteredObjects.map((object) => (
-            <Link
-              key={object.id}
-              className={`nav-card${object.id === activeObjectId ? " active-card" : ""}`}
-              to={buildHostedRoute(`/studio/${object.id}`)}
-              target={openLinksInNewTab ? "_blank" : undefined}
-              rel={openLinksInNewTab ? "noreferrer" : undefined}
-            >
-              <span className="badge">{typeLabel(object.type)}</span>
-              <span className="badge">{object.scope === "personal" ? "Personal" : object.scope === "selected" ? "Selected users" : "Shared"}</span>
-              <strong>{object.name}</strong>
-              <span className="micro">{object.folder} · {object.category}</span>
-            </Link>
-          )) : <div className="empty-hint">No reports or dashboards match this builder filter.</div>}
+          {filteredObjects.length ? (
+            <>
+              {Object.keys(byFolderId).map((folderId) => {
+                const collapsed = isCollapsed(folderId);
+                return (
+                  <div key={folderId}>
+                    <button
+                      type="button"
+                      className="nav-accordion-folder"
+                      onClick={() => toggleFolder(folderId)}
+                      onDragOver={(event) => { if (onMoveToFolder) event.preventDefault(); }}
+                      onDrop={(event) => {
+                        const objectId = event.dataTransfer.getData(DRAG_OBJECT_ID_MIME);
+                        if (objectId) onMoveToFolder?.(objectId, folderId);
+                      }}
+                    >
+                      <span className="nav-accordion-group-chevron">{collapsed ? "▸" : "▾"}</span>
+                      <span>{foldersById[folderId]?.name || "Untitled folder"}</span>
+                      <span className="nav-accordion-group-count">{byFolderId[folderId].length}</span>
+                    </button>
+                    {!collapsed && byFolderId[folderId].map(renderObjectCard)}
+                  </div>
+                );
+              })}
+              {unfoldered.map(renderObjectCard)}
+            </>
+          ) : <div className="empty-hint">No reports or dashboards match this builder filter.</div>}
         </div>
       </div>
 

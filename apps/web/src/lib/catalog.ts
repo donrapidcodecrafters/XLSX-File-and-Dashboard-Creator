@@ -2,6 +2,7 @@ import {
   normalizeStudioAppId,
   normalizeStudioRealmHostname,
   type CatalogSummaryItem,
+  type FolderDefinition,
   type StudioDocument,
   type StudioLaunchContext,
   type StudioObject,
@@ -10,6 +11,14 @@ import {
 
 export function typeLabel(type: "report" | "dashboard") {
   return type === "report" ? "Report" : "Dashboard";
+}
+
+export function buildFolderMap(folders: FolderDefinition[]): Record<string, FolderDefinition> {
+  return Object.fromEntries(folders.map((folder) => [folder.id, folder]));
+}
+
+export function resolveFolderName(folderId: string, foldersById: Record<string, FolderDefinition>): string {
+  return folderId ? (foldersById[folderId]?.name || "") : "";
 }
 
 export function resolveTableDefinition(tables: TableDefinition[], tableId: string) {

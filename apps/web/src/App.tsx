@@ -8,6 +8,7 @@ import {
   resolveStudioSessionStatus,
   touchStudioSession,
   type CatalogSummaryItem,
+  type FolderDefinition,
   type RefreshJobStatus,
   type ReportDefinition,
   type ReportFocusMode,
@@ -45,7 +46,7 @@ import {
 } from "./lib/catalog";
 import { buildHostedRoute, getHostedContext } from "./lib/embed";
 import { buildQuickbaseHelpdeskTicketUrl, type QuickbaseTableLinkContext } from "./lib/quickbaseLinks";
-import { AuthRequiredError, checkAuth, fetchStudioDocument, fetchStudioRefreshJob, getMyPermissions, getMyProfile, getSessionTtlHours, logoutSession, saveStudioUserSettings, startStudioObjectRefresh, startStudioRefresh, stopImpersonating, updateStudioSession, type PlatformUser } from "./lib/studioApi";
+import { AuthRequiredError, checkAuth, fetchStudioDocument, fetchStudioRefreshJob, getMyPermissions, getMyProfile, getSessionTtlHours, logoutSession, saveStudioDocument, saveStudioUserSettings, startStudioObjectRefresh, startStudioRefresh, stopImpersonating, updateStudioSession, type PlatformUser } from "./lib/studioApi";
 import { useInactivityLogout } from "./hooks/useInactivityLogout";
 import { ReaderToolsProvider } from "./contexts/ReaderToolsContext";
 
@@ -101,6 +102,7 @@ function loadSharedWorkspaceDirtyState() {
 
 function buildCatalogItemsFromDocument(document: StudioDocument): CatalogSummaryItem[] {
   const objects = document.bundle.objects || {};
+  const folders = document.bundle.folders || {};
   const orderedIds = [
     ...(document.bundle.order || []),
     ...Object.keys(objects)
@@ -115,7 +117,8 @@ function buildCatalogItemsFromDocument(document: StudioDocument): CatalogSummary
         schemaVersion: object.schemaVersion,
         name: object.name,
         description: object.description,
-        folder: object.folder,
+        folderId: object.folderId,
+        folderName: folders[object.folderId]?.name || "",
         category: object.category,
         tags: object.tags,
         scope: object.scope,
@@ -171,6 +174,7 @@ function getQuickbaseLinkContextForTable(table: TableDefinition | undefined, stu
 
 function useCatalog() {
   const [objects, setObjects] = useState<CatalogSummaryItem[]>([]);
+  const [folders, setFolders] = useState<FolderDefinition[]>([]);
   const [tables, setTables] = useState<TableDefinition[]>([]);
   const [studioDocument, setStudioDocument] = useState<StudioDocument | null>(() => loadCachedStudioDocument());
   const [catalogLoading, setCatalogLoading] = useState(true);
@@ -208,6 +212,7 @@ function useCatalog() {
       if (snapshot) {
         setStudioDocument(snapshot);
         setObjects(buildCatalogItemsFromDocument(snapshot));
+        setFolders(Object.values(snapshot.bundle.folders || {}));
         setTables(snapshot.bundle.tables || []);
         saveCachedStudioDocument(snapshot);
         setCatalogLoading(false);
@@ -227,6 +232,7 @@ function useCatalog() {
       lastPersistedSessionAt.current = Date.now();
       setStudioDocument(normalized);
       setObjects(buildCatalogItemsFromDocument(normalized));
+      setFolders(Object.values(normalized.bundle.folders || {}));
       setTables(normalized.bundle.tables || []);
       saveCachedStudioDocument(normalized);
       setCatalogLoading(false);
@@ -239,8 +245,10 @@ function useCatalog() {
     ]);
     if (catalogResponse.status === "fulfilled") {
       setObjects(catalogResponse.value.objects);
+      setFolders(catalogResponse.value.folders || []);
     } else {
       setObjects([]);
+      setFolders([]);
     }
     if (tablesResponse.status === "fulfilled") {
       setTables(tablesResponse.value.tables);
@@ -252,6 +260,7 @@ function useCatalog() {
       if (cachedDocument) {
         setStudioDocument(cachedDocument);
         setObjects(buildCatalogItemsFromDocument(cachedDocument));
+        setFolders(Object.values(cachedDocument.bundle.folders || {}));
         setTables(cachedDocument.bundle.tables || []);
         setCatalogError("Using the last saved platform snapshot because the hosted studio document did not load cleanly.");
       }
@@ -372,6 +381,7 @@ function useCatalog() {
       if (snapshot) {
         setStudioDocument(snapshot);
         setObjects(buildCatalogItemsFromDocument(snapshot));
+        setFolders(Object.values(snapshot.bundle.folders || {}));
         setTables(snapshot.bundle.tables || []);
         saveCachedStudioDocument(snapshot);
         return;
@@ -384,6 +394,7 @@ function useCatalog() {
       if (snapshot) {
         setStudioDocument(snapshot);
         setObjects(buildCatalogItemsFromDocument(snapshot));
+        setFolders(Object.values(snapshot.bundle.folders || {}));
         setTables(snapshot.bundle.tables || []);
         saveCachedStudioDocument(snapshot);
         return;
@@ -398,7 +409,7 @@ function useCatalog() {
     };
   }, [reloadCatalog]);
 
-  return { objects, tables, studioDocument, recentIds, reloadCatalog, markObjectAsRecent, updateUserSettings, persistSession, setStudioDocument, catalogLoading, catalogError, authState, setAuthState, authRequired };
+  return { objects, folders, tables, studioDocument, recentIds, reloadCatalog, markObjectAsRecent, updateUserSettings, persistSession, setStudioDocument, catalogLoading, catalogError, authState, setAuthState, authRequired };
 }
 
 function formatTimestamp(value?: string) {
@@ -926,7 +937,7 @@ function useDarkMode() {
 }
 
 export function App() {
-  const { objects, tables, studioDocument, recentIds, reloadCatalog, markObjectAsRecent, updateUserSettings, persistSession, setStudioDocument, catalogLoading, catalogError, authState, setAuthState, authRequired } = useCatalog();
+  const { objects, folders, tables, studioDocument, recentIds, reloadCatalog, markObjectAsRecent, updateUserSettings, persistSession, setStudioDocument, catalogLoading, catalogError, authState, setAuthState, authRequired } = useCatalog();
   const [isDark, setIsDark] = useDarkMode();
   const [currentUser, setCurrentUser] = useState<PlatformUser | null>(null);
   const [showUserSettings, setShowUserSettings] = useState(false);
@@ -1068,7 +1079,8 @@ export function App() {
             schemaVersion: object.schemaVersion,
             name: object.name,
             description: object.description,
-            folder: object.folder,
+            folderId: object.folderId,
+            folderName: displayDocument.bundle.folders[object.folderId]?.name || "",
             category: object.category,
             tags: object.tags,
             scope: object.scope,
@@ -1153,6 +1165,55 @@ export function App() {
     const next = toggleFavoriteIds(studioDocument.favorites || [], objectId);
     await updateUserSettings({ favorites: next });
   }, [studioDocument, updateUserSettings]);
+
+  // Lightweight folder mutators for surfaces (nav sidebar, viewing page) that only hold the
+  // read-mostly useCatalog() document, not the Studio builder's full editing machinery. Each
+  // one clones the ALREADY-COMPLETE fetched document before patching it — never hand-build a
+  // partial document — because the PUT /api/studio/document merge falls back to seed defaults
+  // (not current server state) for any top-level field the client omits.
+  const moveObjectToFolder = useCallback(async (objectId: string, folderId: string) => {
+    if (!studioDocument) return;
+    const object = studioDocument.bundle.objects[objectId];
+    if (!object) return;
+    const next: StudioDocument = JSON.parse(JSON.stringify(studioDocument));
+    next.bundle.objects[objectId] = { ...object, folderId, updatedAt: new Date().toISOString() };
+    setStudioDocument(next);
+    await saveStudioDocument(next);
+  }, [studioDocument, setStudioDocument]);
+
+  const createFolder = useCallback(async (name: string) => {
+    if (!studioDocument) return undefined;
+    const id = `folder-${Math.random().toString(36).slice(2, 10)}`;
+    const next: StudioDocument = JSON.parse(JSON.stringify(studioDocument));
+    const now = new Date().toISOString();
+    next.bundle.folders[id] = { id, name: name.trim() || "New folder", description: "", parentFolderId: null, createdAt: now, updatedAt: now };
+    setStudioDocument(next);
+    await saveStudioDocument(next);
+    return id;
+  }, [studioDocument, setStudioDocument]);
+
+  const renameFolder = useCallback(async (folderId: string, name: string) => {
+    if (!studioDocument) return;
+    const folder = studioDocument.bundle.folders[folderId];
+    if (!folder) return;
+    const next: StudioDocument = JSON.parse(JSON.stringify(studioDocument));
+    next.bundle.folders[folderId] = { ...folder, name: name.trim() || folder.name, updatedAt: new Date().toISOString() };
+    setStudioDocument(next);
+    await saveStudioDocument(next);
+  }, [studioDocument, setStudioDocument]);
+
+  const deleteFolder = useCallback(async (folderId: string) => {
+    if (!studioDocument) return;
+    const next: StudioDocument = JSON.parse(JSON.stringify(studioDocument));
+    delete next.bundle.folders[folderId];
+    // Never touches bundle.objects' keys — members just become unfoldered, structurally
+    // incapable of deleting a report or dashboard as a side effect.
+    Object.values(next.bundle.objects).forEach((object) => {
+      if (object.folderId === folderId) object.folderId = "";
+    });
+    setStudioDocument(next);
+    await saveStudioDocument(next, { removedFolderIds: [folderId] });
+  }, [studioDocument, setStudioDocument]);
 
   useEffect(() => {
     if (isRefreshJobTerminal(topbarRefreshJob)) return;
@@ -1446,6 +1507,9 @@ export function App() {
         onOpenSettings={() => setShowUserSettings(true)}
         onPinnedChange={setSidebarPinned}
         objects={visibleObjects}
+        folders={folders}
+        onMoveToFolder={moveObjectToFolder}
+        onCreateFolder={createFolder}
         authRequired={authRequired}
         permissions={userPermissions}
       />
@@ -1607,7 +1671,7 @@ export function App() {
           ) : (
             <Routes>
               <Route path="/" element={<HomePage objects={visibleObjects} studioDocument={displayDocument} recentIds={recentIds} openLinksInNewTab={openLinksInNewTab} onRefreshComplete={reloadCatalog} onToggleFavorite={toggleFavorite} />} />
-              <Route path="/viewer" element={<ViewerPage objects={visibleObjects} studioDocument={displayDocument} recentIds={recentIds} openLinksInNewTab={openLinksInNewTab} onRefreshComplete={reloadCatalog} onToggleFavorite={toggleFavorite} />} />
+              <Route path="/viewer" element={<ViewerPage objects={visibleObjects} folders={folders} studioDocument={displayDocument} recentIds={recentIds} openLinksInNewTab={openLinksInNewTab} onRefreshComplete={reloadCatalog} onToggleFavorite={toggleFavorite} onMoveToFolder={moveObjectToFolder} onCreateFolder={createFolder} />} />
               <Route path="/help" element={<HelpPage />} />
               <Route path="/studio" element={hasPerm("building.view") ? <StudioPage openSettingsSignal={studioSettingsSignal} userPermissions={userPermissions} launchContext={hosted} /> : <Navigate to={buildHostedRoute("/")} replace />} />
               <Route path="/studio/:objectId" element={hasPerm("building.view") ? <StudioPage openSettingsSignal={studioSettingsSignal} userPermissions={userPermissions} launchContext={hosted} /> : <Navigate to={buildHostedRoute("/")} replace />} />
