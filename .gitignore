@@ -11,3 +11,6 @@ test-results/
 logs/
 *.docx
 Screenshot *.png
+
+# Server/DB access credentials — never commit, local reference only
+SERVER_ACCESS.md

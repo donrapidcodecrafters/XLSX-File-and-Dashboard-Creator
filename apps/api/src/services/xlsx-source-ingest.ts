@@ -219,11 +219,35 @@ function buildSourceTable(table: TableDefinition, sourceId: string, sourceName: 
 
 function upsertSourceTables(document: StudioDocument, tables: TableDefinition[]) {
   const sourceIds = new Set(tables.map((table) => table.id));
-  const sourceNames = new Set(tables.map((table) => table.name.trim().toLowerCase()).filter(Boolean));
+  const newIdByName = new Map(tables.map((table) => [table.name.trim().toLowerCase(), table.id]));
+  const sourceNames = new Set(newIdByName.keys());
+
+  // A table gets evicted below when a re-import produces the same name under a new id.
+  // Any report still pointing at the evicted table's old id would otherwise start
+  // throwing "Table not found" on every run — repoint those reports at the new id.
+  const staleTableIdRemap = new Map<string, string>();
+  for (const table of document.bundle.tables) {
+    if (sourceIds.has(table.id)) continue;
+    const name = table.name.trim().toLowerCase();
+    const newId = name ? newIdByName.get(name) : undefined;
+    if (newId) staleTableIdRemap.set(table.id, newId);
+  }
+  const objects = staleTableIdRemap.size
+    ? Object.fromEntries(
+        Object.entries(document.bundle.objects).map(([id, obj]) => {
+          if (obj.type === "report" && staleTableIdRemap.has(obj.sourceTableId)) {
+            return [id, { ...obj, sourceTableId: staleTableIdRemap.get(obj.sourceTableId)! }];
+          }
+          return [id, obj];
+        })
+      )
+    : document.bundle.objects;
+
   return normalizeStudioDocument({
     ...document,
     bundle: {
       ...document.bundle,
+      objects,
       tables: [
         ...document.bundle.tables.filter(
           (table) => !sourceIds.has(table.id) && !sourceNames.has(table.name.trim().toLowerCase())

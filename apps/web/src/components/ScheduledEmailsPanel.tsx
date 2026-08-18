@@ -183,6 +183,14 @@ function getObjectName(doc: StudioDocument, objectId: string): string {
   return doc.bundle.objects[objectId]?.name || objectId;
 }
 
+// The report_configs row's stored object_type can go stale (e.g. if a caller updates a
+// config without re-sending it). The live document always knows the object's real type,
+// so prefer that and only fall back to the stored value if the object no longer exists.
+function resolveObjectType(doc: StudioDocument, objectId: string, fallback: "report" | "dashboard"): "report" | "dashboard" {
+  const obj = doc.bundle.objects[objectId];
+  return obj ? (obj.type === "dashboard" ? "dashboard" : "report") : fallback;
+}
+
 function parseRecipients(raw: string): string[] {
   return raw.split(/[\n,;]+/).map((s) => s.trim()).filter((s) => s.includes("@")).slice(0, 50);
 }
@@ -218,10 +226,10 @@ function blankForm(doc: StudioDocument): ConfigFormState {
   };
 }
 
-function configToForm(c: ReportConfig): ConfigFormState {
+function configToForm(doc: StudioDocument, c: ReportConfig): ConfigFormState {
   return {
     objectId: c.object_id,
-    objectType: c.object_type,
+    objectType: resolveObjectType(doc, c.object_id, c.object_type),
     cronExpression: c.cron_expression,
     timeZone: c.time_zone,
     recipientsRaw: recipientsToString(c.send_to),
@@ -422,6 +430,8 @@ export function ScheduledEmailsPanel({ documentState }: Props) {
     setEditing(true); setEditError("");
     try {
       await updateReportConfig(editingId, {
+        object_id: editForm.objectId,
+        object_type: editForm.objectType,
         enabled: editForm.enabled,
         cron_expression: editForm.cronExpression,
         time_zone: editForm.timeZone,
@@ -438,6 +448,8 @@ export function ScheduledEmailsPanel({ documentState }: Props) {
   async function toggleEnabled(config: ReportConfig) {
     try {
       const updated = await updateReportConfig(config.id, {
+        object_id: config.object_id,
+        object_type: resolveObjectType(documentState, config.object_id, config.object_type),
         enabled: !config.enabled,
         cron_expression: config.cron_expression,
         time_zone: config.time_zone,
@@ -537,7 +549,7 @@ export function ScheduledEmailsPanel({ documentState }: Props) {
                     {testingId === config.id ? "Sending…" : "Send test"}
                   </button>
                   <button type="button" className="ghost-button btn-neutral" style={btnSm}
-                    onClick={() => { setEditingId(config.id); setEditForm(configToForm(config)); setEditError(""); }}>
+                    onClick={() => { setEditingId(config.id); setEditForm(configToForm(documentState, config)); setEditError(""); }}>
                     Edit
                   </button>
                   <button type="button" className="ghost-button btn-warning" style={btnSm}

@@ -211,6 +211,8 @@ export function createReportConfig(payload: {
 }
 
 export function updateReportConfig(id: string, payload: {
+  object_id?: string;
+  object_type?: "report" | "dashboard";
   enabled?: boolean;
   cron_expression?: string;
   time_zone?: string;

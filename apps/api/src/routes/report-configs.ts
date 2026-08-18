@@ -101,11 +101,11 @@ export async function registerReportConfigRoutes(app: FastifyInstance) {
       return { message: "Config not found." };
     }
     const objectId = String(body.object_id || "").trim();
-    const objectType = body.object_type === "dashboard" ? "dashboard" : "report";
+    const objectType = body.object_type === "dashboard" || body.object_type === "report" ? body.object_type : null;
     const result = await pgQuery<ReportConfigRow>(
       `UPDATE report_configs SET
         object_id = COALESCE(NULLIF($1, ''), object_id),
-        object_type = $2,
+        object_type = COALESCE($2, object_type),
         enabled = $3,
         cron_expression = $4,
         time_zone = $5,
