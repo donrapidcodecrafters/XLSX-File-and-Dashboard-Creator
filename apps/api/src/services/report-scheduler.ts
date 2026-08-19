@@ -18,6 +18,17 @@ import {
   buildDashboardFileName
 } from "./xlsx-export.js";
 
+// @sendgrid/mail's ResponseError sets .message to the bare HTTP status text (e.g.
+// "Unauthorized" for any 401, whether from a bad key or one missing Mail Send scope),
+// discarding SendGrid's actual diagnostic body. Pull that detail back out so failures
+// are actionable instead of a generic status phrase.
+function describeSendGridError(error: unknown): string {
+  const base = error instanceof Error ? error.message : "Unknown error";
+  const body = (error as { response?: { body?: { errors?: Array<{ message?: string; field?: string }> } } })?.response?.body;
+  const detail = body?.errors?.map((e) => [e.field, e.message].filter(Boolean).join(": ")).filter(Boolean).join("; ");
+  return detail ? `${base} — ${detail}` : base;
+}
+
 // Set CANVAS_CHARTS_ENABLED=true in .env to use server-side canvas chart rendering
 // (identical output to the manual download). Leave unset or false to keep the
 // current QuickChart.io path while canvas rendering is being verified.
@@ -274,18 +285,22 @@ async function runReportConfig(config: ReportConfigRow, logger: FastifyBaseLogge
   const from = apiConfig.automation.sendgridFromEmail || "reports@example.com";
 
   if (config.sendgrid_template_id) {
-    await sgMail.send({
-      to: recipients,
-      from,
-      attachments: [attachment],
-      templateId: config.sendgrid_template_id,
-      dynamicTemplateData: {
-        report_name: obj.name,
-        filename,
-        object_type: config.object_type,
-        sent_at: sentAt
-      }
-    });
+    try {
+      await sgMail.send({
+        to: recipients,
+        from,
+        attachments: [attachment],
+        templateId: config.sendgrid_template_id,
+        dynamicTemplateData: {
+          report_name: obj.name,
+          filename,
+          object_type: config.object_type,
+          sent_at: sentAt
+        }
+      });
+    } catch (error) {
+      throw new Error(`SendGrid error: ${describeSendGridError(error)}`);
+    }
   } else {
     const html = buildScheduledReportHtml({
       platformName,
@@ -314,14 +329,18 @@ async function runReportConfig(config: ReportConfigRow, logger: FastifyBaseLogge
       "You are receiving this because you are subscribed to scheduled reports."
     ].filter((l) => l !== undefined).join("\n");
 
-    await sgMail.send({
-      to: recipients,
-      from: { email: from, name: platformName },
-      subject: emailSubject,
-      html,
-      text,
-      attachments: [attachment]
-    });
+    try {
+      await sgMail.send({
+        to: recipients,
+        from: { email: from, name: platformName },
+        subject: emailSubject,
+        html,
+        text,
+        attachments: [attachment]
+      });
+    } catch (error) {
+      throw new Error(`SendGrid error: ${describeSendGridError(error)}`);
+    }
   }
 
   logger.info({ configId: config.id, objectId: config.object_id, recipients }, "report-scheduler: email sent");
