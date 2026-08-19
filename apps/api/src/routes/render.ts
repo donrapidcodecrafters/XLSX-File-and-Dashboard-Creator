@@ -5,7 +5,7 @@ import { executeDashboard, executeReport, fetchAllReportRowsForExport, fetchRepo
 import { objectStore } from "../services/object-store.js";
 import { studioStore } from "../services/studio-store.js";
 import { exportJobStore } from "../services/export-jobs.js";
-import { buildDashboardFileName, buildReportFileName, streamDashboardWorkbook, streamReportWorkbook } from "../services/xlsx-export.js";
+import { buildDashboardFileName, buildReportFileName, pickDashboardStreamFn, streamReportWorkbook } from "../services/xlsx-export.js";
 
 function normalizeClientFilters(filters: Array<{ fieldId: string; operator?: string; value: string; valueSource?: "literal" | "field"; compareFieldId?: string }> = []): FilterDefinition[] {
   return filters.map((filter, index) => ({
@@ -233,7 +233,7 @@ export async function registerRenderRoutes(app: FastifyInstance) {
       if (!stream) {
         throw new Error("Unable to create export file stream.");
       }
-      await streamDashboardWorkbook(stream, dashboard, rendered, exportResultsByWidgetId, tablesById, update, runtimeFilters);
+      await pickDashboardStreamFn()(stream, dashboard, rendered, exportResultsByWidgetId, tablesById, update, runtimeFilters);
     });
     return { job };
   });

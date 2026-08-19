@@ -12,8 +12,7 @@ import { sendSystemNotification } from "./notification-service.js";
 import { fetchReportExportBundle, executeDashboard } from "./report-runner.js";
 import {
   streamReportWorkbook,
-  streamDashboardWorkbook,
-  streamDashboardWorkbookCanvas,
+  pickDashboardStreamFn,
   buildReportFileName,
   buildDashboardFileName
 } from "./xlsx-export.js";
@@ -28,11 +27,6 @@ function describeSendGridError(error: unknown): string {
   const detail = body?.errors?.map((e) => [e.field, e.message].filter(Boolean).join(": ")).filter(Boolean).join("; ");
   return detail ? `${base} — ${detail}` : base;
 }
-
-// Set CANVAS_CHARTS_ENABLED=true in .env to use server-side canvas chart rendering
-// (identical output to the manual download). Leave unset or false to keep the
-// current QuickChart.io path while canvas rendering is being verified.
-const useCanvasCharts = process.env.CANVAS_CHARTS_ENABLED === "true";
 
 interface ReportConfigRow {
   id: string;
@@ -249,9 +243,8 @@ async function runReportConfig(config: ReportConfigRow, logger: FastifyBaseLogge
         } catch { /* use widget.result fallback */ }
       }
     }
-    const dashboardStreamFn = useCanvasCharts ? streamDashboardWorkbookCanvas : streamDashboardWorkbook;
     buffer = await workbookToBuffer((pass) =>
-      dashboardStreamFn(pass, dashboard, rendered, exportResultsByWidgetId, tablesById)
+      pickDashboardStreamFn()(pass, dashboard, rendered, exportResultsByWidgetId, tablesById)
     );
   }
 
