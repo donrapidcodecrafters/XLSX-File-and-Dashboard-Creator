@@ -71,6 +71,11 @@ CREATE TABLE IF NOT EXISTS app_entities (
 -- The field that uniquely identifies each record in this table (used to relate tables to each other)
 ALTER TABLE app_entities ADD COLUMN IF NOT EXISTS key_field_id text NOT NULL DEFAULT '';
 
+-- Key field(s) chosen for xlsx re-imports (supports composite keys), used to upsert
+-- records by identity across imports instead of a full delete-and-replace. Persisted
+-- so the next import of the same source pre-fills the same choice.
+ALTER TABLE app_entities ADD COLUMN IF NOT EXISTS key_field_ids text[] NOT NULL DEFAULT '{}';
+
 CREATE INDEX IF NOT EXISTS app_entities_source_type_idx ON app_entities (source_type);
 CREATE INDEX IF NOT EXISTS app_entities_refreshed_at_idx ON app_entities (refreshed_at);
 
@@ -107,6 +112,13 @@ CREATE INDEX IF NOT EXISTS app_records_external_record_id_idx ON app_records (so
 CREATE INDEX IF NOT EXISTS app_records_payload_gin_idx ON app_records USING gin (payload jsonb_path_ops);
 -- Encrypted ciphertext for row-level AES-256-GCM payload encryption
 ALTER TABLE app_records ADD COLUMN IF NOT EXISTS payload_enc text;
+
+-- Lets an upsert INSERT ... ON CONFLICT (entity_id, external_record_id) target rows by
+-- their key-field identity when re-importing a source with key fields configured.
+-- Partial (excludes '') so sources without key fields — which reuse a positional
+-- external_record_id that isn't a stable cross-import identity — are unaffected.
+CREATE UNIQUE INDEX IF NOT EXISTS app_records_entity_external_unique_idx
+  ON app_records (entity_id, external_record_id) WHERE external_record_id <> '';
 
 CREATE TABLE IF NOT EXISTS app_sync_jobs (
   id text PRIMARY KEY,

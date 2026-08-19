@@ -18,6 +18,8 @@ interface ReplaceSourceRecordsInput {
   quickbaseTableId?: string;
   quickbaseReportId?: string;
   keyFieldId?: string;
+  /** One or more field ids whose combined value uniquely identifies a row across imports. */
+  keyFieldIds?: string[];
 }
 
 interface SourceRecordReplaceBaseInput {
@@ -29,6 +31,7 @@ interface SourceRecordReplaceBaseInput {
   quickbaseTableId?: string;
   quickbaseReportId?: string;
   keyFieldId?: string;
+  keyFieldIds?: string[];
 }
 
 interface ReplaceSourceRecordsResult {
@@ -37,6 +40,8 @@ interface ReplaceSourceRecordsResult {
   entityId: string;
   rowCount: number;
   fieldCount: number;
+  /** Only meaningful when keyFieldIds was set — counts from the upsert-by-key pass. */
+  upsert?: { added: number; updated: number; removed: number };
 }
 
 export interface SourceRecordSummary {
@@ -46,6 +51,7 @@ export interface SourceRecordSummary {
   rowCount: number;
   fieldCount: number;
   keyFieldId: string;
+  keyFieldIds: string[];
   metadata: Record<string, unknown>;
   refreshedAt: string;
   updatedAt: string;
@@ -73,6 +79,22 @@ function externalRecordId(row: DataRow, index: number) {
   return String(row.__recordId || row.recordId || row.id || index + 1);
 }
 
+export function normalizeKeyFieldIds(keyFieldIds: string[] | undefined | null): string[] {
+  return Array.from(new Set((keyFieldIds || []).map((id) => String(id || "").trim()).filter(Boolean)));
+}
+
+function normalizeKeyValue(value: unknown) {
+  if (value === null || value === undefined) return "";
+  return String(value).trim().toLowerCase();
+}
+
+// A stable identity for a row, derived from its key field value(s), so the same
+// logical record maps to the same app_records row across repeated imports —
+// letting a re-import update/insert/remove by identity instead of a full replace.
+function keyExternalId(row: DataRow, keyFieldIds: string[]) {
+  return sha256(keyFieldIds.map((fieldId) => normalizeKeyValue(row[fieldId])).join("␟"));
+}
+
 function makeTableFields(table: TableDefinition | null | undefined) {
   return table?.fields || [];
 }
@@ -85,6 +107,7 @@ async function upsertSourceEntity(
   now: string,
   entityId = compactId("entity", input.sourceId)
 ) {
+  const keyFieldIds = normalizeKeyFieldIds(input.keyFieldIds);
   const entity = await client.query<{ id: string }>(
     `
     INSERT INTO app_entities (
@@ -96,13 +119,14 @@ async function upsertSourceEntity(
       quickbase_table_id,
       quickbase_report_id,
       key_field_id,
+      key_field_ids,
       metadata,
       field_count,
       record_count,
       updated_at,
       refreshed_at
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $12)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::text[], $10::jsonb, $11, $12, $13, $13)
     ON CONFLICT (source_id) DO UPDATE SET
       source_name = EXCLUDED.source_name,
       source_type = EXCLUDED.source_type,
@@ -110,6 +134,7 @@ async function upsertSourceEntity(
       quickbase_table_id = EXCLUDED.quickbase_table_id,
       quickbase_report_id = EXCLUDED.quickbase_report_id,
       key_field_id = CASE WHEN EXCLUDED.key_field_id = '' THEN app_entities.key_field_id ELSE EXCLUDED.key_field_id END,
+      key_field_ids = CASE WHEN array_length(EXCLUDED.key_field_ids, 1) IS NULL THEN app_entities.key_field_ids ELSE EXCLUDED.key_field_ids END,
       metadata = EXCLUDED.metadata,
       field_count = EXCLUDED.field_count,
       record_count = EXCLUDED.record_count,
@@ -126,6 +151,7 @@ async function upsertSourceEntity(
       input.quickbaseTableId || "",
       input.quickbaseReportId || "",
       input.keyFieldId || "",
+      keyFieldIds,
       JSON.stringify(input.metadata || {}),
       fields.length,
       rowCount,
@@ -171,6 +197,48 @@ async function replaceSourceAttributes(
   );
 }
 
+function buildRecordBatchValues(
+  entityId: string,
+  sourceId: string,
+  rows: DataRow[],
+  now: string,
+  deriveExternalId: (payload: DataRow, index: number) => string
+) {
+  const useEncryption = isEncryptionEnabled();
+  const values: unknown[] = [];
+  const externalIds: string[] = [];
+  const placeholders = rows.map((row, index) => {
+    const payload = normalizePayload(row);
+    const externalId = deriveExternalId(payload, index);
+    externalIds.push(externalId);
+    const payloadJson = JSON.stringify(payload); // single serialization; row_hash not read by any query
+    if (useEncryption) {
+      values.push(
+        entityId,
+        sourceId,
+        externalId,
+        "",                    // row_hash: not queried; skip sha256 to avoid O(n) crypto per row
+        JSON.stringify({}),    // empty JSONB placeholder — real data is in payload_enc
+        encryptJson(payload),
+        now
+      );
+    } else {
+      values.push(
+        entityId,
+        sourceId,
+        externalId,
+        "",       // row_hash: not queried; skip sha256 to avoid O(n) crypto per row
+        payloadJson,
+        null,
+        now
+      );
+    }
+    const base = index * 7;
+    return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}::jsonb, $${base + 6}, $${base + 7}, $${base + 7})`;
+  });
+  return { values, placeholders, externalIds };
+}
+
 async function insertSourceRecordBatch(
   client: PoolClient,
   entityId: string,
@@ -180,37 +248,10 @@ async function insertSourceRecordBatch(
   now: string
 ) {
   if (!rows.length) return;
-  const useEncryption = isEncryptionEnabled();
-  const values: unknown[] = [];
-  const placeholders = rows.map((row, index) => {
-    const absoluteIndex = startIndex + index;
-    const payload = normalizePayload(row);
-    const payloadJson = JSON.stringify(payload); // single serialization; row_hash not read by any query
-    if (useEncryption) {
-      values.push(
-        entityId,
-        sourceId,
-        externalRecordId(payload, absoluteIndex),
-        "",                    // row_hash: not queried; skip sha256 to avoid O(n) crypto per row
-        JSON.stringify({}),    // empty JSONB placeholder — real data is in payload_enc
-        encryptJson(payload),
-        now
-      );
-      const base = index * 7;
-      return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}::jsonb, $${base + 6}, $${base + 7}, $${base + 7})`;
-    }
-    values.push(
-      entityId,
-      sourceId,
-      externalRecordId(payload, absoluteIndex),
-      "",       // row_hash: not queried; skip sha256 to avoid O(n) crypto per row
-      payloadJson,
-      null,
-      now
-    );
-    const base = index * 7;
-    return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}::jsonb, $${base + 6}, $${base + 7}, $${base + 7})`;
-  });
+  const { values, placeholders } = buildRecordBatchValues(
+    entityId, sourceId, rows, now,
+    (payload, index) => externalRecordId(payload, startIndex + index)
+  );
   await client.query(
     `
     INSERT INTO app_records (
@@ -227,6 +268,62 @@ async function insertSourceRecordBatch(
     `,
     values
   );
+}
+
+interface UpsertBatchResult {
+  added: number;
+  updated: number;
+}
+
+// Inserts new key identities and updates existing ones in place (rather than a
+// full delete+reinsert), so a row's identity — and anything a future feature
+// might key off app_records.id — survives across re-imports. Duplicate key
+// values within one batch are rejected by Postgres itself (ON CONFLICT can't
+// affect the same row twice in one statement), surfacing as a clear error.
+async function upsertSourceRecordBatch(
+  client: PoolClient,
+  entityId: string,
+  sourceId: string,
+  rows: DataRow[],
+  keyFieldIds: string[],
+  now: string,
+  seenExternalIds: Set<string>
+): Promise<UpsertBatchResult> {
+  if (!rows.length) return { added: 0, updated: 0 };
+  const { values, placeholders, externalIds } = buildRecordBatchValues(
+    entityId, sourceId, rows, now,
+    (payload) => keyExternalId(payload, keyFieldIds)
+  );
+  for (const id of externalIds) {
+    if (seenExternalIds.has(id)) {
+      throw new Error("This file has more than one row with the same key field value(s) — key fields must uniquely identify each row.");
+    }
+    seenExternalIds.add(id);
+  }
+  const result = await client.query<{ inserted: boolean }>(
+    `
+    INSERT INTO app_records (
+      entity_id,
+      source_id,
+      external_record_id,
+      row_hash,
+      payload,
+      payload_enc,
+      created_at,
+      updated_at
+    )
+    VALUES ${placeholders.join(", ")}
+    ON CONFLICT (entity_id, external_record_id) WHERE external_record_id <> '' DO UPDATE SET
+      source_id = EXCLUDED.source_id,
+      payload = EXCLUDED.payload,
+      payload_enc = EXCLUDED.payload_enc,
+      updated_at = EXCLUDED.updated_at
+    RETURNING (xmax = 0) AS inserted
+    `,
+    values
+  );
+  const added = result.rows.filter((row) => row.inserted).length;
+  return { added, updated: result.rows.length - added };
 }
 
 export async function replaceSourceRecords(input: ReplaceSourceRecordsInput): Promise<ReplaceSourceRecordsResult> {
@@ -247,13 +344,33 @@ export async function replaceSourceRecords(input: ReplaceSourceRecordsInput): Pr
   const entityId = compactId("entity", sourceId);
   const now = new Date().toISOString();
   const fields = input.fields || [];
+  const keyFieldIds = normalizeKeyFieldIds(input.keyFieldIds);
 
+  let upsertCounts: { added: number; updated: number; removed: number } | undefined;
   await withPgTransaction(async (client) => {
     const persistedEntityId = await upsertSourceEntity(client, input, fields, input.rows.length, now, entityId);
     await replaceSourceAttributes(client, persistedEntityId, fields, now);
-    await client.query("DELETE FROM app_records WHERE entity_id = $1", [persistedEntityId]);
-    for (let start = 0; start < input.rows.length; start += INSERT_RECORD_BATCH_SIZE) {
-      await insertSourceRecordBatch(client, persistedEntityId, sourceId, input.rows.slice(start, start + INSERT_RECORD_BATCH_SIZE), start, now);
+    if (keyFieldIds.length) {
+      const seen = new Set<string>();
+      let added = 0;
+      let updated = 0;
+      for (let start = 0; start < input.rows.length; start += INSERT_RECORD_BATCH_SIZE) {
+        const result = await upsertSourceRecordBatch(
+          client, persistedEntityId, sourceId, input.rows.slice(start, start + INSERT_RECORD_BATCH_SIZE), keyFieldIds, now, seen
+        );
+        added += result.added;
+        updated += result.updated;
+      }
+      const removed = await client.query(
+        "DELETE FROM app_records WHERE entity_id = $1 AND external_record_id <> '' AND NOT (external_record_id = ANY($2::text[]))",
+        [persistedEntityId, Array.from(seen)]
+      );
+      upsertCounts = { added, updated, removed: removed.rowCount || 0 };
+    } else {
+      await client.query("DELETE FROM app_records WHERE entity_id = $1", [persistedEntityId]);
+      for (let start = 0; start < input.rows.length; start += INSERT_RECORD_BATCH_SIZE) {
+        await insertSourceRecordBatch(client, persistedEntityId, sourceId, input.rows.slice(start, start + INSERT_RECORD_BATCH_SIZE), start, now);
+      }
     }
   });
 
@@ -262,7 +379,8 @@ export async function replaceSourceRecords(input: ReplaceSourceRecordsInput): Pr
     sourceId,
     entityId,
     rowCount: input.rows.length,
-    fieldCount: fields.length
+    fieldCount: fields.length,
+    upsert: upsertCounts
   };
 }
 
@@ -288,18 +406,32 @@ export async function replaceSourceRecordsFromBatches(
 
   const entityId = compactId("entity", sourceId);
   const now = new Date().toISOString();
+  const keyFieldIds = normalizeKeyFieldIds(input.keyFieldIds);
   let rowCount = 0;
   let fieldCount = 0;
+  let upsertCounts: { added: number; updated: number; removed: number } | undefined;
 
   await withPgTransaction(async (client) => {
     const persistedEntityId = await upsertSourceEntity(client, input, [], 0, now, entityId);
     await replaceSourceAttributes(client, persistedEntityId, [], now);
-    await client.query("DELETE FROM app_records WHERE entity_id = $1", [persistedEntityId]);
+    // Non-key sources still use the fast delete-then-reinsert path, unchanged.
+    if (!keyFieldIds.length) {
+      await client.query("DELETE FROM app_records WHERE entity_id = $1", [persistedEntityId]);
+    }
+    const seenExternalIds = new Set<string>();
+    let added = 0;
+    let updated = 0;
     const writer = {
       appendRows: async (rows: DataRow[]) => {
         const batch = rows.filter(Boolean);
         if (!batch.length) return;
-        await insertSourceRecordBatch(client, persistedEntityId, sourceId, batch, rowCount, now);
+        if (keyFieldIds.length) {
+          const result = await upsertSourceRecordBatch(client, persistedEntityId, sourceId, batch, keyFieldIds, now, seenExternalIds);
+          added += result.added;
+          updated += result.updated;
+        } else {
+          await insertSourceRecordBatch(client, persistedEntityId, sourceId, batch, rowCount, now);
+        }
         rowCount += batch.length;
       }
     };
@@ -307,6 +439,17 @@ export async function replaceSourceRecordsFromBatches(
     const fields = completed.fields || [];
     rowCount = completed.rowCount;
     fieldCount = fields.length;
+    if (keyFieldIds.length) {
+      const missingKeyFields = keyFieldIds.filter((id) => !fields.some((field) => field.id === id));
+      if (missingKeyFields.length) {
+        throw new Error(`Key field(s) not found in this file's columns: ${missingKeyFields.join(", ")}.`);
+      }
+      const removed = await client.query(
+        "DELETE FROM app_records WHERE entity_id = $1 AND external_record_id <> '' AND NOT (external_record_id = ANY($2::text[]))",
+        [persistedEntityId, Array.from(seenExternalIds)]
+      );
+      upsertCounts = { added, updated, removed: removed.rowCount || 0 };
+    }
     await replaceSourceAttributes(client, persistedEntityId, fields, now);
     await upsertSourceEntity(client, {
       ...input,
@@ -322,7 +465,8 @@ export async function replaceSourceRecordsFromBatches(
     sourceId,
     entityId,
     rowCount,
-    fieldCount
+    fieldCount,
+    upsert: upsertCounts
   };
 }
 
@@ -379,12 +523,13 @@ export async function getSourceRecordSummary(sourceIds: string[]): Promise<Sourc
     record_count: number;
     field_count: number;
     key_field_id: string;
+    key_field_ids: string[] | null;
     metadata: Record<string, unknown>;
     refreshed_at: Date | string | null;
     updated_at: Date | string | null;
   }>(
     `
-    SELECT source_id, source_name, source_type, record_count, field_count, key_field_id, metadata, refreshed_at, updated_at
+    SELECT source_id, source_name, source_type, record_count, field_count, key_field_id, key_field_ids, metadata, refreshed_at, updated_at
     FROM app_entities
     WHERE source_id = ANY($1::text[])
     ORDER BY record_count DESC, refreshed_at DESC NULLS LAST
@@ -401,6 +546,7 @@ export async function getSourceRecordSummary(sourceIds: string[]): Promise<Sourc
     rowCount: Number(row.record_count || 0),
     fieldCount: Number(row.field_count || 0),
     keyFieldId: row.key_field_id || "",
+    keyFieldIds: normalizeKeyFieldIds(row.key_field_ids),
     metadata: row.metadata || {},
     refreshedAt: row.refreshed_at ? new Date(row.refreshed_at).toISOString() : "",
     updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : ""
@@ -464,12 +610,13 @@ export async function listSourceRecordSummaries(): Promise<SourceRecordSummary[]
     record_count: number;
     field_count: number;
     key_field_id: string;
+    key_field_ids: string[] | null;
     metadata: Record<string, unknown>;
     refreshed_at: Date | string | null;
     updated_at: Date | string | null;
   }>(
     `
-    SELECT source_id, source_name, source_type, record_count, field_count, key_field_id, metadata, refreshed_at, updated_at
+    SELECT source_id, source_name, source_type, record_count, field_count, key_field_id, key_field_ids, metadata, refreshed_at, updated_at
     FROM app_entities
     ORDER BY updated_at DESC
     `
@@ -481,6 +628,7 @@ export async function listSourceRecordSummaries(): Promise<SourceRecordSummary[]
     rowCount: Number(row.record_count || 0),
     fieldCount: Number(row.field_count || 0),
     keyFieldId: row.key_field_id || "",
+    keyFieldIds: normalizeKeyFieldIds(row.key_field_ids),
     metadata: row.metadata || {},
     refreshedAt: row.refreshed_at ? new Date(row.refreshed_at).toISOString() : "",
     updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : ""

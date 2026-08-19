@@ -119,6 +119,7 @@ export interface StudioWorkbookSourceImportResult {
     table: TableDefinition;
     rowCount: number;
     fieldCount: number;
+    upsert?: { added: number; updated: number; removed: number };
   }>;
   warnings: string[];
   review: StudioWorkbookImportResult["review"];
@@ -624,17 +625,26 @@ export interface XlsxSheetPeek {
   looksLikeData: boolean;
 }
 
-export async function peekXlsxFile(file: File): Promise<{
+export interface XlsxHeaderDiff {
+  addedLabels: string[];
+  removedLabels: string[];
+}
+
+export async function peekXlsxFile(file: File, options: { sourceId?: string } = {}): Promise<{
   filename: string;
   sheetNames: string[];
   sheets: XlsxSheetPeek[];
   headers: string[];
   rows: Record<string, unknown>[];
   rowCount: number;
+  headerDiff: XlsxHeaderDiff | null;
+  existingKeyFieldIds: string[];
 }> {
   const formData = new FormData();
   formData.append("file", file, file.name);
-  const response = await fetch(API_BASE + "/api/studio/sources/xlsx/peek", {
+  const params = new URLSearchParams();
+  if (options.sourceId) params.set("sourceId", options.sourceId);
+  const response = await fetch(API_BASE + `/api/studio/sources/xlsx/peek${params.toString() ? `?${params.toString()}` : ""}`, {
     method: "POST",
     credentials: "include",
     body: formData
@@ -642,7 +652,16 @@ export async function peekXlsxFile(file: File): Promise<{
   if (response.status === 401) throw new AuthRequiredError();
   const body = await response.json() as Record<string, unknown>;
   if (!response.ok) throw new Error(String(body?.message || "Preview failed."));
-  return body as { filename: string; sheetNames: string[]; sheets: XlsxSheetPeek[]; headers: string[]; rows: Record<string, unknown>[]; rowCount: number; };
+  return body as {
+    filename: string; sheetNames: string[]; sheets: XlsxSheetPeek[]; headers: string[];
+    rows: Record<string, unknown>[]; rowCount: number; headerDiff: XlsxHeaderDiff | null; existingKeyFieldIds: string[];
+  };
+}
+
+export function fetchSourceFields(sourceId: string) {
+  return request<{ sourceId: string; fields: Array<{ id: string; label: string; type: string }>; keyFieldIds: string[] }>(
+    `/api/studio/sources/${encodeURIComponent(sourceId)}/fields`
+  );
 }
 
 export async function importStudioWorkbook(file: File, options?: { maxRowsPerSheet?: number }) {
@@ -693,6 +712,13 @@ export function updateSourceKeyField(sourceId: string, keyFieldId: string) {
   });
 }
 
+export function updateSourceKeyFields(sourceId: string, keyFieldIds: string[]) {
+  return request<{ sourceId: string; keyFieldIds: string[] }>(`/api/studio/sources/${encodeURIComponent(sourceId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ keyFieldIds })
+  });
+}
+
 export function deleteSource(sourceId: string) {
   return request<{ ok: boolean }>(`/api/studio/sources/${encodeURIComponent(sourceId)}`, {
     method: "DELETE"
@@ -705,11 +731,12 @@ export function clearSourceData(sourceId: string) {
   });
 }
 
-export async function importStudioWorkbookSource(file: File, options: { sourceId?: string; sourceName?: string; dataSheets?: string[] } = {}) {
+export async function importStudioWorkbookSource(file: File, options: { sourceId?: string; sourceName?: string; dataSheets?: string[]; keyFieldIds?: string[] } = {}) {
   const params = new URLSearchParams();
   if (options.sourceId) params.set("sourceId", options.sourceId);
   if (options.sourceName) params.set("sourceName", options.sourceName);
   if (options.dataSheets && options.dataSheets.length > 0) params.set("dataSheets", options.dataSheets.join(","));
+  if (options.keyFieldIds && options.keyFieldIds.length > 0) params.set("keyFieldIds", options.keyFieldIds.join(","));
   const formData = new FormData();
   formData.append("file", file, file.name);
   const response = await fetch(API_BASE + `/api/studio/sources/xlsx${params.toString() ? `?${params.toString()}` : ""}`, {
@@ -727,12 +754,13 @@ export async function importStudioWorkbookSource(file: File, options: { sourceId
 
 export async function recreateWorkbookFromDataSource(
   file: File,
-  options: { sourceId?: string; sourceName?: string; dataSheets?: string[] } = {}
+  options: { sourceId?: string; sourceName?: string; dataSheets?: string[]; keyFieldIds?: string[] } = {}
 ): Promise<StudioWorkbookSourceImportResult & { reports: unknown[]; dashboard: unknown | null }> {
   const params = new URLSearchParams();
   if (options.sourceId) params.set("sourceId", options.sourceId);
   if (options.sourceName) params.set("sourceName", options.sourceName);
   if (options.dataSheets && options.dataSheets.length > 0) params.set("dataSheets", options.dataSheets.join(","));
+  if (options.keyFieldIds && options.keyFieldIds.length > 0) params.set("keyFieldIds", options.keyFieldIds.join(","));
   const formData = new FormData();
   formData.append("file", file, file.name);
   const response = await fetch(

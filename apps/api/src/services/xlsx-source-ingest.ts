@@ -13,6 +13,8 @@ interface IngestXlsxSourceOptions {
   sourceName?: string;
   /** Sheet names that should be stored as Postgres tables. Others are skipped for ingestion. */
   dataSheets?: string[];
+  /** Field id(s) that uniquely identify a row — enables upsert-by-key instead of full replace. */
+  keyFieldIds?: string[];
 }
 
 interface IngestXlsxSourceStreamOptions extends Omit<IngestXlsxSourceOptions, "buffer"> {
@@ -28,6 +30,8 @@ interface IngestedXlsxSource {
   rowCount: number;
   fieldCount: number;
   summary?: SourceRecordSummary;
+  /** Present when keyFieldIds was set — how many rows were added/updated/removed by key. */
+  upsert?: { added: number; updated: number; removed: number };
 }
 
 interface IngestXlsxWorkbookSourceResult {
@@ -312,12 +316,13 @@ export async function ingestXlsxWorkbookSource(options: IngestXlsxSourceOptions)
     const sourceName = importedTables.length === 1 ? baseSourceName : `${baseSourceName} - ${importedTable.name}`;
     const rows = imported.document.bundle.data[importedTable.id] || [];
     const table = buildSourceTable(importedTable, sourceId, sourceName, options.filename);
-    await replaceSourceRecords({
+    const replaced = await replaceSourceRecords({
       sourceId,
       sourceName,
       sourceType: "xlsx",
       fields: table.fields,
       rows,
+      keyFieldIds: options.keyFieldIds,
       metadata: {
         workbookName,
         filename: options.filename,
@@ -333,7 +338,8 @@ export async function ingestXlsxWorkbookSource(options: IngestXlsxSourceOptions)
       sheetName: importedTable.name,
       table,
       rowCount: rows.length,
-      fieldCount: table.fields.length
+      fieldCount: table.fields.length,
+      upsert: replaced.upsert
     });
   }
 
@@ -398,10 +404,11 @@ export async function ingestXlsxWorkbookSourceStream(options: IngestXlsxSourceSt
     let skippedBlankRows = 0;
     const batch: DataRow[] = [];
 
-    await replaceSourceRecordsFromBatches({
+    const replaced = await replaceSourceRecordsFromBatches({
       sourceId,
       sourceName,
       sourceType: "xlsx",
+      keyFieldIds: options.keyFieldIds,
       metadata: {
         workbookName,
         filename: options.filename,
@@ -456,7 +463,12 @@ export async function ingestXlsxWorkbookSourceStream(options: IngestXlsxSourceSt
       return null;
     });
 
-    if (fields.length) {
+    // `replaced` is null when the transaction (and its post-handler validation,
+    // e.g. a duplicate/missing key field) failed and rolled back — `fields` may
+    // still be populated at that point since the handler mutates it before the
+    // rollback-triggering check runs, so gate on `replaced` too or a failed
+    // sheet would be reported as successfully imported with no data written.
+    if (fields.length && replaced) {
       const table = buildSourceTable({
         id: sourceId,
         name: sheetName,
@@ -470,7 +482,8 @@ export async function ingestXlsxWorkbookSourceStream(options: IngestXlsxSourceSt
         sheetName,
         table,
         rowCount,
-        fieldCount: fields.length
+        fieldCount: fields.length,
+        upsert: replaced?.upsert
       });
     }
     worksheetIndex += 1;

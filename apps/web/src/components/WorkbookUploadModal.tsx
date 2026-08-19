@@ -1,6 +1,23 @@
 import { useEffect, useRef, useState } from "react";
-import { fetchStudioSources, getWorkbookProfile, importStudioWorkbook, importStudioWorkbookSource, peekXlsxFile, saveWorkbookProfile } from "../lib/studioApi";
+import { fetchSourceFields, fetchStudioSources, getWorkbookProfile, importStudioWorkbook, importStudioWorkbookSource, peekXlsxFile, saveWorkbookProfile } from "../lib/studioApi";
 import type { StudioSourceSummary, StudioWorkbookImportResult, StudioWorkbookSourceImportResult, WorkbookProfile, XlsxSheetPeek } from "../lib/studioApi";
+
+interface ExistingSourceFields {
+  fields: Array<{ id: string; label: string; type: string }>;
+  keyFieldIds: string[];
+}
+
+function diffHeaders(fileHeaders: string[], existing: ExistingSourceFields | undefined) {
+  if (!existing || !existing.fields.length) return null;
+  const norm = (v: string) => v.trim().toLowerCase();
+  const existingLabels = existing.fields.map((f) => f.label);
+  const existingSet = new Set(existingLabels.map(norm));
+  const fileSet = new Set(fileHeaders.map(norm));
+  return {
+    added: fileHeaders.filter((h) => !existingSet.has(norm(h))),
+    removed: existingLabels.filter((l) => !fileSet.has(norm(l)))
+  };
+}
 
 type UploadMode = "data-source" | "template";
 
@@ -94,6 +111,52 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
   // Per-tab label appended after the base name (e.g. "Sheet1" → "Payments - Sheet1"), editable
   const [sheetTabLabels, setSheetTabLabels] = useState<Record<string, string>>({});
 
+  // Key field(s) that uniquely identify a row — lets a re-import update rows in
+  // place instead of a full replace. Single-target mode uses `keyFieldIds`;
+  // multi-sheet mode tracks one selection per sheet.
+  const [keyFieldIds, setKeyFieldIds] = useState<string[]>([]);
+  const [sheetKeyFieldMap, setSheetKeyFieldMap] = useState<Record<string, string[]>>({});
+  const [diffAcknowledged, setDiffAcknowledged] = useState(false);
+  // Cache of an existing source's current columns + saved key field(s), fetched
+  // on demand so the modal can diff the new file's headers and pre-fill keys.
+  const [existingFieldsCache, setExistingFieldsCache] = useState<Record<string, ExistingSourceFields>>({});
+
+  function ensureExistingFields(sourceId: string) {
+    if (!sourceId || existingFieldsCache[sourceId]) return;
+    fetchSourceFields(sourceId)
+      .then((res) => setExistingFieldsCache((prev) => ({ ...prev, [sourceId]: { fields: res.fields, keyFieldIds: res.keyFieldIds } })))
+      .catch(() => { /* non-blocking */ });
+  }
+
+  // Fetch existing columns/keys for every distinct multi-sheet target, and pre-fill
+  // that sheet's key-field picker from the target's saved choice once it arrives.
+  useEffect(() => {
+    setSheetKeyFieldMap((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const [sheetName, sid] of Object.entries(sheetSourceMap)) {
+        if (!sid) continue;
+        ensureExistingFields(sid);
+        const existing = existingFieldsCache[sid];
+        if (existing && !(sheetName in prev)) {
+          next[sheetName] = existing.keyFieldIds;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [sheetSourceMap, existingFieldsCache]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Switching targets: fetch its columns/keys, reset the acknowledgment banner, and
+  // pre-fill the key-field picker from whatever this target last had saved (falls
+  // back to empty for "new" or before the fetch lands).
+  useEffect(() => {
+    setDiffAcknowledged(false);
+    if (!selectedSourceId || selectedSourceId === "new") { setKeyFieldIds([]); return; }
+    ensureExistingFields(selectedSourceId);
+    setKeyFieldIds(existingFieldsCache[selectedSourceId]?.keyFieldIds || []);
+  }, [selectedSourceId, existingFieldsCache[selectedSourceId]]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Load existing xlsx sources whenever modal opens in data-source mode
   useEffect(() => {
     if (!open || mode !== "data-source") return;
@@ -149,6 +212,7 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
     setDragging(false); setSelectedSourceId(""); setNewWorkbookName("");
     setDropdownOpen(false); setDataSheets([]);
     setSheetSourceMap({}); setMultiSheetBaseName(""); setSheetTabLabels({});
+    setKeyFieldIds([]); setSheetKeyFieldMap({}); setDiffAcknowledged(false); setExistingFieldsCache({});
   }
 
   function handleClose() {
@@ -188,7 +252,7 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
         if (multiSheetMode) {
           // Build import groups: each unique target source gets its own API call.
           // Multiple sheets can share an existing sourceId (grouped); new sources are always one per tab.
-          const groups: { sheets: string[]; sourceId?: string; sourceName?: string }[] = [];
+          const groups: { sheets: string[]; sourceId?: string; sourceName?: string; keyFieldIds?: string[] }[] = [];
           const groupIndex = new Map<string, number>(); // existing sourceId → groups index
           const base = multiSheetBaseName.trim();
           for (const sheetName of dataSheets) {
@@ -199,21 +263,21 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
                 groups[groupIndex.get(sid)!].sheets.push(sheetName);
               } else {
                 groupIndex.set(sid, groups.length);
-                groups.push({ sheets: [sheetName], sourceId: sid, sourceName: undefined });
+                groups.push({ sheets: [sheetName], sourceId: sid, sourceName: undefined, keyFieldIds: sheetKeyFieldMap[sheetName] });
               }
             } else {
               // Creating a new source — one group per tab, name = "BaseName - TabLabel"
               const tabLabel = (sheetTabLabels[sheetName] || sheetName).trim();
               const sourceName = base ? `${base} - ${tabLabel}` : tabLabel;
-              groups.push({ sheets: [sheetName], sourceId: undefined, sourceName });
+              groups.push({ sheets: [sheetName], sourceId: undefined, sourceName, keyFieldIds: sheetKeyFieldMap[sheetName] });
             }
           }
           // Import data tabs first (datasource creation) — all tabs can run in parallel
           // with each other since they write to separate Postgres tables.
           // Only start workbook analysis for the review AFTER all datasources are saved,
           // so the two heavy operations don't compete for memory at the same time.
-          const sourceResults = await Promise.all(groups.map(({ sourceId, sourceName, sheets }) =>
-            importStudioWorkbookSource(file, { sourceId, sourceName, dataSheets: sheets })
+          const sourceResults = await Promise.all(groups.map(({ sourceId, sourceName, sheets, keyFieldIds: groupKeyFieldIds }) =>
+            importStudioWorkbookSource(file, { sourceId, sourceName, dataSheets: sheets, keyFieldIds: groupKeyFieldIds })
           ));
           const workbookResult = recreate
             ? await importStudioWorkbook(file, { maxRowsPerSheet: 500 })
@@ -246,7 +310,7 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
           const sourceNameArg = isNew ? (newWorkbookName.trim() || file.name.replace(/\.xlsx$/i, "").trim()) : undefined;
           const multiSheet = (peek?.sheets?.length ?? 0) > 1;
           const dataSheetsArg = multiSheet && dataSheets.length > 0 ? dataSheets : undefined;
-          const opts = { sourceId: sourceIdArg, sourceName: sourceNameArg, dataSheets: dataSheetsArg };
+          const opts = { sourceId: sourceIdArg, sourceName: sourceNameArg, dataSheets: dataSheetsArg, keyFieldIds: keyFieldIds.length > 0 ? keyFieldIds : undefined };
 
           if (recreate) {
             const sourceResult = await importStudioWorkbookSource(file, opts);
@@ -298,7 +362,28 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
   const multiSheetCanSubmit = isMultiSheetMode && (
     !anyTabCreatingNew || multiSheetBaseName.trim().length > 0
   );
-  const canSubmit = Boolean(file) && !importing && !peeking && hasDataSheetSelection && (
+
+  // Header diff: does this file's columns differ from what the target source already has?
+  const singleTargetDiff = isData && !isMultiSheetMode && isUpdating
+    ? diffHeaders(peek?.headers || [], existingFieldsCache[selectedSourceId])
+    : null;
+  const multiSheetDiffs = isMultiSheetMode
+    ? dataSheets
+      .map((sheetName) => {
+        const sid = sheetSourceMap[sheetName] || "";
+        if (!sid) return null;
+        const sheet = peek?.sheets?.find((s) => s.name === sheetName);
+        const diff = diffHeaders(sheet?.headers || [], existingFieldsCache[sid]);
+        return diff && (diff.added.length || diff.removed.length) ? { sheetName, diff } : null;
+      })
+      .filter((v): v is { sheetName: string; diff: { added: string[]; removed: string[] } } => Boolean(v))
+    : [];
+  const hasHeaderDiff = Boolean(
+    (singleTargetDiff && (singleTargetDiff.added.length || singleTargetDiff.removed.length)) ||
+    multiSheetDiffs.length > 0
+  );
+
+  const canSubmit = Boolean(file) && !importing && !peeking && hasDataSheetSelection && (!hasHeaderDiff || diffAcknowledged) && (
     !isData ||
     (isMultiSheetMode ? multiSheetCanSubmit : (
       selectedSourceId === "" ||
@@ -574,7 +659,11 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
               {/* Info when updating an existing workbook (no profile) */}
               {isUpdating && !profile && (
                 <div style={{ padding: "10px 12px", borderRadius: T.radiusSm, background: T.infoBg, border: `1px solid ${T.infoBorder}`, fontSize: 12, color: T.infoText, lineHeight: 1.5 }}>
-                  <strong>Replacing existing data.</strong> All rows in <strong>{selectedSource!.sourceName}</strong> will be replaced with the contents of this file. Columns added or removed in the file will be reflected immediately. All reports using this source will update automatically.
+                  {keyFieldIds.length > 0 ? (
+                    <><strong>Updating by key field.</strong> Rows in <strong>{selectedSource!.sourceName}</strong> matching {keyFieldIds.join(" + ")} will update in place, new rows will be added, and rows no longer in the file will be removed. All reports using this source will update automatically.</>
+                  ) : (
+                    <><strong>Replacing existing data.</strong> All rows in <strong>{selectedSource!.sourceName}</strong> will be replaced with the contents of this file. Columns added or removed in the file will be reflected immediately. All reports using this source will update automatically. Pick a key field below to update rows in place instead.</>
+                  )}
                 </div>
               )}
             </div>
@@ -766,6 +855,29 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
                                   Will update <strong>{sheetSource.sourceName}</strong> (name preserved)
                                 </p>
                               )}
+                              {/* Key field(s) for this tab — optional, matches rows across re-imports */}
+                              <div style={{ paddingLeft: 52, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 5 }}>
+                                <span style={{ fontSize: 11, color: T.textSoft, flexShrink: 0 }}>Key field(s):</span>
+                                {sheet.headers.map((h) => {
+                                  const checked = (sheetKeyFieldMap[sheet.name] || []).includes(h);
+                                  return (
+                                    <button
+                                      key={h} type="button" disabled={importing}
+                                      onClick={() => setSheetKeyFieldMap((prev) => {
+                                        const current = prev[sheet.name] || [];
+                                        return { ...prev, [sheet.name]: current.includes(h) ? current.filter((v) => v !== h) : [...current, h] };
+                                      })}
+                                      style={{
+                                        padding: "2px 8px", borderRadius: 99, fontSize: 11, fontWeight: 600,
+                                        border: `1px solid ${checked ? T.brand : T.borderMd}`,
+                                        background: checked ? T.brandLight : T.bg,
+                                        color: checked ? T.brandDeep : T.textSecondary,
+                                        cursor: importing ? "not-allowed" : "pointer", fontFamily: T.font,
+                                      }}
+                                    >{checked ? "✓ " : ""}{h}</button>
+                                  );
+                                })}
+                              </div>
                             </div>
                           )}
                         </div>
@@ -799,6 +911,78 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
                   Columns: {peek.headers.slice(0, 8).join(", ")}{peek.headers.length > 8 ? ` +${peek.headers.length - 8} more` : ""}
                 </div>
               </div>
+
+              {/* Key field picker — single-target mode. Lets a re-import match rows
+                  by identity (update in place) instead of replacing the whole table. */}
+              {isData && !isMultiSheetMode && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: T.textSecondary }}>
+                    Key field(s) <span style={{ fontWeight: 400, color: T.textSoft }}>— optional, recommended for re-imports</span>
+                  </label>
+                  <p style={{ margin: 0, fontSize: 11, color: T.textSoft, lineHeight: 1.5 }}>
+                    Pick the column(s) that uniquely identify each row (e.g. an ID or SKU). Future imports of this
+                    same workbook will use it to update existing rows in place, add new ones, and remove ones no
+                    longer in the file — instead of replacing everything. Remembered for next time.
+                  </p>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {peek.headers.map((h) => {
+                      const checked = keyFieldIds.includes(h);
+                      return (
+                        <button
+                          key={h} type="button" disabled={importing}
+                          onClick={() => setKeyFieldIds((prev) => prev.includes(h) ? prev.filter((v) => v !== h) : [...prev, h])}
+                          style={{
+                            padding: "5px 10px", borderRadius: 99, fontSize: 12, fontWeight: 600,
+                            border: `1px solid ${checked ? T.brand : T.borderMd}`,
+                            background: checked ? T.brandLight : T.bg,
+                            color: checked ? T.brandDeep : T.textSecondary,
+                            cursor: importing ? "not-allowed" : "pointer", fontFamily: T.font,
+                          }}
+                        >{checked ? "✓ " : ""}{h}</button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Header diff warning — this file's columns differ from what's already
+                  stored for the target(s). Requires explicit acknowledgment since an
+                  update replaces/re-maps data by these columns. */}
+              {hasHeaderDiff && (
+                <div style={{ padding: "10px 14px", borderRadius: T.radius, border: `1px solid ${T.errorBorder}`, background: T.errorBg }}>
+                  <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 700, color: T.errorText }}>
+                    ⚠ This file's columns don't exactly match what's already stored — double-check before continuing.
+                  </p>
+                  {singleTargetDiff && (
+                    <div style={{ fontSize: 12, color: T.errorText, lineHeight: 1.6 }}>
+                      {singleTargetDiff.added.length > 0 && (
+                        <div><strong>New columns:</strong> {singleTargetDiff.added.join(", ")}</div>
+                      )}
+                      {singleTargetDiff.removed.length > 0 && (
+                        <div><strong>Missing columns (were there before, not in this file):</strong> {singleTargetDiff.removed.join(", ")}</div>
+                      )}
+                    </div>
+                  )}
+                  {multiSheetDiffs.map(({ sheetName, diff }) => (
+                    <div key={sheetName} style={{ fontSize: 12, color: T.errorText, lineHeight: 1.6, marginTop: 4 }}>
+                      <strong>{sheetName}:</strong>{" "}
+                      {diff.added.length > 0 ? `new — ${diff.added.join(", ")}` : ""}
+                      {diff.added.length > 0 && diff.removed.length > 0 ? "; " : ""}
+                      {diff.removed.length > 0 ? `missing — ${diff.removed.join(", ")}` : ""}
+                    </div>
+                  ))}
+                  <label style={{ display: "flex", alignItems: "flex-start", gap: 8, marginTop: 10, cursor: "pointer" }}>
+                    <input
+                      type="checkbox" checked={diffAcknowledged}
+                      onChange={(e) => setDiffAcknowledged(e.target.checked)}
+                      style={{ marginTop: 2 }}
+                    />
+                    <span style={{ fontSize: 12, color: T.errorText, fontWeight: 600 }}>
+                      I understand this may affect reports and charts that use these columns — continue anyway.
+                    </span>
+                  </label>
+                </div>
+              )}
             </>
           ) : null}
 

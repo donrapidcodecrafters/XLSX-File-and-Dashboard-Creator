@@ -11,7 +11,7 @@ import {
   ensureRefreshScheduleNextRun
 } from "../services/refresh-cache.js";
 import { refreshJobStore } from "../services/refresh-jobs.js";
-import { listSourceRecordSummaries, loadAllSourceAttributes } from "../services/eav-record-store.js";
+import { listSourceRecordSummaries, loadAllSourceAttributes, loadSourceAttributes, getSourceRecordSummary, normalizeKeyFieldIds } from "../services/eav-record-store.js";
 import { ingestXlsxWorkbookSource, ingestXlsxWorkbookSourceAndRecreate, ingestXlsxWorkbookSourceStream } from "../services/xlsx-source-ingest.js";
 import { invalidateSourceCaches } from "../services/report-runner.js";
 import { logAuditEvent } from "../services/audit-log.js";
@@ -290,9 +290,31 @@ export async function registerStudioRoutes(app: FastifyInstance) {
     }
   });
 
+  // Returns the current field list + saved key field(s) for an existing durable
+  // source — used by the import modal to pre-fill the key-field picker and to
+  // diff an update file's headers against what's already stored.
+  app.get("/api/studio/sources/:sourceId/fields", async (request, reply) => {
+    const { sourceId } = request.params as { sourceId: string };
+    if (!isPostgresEnabled()) {
+      reply.code(503);
+      return { message: "Postgres is not enabled." };
+    }
+    const [fields, summary] = await Promise.all([
+      loadSourceAttributes(sourceId),
+      getSourceRecordSummary([sourceId])
+    ]);
+    return {
+      sourceId,
+      fields,
+      keyFieldIds: summary?.keyFieldIds || []
+    };
+  });
+
   // Returns per-sheet stats from an uploaded xlsx file for preview and data-tab selection.
   app.post("/api/studio/sources/xlsx/peek", async (request, reply) => {
     try {
+      const query = (request.query as { sourceId?: string } | undefined) || {};
+      const diffSourceId = String(query.sourceId || "").trim();
       const ExcelJSMod = await import("exceljs");
       const ExcelJSWorkbook = ExcelJSMod.default.Workbook;
       let filename = "";
@@ -356,7 +378,26 @@ export async function registerStudioRoutes(app: FastifyInstance) {
         }
 
         if (!filename) { reply.code(400); return { message: "No file provided." }; }
-        return { filename, sheetNames, sheets, headers, rows, rowCount };
+
+        let headerDiff: { addedLabels: string[]; removedLabels: string[] } | null = null;
+        let existingKeyFieldIds: string[] = [];
+        if (diffSourceId) {
+          const [existingFields, summary] = await Promise.all([
+            loadSourceAttributes(diffSourceId),
+            getSourceRecordSummary([diffSourceId])
+          ]);
+          if (existingFields.length) {
+            const existingLabels = new Set(existingFields.map((f) => f.label.trim().toLowerCase()));
+            const newLabels = new Set(headers.map((h) => h.trim().toLowerCase()));
+            headerDiff = {
+              addedLabels: headers.filter((h) => !existingLabels.has(h.trim().toLowerCase())),
+              removedLabels: existingFields.map((f) => f.label).filter((l) => !newLabels.has(l.trim().toLowerCase()))
+            };
+          }
+          existingKeyFieldIds = summary?.keyFieldIds || [];
+        }
+
+        return { filename, sheetNames, sheets, headers, rows, rowCount, headerDiff, existingKeyFieldIds };
       }
 
       if (!filename) { reply.code(400); return { message: "No file provided." }; }
@@ -369,12 +410,13 @@ export async function registerStudioRoutes(app: FastifyInstance) {
 
   app.post("/api/studio/sources/xlsx/recreate", async (request, reply) => {
     try {
-      const query = (request.query as { sourceId?: string; sourceName?: string; dataSheets?: string } | undefined) || {};
+      const query = (request.query as { sourceId?: string; sourceName?: string; dataSheets?: string; keyFieldIds?: string } | undefined) || {};
       let filename = "";
       let workbookBuffer: Buffer | null = null;
       let sourceId = String(query.sourceId || "").trim();
       let sourceName = String(query.sourceName || "").trim();
       const dataSheets = String(query.dataSheets || "").split(",").map((s) => s.trim()).filter(Boolean);
+      let keyFieldIds = String(query.keyFieldIds || "").split(",").map((s) => s.trim()).filter(Boolean);
       if (request.isMultipart()) {
         const file = await request.file();
         if (file) {
@@ -382,13 +424,14 @@ export async function registerStudioRoutes(app: FastifyInstance) {
           workbookBuffer = await file.toBuffer();
         }
       } else {
-        const body = (request.body as { filename?: string; base64?: string; sourceId?: string; sourceName?: string } | undefined) || {};
+        const body = (request.body as { filename?: string; base64?: string; sourceId?: string; sourceName?: string; keyFieldIds?: string[] } | undefined) || {};
         if (body.filename && body.base64) {
           filename = body.filename;
           workbookBuffer = Buffer.from(body.base64, "base64");
         }
         sourceId = sourceId || String(body.sourceId || "").trim();
         sourceName = sourceName || String(body.sourceName || "").trim();
+        keyFieldIds = keyFieldIds.length ? keyFieldIds : (Array.isArray(body.keyFieldIds) ? body.keyFieldIds.filter(Boolean) : []);
       }
       if (!filename || !workbookBuffer) {
         reply.code(400);
@@ -399,7 +442,8 @@ export async function registerStudioRoutes(app: FastifyInstance) {
         buffer: workbookBuffer as Buffer,
         sourceId,
         sourceName,
-        dataSheets: dataSheets.length > 0 ? dataSheets : undefined
+        dataSheets: dataSheets.length > 0 ? dataSheets : undefined,
+        keyFieldIds: keyFieldIds.length > 0 ? keyFieldIds : undefined
       }));
       invalidateSourceCaches(...result.sources.map((s) => s.sourceId));
       invalidateSourceAttributeCache();
@@ -420,12 +464,13 @@ export async function registerStudioRoutes(app: FastifyInstance) {
 
   app.post("/api/studio/sources/xlsx", async (request, reply) => {
     try {
-      const query = (request.query as { sourceId?: string; sourceName?: string; dataSheets?: string } | undefined) || {};
+      const query = (request.query as { sourceId?: string; sourceName?: string; dataSheets?: string; keyFieldIds?: string } | undefined) || {};
       let filename = "";
       let workbookBuffer: Buffer | null = null;
       let sourceId = String(query.sourceId || "").trim();
       let sourceName = String(query.sourceName || "").trim();
       const dataSheets = String(query.dataSheets || "").split(",").map((s) => s.trim()).filter(Boolean);
+      let keyFieldIds = String(query.keyFieldIds || "").split(",").map((s) => s.trim()).filter(Boolean);
       if (request.isMultipart()) {
         const file = await request.file();
         if (file) {
@@ -435,13 +480,14 @@ export async function registerStudioRoutes(app: FastifyInstance) {
           workbookBuffer = await file.toBuffer();
         }
       } else {
-        const body = (request.body as { filename?: string; base64?: string; sourceId?: string; sourceName?: string } | undefined) || {};
+        const body = (request.body as { filename?: string; base64?: string; sourceId?: string; sourceName?: string; keyFieldIds?: string[] } | undefined) || {};
         if (body.filename && body.base64) {
           filename = body.filename;
           workbookBuffer = Buffer.from(body.base64, "base64");
         }
         sourceId = sourceId || String(body.sourceId || "").trim();
         sourceName = sourceName || String(body.sourceName || "").trim();
+        keyFieldIds = keyFieldIds.length ? keyFieldIds : (Array.isArray(body.keyFieldIds) ? body.keyFieldIds.filter(Boolean) : []);
       }
       if (!filename || !workbookBuffer) {
         reply.code(400);
@@ -455,7 +501,8 @@ export async function registerStudioRoutes(app: FastifyInstance) {
           stream: Readable.from(buf),
           sourceId,
           sourceName,
-          dataSheets: dataSheets.length > 0 ? dataSheets : undefined
+          dataSheets: dataSheets.length > 0 ? dataSheets : undefined,
+          keyFieldIds: keyFieldIds.length > 0 ? keyFieldIds : undefined
         });
       });
       invalidateSourceCaches(...ingested.sources.map((s) => s.sourceId));
@@ -663,27 +710,32 @@ export async function registerStudioRoutes(app: FastifyInstance) {
 
   app.patch("/api/studio/sources/:sourceId", async (request, reply) => {
     const { sourceId } = request.params as { sourceId: string };
-    const body = (request.body as { sourceName?: string; keyFieldId?: string } | undefined) || {};
+    const body = (request.body as { sourceName?: string; keyFieldId?: string; keyFieldIds?: string[] } | undefined) || {};
 
     if (!isPostgresEnabled()) {
       reply.code(503);
       return { message: "Postgres is not enabled." };
     }
 
-    // Handle key field update (immediate save to app_entities)
-    if (body.keyFieldId !== undefined) {
+    // Handle key field(s) update (immediate save to app_entities)
+    if (body.keyFieldId !== undefined || body.keyFieldIds !== undefined) {
       const keyFieldId = String(body.keyFieldId || "").trim();
+      const keyFieldIds = normalizeKeyFieldIds(body.keyFieldIds);
       const result = await pgQuery<{ source_id: string }>(
-        `UPDATE app_entities SET key_field_id = $1, updated_at = now()
-         WHERE source_id = $2
+        `UPDATE app_entities SET
+           key_field_id = CASE WHEN $1::text IS NULL THEN key_field_id ELSE $1::text END,
+           key_field_ids = CASE WHEN $2::text[] IS NULL THEN key_field_ids ELSE $2::text[] END,
+           updated_at = now()
+         WHERE source_id = $3
          RETURNING source_id`,
-        [keyFieldId, sourceId]
+        [body.keyFieldId !== undefined ? keyFieldId : null, body.keyFieldIds !== undefined ? keyFieldIds : null, sourceId]
       );
       if (!result.rows.length) {
         reply.code(404);
         return { message: "Source not found." };
       }
-      return { sourceId, keyFieldId };
+      invalidateSourceCaches(sourceId);
+      return { sourceId, keyFieldId, keyFieldIds };
     }
 
     // Handle source name update
