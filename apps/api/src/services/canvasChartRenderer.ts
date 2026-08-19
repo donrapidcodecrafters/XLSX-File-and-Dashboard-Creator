@@ -19,6 +19,7 @@
  */
 
 import path from "path";
+import { createRequire } from "module";
 import { fileURLToPath } from "url";
 import type {
   ChartDatum,
@@ -36,8 +37,10 @@ let nodeCreateCanvas: ((width: number, height: number) => any) | null = null;
 let registerFont: ((path: string, opts: { family: string; weight: string }) => void) | null = null;
 
 try {
-  // canvas is an optional native dependency — only available when node-canvas is installed
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  // canvas is an optional native dependency — only available when node-canvas is installed.
+  // This file runs as an ES module (apps/api/package.json has "type": "module"), where
+  // `require` isn't a global — it must be created explicitly to load the CJS `canvas` package.
+  const require = createRequire(import.meta.url);
   const canvasMod = require("canvas") as { createCanvas: typeof nodeCreateCanvas; registerFont: typeof registerFont };
   nodeCreateCanvas = canvasMod.createCanvas;
   registerFont = canvasMod.registerFont;
