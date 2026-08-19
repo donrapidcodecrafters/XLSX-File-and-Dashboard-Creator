@@ -602,10 +602,12 @@ export function DashboardView({
   ]);
 
   async function buildDashboardExportResult() {
-    // Concurrency-limited: an unbounded Promise.all here fires one request per
-    // tab/widget simultaneously — a dashboard with many widgets can burst dozens
-    // of requests at once and saturate the server's database connection pool.
-    const renderedTabs = await mapWithConcurrency(dashboard.tabs, 3, async (tab) => {
+    // Sequential (concurrency 1): an unbounded Promise.all here fires one request
+    // per tab/widget simultaneously — a dashboard with many widgets can burst
+    // dozens of requests at once and saturate the server's database connection
+    // pool, causing intermittent 500s. Correctness/reliability matters far more
+    // than export speed here, so this deliberately does not parallelize at all.
+    const renderedTabs = await mapWithConcurrency(dashboard.tabs, 1, async (tab) => {
       const cached = tabResults[tab.id];
       if (cached?.widgets.length) return cached;
       const rendered = await renderDashboard(dashboard.id, runtimeFilters, tab.id, {
@@ -618,7 +620,7 @@ export function DashboardView({
     const exportResultsByWidgetId = Object.fromEntries(
       await mapWithConcurrency(
         renderedTabs.flatMap((tab) => tab.widgets),
-        3,
+        1,
         async (widget) => {
           const filters = buildDashboardFilters(dashboard, widget.report.id, runtimeFilters, widget.report.sourceTableId);
           const response = await fetchReportExportBundle(widget.report.id, filters, {
