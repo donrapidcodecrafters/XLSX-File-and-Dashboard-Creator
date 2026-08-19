@@ -11,6 +11,7 @@ import { buildDashboardExportDefinition } from "../lib/dashboardExport";
 import { buildQuickbaseReportFilterTree } from "../lib/quickbaseLinks";
 import { getChartViewportBounds } from "./studioReportUtils";
 import { exportDashboardWorkbook } from "../lib/workbookExport";
+import { mapWithConcurrency } from "../lib/concurrency";
 
 interface DashboardViewProps {
   dashboard: DashboardDefinition;
@@ -601,29 +602,30 @@ export function DashboardView({
   ]);
 
   async function buildDashboardExportResult() {
-    const renderedTabs = await Promise.all(
-      dashboard.tabs.map(async (tab) => {
-        const cached = tabResults[tab.id];
-        if (cached?.widgets.length) return cached;
-        const rendered = await renderDashboard(dashboard.id, runtimeFilters, tab.id, {
-          forceLive,
-          dashboard: exportDashboard,
-          reportOverrides: reportDefinitions
-        });
-        return rendered.tabs.find((item) => item.id === tab.id) || { id: tab.id, name: tab.name, widgets: [] };
-      })
-    );
+    // Concurrency-limited: an unbounded Promise.all here fires one request per
+    // tab/widget simultaneously — a dashboard with many widgets can burst dozens
+    // of requests at once and saturate the server's database connection pool.
+    const renderedTabs = await mapWithConcurrency(dashboard.tabs, 3, async (tab) => {
+      const cached = tabResults[tab.id];
+      if (cached?.widgets.length) return cached;
+      const rendered = await renderDashboard(dashboard.id, runtimeFilters, tab.id, {
+        forceLive,
+        dashboard: exportDashboard,
+        reportOverrides: reportDefinitions
+      });
+      return rendered.tabs.find((item) => item.id === tab.id) || { id: tab.id, name: tab.name, widgets: [] };
+    });
     const exportResultsByWidgetId = Object.fromEntries(
-      await Promise.all(
-        renderedTabs
-          .flatMap((tab) => tab.widgets)
-          .map(async (widget) => {
-            const filters = buildDashboardFilters(dashboard, widget.report.id, runtimeFilters, widget.report.sourceTableId);
-            const response = await fetchReportExportBundle(widget.report.id, filters, {
-              report: widget.report
-            });
-            return [widget.widgetId, response.result] as const;
-          })
+      await mapWithConcurrency(
+        renderedTabs.flatMap((tab) => tab.widgets),
+        3,
+        async (widget) => {
+          const filters = buildDashboardFilters(dashboard, widget.report.id, runtimeFilters, widget.report.sourceTableId);
+          const response = await fetchReportExportBundle(widget.report.id, filters, {
+            report: widget.report
+          });
+          return [widget.widgetId, response.result] as const;
+        }
       )
     );
     return {
