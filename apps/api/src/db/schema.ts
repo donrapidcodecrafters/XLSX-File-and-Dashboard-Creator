@@ -113,13 +113,6 @@ CREATE INDEX IF NOT EXISTS app_records_payload_gin_idx ON app_records USING gin 
 -- Encrypted ciphertext for row-level AES-256-GCM payload encryption
 ALTER TABLE app_records ADD COLUMN IF NOT EXISTS payload_enc text;
 
--- Lets an upsert INSERT ... ON CONFLICT (entity_id, external_record_id) target rows by
--- their key-field identity when re-importing a source with key fields configured.
--- Partial (excludes '') so sources without key fields — which reuse a positional
--- external_record_id that isn't a stable cross-import identity — are unaffected.
-CREATE UNIQUE INDEX IF NOT EXISTS app_records_entity_external_unique_idx
-  ON app_records (entity_id, external_record_id) WHERE external_record_id <> '';
-
 CREATE TABLE IF NOT EXISTS app_sync_jobs (
   id text PRIMARY KEY,
   source_id text NOT NULL,
@@ -271,6 +264,19 @@ CREATE TABLE IF NOT EXISTS workbook_profiles (
 );
 `;
 
+// Lets an upsert INSERT ... ON CONFLICT (entity_id, external_record_id) target rows by
+// their key-field identity when re-importing a source with key fields configured.
+// Partial (excludes '') so sources without key fields — which reuse a positional
+// external_record_id that isn't a stable cross-import identity — are unaffected.
+// Run separately (not inside ENTERPRISE_SCHEMA_SQL) and non-fatally: on a long-lived
+// database this can fail if some pre-existing rows already collide on that pair, and
+// that must degrade to "upsert-by-key isn't available yet" rather than take the whole
+// API down at startup.
+const APP_RECORDS_EXTERNAL_UNIQUE_INDEX_SQL = `
+  CREATE UNIQUE INDEX IF NOT EXISTS app_records_entity_external_unique_idx
+    ON app_records (entity_id, external_record_id) WHERE external_record_id <> '';
+`;
+
 export async function ensureEnterpriseSchema(logger?: FastifyBaseLogger) {
   if (!isPostgresEnabled()) {
     logger?.warn("Postgres disabled: DATABASE_URL/POSTGRES_URL is not configured; using local JSON persistence.");
@@ -281,6 +287,14 @@ export async function ensureEnterpriseSchema(logger?: FastifyBaseLogger) {
     return { ok: true, skipped: true };
   }
   await pgQuery(ENTERPRISE_SCHEMA_SQL);
+  try {
+    await pgQuery(APP_RECORDS_EXTERNAL_UNIQUE_INDEX_SQL);
+  } catch (err) {
+    logger?.warn(
+      { err: (err as Error).message },
+      "Could not create app_records_entity_external_unique_idx (likely pre-existing duplicate external_record_id values) — key-field upsert on data imports will report a clear error until this is resolved manually; everything else is unaffected."
+    );
+  }
   logger?.info("Postgres enterprise schema is ready.");
   return { ok: true, skipped: false };
 }
