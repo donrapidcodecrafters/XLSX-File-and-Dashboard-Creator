@@ -690,7 +690,8 @@ export function DashboardView({
       const exportPayload = await buildDashboardExportResult();
       const blob = await exportDashboardNativeChartWorkbook(dashboard, exportPayload.result, exportPayload.exportResultsByWidgetId, {
         filename,
-        tablesById: Object.fromEntries((tables || []).map((table) => [table.id, table]))
+        tablesById: Object.fromEntries((tables || []).map((table) => [table.id, table])),
+        includeOverviewSheet: dashboard.includeExportOverviewSheet !== false
       });
       if (!(blob instanceof Blob)) {
         throw new Error("Native chart export did not produce a workbook file.");

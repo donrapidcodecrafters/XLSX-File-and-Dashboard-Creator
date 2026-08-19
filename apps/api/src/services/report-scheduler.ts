@@ -227,7 +227,10 @@ async function runReportConfig(config: ReportConfigRow, logger: FastifyBaseLogge
         } catch { /* use widget.result fallback */ }
       }
     }
-    buffer = await exportDashboardNativeChartWorkbook(dashboard, rendered, exportResultsByWidgetId, { tablesById });
+    buffer = await exportDashboardNativeChartWorkbook(dashboard, rendered, exportResultsByWidgetId, {
+      tablesById,
+      includeOverviewSheet: dashboard.includeExportOverviewSheet !== false
+    });
   }
 
   sgMail.setApiKey(apiConfig.automation.sendgridApiKey);

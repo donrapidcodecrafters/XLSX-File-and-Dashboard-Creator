@@ -6,6 +6,7 @@ import {
   type DashboardDefinition,
   type DashboardRunResult,
   type DataRow,
+  getDashboardWidgetPlacements,
   getReportFieldLabel,
   resolveDashboardWidgetRenderMode,
   type ReportDefinition,
@@ -16,6 +17,8 @@ import {
 interface NativeDashboardExportOptions {
   filename?: string;
   tablesById?: Record<string, TableDefinition>;
+  /** Include the synthetic dashboard-wide summary sheet. Defaults to true. */
+  includeOverviewSheet?: boolean;
 }
 
 interface NativeReportExportOptions {
@@ -316,16 +319,50 @@ function writeSummarySheet(sheet: any, result: ReportRunResult, startRow: number
   return startRow + 3;
 }
 
-function writeCrosstabBlock(sheet: any, crosstab: { columns: string[]; rows: Array<{ label: string; formatted: string[] }> }, startRow: number, startCol: number) {
-  const headerRow = sheet.getRow(startRow);
+type CrosstabData = { columns: string[]; rows: Array<{ label: string; formatted: string[] }> };
+
+// Reports have a "pivot orientation" setting (report.view.pivotOrientation) that
+// the live dashboard honors — "vertical" transposes the table so categories run
+// top-to-bottom as rows instead of left-to-right as columns. Must match here too,
+// or a crosstab that reads as a tall list of categories on screen (e.g. an aging
+// bucket breakdown) comes out as one wide, hard-to-read row in the export instead.
+function crosstabFootprint(crosstab: CrosstabData, orientation: "horizontal" | "vertical") {
+  return orientation === "vertical"
+    ? { width: 1 + crosstab.rows.length, height: 1 + crosstab.columns.length }
+    : { width: 1 + crosstab.columns.length, height: 1 + crosstab.rows.length };
+}
+
+function writeCrosstabBlock(
+  sheet: any,
+  crosstab: CrosstabData,
+  startRow: number,
+  startCol: number,
+  orientation: "horizontal" | "vertical" = "horizontal"
+) {
   sheet.getCell(startRow, startCol).value = "";
+  if (orientation === "vertical") {
+    crosstab.rows.forEach((row, ri) => {
+      const cell = sheet.getCell(startRow, startCol + ri + 1);
+      cell.value = row.label || "(blank)";
+      cell.font = { bold: true };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEAF5F1" } };
+    });
+    crosstab.columns.forEach((col, ci) => {
+      const labelCell = sheet.getCell(startRow + ci + 1, startCol);
+      labelCell.value = col || "(blank)";
+      labelCell.font = { bold: true };
+      crosstab.rows.forEach((row, ri) => {
+        sheet.getCell(startRow + ci + 1, startCol + ri + 1).value = row.formatted[ci];
+      });
+    });
+    return startRow + crosstab.columns.length + 2;
+  }
   crosstab.columns.forEach((col, ci) => {
     const cell = sheet.getCell(startRow, startCol + ci + 1);
     cell.value = col || "(blank)";
     cell.font = { bold: true };
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEAF5F1" } };
   });
-  void headerRow;
   crosstab.rows.forEach((row, ri) => {
     const labelCell = sheet.getCell(startRow + ri + 1, startCol);
     labelCell.value = row.label;
@@ -659,12 +696,15 @@ export async function exportDashboardNativeChartWorkbook(
   workbook.created = new Date();
 
   // Overview sheet: shows summary metrics and charts for every widget
-  const overview = workbook.addWorksheet(safeSheetName(`${dashboard.name} Overview`, usedNames));
-  overview.columns = Array.from({ length: 12 }, () => ({ width: 18 }));
-  overview.getCell("A1").value = dashboard.name;
-  overview.getCell("A1").font = { bold: true, size: 18 };
-  overview.getCell("A2").value = dashboard.description || "";
-  overview.mergeCells("A2:L2");
+  const includeOverviewSheet = options.includeOverviewSheet !== false;
+  const overview = includeOverviewSheet ? workbook.addWorksheet(safeSheetName(`${dashboard.name} Overview`, usedNames)) : null;
+  if (overview) {
+    overview.columns = Array.from({ length: 12 }, () => ({ width: 18 }));
+    overview.getCell("A1").value = dashboard.name;
+    overview.getCell("A1").font = { bold: true, size: 18 };
+    overview.getCell("A2").value = dashboard.description || "";
+    overview.mergeCells("A2:L2");
+  }
 
   const dataSheetName = safeSheetName("_chart_src", usedNames);
   const dataSheet = workbook.addWorksheet(dataSheetName);
@@ -676,97 +716,162 @@ export async function exportDashboardNativeChartWorkbook(
 
   // Track overview row position
   let overviewRow = 4;
+  const WIDGET_GAP_COLS = 2;
+  const DEFAULT_CHART_WIDTH = 12;
 
   rendered.tabs.forEach((tab) => {
     // Write tab header on overview
-    overview.getCell(overviewRow, 1).value = tab.name;
-    overview.getCell(overviewRow, 1).font = { bold: true, size: 13 };
-    overviewRow += 1;
+    if (overview) {
+      overview.getCell(overviewRow, 1).value = tab.name;
+      overview.getCell(overviewRow, 1).font = { bold: true, size: 13 };
+      overviewRow += 1;
+    }
 
-    // Per-tab sheet: sequential layout, no placement math
     const sheet = workbook.addWorksheet(safeSheetName(tab.name, usedNames));
-    sheet.columns = Array.from({ length: 12 }, () => ({ width: 18 }));
+    // Column widths can't be predicted up front — widgets placed side-by-side
+    // may need dozens of columns for a wide crosstab — so provision generously.
+    sheet.columns = Array.from({ length: 80 }, () => ({ width: 16 }));
     sheet.getCell("A1").value = tab.name;
     sheet.getCell("A1").font = { bold: true, size: 18 };
     sheet.getCell("A2").value = dashboard.name;
 
     const sheetCharts: NativeChartPlacement[] = [];
-    // Widgets are stacked strictly sequentially (one full-width block per widget)
-    // rather than placed side-by-side at their on-screen grid position. A
-    // crosstab's column count is unbounded (driven by distinct field values,
-    // not layout), so mirroring the dashboard's 2-column grid in Excel let a
-    // wide crosstab overflow straight into the next widget's columns on the
-    // same row — sequential placement makes that collision impossible.
     let currentRow = 4;
 
-    for (const widget of tab.widgets) {
-      const titleCol = 1;
-      const toCol = 11;
+    // Widgets placed on the same on-screen dashboard row are kept side-by-side
+    // here too, matching the live layout — but each widget's column span is
+    // sized from its ACTUAL content (crosstab column count, honoring pivot
+    // orientation) rather than its on-screen grid width, with a fixed gap
+    // between widgets. A crosstab's column count is driven by distinct field
+    // values, not layout, so trusting the narrow on-screen grid width let a
+    // wide crosstab overflow straight into the next widget's columns.
+    const dashboardTabDef = dashboard.tabs.find((t) => t.id === tab.id);
+    const placementsMap = dashboardTabDef
+      ? new Map(getDashboardWidgetPlacements(dashboardTabDef).map((p) => [p.widgetId, p]))
+      : new Map<string, ReturnType<typeof getDashboardWidgetPlacements>[number]>();
 
-      const exportResult = resolveWidgetResult(widget, exportResultsByWidgetId);
-      const table = options.tablesById?.[widget.report.sourceTableId];
-      const widgetTitle = widget.report.name || widget.widget.title;
-      const widgetDisplayMode = resolveDashboardWidgetRenderMode(widget.widget, widget.report.view.mode);
-      const isSummaryMode = widgetDisplayMode === "summary";
+    const placed = tab.widgets
+      .flatMap((w) => {
+        const p = placementsMap.get(w.widgetId);
+        return p ? [{ widget: w, placement: p }] : [];
+      })
+      .sort((a, b) =>
+        a.placement.startRow !== b.placement.startRow
+          ? a.placement.startRow - b.placement.startRow
+          : a.placement.startCol - b.placement.startCol
+      );
+    const unplacedWidgets = tab.widgets.filter((w) => !placementsMap.has(w.widgetId));
 
-      let widgetCursor = currentRow;
-
-      sheet.getCell(widgetCursor, titleCol).value = widgetTitle;
-      sheet.getCell(widgetCursor, titleCol).font = { bold: true, size: 13 };
-      widgetCursor += 1;
-
-      const contentStartRow = widgetCursor;
-
-      if ((widget.widget.showSummary || isSummaryMode) && exportResult.summary.length) {
-        widgetCursor = writeSummarySheet(sheet, exportResult, widgetCursor, titleCol, toCol + 1);
-      }
-      if (isSummaryMode && exportResult.crosstab) {
-        widgetCursor = writeCrosstabBlock(sheet, exportResult.crosstab, widgetCursor, titleCol);
-      }
-
-      const hasChart = widget.status === "complete" && widgetShowsChart(widget.widget, widget.report) && exportResult.chartData.length > 0;
-      if (hasChart) {
-        const chartEndRow = contentStartRow + 22;
-        const written = writeHiddenChartData(dataSheet, dataSheetName, dataRow, widget.report, exportResult, table, chartId);
-        dataRow = written.nextRow;
-        sheetCharts.push({
-          chart: written.source,
-          fromCol: 0,
-          fromRow: contentStartRow - 1,
-          toCol,
-          toRow: chartEndRow
-        });
-        widgetCursor = Math.max(widgetCursor, chartEndRow + 1);
-        chartId += 1;
-      } else if (widget.status === "complete" && widgetShowsRows(widget.widget, widget.report) && exportResult.rows.length) {
-        widgetCursor = writeRowsSheet(sheet, widget.report, table, exportResult, widgetCursor, titleCol);
-      }
-
-      currentRow = widgetCursor + 2;
-
-      // --- Write to overview sheet ---
-      overview.getCell(overviewRow, 1).value = widgetTitle;
-      overview.getCell(overviewRow, 1).font = { bold: false };
-      overviewRow += 1;
-      if ((widget.widget.showSummary || isSummaryMode) && exportResult.summary.length) {
-        let col = 2;
-        exportResult.summary.forEach((item) => {
-          if (col > 12) return;
-          overview.getCell(overviewRow, col).value = item.value;
-          overview.getCell(overviewRow, col).font = { bold: true, size: 13 };
-          overview.getCell(overviewRow + 1, col).value = item.label;
-          col += 2;
-        });
-        overviewRow += 3;
-      } else if (isSummaryMode && exportResult.crosstab) {
-        overviewRow = writeCrosstabBlock(overview, exportResult.crosstab, overviewRow, 2);
-        overviewRow += 1;
+    const rowGroups: (typeof placed)[] = [];
+    let groupMaxEndRow = -1;
+    let curGroup: typeof placed = [];
+    for (const item of placed) {
+      if (curGroup.length === 0 || item.placement.startRow <= groupMaxEndRow) {
+        curGroup.push(item);
+        groupMaxEndRow = Math.max(groupMaxEndRow, item.placement.endRow);
       } else {
-        overviewRow += 1;
+        rowGroups.push(curGroup);
+        curGroup = [item];
+        groupMaxEndRow = item.placement.endRow;
       }
     }
+    if (curGroup.length) rowGroups.push(curGroup);
+    for (const w of unplacedWidgets) {
+      rowGroups.push([{ widget: w, placement: { widgetId: w.widgetId, startCol: 1, endCol: 12, startRow: 0, endRow: 0 } as any }]);
+    }
 
-    overviewRow += 1; // gap between tabs on overview
+    for (const group of rowGroups) {
+      const groupStartRow = currentRow;
+      let groupEndRow = currentRow;
+      let cursorCol = 1;
+
+      for (const { widget } of group) {
+        const exportResult = resolveWidgetResult(widget, exportResultsByWidgetId);
+        const table = options.tablesById?.[widget.report.sourceTableId];
+        const widgetTitle = widget.report.name || widget.widget.title;
+        const widgetDisplayMode = resolveDashboardWidgetRenderMode(widget.widget, widget.report.view.mode);
+        const isSummaryMode = widgetDisplayMode === "summary";
+        const orientation: "horizontal" | "vertical" = widget.report.view.pivotOrientation === "vertical" ? "vertical" : "horizontal";
+        const hasChart = widget.status === "complete" && widgetShowsChart(widget.widget, widget.report) && exportResult.chartData.length > 0;
+
+        let widgetWidth = 6;
+        if (isSummaryMode && exportResult.crosstab) {
+          widgetWidth = Math.max(widgetWidth, crosstabFootprint(exportResult.crosstab, orientation).width);
+        }
+        if ((widget.widget.showSummary || isSummaryMode) && exportResult.summary.length) {
+          widgetWidth = Math.max(widgetWidth, Math.min(exportResult.summary.length, 6) * 2);
+        }
+        if (hasChart) {
+          widgetWidth = Math.max(widgetWidth, DEFAULT_CHART_WIDTH);
+        } else if (widget.status === "complete" && widgetShowsRows(widget.widget, widget.report) && exportResult.rows.length) {
+          widgetWidth = Math.max(widgetWidth, Math.min(Math.max(widget.report.selectedFieldIds.length, 1), 20));
+        }
+
+        const titleCol = cursorCol;
+        const toCol = titleCol + widgetWidth - 1;
+        let widgetCursor = groupStartRow;
+
+        sheet.getCell(widgetCursor, titleCol).value = widgetTitle;
+        sheet.getCell(widgetCursor, titleCol).font = { bold: true, size: 13 };
+        widgetCursor += 1;
+
+        const contentStartRow = widgetCursor;
+
+        if ((widget.widget.showSummary || isSummaryMode) && exportResult.summary.length) {
+          widgetCursor = writeSummarySheet(sheet, exportResult, widgetCursor, titleCol, toCol);
+        }
+        if (isSummaryMode && exportResult.crosstab) {
+          widgetCursor = writeCrosstabBlock(sheet, exportResult.crosstab, widgetCursor, titleCol, orientation);
+        }
+
+        if (hasChart) {
+          const chartEndRow = contentStartRow + 22;
+          const written = writeHiddenChartData(dataSheet, dataSheetName, dataRow, widget.report, exportResult, table, chartId);
+          dataRow = written.nextRow;
+          sheetCharts.push({
+            chart: written.source,
+            fromCol: titleCol - 1,
+            fromRow: contentStartRow - 1,
+            toCol,
+            toRow: chartEndRow
+          });
+          widgetCursor = Math.max(widgetCursor, chartEndRow + 1);
+          chartId += 1;
+        } else if (widget.status === "complete" && widgetShowsRows(widget.widget, widget.report) && exportResult.rows.length) {
+          widgetCursor = writeRowsSheet(sheet, widget.report, table, exportResult, widgetCursor, titleCol);
+        }
+
+        groupEndRow = Math.max(groupEndRow, widgetCursor);
+        cursorCol = titleCol + widgetWidth + WIDGET_GAP_COLS;
+
+        // --- Write to overview sheet ---
+        if (overview) {
+          overview.getCell(overviewRow, 1).value = widgetTitle;
+          overview.getCell(overviewRow, 1).font = { bold: false };
+          overviewRow += 1;
+          if ((widget.widget.showSummary || isSummaryMode) && exportResult.summary.length) {
+            let col = 2;
+            exportResult.summary.forEach((item) => {
+              if (col > 12) return;
+              overview.getCell(overviewRow, col).value = item.value;
+              overview.getCell(overviewRow, col).font = { bold: true, size: 13 };
+              overview.getCell(overviewRow + 1, col).value = item.label;
+              col += 2;
+            });
+            overviewRow += 3;
+          } else if (isSummaryMode && exportResult.crosstab) {
+            overviewRow = writeCrosstabBlock(overview, exportResult.crosstab, overviewRow, 2, orientation);
+            overviewRow += 1;
+          } else {
+            overviewRow += 1;
+          }
+        }
+      }
+
+      currentRow = groupEndRow + 2;
+    }
+
+    if (overview) overviewRow += 1; // gap between tabs on overview
     chartsBySheet.set(sheet.name, sheetCharts);
   });
 

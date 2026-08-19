@@ -242,7 +242,10 @@ export async function registerRenderRoutes(app: FastifyInstance) {
       if (!stream) {
         throw new Error("Unable to create export file stream.");
       }
-      const buffer = await exportDashboardNativeChartWorkbook(dashboard, rendered, exportResultsByWidgetId, { tablesById });
+      const buffer = await exportDashboardNativeChartWorkbook(dashboard, rendered, exportResultsByWidgetId, {
+        tablesById,
+        includeOverviewSheet: dashboard.includeExportOverviewSheet !== false
+      });
       await writeBufferToStream(stream, buffer);
     });
     return { job };

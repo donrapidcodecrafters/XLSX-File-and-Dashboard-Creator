@@ -304,6 +304,8 @@ export interface DashboardDefinition extends BaseStudioObject {
   defaultTabId?: string;
   runtimeFilters: RuntimeFilterDefinition[];
   sourceReportOverrides?: Record<string, string>;
+  /** Include the synthetic dashboard-wide summary sheet in exports/emails. Defaults to true. */
+  includeExportOverviewSheet?: boolean;
 }
 
 export interface DashboardPersonalOverride {

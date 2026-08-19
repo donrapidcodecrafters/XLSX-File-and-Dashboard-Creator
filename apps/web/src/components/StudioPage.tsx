@@ -4970,6 +4970,21 @@ export function StudioPage({
 
                 <div className="card">
                   <div className="card-head">
+                    <strong>Export options</strong>
+                  </div>
+                  <label className="toggle-row">
+                    <input
+                      type="checkbox"
+                      checked={activeDashboard.includeExportOverviewSheet !== false}
+                      onChange={(event) => updateObject({ ...activeDashboard, includeExportOverviewSheet: event.target.checked })}
+                    />
+                    Include a summary "Overview" sheet in exports and emails
+                  </label>
+                  <span className="micro">A generated sheet listing every widget's headline metrics across all tabs, in addition to each tab's own sheet.</span>
+                </div>
+
+                <div className="card">
+                  <div className="card-head">
                     <strong>Runtime filters</strong>
                     <button
                       type="button"
