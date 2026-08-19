@@ -667,7 +667,7 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
               {isUpdating && !profile && (
                 <div style={{ padding: "10px 12px", borderRadius: T.radiusSm, background: T.infoBg, border: `1px solid ${T.infoBorder}`, fontSize: 12, color: T.infoText, lineHeight: 1.5 }}>
                   {keyFieldIds.length > 0 ? (
-                    <><strong>Updating by key field.</strong> Rows in <strong>{selectedSource!.sourceName}</strong> matching {keyFieldIds.join(" + ")} will update in place, new rows will be added, and rows no longer in the file will be removed. All reports using this source will update automatically.</>
+                    <><strong>Updating by key field.</strong> Rows in <strong>{selectedSource!.sourceName}</strong> matching {keyFieldIds.join(" + ")} will update in place and new rows will be added. Rows already in the table that aren't in this file are left as-is. All reports using this source will update automatically.</>
                   ) : (
                     <><strong>Replacing existing data.</strong> All rows in <strong>{selectedSource!.sourceName}</strong> will be replaced with the contents of this file. Columns added or removed in the file will be reflected immediately. All reports using this source will update automatically. Pick a key field below to update rows in place instead.</>
                   )}
@@ -940,8 +940,9 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
                   </label>
                   <p style={{ margin: 0, fontSize: 11, color: T.textSoft, lineHeight: 1.5 }}>
                     Pick the column(s) that uniquely identify each row (e.g. an ID or SKU). Future imports of this
-                    same workbook will use it to update existing rows in place, add new ones, and remove ones no
-                    longer in the file — instead of replacing everything. Remembered for next time.
+                    same workbook will use it to update existing rows in place and add new ones — instead of
+                    replacing everything. Rows already in the table that aren't in a later file are left as-is,
+                    never deleted. Remembered for next time.
                   </p>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                     {peek.headers.map((h) => {

@@ -37,7 +37,8 @@ async function rowIdsBySku(sourceId) {
 async function main() {
   await ensureEnterpriseSchema();
 
-  // --- Test 1: keyed upsert preserves row identity, computes added/updated/removed ---
+  // --- Test 1: keyed upsert preserves row identity, computes added/updated,
+  // and never deletes rows missing from a later file ---
   const sourceId = "test:upsert-widgets";
   const first = await ingest(sourceId, [
     { sku: "A-1", qty: 10 },
@@ -46,11 +47,11 @@ async function main() {
   ], ["sku"]);
   assert.equal(first.upsert?.added, 3, "first import: expected 3 added");
   assert.equal(first.upsert?.updated, 0, "first import: expected 0 updated");
-  assert.equal(first.upsert?.removed, 0, "first import: expected 0 removed");
   const rowsAfterFirst = await rowIdsBySku(sourceId);
-  const idBySku = Object.fromEntries(rowsAfterFirst.map((r) => [r.external_record_id, r.id]));
+  const firstRowsBySku = {};
+  for (const r of rowsAfterFirst) firstRowsBySku[r.payload.sku] = r;
 
-  // Re-import: A-1 unchanged, A-2 value changed, A-3 removed, A-4 new
+  // Re-import without A-3: A-1 unchanged, A-2 value changed, A-4 new
   const second = await ingest(sourceId, [
     { sku: "A-1", qty: 10 },
     { sku: "A-2", qty: 999 },
@@ -58,23 +59,20 @@ async function main() {
   ], ["sku"]);
   assert.equal(second.upsert?.added, 1, "second import: expected 1 added (A-4)");
   assert.equal(second.upsert?.updated, 2, "second import: expected 2 updated (A-1, A-2)");
-  assert.equal(second.upsert?.removed, 1, "second import: expected 1 removed (A-3)");
 
   const rowsAfterSecond = await rowIdsBySku(sourceId);
-  assert.equal(rowsAfterSecond.length, 3, "expected 3 rows after second import");
-  const a1 = rowsAfterSecond.find((r) => r.external_record_id === Object.keys(idBySku).find((k) => idBySku[k] === idBySku[Object.keys(idBySku)[0]]));
+  assert.equal(rowsAfterSecond.length, 4, "expected 4 rows after second import — A-3 must NOT be deleted just because it's absent from the file");
   const bySkuAfter = {};
   for (const r of rowsAfterSecond) bySkuAfter[r.payload.sku] = r;
-  assert.equal(bySkuAfter["A-1"].id, idBySku[Object.keys(idBySku).find((k) => true)] ?? bySkuAfter["A-1"].id, "sanity");
   // Row identity check: A-1's row id must be IDENTICAL across imports (true upsert, not delete+reinsert)
-  const firstRowsBySku = {};
-  for (const r of rowsAfterFirst) firstRowsBySku[r.payload.sku] = r;
   assert.equal(bySkuAfter["A-1"].id, firstRowsBySku["A-1"].id, "A-1 row id should be preserved across re-import (true upsert)");
   assert.equal(bySkuAfter["A-2"].id, firstRowsBySku["A-2"].id, "A-2 row id should be preserved across re-import (true upsert)");
   assert.equal(bySkuAfter["A-2"].payload.qty, 999, "A-2 value should be updated in place");
-  assert.ok(!bySkuAfter["A-3"], "A-3 should have been removed");
+  assert.ok(bySkuAfter["A-3"], "A-3 should still be present — omission from a later file is not deletion");
+  assert.equal(bySkuAfter["A-3"].id, firstRowsBySku["A-3"].id, "A-3 row id should be untouched");
+  assert.equal(bySkuAfter["A-3"].payload.qty, 30, "A-3 value should be unchanged");
   assert.ok(bySkuAfter["A-4"], "A-4 should have been added");
-  console.log("ok   keyed upsert: identity preserved, added/updated/removed correct");
+  console.log("ok   keyed upsert: identity preserved, added/updated correct, absent rows kept");
 
   // --- Test 2: key fields persisted and returned via getSourceRecordSummary ---
   const summary = await getSourceRecordSummary([sourceId]);

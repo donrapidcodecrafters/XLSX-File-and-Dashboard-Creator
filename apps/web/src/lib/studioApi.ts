@@ -119,7 +119,7 @@ export interface StudioWorkbookSourceImportResult {
     table: TableDefinition;
     rowCount: number;
     fieldCount: number;
-    upsert?: { added: number; updated: number; removed: number };
+    upsert?: { added: number; updated: number };
   }>;
   warnings: string[];
   review: StudioWorkbookImportResult["review"];

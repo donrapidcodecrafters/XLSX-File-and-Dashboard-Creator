@@ -33,8 +33,8 @@ interface IngestedXlsxSource {
   rowCount: number;
   fieldCount: number;
   summary?: SourceRecordSummary;
-  /** Present when keyFieldIds was set — how many rows were added/updated/removed by key. */
-  upsert?: { added: number; updated: number; removed: number };
+  /** Present when keyFieldIds was set — how many rows were added/updated by key. */
+  upsert?: { added: number; updated: number };
 }
 
 interface IngestXlsxWorkbookSourceResult {

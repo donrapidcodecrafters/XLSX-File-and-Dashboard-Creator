@@ -48,7 +48,7 @@ interface ReplaceSourceRecordsResult {
   rowCount: number;
   fieldCount: number;
   /** Only meaningful when keyFieldIds was set — counts from the upsert-by-key pass. */
-  upsert?: { added: number; updated: number; removed: number };
+  upsert?: { added: number; updated: number };
 }
 
 export interface SourceRecordSummary {
@@ -97,7 +97,8 @@ function normalizeKeyValue(value: unknown) {
 
 // A stable identity for a row, derived from its key field value(s), so the same
 // logical record maps to the same app_records row across repeated imports —
-// letting a re-import update/insert/remove by identity instead of a full replace.
+// letting a re-import update/insert by identity instead of a full replace. Rows
+// whose key isn't in a given file are left untouched (not deleted).
 function keyExternalId(row: DataRow, keyFieldIds: string[]) {
   return sha256(keyFieldIds.map((fieldId) => normalizeKeyValue(row[fieldId])).join("␟"));
 }
@@ -358,7 +359,7 @@ export async function replaceSourceRecords(input: ReplaceSourceRecordsInput): Pr
   // or with allowDuplicates checked again) can still match by it.
   const useUpsert = keyFieldIds.length > 0 && !input.allowDuplicates;
 
-  let upsertCounts: { added: number; updated: number; removed: number } | undefined;
+  let upsertCounts: { added: number; updated: number } | undefined;
   await withPgTransaction(async (client) => {
     const persistedEntityId = await upsertSourceEntity(client, input, fields, input.rows.length, now, entityId);
     await replaceSourceAttributes(client, persistedEntityId, fields, now);
@@ -373,11 +374,9 @@ export async function replaceSourceRecords(input: ReplaceSourceRecordsInput): Pr
         added += result.added;
         updated += result.updated;
       }
-      const removed = await client.query(
-        "DELETE FROM app_records WHERE entity_id = $1 AND external_record_id <> '' AND NOT (external_record_id = ANY($2::text[]))",
-        [persistedEntityId, Array.from(seen)]
-      );
-      upsertCounts = { added, updated, removed: removed.rowCount || 0 };
+      // Rows whose key isn't in this file are left alone (not deleted) — a re-import
+      // is treated as "add/update what's here," not "the file is now the whole truth."
+      upsertCounts = { added, updated };
     } else {
       await client.query("DELETE FROM app_records WHERE entity_id = $1", [persistedEntityId]);
       for (let start = 0; start < input.rows.length; start += INSERT_RECORD_BATCH_SIZE) {
@@ -422,7 +421,7 @@ export async function replaceSourceRecordsFromBatches(
   const useUpsert = keyFieldIds.length > 0 && !input.allowDuplicates;
   let rowCount = 0;
   let fieldCount = 0;
-  let upsertCounts: { added: number; updated: number; removed: number } | undefined;
+  let upsertCounts: { added: number; updated: number } | undefined;
 
   await withPgTransaction(async (client) => {
     const persistedEntityId = await upsertSourceEntity(client, input, [], 0, now, entityId);
@@ -457,11 +456,9 @@ export async function replaceSourceRecordsFromBatches(
       if (missingKeyFields.length) {
         throw new Error(`Key field(s) not found in this file's columns: ${missingKeyFields.join(", ")}.`);
       }
-      const removed = await client.query(
-        "DELETE FROM app_records WHERE entity_id = $1 AND external_record_id <> '' AND NOT (external_record_id = ANY($2::text[]))",
-        [persistedEntityId, Array.from(seenExternalIds)]
-      );
-      upsertCounts = { added, updated, removed: removed.rowCount || 0 };
+      // Rows whose key isn't in this file are left alone (not deleted) — a re-import
+      // is treated as "add/update what's here," not "the file is now the whole truth."
+      upsertCounts = { added, updated };
     }
     await replaceSourceAttributes(client, persistedEntityId, fields, now);
     await upsertSourceEntity(client, {
