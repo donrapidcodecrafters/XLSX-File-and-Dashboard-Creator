@@ -282,6 +282,7 @@ export function StudioDashboardPreview({
               const options = runtimeFilterOptionsById[filter.id] || [];
               const value = runtimeValues[filter.id] || "";
               const selectedValues = value ? value.split("|||").filter(Boolean) : [];
+              const filterInputId = `dashboard-builder-filter-${filter.id}`;
               function toggleValue(opt: string) {
                 const next = selectedValues.includes(opt)
                   ? selectedValues.filter((v) => v !== opt)
@@ -291,19 +292,19 @@ export function StudioDashboardPreview({
               return (
                 <div className="dashboard-live-filter-field" key={filter.id}>
                   <div className="dashboard-live-filter-label">
-                    <span>{filter.label}</span>
+                    <label htmlFor={filterInputId}>{filter.label}</label>
                     {selectedValues.length ? (
                       <button type="button" className="ghost-button micro" onClick={() => updateRuntimeValue(filter.id, "")}>Clear</button>
                     ) : null}
                   </div>
                   {filter.uiType === "boolean-toggle" ? (
-                    <select className="dashboard-live-filter-input" value={value} onChange={(event) => updateRuntimeValue(filter.id, event.target.value)}>
+                    <select id={filterInputId} className="dashboard-live-filter-input" value={value} onChange={(event) => updateRuntimeValue(filter.id, event.target.value)}>
                       <option value="">Any</option>
                       <option value="true">True</option>
                       <option value="false">False</option>
                     </select>
                   ) : filter.uiType === "date-range" ? (
-                    <input type="date" className="dashboard-live-filter-input" value={value} onChange={(e) => updateRuntimeValue(filter.id, e.target.value)} />
+                    <input id={filterInputId} type="date" className="dashboard-live-filter-input" value={value} onChange={(e) => updateRuntimeValue(filter.id, e.target.value)} />
                   ) : options.length ? (
                     <div className="dashboard-live-filter-options">
                       {options.map((option) => (
@@ -314,7 +315,7 @@ export function StudioDashboardPreview({
                       ))}
                     </div>
                   ) : (
-                    <input className="dashboard-live-filter-input" value={value} onChange={(event) => updateRuntimeValue(filter.id, event.target.value)} />
+                    <input id={filterInputId} className="dashboard-live-filter-input" value={value} onChange={(event) => updateRuntimeValue(filter.id, event.target.value)} />
                   )}
                 </div>
               );
