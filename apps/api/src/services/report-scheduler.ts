@@ -213,7 +213,7 @@ async function runReportConfig(config: ReportConfigRow, logger: FastifyBaseLogge
       for (const widget of tab.widgets) {
         if (!widget.report || widget.status === "failed") continue;
         try {
-          const filters = buildDashboardFilters(dashboard, widget.report.id, {}, widget.report.sourceTableId);
+          const filters = buildDashboardFilters(dashboard, widget.report.id, {}, widget.report.sourceTableId, widget.widget, tab.id);
           const widgetMode = widget.widget.displayMode !== "inherit" ? widget.widget.displayMode : widget.report.view.mode;
           const needsDetailSheet = widgetMode !== "table" && widget.widget.showDetails;
           let effectiveReport = widget.report;
@@ -229,7 +229,7 @@ async function runReportConfig(config: ReportConfigRow, logger: FastifyBaseLogge
     }
     buffer = await exportDashboardNativeChartWorkbook(dashboard, rendered, exportResultsByWidgetId, {
       tablesById,
-      includeOverviewSheet: dashboard.includeExportOverviewSheet !== false
+      includeOverviewSheet: dashboard.includeExportOverviewSheet === true
     });
   }
 

@@ -5031,6 +5031,15 @@ select {
   margin-bottom: 4px;
 }
 
+/* The generic .card rule sets overflow:hidden (needed elsewhere, e.g. to clip
+   chart content) but that also clips the absolutely-positioned dropdown menu
+   filter fields open below them (.filter-dropdown-menu) — it can never show
+   its options once the menu extends past the card's edge. Filter panels don't
+   need edge clipping, so opt this specific card out. */
+.card.dashboard-filter-panel {
+  overflow: visible;
+}
+
 .dashboard-live-filter-field {
   display: grid;
   gap: 6px;

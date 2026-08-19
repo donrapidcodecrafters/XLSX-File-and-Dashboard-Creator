@@ -185,7 +185,7 @@ export async function registerRenderRoutes(app: FastifyInstance) {
     const job = exportJobStore.createJob(dashboard.id, "dashboard", filename, async ({ jobId, update }) => {
       update(5, "Rendering dashboard");
       const rendered = await executeDashboard(dashboard.id, runtimeFilters, { dashboard });
-      const renderedWidgets = rendered.tabs.flatMap((tab) => tab.widgets);
+      const renderedWidgets = rendered.tabs.flatMap((tab) => tab.widgets.map((widget) => ({ ...widget, tabId: tab.id })));
       const exportResultsByWidgetId: Record<string, ReportRunResult> = {};
       const tablesById = Object.fromEntries(objectStore.listTables().map((table) => [table.id, table]));
       const reportProgress = new Map<string, number>();
@@ -206,7 +206,7 @@ export async function registerRenderRoutes(app: FastifyInstance) {
       await runWithConcurrency(renderedWidgets, 2, async (widget) => {
         const report = widget.report;
         if (!report) return;
-        const filters = buildDashboardFilters(dashboard, report.id, runtimeFilters, report.sourceTableId);
+        const filters = buildDashboardFilters(dashboard, report.id, runtimeFilters, report.sourceTableId, widget.widget, widget.tabId);
         reportProgress.set(widget.widgetId, 0);
         reportMessage.set(widget.widgetId, `Loading ${report.name}`);
         updateOverallProgress();
@@ -244,7 +244,7 @@ export async function registerRenderRoutes(app: FastifyInstance) {
       }
       const buffer = await exportDashboardNativeChartWorkbook(dashboard, rendered, exportResultsByWidgetId, {
         tablesById,
-        includeOverviewSheet: dashboard.includeExportOverviewSheet !== false
+        includeOverviewSheet: dashboard.includeExportOverviewSheet === true
       });
       await writeBufferToStream(stream, buffer);
     });

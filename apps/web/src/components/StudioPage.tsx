@@ -1652,6 +1652,11 @@ export function StudioPage({
   const [dashboardAddMode, setDashboardAddMode] = useState<DashboardAddMode>("chooser");
   const [dashboardWidgetDraft, setDashboardWidgetDraft] = useState<DashboardWidgetBuilderDraft>(buildDashboardWidgetDraft());
   const [dashboardSettingsModalOpen, setDashboardSettingsModalOpen] = useState(false);
+  // Snapshot of the dashboard taken the moment its settings modal opens, since edits
+  // inside that modal apply immediately to the live document — this is what "Cancel"
+  // restores, so closing without saving actually discards the changes instead of
+  // silently leaving them applied-but-unpersisted.
+  const dashboardSettingsSnapshotRef = useRef<DashboardDefinition | null>(null);
   const [dashboardBuilderFlow, setDashboardBuilderFlow] = useState<DashboardBuilderFlow>(null);
   const [createStep, setCreateStep] = useState<CreateStep>("basics");
   const [createPreviewPage, setCreatePreviewPage] = useState(1);
@@ -1877,6 +1882,19 @@ export function StudioPage({
   const hasActiveObject = Boolean(activeObject);
   const activeReport: ReportDefinition | null = activeObject?.type === "report" ? activeObject : null;
   const activeDashboard: DashboardDefinition | null = activeObject?.type === "dashboard" ? activeObject : null;
+
+  // Modal-open flags are local component state, but StudioPage itself isn't
+  // remounted when navigating between /studio/:objectId routes — without this,
+  // a modal left open on one report/dashboard (e.g. via browser back, or a
+  // link click instead of its own Done/Save button) would still be open the
+  // instant the next object loads, popping up over the wrong item's canvas.
+  useEffect(() => {
+    setDashboardAddModalOpen(false);
+    setDashboardSettingsModalOpen(false);
+    setImportReviewModalOpen(false);
+    setCreateModalOpen(false);
+    setXlsxUploadModalOpen(false);
+  }, [activeObjectId]);
   const openLinksInNewTab = documentState.branding.openLinksInNewTab === true;
   const resolvedActiveDashboardTabId = resolveActiveDashboardTabId(activeDashboard, activeTabId);
   const activeDashboardTab = activeDashboard?.tabs.find((tab) => tab.id === resolvedActiveDashboardTabId) || null;
@@ -4925,10 +4943,13 @@ export function StudioPage({
               <div className="card-head">
                 <div>
                   <strong>Dashboard settings</strong>
-                  <div className="micro">Changes apply immediately — click Save to persist to server.</div>
+                  <div className="micro">Cancel discards everything changed in this panel. Save &amp; close persists it to the server.</div>
                 </div>
                 <div className="studio-actions">
-                  <button type="button" className="btn-neutral ghost-button" onClick={() => setDashboardSettingsModalOpen(false)}>Done</button>
+                  <button type="button" className="btn-neutral ghost-button" onClick={() => {
+                    if (dashboardSettingsSnapshotRef.current) writeObject(dashboardSettingsSnapshotRef.current, { skipHistory: true });
+                    setDashboardSettingsModalOpen(false);
+                  }}>Cancel</button>
                   <button type="button" onClick={() => { void saveRemote(); setDashboardSettingsModalOpen(false); }}>Save &amp; close</button>
                 </div>
               </div>
@@ -4975,7 +4996,7 @@ export function StudioPage({
                   <label className="toggle-row">
                     <input
                       type="checkbox"
-                      checked={activeDashboard.includeExportOverviewSheet !== false}
+                      checked={activeDashboard.includeExportOverviewSheet === true}
                       onChange={(event) => updateObject({ ...activeDashboard, includeExportOverviewSheet: event.target.checked })}
                     />
                     Include a summary "Overview" sheet in exports and emails
@@ -5720,18 +5741,16 @@ export function StudioPage({
           <div className="link-toolbar">
             <Link className="ghost-button btn-neutral" to={buildHostedRoute("/studio")}>Back to Building home</Link>
             <button onClick={saveRemote} disabled={savingRemote}>{savingRemote ? "Saving…" : "Save"}</button>
-            {canDo("building.create") && !hasActiveObject ? <button className="btn-create" onClick={() => openCreateModal("report")}>Create report</button> : null}
-            {canDo("building.create") && !hasActiveObject ? <button className="btn-create" onClick={() => openCreateModal("dashboard")}>Create dashboard</button> : null}
-            {!hasActiveObject ? <button onClick={() => setXlsxUploadModalOpen(true)} disabled={xlsxImporting}>{xlsxImporting ? "Importing xlsx…" : "Import xlsx"}</button> : null}
-            {activeReport ? <button onClick={() => openEditReportModal(activeReport)}>Edit report</button> : null}
-            {activeReport ? <button className="btn-danger" onClick={() => deleteObject(activeReport.id)}>Delete report</button> : null}
-            {hasActiveObject ? <button onClick={() => toggleFavorite(activeObject.id)}>{documentState.favorites.includes(activeObject.id) ? "Unfavorite" : "Favorite"}</button> : null}
-            {hasActiveObject ? <button onClick={() => cloneObject(activeObject)}>Clone</button> : null}
+            {canDo("building.create") ? <button className="btn-create" onClick={() => openCreateModal("report")}>Create report</button> : null}
+            {canDo("building.create") ? <button className="btn-create" onClick={() => openCreateModal("dashboard")}>Create dashboard</button> : null}
+            <button onClick={() => setXlsxUploadModalOpen(true)} disabled={xlsxImporting}>{xlsxImporting ? "Importing xlsx…" : "Import xlsx"}</button>
             <button onClick={undo} disabled={!history.length}>Undo</button>
             <button onClick={redo} disabled={!future.length}>Redo</button>
-            {hasActiveObject ? <button onClick={() => setDrawer("share")}>Share</button> : null}
-            {hasActiveObject && canDo("reports.export") ? <button className="btn-export" onClick={() => setDrawer("export")}>Export</button> : null}
-            {hasActiveObject ? <button onClick={openVersions}>History</button> : null}
+          </div>
+          ) : null}
+          {activeReport ? (
+          <div className="link-toolbar">
+            {canDo("building.edit") ? <button className="btn-create" onClick={() => openEditReportModal(activeReport)}>Edit report</button> : null}
           </div>
           ) : null}
         </div>
@@ -5845,7 +5864,7 @@ export function StudioPage({
             <div className="dashboard-builder-toolbar">
               <div className="dashboard-builder-toolbar-actions">
                 {canDo("building.edit") && <button type="button" className="btn-create" onClick={openDashboardAddModal}>Add report/graph</button>}
-                {canDo("building.edit") && <button type="button" className="ghost-button btn-system" onClick={() => setDashboardSettingsModalOpen(true)}>Dashboard settings</button>}
+                {canDo("building.edit") && <button type="button" className="ghost-button btn-system" onClick={() => { dashboardSettingsSnapshotRef.current = activeDashboard ? structuredClone(activeDashboard) : null; setDashboardSettingsModalOpen(true); }}>Dashboard settings</button>}
               </div>
               <div className="dashboard-builder-toolbar-meta">
                 <span className="micro">{activeDashboard.tabs.length} tabs</span>

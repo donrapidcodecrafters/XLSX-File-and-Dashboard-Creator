@@ -1725,7 +1725,7 @@ function buildDashboardCacheKey(
         return {
           tabId: tab.id,
           widgetId: widget.id,
-          widgetExecution: buildDashboardExecutionKey(report, widget, buildDashboardFilters(dashboard, report.id, runtimeValues, report.sourceTableId)),
+          widgetExecution: buildDashboardExecutionKey(report, widget, buildDashboardFilters(dashboard, report.id, runtimeValues, report.sourceTableId, widget, tab.id)),
           tableVersion: table ? getTableCacheVersion(table) : ""
         };
       })
@@ -1781,7 +1781,7 @@ async function executeDashboardUncached(
   const widgetResults = await mapWithConcurrency(
     widgetJobs,
     DASHBOARD_WIDGET_CONCURRENCY,
-    async ({ widget }) => {
+    async ({ tab, widget }) => {
         const report = resolveReport(widget);
         if (!report) {
           const message = "Widget report not found.";
@@ -1796,7 +1796,7 @@ async function executeDashboardUncached(
             error: message
           };
         }
-        const extraFilters = buildDashboardFilters(dashboard, report.id, runtimeValues, report.sourceTableId);
+        const extraFilters = buildDashboardFilters(dashboard, report.id, runtimeValues, report.sourceTableId, widget, tab.id);
         const executionKey = buildDashboardExecutionKey(report, widget, extraFilters);
         try {
           let pending = executionCache.get(executionKey);

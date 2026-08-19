@@ -619,10 +619,10 @@ export function DashboardView({
     });
     const exportResultsByWidgetId = Object.fromEntries(
       await mapWithConcurrency(
-        renderedTabs.flatMap((tab) => tab.widgets),
+        renderedTabs.flatMap((tab) => tab.widgets.map((widget) => ({ ...widget, tabId: tab.id }))),
         1,
         async (widget) => {
-          const filters = buildDashboardFilters(dashboard, widget.report.id, runtimeFilters, widget.report.sourceTableId);
+          const filters = buildDashboardFilters(dashboard, widget.report.id, runtimeFilters, widget.report.sourceTableId, widget.widget, widget.tabId);
           const response = await fetchReportExportBundle(widget.report.id, filters, {
             report: widget.report
           });
@@ -691,7 +691,7 @@ export function DashboardView({
       const blob = await exportDashboardNativeChartWorkbook(dashboard, exportPayload.result, exportPayload.exportResultsByWidgetId, {
         filename,
         tablesById: Object.fromEntries((tables || []).map((table) => [table.id, table])),
-        includeOverviewSheet: dashboard.includeExportOverviewSheet !== false
+        includeOverviewSheet: dashboard.includeExportOverviewSheet === true
       });
       if (!(blob instanceof Blob)) {
         throw new Error("Native chart export did not produce a workbook file.");
@@ -716,7 +716,7 @@ export function DashboardView({
     if (page < 1) return;
     setWidgetPageLoading((current) => ({ ...current, [widget.widgetId]: true }));
     try {
-      const filters = buildDashboardFilters(dashboard, widget.report.id, runtimeFilters, widget.report.sourceTableId);
+      const filters = buildDashboardFilters(dashboard, widget.report.id, runtimeFilters, widget.report.sourceTableId, widget.widget, activeTab?.id || "");
       const next = await runReportPage(widget.report.id, page, 100, filters, { forceLive, report: widget.report });
       setWidgetPages((current) => ({ ...current, [widget.widgetId]: page }));
       setWidgetPageResults((current) => ({ ...current, [widget.widgetId]: next }));
@@ -1128,7 +1128,7 @@ export function DashboardView({
               const axisLabels = getChartAxisLabels(tables, widget.report);
               const widgetQuickbaseFilterTree = buildQuickbaseReportFilterTree(
                 widget.report,
-                buildDashboardFilters(dashboard, widget.report.id, runtimeFilters, widget.report.sourceTableId)
+                buildDashboardFilters(dashboard, widget.report.id, runtimeFilters, widget.report.sourceTableId, widget.widget, activeTab.id)
               );
               const measuredChartHeight = widgetChartHeights[widget.widgetId] || 0;
               const requestedChartHeight = Math.max(

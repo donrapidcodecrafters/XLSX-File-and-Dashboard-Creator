@@ -1440,7 +1440,7 @@ export async function streamDashboardWorkbook(
       const detailSheetName = safeSheetName(`${tab.name} ${widget.report.name} Data`, usedNames);
       detailSheetNames[widget.widgetId] = detailSheetName;
       const detailSheet = workbook.addWorksheet(detailSheetName);
-      const widgetFilters = buildDashboardFilters(dashboard, widget.report.id, runtimeFilters, widget.report.sourceTableId);
+      const widgetFilters = buildDashboardFilters(dashboard, widget.report.id, runtimeFilters, widget.report.sourceTableId, widget.widget, tab.id);
       const filterDescriptions = [
         ...widget.report.filters.map((filter) => describeReportFilter(widget.report, table, filter)),
         ...widgetFilters.map((filter) => describeReportFilter(widget.report, table, filter))
@@ -1558,7 +1558,7 @@ export async function streamDashboardWorkbookCanvas(
       const detailSheetName = safeSheetName(`${tab.name} ${widget.report.name} Data`, usedNames);
       detailSheetNames[widget.widgetId] = detailSheetName;
       const detailSheet = workbook.addWorksheet(detailSheetName);
-      const widgetFilters = buildDashboardFilters(dashboard, widget.report.id, runtimeFilters, widget.report.sourceTableId);
+      const widgetFilters = buildDashboardFilters(dashboard, widget.report.id, runtimeFilters, widget.report.sourceTableId, widget.widget, tab.id);
       const filterDescriptions = [
         ...widget.report.filters.map((filter) => describeReportFilter(widget.report, table, filter)),
         ...widgetFilters.map((filter) => describeReportFilter(widget.report, table, filter))
