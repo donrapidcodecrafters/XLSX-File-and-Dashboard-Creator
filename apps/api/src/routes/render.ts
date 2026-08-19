@@ -5,7 +5,15 @@ import { executeDashboard, executeReport, fetchAllReportRowsForExport, fetchRepo
 import { objectStore } from "../services/object-store.js";
 import { studioStore } from "../services/studio-store.js";
 import { exportJobStore } from "../services/export-jobs.js";
-import { buildDashboardFileName, buildReportFileName, pickDashboardStreamFn, streamReportWorkbook } from "../services/xlsx-export.js";
+import { buildDashboardFileName, buildReportFileName } from "../services/xlsx-export.js";
+import { exportDashboardNativeChartWorkbook, exportReportNativeChartWorkbook } from "../services/nativeExcelExport.js";
+
+function writeBufferToStream(stream: NodeJS.WritableStream, buffer: Buffer): Promise<void> {
+  return new Promise((resolve, reject) => {
+    stream.on("error", reject);
+    stream.end(buffer, (error?: Error | null) => (error ? reject(error) : resolve()));
+  });
+}
 
 function normalizeClientFilters(filters: Array<{ fieldId: string; operator?: string; value: string; valueSource?: "literal" | "field"; compareFieldId?: string }> = []): FilterDefinition[] {
   return filters.map((filter, index) => ({
@@ -151,7 +159,8 @@ export async function registerRenderRoutes(app: FastifyInstance) {
       if (!stream) {
         throw new Error("Unable to create export file stream.");
       }
-      await streamReportWorkbook(stream, report, table, result, update, extraFilters);
+      const buffer = await exportReportNativeChartWorkbook(report, table, result);
+      await writeBufferToStream(stream, buffer);
     });
     return { job };
   });
@@ -233,7 +242,8 @@ export async function registerRenderRoutes(app: FastifyInstance) {
       if (!stream) {
         throw new Error("Unable to create export file stream.");
       }
-      await pickDashboardStreamFn()(stream, dashboard, rendered, exportResultsByWidgetId, tablesById, update, runtimeFilters);
+      const buffer = await exportDashboardNativeChartWorkbook(dashboard, rendered, exportResultsByWidgetId, { tablesById });
+      await writeBufferToStream(stream, buffer);
     });
     return { job };
   });

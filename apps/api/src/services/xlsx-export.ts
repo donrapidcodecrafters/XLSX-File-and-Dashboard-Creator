@@ -1610,17 +1610,6 @@ export async function streamDashboardWorkbookCanvas(
   onProgress?.(100, "Export ready");
 }
 
-// Single source of truth for which dashboard chart renderer every caller (manual
-// export, scheduled email, test email) uses, so they can never drift out of sync —
-// they previously read CANVAS_CHARTS_ENABLED independently, and only the email path
-// checked it, producing dashboard exports and emails with visibly different charts.
-// Always use the canvas renderer: it's the one built to match what Studio itself
-// renders live, and QuickChart.io has proven unreliable from background/cron
-// contexts (scheduled emails failed unless a Studio tab happened to be open).
-export function pickDashboardStreamFn() {
-  return streamDashboardWorkbookCanvas;
-}
-
 export function buildReportFileName(report: ReportDefinition) {
   return `${safeFileName(report.name, report.id)} ${buildFileTimestamp(new Date())}.xlsx`;
 }

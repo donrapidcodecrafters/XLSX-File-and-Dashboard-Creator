@@ -1,4 +1,3 @@
-import { PassThrough } from "node:stream";
 import cron from "node-cron"; // fallback only — pg-boss preferred when Postgres is available
 import sgMail from "@sendgrid/mail";
 import { CronExpressionParser } from "cron-parser";
@@ -10,12 +9,8 @@ import { studioStore } from "./studio-store.js";
 import { logAuditEvent } from "./audit-log.js";
 import { sendSystemNotification } from "./notification-service.js";
 import { fetchReportExportBundle, executeDashboard } from "./report-runner.js";
-import {
-  streamReportWorkbook,
-  pickDashboardStreamFn,
-  buildReportFileName,
-  buildDashboardFileName
-} from "./xlsx-export.js";
+import { buildReportFileName, buildDashboardFileName } from "./xlsx-export.js";
+import { exportReportNativeChartWorkbook, exportDashboardNativeChartWorkbook } from "./nativeExcelExport.js";
 
 // @sendgrid/mail's ResponseError sets .message to the bare HTTP status text (e.g.
 // "Unauthorized" for any 401, whether from a bad key or one missing Mail Send scope),
@@ -56,17 +51,6 @@ function computeNextCronRun(expression: string, timeZone: string, from = new Dat
   } catch {
     return "";
   }
-}
-
-async function workbookToBuffer(fn: (pass: PassThrough) => Promise<void>): Promise<Buffer> {
-  return new Promise<Buffer>((resolve, reject) => {
-    const pass = new PassThrough();
-    const chunks: Buffer[] = [];
-    pass.on("data", (chunk: unknown) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array)));
-    pass.on("error", reject);
-    pass.on("finish", () => resolve(Buffer.concat(chunks)));
-    fn(pass).catch(reject);
-  });
 }
 
 function resolveObject(objectId: string): ReportDefinition | DashboardDefinition | null {
@@ -218,7 +202,7 @@ async function runReportConfig(config: ReportConfigRow, logger: FastifyBaseLogge
       throw new Error(`Source table ${report.sourceTableId} not found for report ${report.id}.`);
     }
     filename = buildReportFileName(report);
-    buffer = await workbookToBuffer((pass) => streamReportWorkbook(pass, report, table, result));
+    buffer = await exportReportNativeChartWorkbook(report, table, result);
   } else {
     const dashboard = obj as DashboardDefinition;
     filename = buildDashboardFileName(dashboard);
@@ -243,9 +227,7 @@ async function runReportConfig(config: ReportConfigRow, logger: FastifyBaseLogge
         } catch { /* use widget.result fallback */ }
       }
     }
-    buffer = await workbookToBuffer((pass) =>
-      pickDashboardStreamFn()(pass, dashboard, rendered, exportResultsByWidgetId, tablesById)
-    );
+    buffer = await exportDashboardNativeChartWorkbook(dashboard, rendered, exportResultsByWidgetId, { tablesById });
   }
 
   sgMail.setApiKey(apiConfig.automation.sendgridApiKey);
