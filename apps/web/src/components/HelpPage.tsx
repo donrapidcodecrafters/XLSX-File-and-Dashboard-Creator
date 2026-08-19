@@ -81,8 +81,7 @@ export function HelpPage() {
           <div className="help-sidebar-top">
             <div className="card-head">
               <div>
-                <span className="badge brand">Help</span>
-                <strong>Platform Manual</strong>
+                <strong>Contents</strong>
               </div>
               <span className="micro">Click any section to jump to it.</span>
             </div>
@@ -137,17 +136,16 @@ export function HelpPage() {
                 <Step n={3}>Enter the code and click <strong>Sign in →</strong>. Codes refresh every 30 seconds — enter whichever code is currently shown.</Step>
 
                 <Sub>Account lockout</Sub>
-                <p style={{ fontSize: "0.95rem", lineHeight: 1.6 }}>After <strong>5 consecutive failed sign-in attempts</strong>, your account is locked for <strong>15 minutes</strong>. You will see a message on the sign-in screen telling you how many minutes remain. After 15 minutes the lock clears automatically and you can try again. If you need access sooner, ask your administrator to unlock your account from the Users page.</p>
+                <p style={{ fontSize: "0.95rem", lineHeight: 1.6 }}>After <strong>10 consecutive failed sign-in attempts</strong>, your account is locked for <strong>5 minutes</strong>. The sign-in screen will tell you how many minutes remain when you try again. There is no way to unlock it early — including asking an administrator — so just wait out the 5 minutes and try again with the correct password.</p>
 
-                <Sub>Signing out</Sub>
-                <Step n={1}>Click <strong>Sign out</strong> in the top-right corner of the top navigation bar.</Step>
-                <Step n={2}>You are immediately returned to the sign-in screen. Your session data is cleared.</Step>
+                <Sub>Your account menu (display name, appearance, sign out)</Sub>
+                <Step n={1}>Click your <strong>name or initials</strong> in the top-right corner of the top navigation bar. A small menu drops down.</Step>
+                <Step n={2}>Click <strong>Account settings</strong> in that menu to open a panel where you can change your <strong>display name</strong> and choose an <strong>appearance</strong> of Light, Dark, or System (matches your device). You can also change your password here, under <strong>Change password</strong>.</Step>
+                <Step n={3}>The same dropdown menu also has a quick <strong>Dark mode</strong> / <strong>Light mode</strong> item that switches the theme without opening the panel, plus <strong>Help guide</strong> (this page) and, for admins/developers, <strong>Users</strong>.</Step>
+                <Step n={4}>To sign out, open that same menu and click <strong>Sign out</strong> at the bottom (in red). You are immediately returned to the sign-in screen.</Step>
+                <Note>There is currently no way to turn 2FA off or re-scan a new QR code from inside the app once it's set up. If you lose access to your Authenticator app, ask your administrator for help.</Note>
 
-                <Sub>Your account settings (display name, dark mode, 2FA)</Sub>
-                <Step n={1}>Click your <strong>name or initials</strong> in the top navigation bar (top-right area) to open your account settings drawer.</Step>
-                <Step n={2}>Here you can change your <strong>display name</strong>, toggle <strong>dark mode</strong>, and manage your 2FA setup.</Step>
-
-                <Note>Sessions expire automatically after a period of inactivity set by your administrator (default: 24 hours). You will see a warning before expiry with an option to stay signed in.</Note>
+                <Note>Sessions expire automatically after a period of inactivity — 12 hours by default, adjustable by your administrator in Settings. About 2 minutes before your session expires, a "Session expiring soon" popup appears with two buttons: <strong>Stay signed in</strong> and <strong>Sign out now</strong>.</Note>
               </div>
             </article>
 
@@ -171,19 +169,20 @@ export function HelpPage() {
                 <Sub>Step 3 — Configure data refresh</Sub>
                 <Step n={8}>On <strong>Step 3 — Data Refresh</strong>, check the boxes next to each Quickbase table you want to sync into the database.</Step>
                 <Step n={9}>For each selected table, enter the <strong>saved report number</strong> from Quickbase (or leave blank to sync all records) and choose the <strong>key field</strong> (the unique identifier for each row).</Step>
-                <Step n={10}>Enable the scheduled refresh and choose a cadence (daily, weekly, or monthly) and time.</Step>
+                <Step n={10}>Set <strong>Enable scheduled refresh</strong> to <em>Enabled</em> (it's a dropdown, not a checkbox) and choose a cadence (daily, weekly, or monthly) and time.</Step>
                 <Step n={11}>Click <strong>Refresh all now</strong> to do the first data pull immediately.</Step>
+                <Step n={12}>Click <strong>Save all settings</strong> (in this same step) so your table selections and schedule aren't lost — doing the refresh alone doesn't save the configuration.</Step>
 
                 <Sub>Step 4 — Set up email delivery (optional)</Sub>
-                <Step n={12}>On <strong>Step 4 — Email Reports</strong>, configure your SendGrid API key and sender email address if you want to send scheduled reports by email.</Step>
+                <Step n={13}>On <strong>Step 4 — Email Reports</strong>, configure your SendGrid API key and sender email address if you want to send scheduled reports by email.</Step>
 
-                <Sub>Step 5 — Invite users</Sub>
-                <Step n={13}>Go to <strong>Users</strong> in the sidebar, click <strong>+ Invite user</strong>, enter the person's email, choose a role, and click <strong>Send invitation</strong>. They will receive an email to set up their account.</Step>
+                <Sub>Next — Invite users</Sub>
+                <Step n={14}>Go to <strong>Users</strong> in the sidebar, click <strong>+ Invite user</strong>, enter the person's email, choose a role, and click <strong>Send invitation</strong>. They will receive an email to set up their account.</Step>
 
-                <Sub>Step 6 — Import Excel data (optional)</Sub>
-                <Step n={14}>Go to <strong>Data Sources</strong> in the sidebar and click <strong>+ Import XLSX</strong> to upload Excel files as data sources for your reports.</Step>
+                <Sub>Finally — Import Excel data (optional)</Sub>
+                <Step n={15}>Go to <strong>Data Sources</strong> in the sidebar and click <strong>+ Import XLSX</strong> to upload Excel files as data sources for your reports.</Step>
 
-                <Tip>You can save and return to Settings any time. All settings are stored in the database and persist across server restarts and deployments.</Tip>
+                <Tip>You can save and return to Settings any time. All settings are stored in the database and persist across server restarts and deployments. Note that "Invite users" and "Import Excel data" above aren't part of the numbered Settings wizard steps — they're separate, later tasks that happen to also be worth doing early.</Tip>
               </div>
             </article>
 
@@ -197,7 +196,7 @@ export function HelpPage() {
                 <Step n={4}>Enter your full name in the <strong>Your name</strong> field.</Step>
                 <Step n={5}>Enter a password of at least 8 characters in <strong>Choose a password</strong>, then repeat it in <strong>Confirm password</strong>.</Step>
                 <Step n={6}>Click <strong>Set up my account</strong>. Your account is created and you are signed in automatically.</Step>
-                <Step n={7}>You will then be prompted to set up Microsoft Authenticator for 2FA — follow the on-screen QR code instructions (see <strong>Signing In</strong> above).</Step>
+                <Step n={7}>You are taken straight into the platform, already signed in — two-factor authentication is <strong>not</strong> set up at this point. The next time you have to sign in (for example, after your session expires), you will see the QR code setup screen described above under <strong>Signing In</strong>.</Step>
                 <Tip>Invitation links expire after 7 days. If yours has expired, ask your administrator to resend it from the Users management page.</Tip>
               </div>
             </article>
@@ -212,23 +211,25 @@ export function HelpPage() {
                 <Step n={2}><strong>Building</strong> — Create and edit reports and dashboards. Also shows <strong>Refresh all</strong> and <strong>Settings</strong> buttons in the topbar when active.</Step>
                 <Step n={3}><strong>Viewing</strong> — Browse and open all reports and dashboards you have access to.</Step>
                 <Step n={4}><strong>Refresh all</strong> — Available on Home, Building, and Viewing. Pulls the latest data from all configured Quickbase tables into the database. Reports update immediately after.</Step>
-                <Step n={5}><strong>Help Ticket</strong> — Opens a helpdesk ticket form in a popup (only visible if your administrator has configured the helpdesk integration in Settings).</Step>
-                <Step n={6}><strong>Help</strong> — Opens this page.</Step>
-                <Step n={7}><strong>Dark mode toggle</strong> (moon/sun icon) — Switches between light and dark themes. Your preference is saved in your browser.</Step>
-                <Step n={8}><strong>Your name/initials</strong> — Click to open your account settings drawer where you can change your display name, toggle dark mode, and manage 2FA.</Step>
-                <Step n={9}><strong>Users</strong> — Visible to admins and developers only. Opens the user management page.</Step>
-                <Step n={10}><strong>Sign out</strong> — Immediately ends your session and returns to the sign-in screen.</Step>
+                <Step n={5}><strong>Import data</strong> — Available from every page for users with import permission. Opens the same Excel upload dialog as the Data Sources page, so you can update your data without leaving whatever you're doing. See <strong>Data Sources</strong> below for the full import walkthrough.</Step>
+                <Step n={6}><strong>Your name/initials</strong> (far right) — Click to open a dropdown menu with everything else described below.</Step>
+                <Step n={7}><strong>Account settings</strong> — In that dropdown. Opens a panel to change your display name, choose Light/Dark/System appearance, and change your password.</Step>
+                <Step n={8}><strong>Dark mode</strong> / <strong>Light mode</strong> — Also in the dropdown. Switches the theme immediately without opening a panel. Your preference is saved in your browser.</Step>
+                <Step n={9}><strong>Help guide</strong> — Also in the dropdown. Opens this page.</Step>
+                <Step n={10}><strong>Help ticket</strong> — Also in the dropdown, only shown if your administrator has configured the helpdesk integration in Settings. Opens a helpdesk ticket form.</Step>
+                <Step n={11}><strong>Users</strong> — Also in the dropdown, shown to admins and developers only. Opens the user management page.</Step>
+                <Step n={12}><strong>Sign out</strong> — Last item in the same dropdown, shown in red. Immediately ends your session and returns to the sign-in screen.</Step>
 
                 <Sub>Left sidebar</Sub>
                 <p style={{ fontSize: "0.95rem", lineHeight: 1.6 }}>The left sidebar is always present. Hover over it to expand labels. Click the <strong>pin</strong> button at the top to keep it expanded permanently.</p>
-                <Step n={11}><strong>Home / Viewing / Building</strong> — Same as the topbar tabs.</Step>
-                <Step n={12}><strong>Reports &amp; Dashboards</strong> accordion — Expand to see a scrollable list of all your content, grouped by Dashboards then Reports. Click any item to open it directly.</Step>
-                <Step n={13}><strong>Data Sources</strong> — View, import, rename, and delete Excel data files.</Step>
-                <Step n={14}><strong>Scheduled Reports</strong> — Manage automated email delivery of reports (admins only).</Step>
-                <Step n={15}><strong>Users</strong> — Invite and manage platform users (admins and developers only).</Step>
-                <Step n={16}><strong>Roles</strong> — Create and manage permission roles (admins and developers only).</Step>
-                <Step n={17}><strong>Settings</strong> — Platform configuration: branding, Quickbase, data refresh, email, and more.</Step>
-                <Step n={18}><strong>Help</strong> — This page.</Step>
+                <Step n={13}><strong>Home / Viewing / Building</strong> — Same as the topbar tabs.</Step>
+                <Step n={14}><strong>Reports &amp; Dashboards</strong> accordion — Expand to see a scrollable list of all your content, grouped by Dashboards then Reports. Click any item to open it directly.</Step>
+                <Step n={15}><strong>Data Sources</strong> — View, import, rename, and delete Excel data files.</Step>
+                <Step n={16}><strong>Scheduled Reports</strong> — Manage automated email delivery of reports (admins and developers only).</Step>
+                <Step n={17}><strong>Users</strong> — Invite and manage platform users (admins and developers only).</Step>
+                <Step n={18}><strong>Roles</strong> — Create and manage permission roles (admins and developers only).</Step>
+                <Step n={19}><strong>Settings</strong> — Platform configuration: branding, Quickbase, data refresh, email, and more.</Step>
+                <Step n={20}><strong>Help</strong> — This page.</Step>
               </div>
             </article>
 
@@ -253,10 +254,10 @@ export function HelpPage() {
                 <Sub>Managing data sources</Sub>
                 <Step n={9}>Go to <strong>Data Sources</strong>. A table lists all imported sources with row counts, column counts, and last-updated dates.</Step>
                 <Step n={10}>To <strong>rename</strong> a source, click the pencil icon next to its name, type the new name, and press Enter.</Step>
-                <Step n={11}>To <strong>preview</strong> the data, click the source name to see the first rows and all column names.</Step>
-                <Step n={12}>To <strong>clear data only</strong> (keep the source entry but remove all rows), click the <strong>Clear data</strong> button.</Step>
-                <Step n={13}>To <strong>permanently delete</strong> a source and all its data, click <strong>Delete</strong> and confirm. Reports using this source will stop working.</Step>
-                <Note>Only .xlsx files are supported. Files must have column headers in the first row of each sheet. Maximum recommended file size is 25 MB.</Note>
+                <Step n={11}>To <strong>clear data only</strong> (keep the source entry but remove all rows), click the <strong>Clear data</strong> button.</Step>
+                <Step n={12}>To <strong>permanently delete</strong> a source and all its data, click <strong>Delete</strong> and confirm. Reports using this source will stop working.</Step>
+                <Note>The Data Sources table only shows row/column counts and the last-updated date — there is currently no button to preview a source's actual rows after it's been imported. To see real data, open <strong>+ Import XLSX</strong> and select that workbook; the upload screen shows a sample of the file before you confirm anything.</Note>
+                <Note>Only .xlsx files are supported (not .xls or .csv). The uploader works best when column headers are in the first row of each sheet, though it can sometimes locate headers a few rows down. Files larger than <strong>25 MB</strong> are rejected outright — this is a hard limit, not just a recommendation.</Note>
               </div>
             </article>
 
@@ -267,34 +268,37 @@ export function HelpPage() {
                 <Step n={1}>Go to <strong>Building</strong> in the topbar or sidebar, then click <strong>Create a new report</strong>.</Step>
 
                 <Sub>Step 1 — Basics</Sub>
-                <Step n={2}><strong>Mode</strong> — Choose how data is displayed: <em>table</em> (rows and columns), <em>chart</em> (visual graph), <em>metric</em> (single number card), <em>pivot</em> (cross-tab), or others.</Step>
-                <Step n={3}><strong>Record title field</strong> — Search for and select the field that identifies each record (e.g. "Customer Name" or "Order ID"). Used as the clickable title when detail rows are shown.</Step>
-                <Step n={4}><strong>Decimal places</strong> — How many decimal places to show for number fields.</Step>
-                <Step n={5}><strong>Show summary metrics</strong> — Toggle on to display calculated summary values (sum, count, average, etc.) above the report.</Step>
-                <Step n={6}><strong>Include detail rows</strong> — Toggle on to show individual data rows. Toggle off for aggregate/summary-only reports.</Step>
-                <Step n={7}><strong>Include chart above table</strong> — Toggle on to show a chart above the data table.</Step>
-                <Step n={8}>Click <strong>Next</strong>.</Step>
+                <Step n={2}><strong>Name</strong>, <strong>Description</strong>, and <strong>Folder</strong> — Enter these here at the start, not at the end. You can rename the report later.</Step>
+                <Step n={3}><strong>Sharing</strong> — Also set here: choose <em>Shared with everyone</em> (all users), <em>Shared with specific users or roles</em> (you pick who), or <em>Personal</em> (only you).</Step>
+                <Step n={4}><strong>Mode</strong> — Choose how data is displayed: <em>table</em> (rows and columns), <em>summary</em> (grouped totals in a cross-tab), <em>chart</em> (visual graph), <em>timeline</em>, <em>calendar</em>, or <em>kanban</em> (card board).</Step>
+                <Step n={5}><strong>Record title field</strong> — Search for and select the field that identifies each record (e.g. "Customer Name" or "Order ID"). Used as the clickable title when detail rows are shown.</Step>
+                <Step n={6}><strong>Decimal places</strong> — How many decimal places to show for number fields.</Step>
+                <Step n={7}><strong>Show summary metrics</strong> — Toggle on to display calculated summary values (sum, count, average, etc.) above the report.</Step>
+                <Step n={8}><strong>Include detail rows</strong> — Toggle on to show individual data rows. Toggle off for aggregate/summary-only reports.</Step>
+                <Step n={9}><strong>Include chart above table</strong> — Toggle on to show a chart above the data table.</Step>
+                <Step n={10}>Click <strong>Next</strong>.</Step>
 
                 <Sub>Step 2 — Data</Sub>
-                <Step n={9}><strong>Data source</strong> — Select which imported data source (Excel workbook or Quickbase table) powers this report.</Step>
-                <Step n={10}><strong>Fields to show</strong> — Check which columns from the data source appear in the report. Drag to reorder.</Step>
-                <Step n={11}><strong>Grouping</strong> — Optionally group rows by a field (e.g. group by "Department" to see totals per department).</Step>
-                <Step n={12}><strong>Sorting</strong> — Choose a field to sort by and direction (ascending or descending).</Step>
+                <Step n={11}><strong>Data source</strong> — Select which imported data source (Excel workbook or Quickbase table) powers this report.</Step>
+                <Step n={12}><strong>Fields to show</strong> — In the "Available fields" list, click a field to move it into "Selected fields" (there are no checkboxes — clicking is how you add a field). Use the <strong>Up</strong>/<strong>Down</strong> buttons next to each selected field to change column order — there is no drag-and-drop.</Step>
                 <Step n={13}>Click <strong>Next</strong>.</Step>
 
                 <Sub>Step 3 — Filters</Sub>
-                <Step n={14}>Click <strong>Add filter</strong>, choose a field, choose a condition (equals, contains, greater than, etc.), and enter a value. All filter conditions must be true for a row to appear.</Step>
-                <Step n={15}>Add as many filters as needed. Click <strong>Next</strong>.</Step>
+                <Step n={14}>Click <strong>Add filter</strong>, choose a field, choose a condition (equals, contains, greater than, etc.), and enter a value.</Step>
+                <Step n={15}>If you add more than one filter, use the <strong>Match</strong> setting to choose <em>All conditions (AND)</em> (every filter must be true) or <em>Any condition (OR)</em> (at least one must be true). Click <strong>Add group</strong> to nest a more complex combination of filters.</Step>
+                <Step n={16}><strong>Sorting</strong> — On this same screen, click <strong>Add sort</strong>, choose a field, and choose <em>Ascending</em> or <em>Descending</em>.</Step>
+                <Step n={17}>Click <strong>Next</strong>.</Step>
 
                 <Sub>Step 4 — View</Sub>
-                <Step n={16}><strong>Summary metrics</strong> — If you enabled summary metrics, click <strong>Add summary metric</strong>, choose a field, and choose the calculation (Sum, Count, Average, Minimum, Maximum, Count rows).</Step>
-                <Step n={17}><strong>Chart settings</strong> — If your mode includes a chart, configure the X-axis field, Y-axis field, chart type (bar, line, pie, etc.), and color options.</Step>
-                <Step n={18}>Click <strong>Next</strong>.</Step>
+                <Step n={18}><strong>Group field / Value field</strong> — Only shown when Mode is <em>summary</em>. Choose the field to group by (its distinct values become rows or columns) and the field to total up.</Step>
+                <Step n={19}><strong>Summary metrics</strong> — If you enabled summary metrics, click <strong>Add summary metric</strong>, choose a field, and choose the calculation (Sum, Count, Average, Minimum, Maximum, Count rows).</Step>
+                <Step n={20}><strong>Chart settings</strong> — If your mode includes a chart, configure the X-axis field, Y-axis field, chart type, and color options. There are dozens of chart types to choose from (bar, column, line, area, pie, donut, funnel, heatmap, radar, gauge, waterfall, and more).</Step>
+                <Step n={21}>Click <strong>Next</strong>.</Step>
 
                 <Sub>Step 5 — Review</Sub>
-                <Step n={19}>Review and edit the report <strong>name</strong> (click to edit), description, folder, and sharing settings.</Step>
-                <Step n={20}><strong>Sharing</strong> — Choose who can see this report: <em>Shared with everyone</em> (all users), <em>Specific users or roles</em> (select individuals), or <em>Personal</em> (only you).</Step>
-                <Step n={21}>Click <strong>Create report</strong>. The report is saved and opens immediately.</Step>
+                <Step n={22}>This step is a read-only summary — a checklist to confirm before saving, not a place to make further edits. It shows the report's type, sharing scope, data source, how many fields and filters you set up, and the default view, plus a small preview of your data.</Step>
+                <Step n={23}>If something looks wrong, use the step buttons at the top (or <strong>← Back</strong>) to go fix it — you cannot edit fields directly on this screen.</Step>
+                <Step n={24}>Click <strong>Create report</strong>. The report is saved and opens immediately.</Step>
 
                 <Tip>You can edit any report at any time by opening it in the Building area and clicking <strong>Edit report</strong> in the toolbar at the bottom.</Tip>
               </div>
@@ -304,15 +308,15 @@ export function HelpPage() {
             <article className="card help-card" id="create-dashboard">
               <SectionHeading title="Creating a Dashboard" subtitle="Building dashboards and adding report cards to a tabbed canvas" />
               <div className="stack-compact">
-                <Step n={1}>Go to <strong>Building</strong> in the topbar or sidebar, then click <strong>Create a new dashboard</strong>.</Step>
-                <Step n={2}>Give the dashboard a name, description, folder, and sharing settings. Click <strong>Create dashboard</strong>.</Step>
-                <Step n={3}>The dashboard canvas opens. Click <strong>Add report/graph</strong> in the toolbar.</Step>
-                <Step n={4}>A panel opens. Choose an existing report from the list, or create a new one on the spot. Select a <strong>display size</strong> (small, medium, large, or full width) and click <strong>Add</strong>.</Step>
+                <Step n={1}>Go to <strong>Building</strong> in the topbar or sidebar, then click <strong>Create a new dashboard</strong>. Dashboards use the same kind of multi-step wizard as reports (Basics → Layout → Review) — the <strong>Create dashboard</strong> button is on the final Review step, not right after entering a name.</Step>
+                <Step n={2}>On the <strong>Basics</strong> step, enter a name, description, folder, and sharing settings.</Step>
+                <Step n={3}>On the <strong>Layout</strong> step, click <strong>Add report/graph</strong>.</Step>
+                <Step n={4}>A panel opens. Choose an existing report from the list, or create a new one on the spot. Set a <strong>Width</strong> (1–12) and <strong>Height</strong> (2–10) in grid units, choose a <strong>Display mode</strong>, and click <strong>Add to dashboard</strong>.</Step>
                 <Step n={5}>The report card appears on the canvas. Repeat to add more cards.</Step>
-                <Step n={6}>To <strong>reorganize cards</strong>, drag them by their header. Resize them using the size controls on each card.</Step>
+                <Step n={6}>To <strong>reorganize cards</strong>, select one and use the <strong>Move</strong> (left/right/up/down), <strong>Align</strong>, and layout-preset buttons (Quarter/Third/Half/Wide/Full/Tall) in the side panel — cards cannot be dragged with the mouse.</Step>
                 <Step n={7}>Dashboards support <strong>tabs</strong>. Click <strong>Dashboard settings</strong> in the toolbar to add, rename, or reorder tabs. Move cards between tabs by editing each card.</Step>
-                <Step n={8}>Click <strong>Save to server</strong> in the toolbar to save your changes.</Step>
-                <Tip>Click any report card in the dashboard to expand it to full-screen focus mode. Press Escape or click the back arrow to return to the dashboard.</Tip>
+                <Step n={8}>Review your dashboard on the final step and click <strong>Create dashboard</strong> (or <strong>Save to server</strong> if you're editing an existing one) to save.</Step>
+                <Tip>Click the <strong>Focus</strong> (or <strong>Focus card</strong>) button on any report card to expand it full-screen. Click <strong>Close</strong> to return to the dashboard — there is no Escape-key shortcut.</Tip>
               </div>
             </article>
 
@@ -329,16 +333,16 @@ export function HelpPage() {
                 <Step n={6}>Click any card to open that report or dashboard.</Step>
 
                 <Sub>Interacting with a report</Sub>
-                <Step n={7}>When viewing a report, use the <strong>filter controls</strong> at the top to change what data appears. Changes apply instantly.</Step>
-                <Step n={8}>Click <strong>Open full-screen</strong> to expand the report to fill your screen. Press Escape to return.</Step>
-                <Step n={9}>Click <strong>Focus details</strong> to expand the data table; <strong>Focus chart</strong> to expand the chart.</Step>
-                <Step n={10}>Click <strong>Save view</strong> to save your current filter/sort settings as a named view. Load any saved view from the list that appears.</Step>
-                <Step n={11}>Click <strong>Export</strong> to download the report as an Excel file.</Step>
+                <Step n={7}>A standalone report opens as a normal full page — there is no separate "full-screen" button to click (that only appears if the report is embedded inside another website).</Step>
+                <Step n={8}>Click <strong>Focus details</strong> to expand the data table; <strong>Focus chart</strong> to expand the chart.</Step>
+                <Step n={9}>Click <strong>Save view</strong> to save your current filter/sort settings as a named view. Load any saved view from the list that appears.</Step>
+                <Step n={10}>Click <strong>Download xlsx</strong> for a quick Excel copy of the report (its chart, if any, is included as a picture). Click <strong>Native chart xlsx</strong> instead if you want a workbook with a real, editable Excel chart.</Step>
 
                 <Sub>Interacting with a dashboard</Sub>
-                <Step n={12}>Click any tab at the top of the dashboard to switch between tab sections.</Step>
-                <Step n={13}>Click any report card to expand it to focus mode. Press Escape to return.</Step>
-                <Step n={14}>Click <strong>Export</strong> to export the entire dashboard or individual cards to Excel or image.</Step>
+                <Step n={11}>Click any tab at the top of the dashboard to switch between tab sections.</Step>
+                <Step n={12}>If the dashboard has runtime filters, a <strong>Filters</strong> card appears above the tabs — pick values there to change what data shows across the dashboard. (Standalone reports don't have this; only dashboards do.)</Step>
+                <Step n={13}>Click the <strong>Focus</strong> (or <strong>Focus card</strong>) button in a card's header to expand just that card full-screen. Click <strong>Close</strong> to return — clicking elsewhere on the card does not expand it.</Step>
+                <Step n={14}>Click <strong>Export Workbook</strong> to download the entire dashboard (every tab) as one Excel file with real, editable charts. There is currently no option to export a single card on its own, or to export as an image.</Step>
 
                 <Tip>Star/favorite a report or dashboard by clicking the <strong>Favorite</strong> button in the report toolbar. Favorites appear first when you filter by Favorites only.</Tip>
               </div>
@@ -351,8 +355,8 @@ export function HelpPage() {
                 <p style={{ fontSize: "0.95rem", lineHeight: 1.6 }}>Scheduled email delivery is managed in two places: the <strong>Scheduled Reports</strong> page (accessible from the sidebar) and <strong>Settings → Email Reports</strong> (Step 4). Both show the same list — use whichever is most convenient.</p>
 
                 <Sub>Creating a new scheduled email</Sub>
-                <Step n={1}>Go to <strong>Scheduled Reports</strong> in the sidebar (admins only). Click <strong>+ Set up a new scheduled email</strong>.</Step>
-                <Step n={2}><strong>Which report or dashboard?</strong> — Choose the report or dashboard to deliver from the dropdown.</Step>
+                <Step n={1}>Go to <strong>Scheduled Reports</strong> in the sidebar (admins and developers only). Click <strong>+ Set up a new scheduled email</strong>.</Step>
+                <Step n={2}><strong>Report or dashboard</strong> — Choose the item to deliver from the dropdown.</Step>
                 <Step n={3}><strong>Frequency</strong> — Choose how often to send: <em>Hourly</em>, <em>Daily</em>, <em>Weekly</em>, or <em>Monthly</em>.</Step>
                 <Step n={4}><strong>Time</strong> — Choose the hour of day to send (in your selected timezone).</Step>
                 <Step n={5}><strong>Day</strong> (weekly/monthly) — Choose which day of the week or which day of the month.</Step>
@@ -395,12 +399,12 @@ export function HelpPage() {
                 <Step n={12}>To <strong>change a user's role</strong>, click the role dropdown in their row and select the new role. The change takes effect immediately.</Step>
                 <Step n={13}>To <strong>toggle system notifications</strong> for a user, click the toggle in the <strong>Notifications</strong> column. When enabled (green), that user receives automated system emails such as data refresh completion and failure alerts.</Step>
                 <Step n={14}>To <strong>deactivate</strong> a user (they can no longer sign in but their data is kept), click <strong>Deactivate</strong>.</Step>
-                <Step n={15}>To <strong>reactivate</strong> a deactivated user, click <strong>Activate</strong>.</Step>
+                <Step n={15}>To <strong>reactivate</strong> a deactivated user, click <strong>Reactivate</strong> (this button replaces "Deactivate" in that user's row once they're deactivated).</Step>
                 <Step n={16}>To <strong>send a password reset link</strong>, click <strong>Reset pwd</strong>. An email is sent with a reset link that expires in 1 hour.</Step>
                 <Step n={17}>To <strong>permanently delete</strong> a user and all their data, click <strong>Delete</strong> and confirm. This cannot be undone.</Step>
-                <Step n={18}>To <strong>view the platform as that user</strong> (impersonate), click <strong>View as</strong>. A banner appears at the top. Click <strong>Exit — return to my account</strong> to return to your own account.</Step>
+                <Step n={18}>To <strong>view the platform as that user</strong> (impersonate), click <strong>View as</strong>. A banner appears at the top reading "Viewing as [name] — you are in impersonation mode." Click <strong>Exit impersonation</strong> in that banner to return to your own account.</Step>
 
-                <Note>You cannot delete or deactivate your own account. You cannot impersonate an administrator or developer. System notifications require SendGrid to be configured in Settings.</Note>
+                <Note>You cannot delete or deactivate your own account, and you cannot impersonate yourself. There is currently no restriction on impersonating an admin or developer account. System notifications require SendGrid to be configured in Settings.</Note>
               </div>
             </article>
 
@@ -418,8 +422,9 @@ export function HelpPage() {
                 <Step n={5}>Go to <strong>Roles</strong> in the sidebar (admins and developers only).</Step>
                 <Step n={6}>Click <strong>New role</strong> in the top-right corner.</Step>
                 <Step n={7}>Enter a <strong>name</strong>, <strong>description</strong>, and choose a <strong>color</strong> for easy identification.</Step>
-                <Step n={8}>In the permissions panel, toggle each permission on or off. Permissions are grouped by category: Content Access, Report &amp; Dashboard Builder, Data Sources, Platform Settings, User Management, Role Management, Testing, and Exports.</Step>
-                <Step n={9}>Click <strong>Save role</strong>. The role is now available when inviting or updating users.</Step>
+                <Step n={8}>In the permissions panel, toggle each permission on or off. Permissions are grouped by category: Content Access, Report &amp; Dashboard Builder, Data Sources, Platform Settings, User Management, Role &amp; Permission Management, Testing &amp; Impersonation, and Exports.</Step>
+                <Step n={9}>Click <strong>Save role</strong>.</Step>
+                <Note>Custom roles you create here cannot currently be assigned to a user — the role dropdown when inviting someone, and when changing an existing user's role, only offers <strong>Viewer</strong>, <strong>Editor</strong>, and <strong>Admin</strong>. Ask your developer if you need a custom role actually usable for user assignment.</Note>
                 <Step n={10}>To edit an existing custom role, select it from the left panel, make changes, and click <strong>Save role</strong>.</Step>
                 <Step n={11}>To delete a custom role, select it and click <strong>Delete role</strong>. Users with that role will need to be reassigned.</Step>
 
@@ -445,7 +450,7 @@ export function HelpPage() {
 
                 <Sub>Step 2 — Connect Quickbase</Sub>
                 <p style={{ fontSize: "0.95rem", lineHeight: 1.6 }}>This step is optional if you only use Excel imports. You can connect to multiple Quickbase apps using separate "app profiles." Each profile has its own credentials and data refresh settings.</p>
-                <Step n={7}><strong>Active app profile</strong> — Select which Quickbase app profile you are configuring. Click <strong>Add app profile</strong> to add a second Quickbase app connection.</Step>
+                <Step n={7}><strong>Active app profile</strong> — Select which Quickbase app profile you are configuring. Click <strong>Add app profile</strong> to add a second Quickbase app connection, or <strong>Remove app profile</strong> to delete the one you're currently viewing.</Step>
                 <Step n={8}><strong>Profile label</strong> — A name for this connection (e.g. "Claims app", "HR data").</Step>
                 <Step n={9}><strong>Live mode for this app</strong> — When enabled, reports using this app's data will automatically refresh when opened in view mode. Warning: this makes reports take significantly longer to load and should only be used when real-time data is essential.</Step>
                 <Step n={10}><strong>Your Quickbase website address</strong> — The URL you use to log in to Quickbase, e.g. <em>yourcompany.quickbase.com</em>.</Step>
@@ -453,21 +458,21 @@ export function HelpPage() {
                 <Step n={12}><strong>App token</strong> (optional) — Only required if your Quickbase admin has set up app-level tokens. Leave blank unless instructed.</Step>
                 <Step n={13}>Click <strong>Load my apps</strong> to fetch all apps in your Quickbase account, then select the app you want to connect from the dropdown.</Step>
                 <Step n={14}>Click <strong>Connect and load tables</strong>. The platform reads your Quickbase table list and verifies the connection.</Step>
-                <Step n={15}>If the connection succeeds, an <strong>Auto-configure settings</strong> button appears. Click it to automatically map your Quickbase tables to sensible default settings.</Step>
+                <Step n={15}>If the connection succeeds, an <strong>Auto-configure settings</strong> button appears. Click it to automatically find the platform's own internal storage tables inside your Quickbase app (the tables it uses to save report/dashboard definitions). This does <strong>not</strong> select which of your data tables sync in Step 3 below — that's a separate, manual choice.</Step>
 
                 <Sub>Step 3 — Data Refresh</Sub>
                 <p style={{ fontSize: "0.95rem", lineHeight: 1.6 }}>This step controls which Quickbase tables are synced to the PostgreSQL database and how often. Reports and dashboards always read from the database — Quickbase is never queried live when viewing content.</p>
-                <Step n={16}><strong>Enable scheduled refresh</strong> — Toggle on to allow automatic data refresh on a recurring schedule.</Step>
+                <Step n={16}><strong>Enable scheduled refresh</strong> — This is a dropdown, not a checkbox. Choose <em>Enabled</em> to allow automatic data refresh on a recurring schedule, or <em>Disabled</em> to turn it off.</Step>
                 <Step n={17}><strong>Cadence</strong> — How often to refresh: <em>Nightly / daily</em>, <em>Weekly</em>, or <em>Monthly</em>.</Step>
                 <Step n={18}><strong>Time</strong> — The time of day to run the scheduled refresh (24-hour clock).</Step>
                 <Step n={19}><strong>Day of week</strong> (weekly cadence only) — Which day of the week to run.</Step>
                 <Step n={20}><strong>Day of month</strong> (monthly cadence only) — Which day of the month to run (1–31).</Step>
                 <Step n={21}><strong>Timezone</strong> — The timezone for the scheduled time.</Step>
                 <Step n={22}><strong>Tables to sync to PostgreSQL</strong> — Check the box next to each Quickbase table you want to keep up to date. Only checked tables are pulled on each refresh. (You must click "Connect and load tables" in Step 2 first to see your tables here.)</Step>
-                <Step n={23}><strong>Quickbase saved report number</strong> (per table) — The number of the saved report in Quickbase that determines which rows and fields to pull. Find it in Quickbase by opening the table, going to Reports, and looking at the report's URL. <em>Leave this blank to sync all records and all fields from the table automatically.</em></Step>
+                <Step n={23}><strong>Quickbase saved report number</strong> (per table) — The number of the saved report in Quickbase that determines which rows and fields to pull. Click the <strong>Open in QB</strong> link next to this field to jump straight to that table in Quickbase and find the number yourself. <em>Leave this blank to sync all records and all fields from the table automatically.</em></Step>
                 <Step n={24}><strong>Key field</strong> (per table) — The field that uniquely identifies each record in this table (like an ID number). This is used to relate tables to each other in the database when joining data across reports. If your table fields are loaded, a dropdown appears — otherwise type the field ID number.</Step>
                 <Step n={25}>Click <strong>Refresh all now</strong> to immediately pull data from all selected Quickbase tables. You can also use the <strong>Refresh all</strong> button in the topbar from any page.</Step>
-                <Step n={26}>Click <strong>Save all settings</strong> to persist the refresh schedule and table selections.</Step>
+                <Step n={26}>Click <strong>Save all settings</strong> to persist the refresh schedule and table selections (there's also a <strong>Load all settings</strong> button next to it, which discards unsaved changes and reloads this step from the server — the same thing the global <strong>↺ Reload settings from server</strong> button at the bottom does for every step at once).</Step>
 
                 <Sub>Step 4 — Email Reports</Sub>
                 <p style={{ fontSize: "0.95rem", lineHeight: 1.6 }}>This step shows the same scheduled email list as the <strong>Scheduled Reports</strong> page in the sidebar. From here you can create, edit, pause, and delete automated email deliveries of reports and dashboards. Requires SendGrid to be configured on the server (contact your administrator for the API key setup).</p>
@@ -493,47 +498,46 @@ export function HelpPage() {
               <SectionHeading title="Common Problems & Fixes" subtitle="What to check first when something looks wrong" />
               <div className="stack-compact">
                 <Sub>Account locked — "Your account is temporarily locked"</Sub>
-                <Step n={1}>Your account locks for <strong>15 minutes</strong> after 5 consecutive failed sign-in attempts. The sign-in screen will show how many minutes remain.</Step>
-                <Step n={2}>Wait 15 minutes, then try again with the correct password.</Step>
-                <Step n={3}>If you need access sooner, ask your administrator to go to <strong>Users</strong>, find your account, and click <strong>Reset pwd</strong> — this also clears the lockout.</Step>
+                <Step n={1}>Your account locks for <strong>5 minutes</strong> after 10 consecutive failed sign-in attempts. The sign-in screen will show how many minutes remain.</Step>
+                <Step n={2}>Wait 5 minutes, then try again with the correct password. There is no way to unlock it sooner — an administrator cannot clear the lockout for you either, so waiting is the only option.</Step>
 
                 <Sub>Can't sign in — "Invalid email or password"</Sub>
-                <Step n={4}>Double-check your email address spelling and that Caps Lock is off.</Step>
-                <Step n={5}>Passwords are case-sensitive. Use the <strong>👁 Show password</strong> button to verify what you are typing.</Step>
-                <Step n={6}>If you forgot your password, click <strong>Forgot password?</strong> on the sign-in screen, or ask your administrator to send a <strong>Reset pwd</strong> email from the Users page.</Step>
+                <Step n={3}>Double-check your email address spelling and that Caps Lock is off.</Step>
+                <Step n={4}>Passwords are case-sensitive. Use the <strong>👁 Show password</strong> button to verify what you are typing.</Step>
+                <Step n={5}>There is no "Forgot password?" link on the sign-in screen. If you forgot your password, ask your administrator to click <strong>Reset pwd</strong> next to your account on the Users page — you'll get an email with a reset link that expires in 1 hour.</Step>
 
                 <Sub>2FA code not working</Sub>
-                <Step n={7}>Make sure your phone's time is synchronized (Settings → General → Date &amp; Time → Set Automatically on iPhone).</Step>
-                <Step n={8}>Use the code that is currently displayed — if it is about to expire (the bar is almost empty), wait for the next one.</Step>
-                <Step n={9}>If you lost access to Microsoft Authenticator, contact your administrator to reset your 2FA setup from the Users page.</Step>
+                <Step n={6}>Make sure your phone's time is synchronized (Settings → General → Date &amp; Time → Set Automatically on iPhone).</Step>
+                <Step n={7}>Use the code that is currently displayed — if it is about to expire (the bar is almost empty), wait for the next one.</Step>
+                <Step n={8}>If you lost access to Microsoft Authenticator, there is currently no self-service or admin-panel way to reset 2FA for your account — contact your technical administrator directly, as this needs to be fixed on the server.</Step>
 
                 <Sub>Invitation link expired or invalid</Sub>
-                <Step n={10}>Invitation links expire after 7 days. Ask your administrator to go to <strong>Users</strong> → <strong>Pending invitations</strong> and click <strong>↺ Resend</strong> next to your email.</Step>
+                <Step n={9}>Invitation links expire after 7 days. Ask your administrator to go to <strong>Users</strong> → <strong>Pending invitations</strong> and click <strong>↺ Resend</strong> next to your email.</Step>
 
                 <Sub>Report shows no data or wrong data</Sub>
-                <Step n={11}>Check the data source was imported successfully in <strong>Data Sources</strong>. Look for a row count greater than zero.</Step>
-                <Step n={12}>Check that the report's filters are not too restrictive — remove all filters and see if data appears.</Step>
-                <Step n={13}>If the source is Quickbase, click <strong>Refresh all</strong> in the topbar to pull the latest data from Quickbase into the database.</Step>
-                <Step n={14}>Go to <strong>Settings → Data Refresh</strong> and confirm the correct tables are checked and that the report number (if set) and key field are correct.</Step>
+                <Step n={10}>Check the data source was imported successfully in <strong>Data Sources</strong>. Look for a row count greater than zero.</Step>
+                <Step n={11}>Check that the report's filters are not too restrictive — remove all filters and see if data appears.</Step>
+                <Step n={12}>If the source is Quickbase, click <strong>Refresh all</strong> in the topbar to pull the latest data from Quickbase into the database.</Step>
+                <Step n={13}>Go to <strong>Settings → Data Refresh</strong> and confirm the correct tables are checked and that the report number (if set) and key field are correct.</Step>
 
                 <Sub>Page looks broken or missing content</Sub>
-                <Step n={15}>Try a hard refresh: hold <strong>Cmd (Mac) / Ctrl (Windows)</strong> and press <strong>Shift + R</strong>.</Step>
-                <Step n={16}>Try opening the platform in an Incognito/Private window to rule out browser cache issues.</Step>
-                <Step n={17}>If the problem persists, contact your administrator with a screenshot of any error messages and the URL you were on.</Step>
+                <Step n={14}>Try a hard refresh: hold <strong>Cmd (Mac) / Ctrl (Windows)</strong> and press <strong>Shift + R</strong>.</Step>
+                <Step n={15}>Try opening the platform in an Incognito/Private window to rule out browser cache issues.</Step>
+                <Step n={16}>If the problem persists, contact your administrator with a screenshot of any error messages and the URL you were on.</Step>
 
                 <Sub>Excel import failed</Sub>
-                <Step n={18}>Only <strong>.xlsx files</strong> are supported — not .xls or .csv. Re-save your file as .xlsx in Excel.</Step>
-                <Step n={19}>Files over <strong>25 MB</strong> may fail. Try splitting large files or removing unused sheets.</Step>
-                <Step n={20}>Make sure the <strong>first row</strong> of each sheet contains column headers.</Step>
-                <Step n={21}>Make sure you selected the correct workbook in the picker (either an existing workbook to update, or "+ Add new workbook" to create one).</Step>
+                <Step n={17}>Only <strong>.xlsx files</strong> are supported — not .xls or .csv. Re-save your file as .xlsx in Excel.</Step>
+                <Step n={18}>Files over <strong>25 MB</strong> are rejected automatically. Try splitting large files or removing unused sheets.</Step>
+                <Step n={19}>Column headers should ideally be in the <strong>first row</strong> of each sheet. The importer can sometimes find headers a little lower (for example, below a title row), but the first row is the safest bet if the import isn't picking up your columns correctly.</Step>
+                <Step n={20}>Make sure you selected the correct workbook in the picker (either an existing workbook to update, or "+ Add new workbook" to create one).</Step>
 
                 <Sub>Can't see a report or dashboard someone shared</Sub>
-                <Step n={22}>Ask the person who created it to check its <strong>Sharing</strong> settings in the Builder. It may be set to <em>Personal</em> (only visible to the creator).</Step>
-                <Step n={23}>If it is shared with specific users, ask them to add your email or role to the shared list.</Step>
+                <Step n={21}>Ask the person who created it to check its <strong>Sharing</strong> settings in the Builder. It may be set to <em>Personal</em> (only visible to the creator).</Step>
+                <Step n={22}>If it is shared with specific users, ask them to add your email or role to the shared list.</Step>
 
                 <Sub>Settings not saving between visits</Sub>
-                <Step n={24}>Always click <strong>✓ Save settings to server</strong> at the bottom of the Settings page after making changes. Settings are only saved when you explicitly click this button.</Step>
-                <Step n={25}>If settings still revert, verify the database is connected in <strong>Settings → Storage &amp; Sharing</strong>. A disconnected database means settings fall back to defaults on restart.</Step>
+                <Step n={23}>Always click <strong>✓ Save settings to server</strong> at the bottom of the Settings page after making changes. Settings are only saved when you explicitly click this button.</Step>
+                <Step n={24}>If settings still revert, verify the database is connected in <strong>Settings → Storage &amp; Sharing</strong>. A disconnected database means settings fall back to defaults on restart.</Step>
 
                 <Tip>When reporting an issue to your administrator, always include: the URL you were on, what you were trying to do, and any error message shown on screen or in the browser console (F12 → Console tab).</Tip>
               </div>

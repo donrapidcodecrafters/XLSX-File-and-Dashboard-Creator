@@ -33,6 +33,7 @@ import { StudioPage } from "./components/StudioPage";
 import { UserManagementPage } from "./components/UserManagementPage";
 import { UserSettingsModal } from "./components/UserSettingsModal";
 import { ViewerPage } from "./components/ViewerPage";
+import { WorkbookUploadModal } from "./components/WorkbookUploadModal";
 import { fetchCatalog, fetchObject, fetchTables, runReport, runReportPage } from "./lib/api";
 import {
   applyLaunchScopeToDocument,
@@ -963,6 +964,7 @@ export function App() {
   const [isDark, setIsDark] = useDarkMode();
   const [currentUser, setCurrentUser] = useState<PlatformUser | null>(null);
   const [showUserSettings, setShowUserSettings] = useState(false);
+  const [showQuickImport, setShowQuickImport] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
@@ -1611,6 +1613,9 @@ export function App() {
                 <button className="ghost-button topbar-action btn-system" onClick={() => navigate("/settings")}>Settings</button>
               </>
             ) : null}
+            {hasPerm("data.import") ? (
+              <button className="ghost-button topbar-action btn-create" onClick={() => setShowQuickImport(true)} title="Import or update an Excel data source without leaving this page">Import data</button>
+            ) : null}
           </div>
           {/* User dropdown — must be outside topbar-meta (overflow:hidden) so dropdown isn't clipped */}
           <div className="topbar-user-menu" ref={userMenuRef}>
@@ -1687,6 +1692,16 @@ export function App() {
           onUserChange={(updates) => setCurrentUser((u) => u ? { ...u, ...updates } : u)}
         />
       ) : null}
+
+      {/* Quick import — lets users update data from anywhere without going into Building */}
+      <WorkbookUploadModal
+        open={showQuickImport}
+        onClose={() => setShowQuickImport(false)}
+        onSuccess={() => {
+          setShowQuickImport(false);
+          navigate(buildHostedRoute("/data"));
+        }}
+      />
 
       <div className={`main-layout ${hosted.embed || studioRoute || readerRoute || viewerRoute || homeRoute || helpRoute ? "embed-layout" : ""} ${readerRoute ? "reader-layout" : ""}`}>
 
