@@ -410,13 +410,14 @@ export async function registerStudioRoutes(app: FastifyInstance) {
 
   app.post("/api/studio/sources/xlsx/recreate", async (request, reply) => {
     try {
-      const query = (request.query as { sourceId?: string; sourceName?: string; dataSheets?: string; keyFieldIds?: string } | undefined) || {};
+      const query = (request.query as { sourceId?: string; sourceName?: string; dataSheets?: string; keyFieldIds?: string; allowDuplicates?: string } | undefined) || {};
       let filename = "";
       let workbookBuffer: Buffer | null = null;
       let sourceId = String(query.sourceId || "").trim();
       let sourceName = String(query.sourceName || "").trim();
       const dataSheets = String(query.dataSheets || "").split(",").map((s) => s.trim()).filter(Boolean);
       let keyFieldIds = String(query.keyFieldIds || "").split(",").map((s) => s.trim()).filter(Boolean);
+      let allowDuplicates = query.allowDuplicates === "1" || query.allowDuplicates === "true";
       if (request.isMultipart()) {
         const file = await request.file();
         if (file) {
@@ -424,7 +425,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
           workbookBuffer = await file.toBuffer();
         }
       } else {
-        const body = (request.body as { filename?: string; base64?: string; sourceId?: string; sourceName?: string; keyFieldIds?: string[] } | undefined) || {};
+        const body = (request.body as { filename?: string; base64?: string; sourceId?: string; sourceName?: string; keyFieldIds?: string[]; allowDuplicates?: boolean } | undefined) || {};
         if (body.filename && body.base64) {
           filename = body.filename;
           workbookBuffer = Buffer.from(body.base64, "base64");
@@ -432,6 +433,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
         sourceId = sourceId || String(body.sourceId || "").trim();
         sourceName = sourceName || String(body.sourceName || "").trim();
         keyFieldIds = keyFieldIds.length ? keyFieldIds : (Array.isArray(body.keyFieldIds) ? body.keyFieldIds.filter(Boolean) : []);
+        allowDuplicates = allowDuplicates || Boolean(body.allowDuplicates);
       }
       if (!filename || !workbookBuffer) {
         reply.code(400);
@@ -443,7 +445,8 @@ export async function registerStudioRoutes(app: FastifyInstance) {
         sourceId,
         sourceName,
         dataSheets: dataSheets.length > 0 ? dataSheets : undefined,
-        keyFieldIds: keyFieldIds.length > 0 ? keyFieldIds : undefined
+        keyFieldIds: keyFieldIds.length > 0 ? keyFieldIds : undefined,
+        allowDuplicates
       }));
       invalidateSourceCaches(...result.sources.map((s) => s.sourceId));
       invalidateSourceAttributeCache();
@@ -464,13 +467,14 @@ export async function registerStudioRoutes(app: FastifyInstance) {
 
   app.post("/api/studio/sources/xlsx", async (request, reply) => {
     try {
-      const query = (request.query as { sourceId?: string; sourceName?: string; dataSheets?: string; keyFieldIds?: string } | undefined) || {};
+      const query = (request.query as { sourceId?: string; sourceName?: string; dataSheets?: string; keyFieldIds?: string; allowDuplicates?: string } | undefined) || {};
       let filename = "";
       let workbookBuffer: Buffer | null = null;
       let sourceId = String(query.sourceId || "").trim();
       let sourceName = String(query.sourceName || "").trim();
       const dataSheets = String(query.dataSheets || "").split(",").map((s) => s.trim()).filter(Boolean);
       let keyFieldIds = String(query.keyFieldIds || "").split(",").map((s) => s.trim()).filter(Boolean);
+      let allowDuplicates = query.allowDuplicates === "1" || query.allowDuplicates === "true";
       if (request.isMultipart()) {
         const file = await request.file();
         if (file) {
@@ -480,7 +484,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
           workbookBuffer = await file.toBuffer();
         }
       } else {
-        const body = (request.body as { filename?: string; base64?: string; sourceId?: string; sourceName?: string; keyFieldIds?: string[] } | undefined) || {};
+        const body = (request.body as { filename?: string; base64?: string; sourceId?: string; sourceName?: string; keyFieldIds?: string[]; allowDuplicates?: boolean } | undefined) || {};
         if (body.filename && body.base64) {
           filename = body.filename;
           workbookBuffer = Buffer.from(body.base64, "base64");
@@ -488,6 +492,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
         sourceId = sourceId || String(body.sourceId || "").trim();
         sourceName = sourceName || String(body.sourceName || "").trim();
         keyFieldIds = keyFieldIds.length ? keyFieldIds : (Array.isArray(body.keyFieldIds) ? body.keyFieldIds.filter(Boolean) : []);
+        allowDuplicates = allowDuplicates || Boolean(body.allowDuplicates);
       }
       if (!filename || !workbookBuffer) {
         reply.code(400);
@@ -502,7 +507,8 @@ export async function registerStudioRoutes(app: FastifyInstance) {
           sourceId,
           sourceName,
           dataSheets: dataSheets.length > 0 ? dataSheets : undefined,
-          keyFieldIds: keyFieldIds.length > 0 ? keyFieldIds : undefined
+          keyFieldIds: keyFieldIds.length > 0 ? keyFieldIds : undefined,
+          allowDuplicates
         });
       });
       invalidateSourceCaches(...ingested.sources.map((s) => s.sourceId));

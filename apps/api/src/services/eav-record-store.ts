@@ -20,6 +20,12 @@ interface ReplaceSourceRecordsInput {
   keyFieldId?: string;
   /** One or more field ids whose combined value uniquely identifies a row across imports. */
   keyFieldIds?: string[];
+  /**
+   * This import's key field(s) don't actually produce unique values (e.g. a claim
+   * number that repeats across payers) — skip key-matching for THIS import and do a
+   * plain full replace instead, while still remembering keyFieldIds for next time.
+   */
+  allowDuplicates?: boolean;
 }
 
 interface SourceRecordReplaceBaseInput {
@@ -32,6 +38,7 @@ interface SourceRecordReplaceBaseInput {
   quickbaseReportId?: string;
   keyFieldId?: string;
   keyFieldIds?: string[];
+  allowDuplicates?: boolean;
 }
 
 interface ReplaceSourceRecordsResult {
@@ -296,7 +303,7 @@ async function upsertSourceRecordBatch(
   );
   for (const id of externalIds) {
     if (seenExternalIds.has(id)) {
-      throw new Error("This file has more than one row with the same key field value(s) — key fields must uniquely identify each row.");
+      throw new Error("This file has more than one row with the same key field value(s). Pick additional key field(s) to make the combination unique, or turn on \"Allow duplicates\" to replace all data in this table instead of matching by key.");
     }
     seenExternalIds.add(id);
   }
@@ -345,12 +352,17 @@ export async function replaceSourceRecords(input: ReplaceSourceRecordsInput): Pr
   const now = new Date().toISOString();
   const fields = input.fields || [];
   const keyFieldIds = normalizeKeyFieldIds(input.keyFieldIds);
+  // allowDuplicates: the chosen key field(s) don't actually produce unique values for
+  // this file — skip matching and fully replace, but keyFieldIds is still persisted
+  // above via upsertSourceEntity so the next import (hopefully without duplicates,
+  // or with allowDuplicates checked again) can still match by it.
+  const useUpsert = keyFieldIds.length > 0 && !input.allowDuplicates;
 
   let upsertCounts: { added: number; updated: number; removed: number } | undefined;
   await withPgTransaction(async (client) => {
     const persistedEntityId = await upsertSourceEntity(client, input, fields, input.rows.length, now, entityId);
     await replaceSourceAttributes(client, persistedEntityId, fields, now);
-    if (keyFieldIds.length) {
+    if (useUpsert) {
       const seen = new Set<string>();
       let added = 0;
       let updated = 0;
@@ -407,6 +419,7 @@ export async function replaceSourceRecordsFromBatches(
   const entityId = compactId("entity", sourceId);
   const now = new Date().toISOString();
   const keyFieldIds = normalizeKeyFieldIds(input.keyFieldIds);
+  const useUpsert = keyFieldIds.length > 0 && !input.allowDuplicates;
   let rowCount = 0;
   let fieldCount = 0;
   let upsertCounts: { added: number; updated: number; removed: number } | undefined;
@@ -414,8 +427,8 @@ export async function replaceSourceRecordsFromBatches(
   await withPgTransaction(async (client) => {
     const persistedEntityId = await upsertSourceEntity(client, input, [], 0, now, entityId);
     await replaceSourceAttributes(client, persistedEntityId, [], now);
-    // Non-key sources still use the fast delete-then-reinsert path, unchanged.
-    if (!keyFieldIds.length) {
+    // Non-key (or allowDuplicates) sources still use the fast delete-then-reinsert path, unchanged.
+    if (!useUpsert) {
       await client.query("DELETE FROM app_records WHERE entity_id = $1", [persistedEntityId]);
     }
     const seenExternalIds = new Set<string>();
@@ -425,7 +438,7 @@ export async function replaceSourceRecordsFromBatches(
       appendRows: async (rows: DataRow[]) => {
         const batch = rows.filter(Boolean);
         if (!batch.length) return;
-        if (keyFieldIds.length) {
+        if (useUpsert) {
           const result = await upsertSourceRecordBatch(client, persistedEntityId, sourceId, batch, keyFieldIds, now, seenExternalIds);
           added += result.added;
           updated += result.updated;
@@ -439,7 +452,7 @@ export async function replaceSourceRecordsFromBatches(
     const fields = completed.fields || [];
     rowCount = completed.rowCount;
     fieldCount = fields.length;
-    if (keyFieldIds.length) {
+    if (useUpsert) {
       const missingKeyFields = keyFieldIds.filter((id) => !fields.some((field) => field.id === id));
       if (missingKeyFields.length) {
         throw new Error(`Key field(s) not found in this file's columns: ${missingKeyFields.join(", ")}.`);

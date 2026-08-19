@@ -731,12 +731,13 @@ export function clearSourceData(sourceId: string) {
   });
 }
 
-export async function importStudioWorkbookSource(file: File, options: { sourceId?: string; sourceName?: string; dataSheets?: string[]; keyFieldIds?: string[] } = {}) {
+export async function importStudioWorkbookSource(file: File, options: { sourceId?: string; sourceName?: string; dataSheets?: string[]; keyFieldIds?: string[]; allowDuplicates?: boolean } = {}) {
   const params = new URLSearchParams();
   if (options.sourceId) params.set("sourceId", options.sourceId);
   if (options.sourceName) params.set("sourceName", options.sourceName);
   if (options.dataSheets && options.dataSheets.length > 0) params.set("dataSheets", options.dataSheets.join(","));
   if (options.keyFieldIds && options.keyFieldIds.length > 0) params.set("keyFieldIds", options.keyFieldIds.join(","));
+  if (options.allowDuplicates) params.set("allowDuplicates", "1");
   const formData = new FormData();
   formData.append("file", file, file.name);
   const response = await fetch(API_BASE + `/api/studio/sources/xlsx${params.toString() ? `?${params.toString()}` : ""}`, {
@@ -754,13 +755,14 @@ export async function importStudioWorkbookSource(file: File, options: { sourceId
 
 export async function recreateWorkbookFromDataSource(
   file: File,
-  options: { sourceId?: string; sourceName?: string; dataSheets?: string[]; keyFieldIds?: string[] } = {}
+  options: { sourceId?: string; sourceName?: string; dataSheets?: string[]; keyFieldIds?: string[]; allowDuplicates?: boolean } = {}
 ): Promise<StudioWorkbookSourceImportResult & { reports: unknown[]; dashboard: unknown | null }> {
   const params = new URLSearchParams();
   if (options.sourceId) params.set("sourceId", options.sourceId);
   if (options.sourceName) params.set("sourceName", options.sourceName);
   if (options.dataSheets && options.dataSheets.length > 0) params.set("dataSheets", options.dataSheets.join(","));
   if (options.keyFieldIds && options.keyFieldIds.length > 0) params.set("keyFieldIds", options.keyFieldIds.join(","));
+  if (options.allowDuplicates) params.set("allowDuplicates", "1");
   const formData = new FormData();
   formData.append("file", file, file.name);
   const response = await fetch(

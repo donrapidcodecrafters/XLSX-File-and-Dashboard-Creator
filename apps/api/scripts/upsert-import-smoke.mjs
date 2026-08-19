@@ -10,9 +10,9 @@ const { ensureEnterpriseSchema } = await import("../dist/db/schema.js");
 const { replaceSourceRecordsFromBatches, loadSourceRows, getSourceRecordSummary } = await import("../dist/services/eav-record-store.js");
 const { pgQuery } = await import("../dist/db/postgres.js");
 
-async function ingest(sourceId, rows, keyFieldIds) {
+async function ingest(sourceId, rows, keyFieldIds, allowDuplicates) {
   return replaceSourceRecordsFromBatches(
-    { sourceId, sourceName: "Test Source", sourceType: "xlsx", keyFieldIds },
+    { sourceId, sourceName: "Test Source", sourceType: "xlsx", keyFieldIds, allowDuplicates },
     async (writer) => {
       await writer.appendRows(rows);
       return {
@@ -114,6 +114,28 @@ async function main() {
   assert.ok(missingFieldError, "expected missing key field import to throw");
   assert.match(String(missingFieldError.message), /not found in this file's columns/i, "expected missing-key-field error message");
   console.log("ok   missing key field column rejected");
+
+  // --- Test 4b: allowDuplicates bypasses key-matching (full replace) even with
+  // genuinely duplicate key values, and keyFieldIds is still remembered for next time ---
+  const dupAllowedSourceId = "test:dup-allowed-widgets";
+  const withDupsResult = await ingest(dupAllowedSourceId, [
+    { sku: "D-1", qty: 1 },
+    { sku: "D-1", qty: 2 }
+  ], ["sku"], true);
+  assert.equal(withDupsResult.upsert, undefined, "allowDuplicates import should not report upsert counts (full replace path)");
+  const dupRows = await rowIdsBySku(dupAllowedSourceId);
+  assert.equal(dupRows.length, 2, "allowDuplicates should store both duplicate-key rows");
+  const dupSummary = await getSourceRecordSummary([dupAllowedSourceId]);
+  assert.deepEqual(dupSummary?.keyFieldIds, ["sku"], "keyFieldIds should still be remembered even when allowDuplicates was used");
+  // Re-import without allowDuplicates against the same still-duplicate data should now reject
+  let stillDupError = null;
+  try {
+    await ingest(dupAllowedSourceId, [{ sku: "D-1", qty: 1 }, { sku: "D-1", qty: 2 }], ["sku"], false);
+  } catch (error) {
+    stillDupError = error;
+  }
+  assert.ok(stillDupError, "expected duplicate key rejection when allowDuplicates is off");
+  console.log("ok   allowDuplicates bypasses key-matching, keeps keyFieldIds remembered");
 
   // --- Test 5: non-keyed sources still do full delete+reinsert (regression check) ---
   const plainSourceId = "test:plain-widgets";

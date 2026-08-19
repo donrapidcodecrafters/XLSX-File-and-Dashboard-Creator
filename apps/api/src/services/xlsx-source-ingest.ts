@@ -15,6 +15,9 @@ interface IngestXlsxSourceOptions {
   dataSheets?: string[];
   /** Field id(s) that uniquely identify a row — enables upsert-by-key instead of full replace. */
   keyFieldIds?: string[];
+  /** The chosen key field(s) don't actually produce unique values for this file — skip
+   *  matching and fully replace, but keyFieldIds is still remembered for next time. */
+  allowDuplicates?: boolean;
 }
 
 interface IngestXlsxSourceStreamOptions extends Omit<IngestXlsxSourceOptions, "buffer"> {
@@ -323,6 +326,7 @@ export async function ingestXlsxWorkbookSource(options: IngestXlsxSourceOptions)
       fields: table.fields,
       rows,
       keyFieldIds: options.keyFieldIds,
+      allowDuplicates: options.allowDuplicates,
       metadata: {
         workbookName,
         filename: options.filename,
@@ -409,6 +413,7 @@ export async function ingestXlsxWorkbookSourceStream(options: IngestXlsxSourceSt
       sourceName,
       sourceType: "xlsx",
       keyFieldIds: options.keyFieldIds,
+      allowDuplicates: options.allowDuplicates,
       metadata: {
         workbookName,
         filename: options.filename,

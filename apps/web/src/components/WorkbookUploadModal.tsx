@@ -116,6 +116,11 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
   // multi-sheet mode tracks one selection per sheet.
   const [keyFieldIds, setKeyFieldIds] = useState<string[]>([]);
   const [sheetKeyFieldMap, setSheetKeyFieldMap] = useState<Record<string, string[]>>({});
+  // When the chosen key field(s) don't actually produce unique values in this file
+  // (e.g. a claim number that repeats across payers) — skip key-matching for this
+  // import and just replace all data, instead of hard-blocking on the duplicate.
+  const [allowDuplicates, setAllowDuplicates] = useState(false);
+  const [sheetAllowDuplicates, setSheetAllowDuplicates] = useState<Record<string, boolean>>({});
   const [diffAcknowledged, setDiffAcknowledged] = useState(false);
   // Cache of an existing source's current columns + saved key field(s), fetched
   // on demand so the modal can diff the new file's headers and pre-fill keys.
@@ -152,6 +157,7 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
   // back to empty for "new" or before the fetch lands).
   useEffect(() => {
     setDiffAcknowledged(false);
+    setAllowDuplicates(false);
     if (!selectedSourceId || selectedSourceId === "new") { setKeyFieldIds([]); return; }
     ensureExistingFields(selectedSourceId);
     setKeyFieldIds(existingFieldsCache[selectedSourceId]?.keyFieldIds || []);
@@ -213,6 +219,7 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
     setDropdownOpen(false); setDataSheets([]);
     setSheetSourceMap({}); setMultiSheetBaseName(""); setSheetTabLabels({});
     setKeyFieldIds([]); setSheetKeyFieldMap({}); setDiffAcknowledged(false); setExistingFieldsCache({});
+    setAllowDuplicates(false); setSheetAllowDuplicates({});
   }
 
   function handleClose() {
@@ -252,7 +259,7 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
         if (multiSheetMode) {
           // Build import groups: each unique target source gets its own API call.
           // Multiple sheets can share an existing sourceId (grouped); new sources are always one per tab.
-          const groups: { sheets: string[]; sourceId?: string; sourceName?: string; keyFieldIds?: string[] }[] = [];
+          const groups: { sheets: string[]; sourceId?: string; sourceName?: string; keyFieldIds?: string[]; allowDuplicates?: boolean }[] = [];
           const groupIndex = new Map<string, number>(); // existing sourceId → groups index
           const base = multiSheetBaseName.trim();
           for (const sheetName of dataSheets) {
@@ -263,21 +270,21 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
                 groups[groupIndex.get(sid)!].sheets.push(sheetName);
               } else {
                 groupIndex.set(sid, groups.length);
-                groups.push({ sheets: [sheetName], sourceId: sid, sourceName: undefined, keyFieldIds: sheetKeyFieldMap[sheetName] });
+                groups.push({ sheets: [sheetName], sourceId: sid, sourceName: undefined, keyFieldIds: sheetKeyFieldMap[sheetName], allowDuplicates: sheetAllowDuplicates[sheetName] });
               }
             } else {
               // Creating a new source — one group per tab, name = "BaseName - TabLabel"
               const tabLabel = (sheetTabLabels[sheetName] || sheetName).trim();
               const sourceName = base ? `${base} - ${tabLabel}` : tabLabel;
-              groups.push({ sheets: [sheetName], sourceId: undefined, sourceName, keyFieldIds: sheetKeyFieldMap[sheetName] });
+              groups.push({ sheets: [sheetName], sourceId: undefined, sourceName, keyFieldIds: sheetKeyFieldMap[sheetName], allowDuplicates: sheetAllowDuplicates[sheetName] });
             }
           }
           // Import data tabs first (datasource creation) — all tabs can run in parallel
           // with each other since they write to separate Postgres tables.
           // Only start workbook analysis for the review AFTER all datasources are saved,
           // so the two heavy operations don't compete for memory at the same time.
-          const sourceResults = await Promise.all(groups.map(({ sourceId, sourceName, sheets, keyFieldIds: groupKeyFieldIds }) =>
-            importStudioWorkbookSource(file, { sourceId, sourceName, dataSheets: sheets, keyFieldIds: groupKeyFieldIds })
+          const sourceResults = await Promise.all(groups.map(({ sourceId, sourceName, sheets, keyFieldIds: groupKeyFieldIds, allowDuplicates: groupAllowDuplicates }) =>
+            importStudioWorkbookSource(file, { sourceId, sourceName, dataSheets: sheets, keyFieldIds: groupKeyFieldIds, allowDuplicates: groupAllowDuplicates })
           ));
           const workbookResult = recreate
             ? await importStudioWorkbook(file, { maxRowsPerSheet: 500 })
@@ -310,7 +317,7 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
           const sourceNameArg = isNew ? (newWorkbookName.trim() || file.name.replace(/\.xlsx$/i, "").trim()) : undefined;
           const multiSheet = (peek?.sheets?.length ?? 0) > 1;
           const dataSheetsArg = multiSheet && dataSheets.length > 0 ? dataSheets : undefined;
-          const opts = { sourceId: sourceIdArg, sourceName: sourceNameArg, dataSheets: dataSheetsArg, keyFieldIds: keyFieldIds.length > 0 ? keyFieldIds : undefined };
+          const opts = { sourceId: sourceIdArg, sourceName: sourceNameArg, dataSheets: dataSheetsArg, keyFieldIds: keyFieldIds.length > 0 ? keyFieldIds : undefined, allowDuplicates };
 
           if (recreate) {
             const sourceResult = await importStudioWorkbookSource(file, opts);
@@ -878,6 +885,18 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
                                   );
                                 })}
                               </div>
+                              {(sheetKeyFieldMap[sheet.name] || []).length > 0 && (
+                                <label style={{ paddingLeft: 52, display: "flex", alignItems: "flex-start", gap: 6, cursor: "pointer" }}>
+                                  <input
+                                    type="checkbox" checked={Boolean(sheetAllowDuplicates[sheet.name])} disabled={importing}
+                                    onChange={(e) => setSheetAllowDuplicates((prev) => ({ ...prev, [sheet.name]: e.target.checked }))}
+                                    style={{ marginTop: 2 }}
+                                  />
+                                  <span style={{ fontSize: 11, color: T.textSecondary, lineHeight: 1.5 }}>
+                                    <strong>Allow duplicates</strong> — these field(s) aren't actually unique per row here; replace all data instead of matching by key.
+                                  </span>
+                                </label>
+                              )}
                             </div>
                           )}
                         </div>
@@ -942,6 +961,20 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
                       );
                     })}
                   </div>
+                  {keyFieldIds.length > 0 && (
+                    <label style={{ display: "flex", alignItems: "flex-start", gap: 8, marginTop: 2, cursor: "pointer" }}>
+                      <input
+                        type="checkbox" checked={allowDuplicates} disabled={importing}
+                        onChange={(e) => setAllowDuplicates(e.target.checked)}
+                        style={{ marginTop: 2 }}
+                      />
+                      <span style={{ fontSize: 12, color: T.textSecondary, lineHeight: 1.5 }}>
+                        <strong>Allow duplicates</strong> — the field(s) above don't actually give a unique value for every
+                        row in this file (e.g. a claim number that repeats). Instead of matching rows by key, this import
+                        will just replace all data in the table. Your key field choice is still remembered for next time.
+                      </span>
+                    </label>
+                  )}
                 </div>
               )}
 
