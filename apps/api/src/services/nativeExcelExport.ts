@@ -46,6 +46,7 @@ interface NativeChartSeries {
   pointColors?: string[];
   nameRef: string;
   valuesRef: string;
+  sizeRef?: string;
 }
 
 interface NativeChartSource {
@@ -63,6 +64,12 @@ interface NativeChartSource {
   categories: string[];
   categoryRef: string;
   series: NativeChartSeries[];
+  /** Secondary-axis series for combo charts (line-bar / pareto) and bubble sizing. */
+  secondarySeries?: NativeChartSeries[];
+  secondaryAxisTitle?: string;
+  secondarySeriesType?: "line" | "area" | "bar" | "column";
+  /** Denominator for gauge / radial-bar ring fill percentages. */
+  maxValue?: number;
 }
 
 interface NativeChartPlacement {
@@ -190,6 +197,8 @@ function normalizeChartType(chartType: ChartType, orientation: ChartOrientation)
   if (chartType === "pareto") return "line-bar";
   if (chartType === "treemap") return "bar";
   if (chartType === "sunburst") return "donut";
+  if (chartType === "solid-gauge") return "gauge";
+  if (chartType === "box-plot") return "bullet";
   if (chartType === "column" && orientation === "horizontal") return "bar";
   return chartType;
 }
@@ -228,10 +237,10 @@ function sortChartData(data: ChartDatum[], chartType: ChartType, sort: ChartSort
   return entries.flatMap(([, items]) => items);
 }
 
-function collapseChartData(data: ChartDatum[]) {
+function collapseChartData(data: ChartDatum[], axis: "primary" | "secondary" = "primary") {
   const grouped = new Map<string, ChartDatum>();
   data
-    .filter((datum) => (datum.axis || "primary") === "primary")
+    .filter((datum) => (datum.axis || "primary") === axis)
     .forEach((datum) => {
       const key = String(datum.rawLabel ?? datum.label ?? "");
       const current = grouped.get(key) || { label: datum.label, rawLabel: datum.rawLabel, value: 0 };
@@ -248,21 +257,21 @@ function deriveCategories(data: ChartDatum[]) {
   });
 }
 
-function deriveSeries(data: ChartDatum[]) {
-  const primary = data.filter((datum) => (datum.axis || "primary") === "primary");
-  const rawSeries = Array.from(new Set(primary.map((datum) => String(datum.rawSeries || datum.series || ""))));
+function deriveSeries(data: ChartDatum[], axis: "primary" | "secondary" = "primary") {
+  const scoped = data.filter((datum) => (datum.axis || "primary") === axis);
+  const rawSeries = Array.from(new Set(scoped.map((datum) => String(datum.rawSeries || datum.series || ""))));
   if (!rawSeries.length || (rawSeries.length === 1 && rawSeries[0] === "")) {
     return [{ rawSeries: "", label: "Values" }];
   }
   return rawSeries.map((seriesKey) => {
-    const match = primary.find((datum) => String(datum.rawSeries || datum.series || "") === seriesKey);
+    const match = scoped.find((datum) => String(datum.rawSeries || datum.series || "") === seriesKey);
     return { rawSeries: seriesKey, label: match?.series || seriesKey || "Values" };
   });
 }
 
-function valueForCategory(data: ChartDatum[], rawLabel: string, rawSeries: string) {
+function valueForCategory(data: ChartDatum[], rawLabel: string, rawSeries: string, axis: "primary" | "secondary" = "primary") {
   return data
-    .filter((datum) => (datum.axis || "primary") === "primary")
+    .filter((datum) => (datum.axis || "primary") === axis)
     .filter((datum) => String(datum.rawLabel ?? datum.label ?? "") === rawLabel)
     .filter((datum) => String(datum.rawSeries || datum.series || "") === rawSeries)
     .reduce((sum, datum) => sum + datum.value, 0);
@@ -302,6 +311,32 @@ function writeRowsSheet(sheet: any, report: ReportDefinition, table: TableDefini
     });
   });
   return startRow + result.rows.length + 2;
+}
+
+function isBigNumberChartType(chartType: ChartType) {
+  return chartType === "kpi-card" || chartType === "big-number-card";
+}
+
+// kpi-card / big-number-card aren't charts in Excel's model at all — the live
+// dashboard just shows one large number and a label, so we write that
+// directly as styled cells instead of forcing it through the chart-drawing
+// path (which would otherwise fall back to an unrelated bar-shaped chart).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function writeBigNumberBlock(sheet: any, report: ReportDefinition, result: ReportRunResult, startRow: number, startCol: number, endCol: number) {
+  const datum = result.chartData[0];
+  const value = datum ? datum.value : 0;
+  const label = (datum && datum.label) || report.view.chartTitle || report.name;
+  const palette = getPalette(report.view.chartColors);
+  const color = normalizeHexColor(colorForDatum(report, palette, 0, datum || label));
+  sheet.mergeCells(startRow, startCol, startRow + 1, endCol);
+  const valueCell = sheet.getCell(startRow, startCol);
+  valueCell.value = value;
+  valueCell.font = { bold: true, size: 28, color: { argb: `FF${color}` } };
+  sheet.mergeCells(startRow + 2, startCol, startRow + 2, endCol);
+  const labelCell = sheet.getCell(startRow + 2, startCol);
+  labelCell.value = label;
+  labelCell.font = { size: 12, color: { argb: "FF5B6B60" } };
+  return startRow + 4;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -387,8 +422,13 @@ function writeHiddenChartData(
   const normalizedType = normalizeChartType(report.view.chartType, report.view.chartOrientation);
   const sortedData = sortChartData(result.chartData, normalizedType, report.view.chartSort || "value-desc");
   const palette = getPalette(report.view.chartColors);
-  const simpleTypes = ["pie", "donut", "radial-bar", "progress-bar", "gauge", "kpi-card", "big-number-card"].includes(normalizedType);
+  const simpleTypes = [
+    "pie", "donut", "radial-bar", "progress-bar", "gauge", "kpi-card", "big-number-card",
+    "funnel", "3d-funnel", "waterfall", "bullet"
+  ].includes(normalizedType);
   const scatterLike = normalizedType === "scatter" || normalizedType === "bubble" || normalizedType === "3d-scatter";
+  const isBubble = normalizedType === "bubble";
+  const isCombo = normalizedType === "line-bar";
   const collapsed = collapseChartData(sortedData);
   const derivedSeries = deriveSeries(sortedData);
   const collapseExcessSeries = !simpleTypes && derivedSeries.length > MAX_NATIVE_CHART_SERIES;
@@ -413,7 +453,7 @@ function writeHiddenChartData(
   const headerRow = nextRow;
   const dataStartRow = headerRow + 1;
   dataSheet.getCell(headerRow, 1).value = `${report.name} category`;
-  const series = seriesDefinitions.map((definition, index) => {
+  const series: NativeChartSeries[] = seriesDefinitions.map((definition, index) => {
     const column = index + 2;
     const label = definition.label || report.view.chartTitle || report.name;
     dataSheet.getCell(headerRow, column).value = label;
@@ -445,6 +485,49 @@ function writeHiddenChartData(
       dataSheet.getCell(dataStartRow + rowIndex, seriesIndex + 2).value = item.values[rowIndex] || 0;
     });
   });
+
+  let nextCol = series.length + 2;
+
+  // Bubble size: pulled from the secondary-axis field (chartSecondaryValueFieldId),
+  // matching what the live dashboard uses to scale bubble radius — falls back to
+  // the primary value itself when no secondary field is configured, same as ChartPreview.
+  if (isBubble && series.length) {
+    const sizeCol = nextCol;
+    nextCol += 1;
+    dataSheet.getCell(headerRow, sizeCol).value = "Size";
+    categories.forEach((category, rowIndex) => {
+      const secondaryValue = valueForCategory(sortedData, category.rawLabel, series[0].rawSeries, "secondary");
+      dataSheet.getCell(dataStartRow + rowIndex, sizeCol).value = secondaryValue || series[0].values[rowIndex] || 0;
+    });
+    series[0].sizeRef = rangeRef(dataSheetName, sizeCol, dataStartRow, sizeCol, dataStartRow + Math.max(categories.length - 1, 0));
+  }
+
+  // Combo chart (line-bar / pareto): primary series render as bars, secondary-axis
+  // series render as report.view.chartSecondarySeriesType on a second value axis —
+  // same split the live ChartPreview combo renderer uses.
+  let secondarySeries: NativeChartSeries[] | undefined;
+  if (isCombo && report.view.chartUseSecondaryAxis) {
+    const secondaryDefinitions = deriveSeries(sortedData, "secondary");
+    secondarySeries = secondaryDefinitions.map((definition) => {
+      const column = nextCol;
+      nextCol += 1;
+      const label = definition.label || "Secondary";
+      dataSheet.getCell(headerRow, column).value = label;
+      const values = categories.map((category) => valueForCategory(sortedData, category.rawLabel, definition.rawSeries, "secondary"));
+      values.forEach((value, rowIndex) => {
+        dataSheet.getCell(dataStartRow + rowIndex, column).value = value || 0;
+      });
+      return {
+        label,
+        rawSeries: definition.rawSeries,
+        values,
+        color: colorForDatum(report, palette, series.length + secondaryDefinitions.indexOf(definition), definition.rawSeries || label),
+        nameRef: cellRef(dataSheetName, column, headerRow),
+        valuesRef: rangeRef(dataSheetName, column, dataStartRow, column, dataStartRow + Math.max(categories.length - 1, 0))
+      };
+    });
+  }
+
   const { xAxisTitle, yAxisTitle } = chartAxisLabels(report, table);
   return {
     nextRow: dataStartRow + Math.max(categories.length, 1) + 2,
@@ -464,7 +547,11 @@ function writeHiddenChartData(
       yAxisTitle,
       categories: categories.map((category) => category.label || "Unassigned"),
       categoryRef: rangeRef(dataSheetName, 1, dataStartRow, 1, dataStartRow + Math.max(categories.length - 1, 0)),
-      series
+      series,
+      secondarySeries,
+      secondaryAxisTitle: report.view.chartSecondaryYAxisLabel?.trim() || "",
+      secondarySeriesType: report.view.chartSecondarySeriesType || "line",
+      maxValue: Math.max(...collapsed.map((item) => item.value), 1)
     }
   };
 }
@@ -472,9 +559,17 @@ function writeHiddenChartData(
 function chartKind(source: NativeChartSource) {
   if (source.chartType === "pie" || source.chartType === "3d-pie") return "pie";
   if (source.chartType === "donut" || source.chartType === "3d-donut") return "doughnut";
-  if (source.chartType === "line" || source.chartType === "spline" || source.chartType === "line-bar") return "line";
+  if (source.chartType === "line-bar") return "combo";
+  if (source.chartType === "line" || source.chartType === "spline") return "line";
   if (source.chartType === "area" || source.chartType === "area-spline" || source.chartType === "streamgraph") return "area";
-  if (source.chartType === "scatter" || source.chartType === "bubble") return "scatter";
+  if (source.chartType === "radar") return "radar";
+  if (source.chartType === "bubble") return "bubble";
+  if (source.chartType === "scatter" || source.chartType === "3d-scatter") return "scatter";
+  if (source.chartType === "funnel" || source.chartType === "3d-funnel" || source.chartType === "sankey") return "funnel";
+  if (source.chartType === "waterfall") return "waterfall";
+  if (source.chartType === "gauge" || source.chartType === "solid-gauge") return "gauge";
+  if (source.chartType === "radial-bar") return "radialBar";
+  if (source.chartType === "progress-bar" || source.chartType === "bullet" || source.chartType === "box-plot") return "bulletBar";
   return "bar";
 }
 
@@ -491,25 +586,50 @@ function shapeColorXml(color: string) {
   return `<c:spPr><a:solidFill><a:srgbClr val="${attr(color)}"/></a:solidFill><a:ln><a:solidFill><a:srgbClr val="${attr(color)}"/></a:solidFill></a:ln></c:spPr>`;
 }
 
+function noFillSpPrXml() {
+  return `<c:spPr><a:noFill/><a:ln><a:noFill/></a:ln></c:spPr>`;
+}
+
 function pointColorXml(colors: string[] | undefined) {
   return (colors || []).map((color, index) => `<c:dPt><c:idx val="${index}"/>${shapeColorXml(color)}</c:dPt>`).join("");
 }
 
-function dataLabelsXml(showValues: boolean, position = "", hiddenIndexes: number[] = []) {
+function dataLabelsXml(showValues: boolean, position = "", hiddenIndexes: number[] = [], numFmt = "") {
   const hidden = hiddenIndexes.map((index) => `<c:dLbl><c:idx val="${index}"/><c:delete val="1"/></c:dLbl>`).join("");
-  return `<c:dLbls>${hidden}${position ? `<c:dLblPos val="${attr(position)}"/>` : ""}<c:showLegendKey val="0"/><c:showVal val="${showValues ? 1 : 0}"/><c:showCatName val="0"/><c:showSerName val="0"/><c:showPercent val="0"/><c:showBubbleSize val="0"/>${position === "outEnd" ? "<c:showLeaderLines val=\"1\"/>" : ""}</c:dLbls>`;
+  const fmt = numFmt ? `<c:numFmt formatCode="${attr(numFmt)}" sourceLinked="0"/>` : "";
+  return `<c:dLbls>${hidden}${fmt}${position ? `<c:dLblPos val="${attr(position)}"/>` : ""}<c:showLegendKey val="0"/><c:showVal val="${showValues ? 1 : 0}"/><c:showCatName val="0"/><c:showSerName val="0"/><c:showPercent val="0"/><c:showBubbleSize val="0"/>${position === "outEnd" ? "<c:showLeaderLines val=\"1\"/>" : ""}</c:dLbls>`;
+}
+
+function noLabelsXml() {
+  return `<c:dLbls><c:delete val="1"/></c:dLbls>`;
+}
+
+function numLitXml(values: number[]) {
+  const pts = values.map((value, index) => `<c:pt idx="${index}"><c:v>${Number.isFinite(value) ? value : 0}</c:v></c:pt>`).join("");
+  return `<c:numLit><c:formatCode>General</c:formatCode><c:ptCount val="${values.length}"/>${pts}</c:numLit>`;
+}
+
+function strLitXml(values: string[]) {
+  const pts = values.map((value, index) => `<c:pt idx="${index}"><c:v>${xml(value)}</c:v></c:pt>`).join("");
+  return `<c:strLit><c:ptCount val="${values.length}"/>${pts}</c:strLit>`;
+}
+
+function seriesXml(series: NativeChartSeries[], categoryRef: string, startIndex = 0, opts: { smooth?: boolean } = {}) {
+  return series.map((entry, offset) => `
+    <c:ser>
+      <c:idx val="${startIndex + offset}"/><c:order val="${startIndex + offset}"/>
+      <c:tx><c:strRef><c:f>${xml(entry.nameRef)}</c:f></c:strRef></c:tx>
+      ${shapeColorXml(entry.color)}
+      ${pointColorXml(entry.pointColors)}
+      <c:cat><c:strRef><c:f>${xml(categoryRef)}</c:f></c:strRef></c:cat>
+      <c:val><c:numRef><c:f>${xml(entry.valuesRef)}</c:f></c:numRef></c:val>
+      ${opts.smooth ? "<c:smooth val=\"1\"/>" : ""}
+    </c:ser>`).join("");
 }
 
 function categorySeriesXml(source: NativeChartSource) {
-  return source.series.map((series, index) => `
-    <c:ser>
-      <c:idx val="${index}"/><c:order val="${index}"/>
-      <c:tx><c:strRef><c:f>${xml(series.nameRef)}</c:f></c:strRef></c:tx>
-      ${shapeColorXml(series.color)}
-      ${pointColorXml(series.pointColors)}
-      <c:cat><c:strRef><c:f>${xml(source.categoryRef)}</c:f></c:strRef></c:cat>
-      <c:val><c:numRef><c:f>${xml(series.valuesRef)}</c:f></c:numRef></c:val>
-    </c:ser>`).join("");
+  const smooth = source.chartType === "spline";
+  return seriesXml(source.series, source.categoryRef, 0, { smooth });
 }
 
 function scatterSeriesXml(source: NativeChartSource) {
@@ -518,26 +638,114 @@ function scatterSeriesXml(source: NativeChartSource) {
   return `<c:ser><c:idx val="0"/><c:order val="0"/><c:tx><c:strRef><c:f>${xml(first.nameRef)}</c:f></c:strRef></c:tx>${shapeColorXml(first.color)}<c:xVal><c:numRef><c:f>${xml(source.categoryRef)}</c:f></c:numRef></c:xVal><c:yVal><c:numRef><c:f>${xml(first.valuesRef)}</c:f></c:numRef></c:yVal></c:ser>`;
 }
 
-function axesXml(catAxisId: number, valAxisId: number, source: NativeChartSource) {
+function bubbleSeriesXml(source: NativeChartSource) {
+  const first = source.series[0];
+  if (!first) return "";
+  return `<c:ser><c:idx val="0"/><c:order val="0"/><c:tx><c:strRef><c:f>${xml(first.nameRef)}</c:f></c:strRef></c:tx>${shapeColorXml(first.color)}<c:xVal><c:numRef><c:f>${xml(source.categoryRef)}</c:f></c:numRef></c:xVal><c:yVal><c:numRef><c:f>${xml(first.valuesRef)}</c:f></c:numRef></c:yVal><c:bubbleSize><c:numRef><c:f>${xml(first.sizeRef || first.valuesRef)}</c:f></c:numRef></c:bubbleSize><c:bubble3D val="0"/></c:ser>`;
+}
+
+function axesXml(catAxisId: number, valAxisId: number, source: NativeChartSource, opts: { reverseCategories?: boolean; hideValueAxis?: boolean } = {}) {
+  const catOrientation = opts.reverseCategories ? "maxMin" : "minMax";
+  const valAxis = opts.hideValueAxis
+    ? `<c:valAx><c:axId val="${valAxisId}"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="1"/><c:axPos val="l"/><c:numFmt formatCode="General" sourceLinked="1"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="none"/><c:crossAx val="${catAxisId}"/><c:crosses val="autoZero"/><c:crossBetween val="between"/></c:valAx>`
+    : `<c:valAx><c:axId val="${valAxisId}"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="l"/>${axisTitleXml(source.yAxisTitle)}<c:numFmt formatCode="General" sourceLinked="1"/><c:majorGridlines/><c:majorTickMark val="out"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:crossAx val="${catAxisId}"/><c:crosses val="autoZero"/><c:crossBetween val="between"/></c:valAx>`;
+  return `
+    <c:catAx><c:axId val="${catAxisId}"/><c:scaling><c:orientation val="${catOrientation}"/></c:scaling><c:delete val="0"/><c:axPos val="b"/>${axisTitleXml(source.xAxisTitle)}<c:numFmt formatCode="General" sourceLinked="1"/><c:majorTickMark val="out"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:crossAx val="${valAxisId}"/><c:crosses val="autoZero"/><c:auto val="1"/><c:lblAlgn val="ctr"/><c:lblOffset val="100"/></c:catAx>
+    ${valAxis}`;
+}
+
+function comboAxesXml(catAxisId: number, valAxisId: number, valAxisId2: number, source: NativeChartSource) {
   return `
     <c:catAx><c:axId val="${catAxisId}"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="b"/>${axisTitleXml(source.xAxisTitle)}<c:numFmt formatCode="General" sourceLinked="1"/><c:majorTickMark val="out"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:crossAx val="${valAxisId}"/><c:crosses val="autoZero"/><c:auto val="1"/><c:lblAlgn val="ctr"/><c:lblOffset val="100"/></c:catAx>
-    <c:valAx><c:axId val="${valAxisId}"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="l"/>${axisTitleXml(source.yAxisTitle)}<c:numFmt formatCode="General" sourceLinked="1"/><c:majorGridlines/><c:majorTickMark val="out"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:crossAx val="${catAxisId}"/><c:crosses val="autoZero"/><c:crossBetween val="between"/></c:valAx>`;
+    <c:valAx><c:axId val="${valAxisId}"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="l"/>${axisTitleXml(source.yAxisTitle)}<c:numFmt formatCode="General" sourceLinked="1"/><c:majorGridlines/><c:majorTickMark val="out"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:crossAx val="${catAxisId}"/><c:crosses val="autoZero"/><c:crossBetween val="between"/></c:valAx>
+    <c:valAx><c:axId val="${valAxisId2}"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="r"/>${axisTitleXml(source.secondaryAxisTitle || "")}<c:numFmt formatCode="General" sourceLinked="1"/><c:majorTickMark val="out"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:crossAx val="${catAxisId}"/><c:crosses val="max"/><c:crossBetween val="between"/></c:valAx>`;
 }
 
 function nativeChartXml(source: NativeChartSource) {
   const kind = chartKind(source);
   const catAxisId = 100000 + source.id * 2;
   const valAxisId = catAxisId + 1;
-  const legend = source.showLegend ? `<c:legend><c:legendPos val="b"/><c:layout/><c:overlay val="0"/></c:legend>` : "";
+  // Gauge/radial-bar/funnel/waterfall/bullet are all built from synthetic
+  // helper series (invisible offsets, remainder slices) that would make a
+  // traditional legend confusing, so they render without one regardless of
+  // the report's legend setting — matching how the live dashboard shows
+  // these as labeled rows/rings rather than a chart-style legend box.
+  const suppressLegend = ["gauge", "radialBar", "funnel", "waterfall", "bulletBar"].includes(kind);
+  const legend = source.showLegend && !suppressLegend ? `<c:legend><c:legendPos val="b"/><c:layout/><c:overlay val="0"/></c:legend>` : "";
   let plotXml = "";
   if (kind === "pie" || kind === "doughnut") {
     const tag = kind === "doughnut" ? "doughnutChart" : "pieChart";
     plotXml = `<c:${tag}><c:varyColors val="1"/>${categorySeriesXml(source)}${dataLabelsXml(source.showValues, "bestFit", source.hiddenLabelIndexes)}${kind === "doughnut" ? "<c:holeSize val=\"55\"/>" : "<c:firstSliceAng val=\"0\"/>"}</c:${tag}>`;
   } else if (kind === "line" || kind === "area") {
     const tag = kind === "area" ? "areaChart" : "lineChart";
-    plotXml = `<c:${tag}><c:grouping val="standard"/>${categorySeriesXml(source)}${dataLabelsXml(source.showValues)}<c:axId val="${catAxisId}"/><c:axId val="${valAxisId}"/></c:${tag}>${axesXml(catAxisId, valAxisId, source)}`;
+    const grouping = kind === "area" && source.chartType === "streamgraph" ? "stacked" : "standard";
+    plotXml = `<c:${tag}><c:grouping val="${grouping}"/>${categorySeriesXml(source)}${dataLabelsXml(source.showValues)}<c:axId val="${catAxisId}"/><c:axId val="${valAxisId}"/></c:${tag}>${axesXml(catAxisId, valAxisId, source)}`;
+  } else if (kind === "radar") {
+    plotXml = `<c:radarChart><c:radarStyle val="standard"/>${categorySeriesXml(source)}${dataLabelsXml(source.showValues)}<c:axId val="${catAxisId}"/><c:axId val="${valAxisId}"/></c:radarChart>${axesXml(catAxisId, valAxisId, source)}`;
   } else if (kind === "scatter") {
     plotXml = `<c:scatterChart><c:scatterStyle val="marker"/>${scatterSeriesXml(source)}${dataLabelsXml(source.showValues)}<c:axId val="${catAxisId}"/><c:axId val="${valAxisId}"/></c:scatterChart>${axesXml(catAxisId, valAxisId, source)}`;
+  } else if (kind === "bubble") {
+    plotXml = `<c:bubbleChart><c:varyColors val="0"/>${bubbleSeriesXml(source)}${dataLabelsXml(source.showValues)}<c:axId val="${catAxisId}"/><c:axId val="${valAxisId}"/></c:bubbleChart>${axesXml(catAxisId, valAxisId, source)}`;
+  } else if (kind === "combo") {
+    const valAxisId2 = catAxisId + 2;
+    const secType = source.secondarySeriesType || "line";
+    const secTag = secType === "area" ? "areaChart" : secType === "bar" || secType === "column" ? "barChart" : "lineChart";
+    const secondary = source.secondarySeries || [];
+    const barPlot = `<c:barChart><c:barDir val="col"/><c:grouping val="clustered"/><c:varyColors val="0"/>${seriesXml(source.series, source.categoryRef, 0)}${dataLabelsXml(source.showValues, "outEnd")}<c:axId val="${catAxisId}"/><c:axId val="${valAxisId}"/></c:barChart>`;
+    const secondaryGrouping = secTag === "barChart" ? `<c:barDir val="col"/><c:grouping val="clustered"/>` : `<c:grouping val="standard"/>`;
+    const secPlot = secondary.length
+      ? `<c:${secTag}>${secondaryGrouping}<c:varyColors val="0"/>${seriesXml(secondary, source.categoryRef, source.series.length, { smooth: false })}${dataLabelsXml(source.showValues)}<c:axId val="${catAxisId}"/><c:axId val="${valAxisId2}"/></c:${secTag}>`
+      : "";
+    plotXml = barPlot + secPlot + comboAxesXml(catAxisId, valAxisId, valAxisId2, source);
+  } else if (kind === "funnel") {
+    const primary = source.series[0];
+    const values = primary?.values || [];
+    const max = source.maxValue || Math.max(...values, 1);
+    const offset = values.map((value) => Math.max(0, (max - value) / 2));
+    const offsetSer = `<c:ser><c:idx val="0"/><c:order val="0"/><c:tx><c:v>Offset</c:v></c:tx>${noFillSpPrXml()}${noLabelsXml()}<c:cat><c:strRef><c:f>${xml(source.categoryRef)}</c:f></c:strRef></c:cat><c:val>${numLitXml(offset)}</c:val></c:ser>`;
+    const valueSer = `<c:ser><c:idx val="1"/><c:order val="1"/><c:tx><c:v>${xml(source.title)}</c:v></c:tx>${shapeColorXml(primary?.color || CHART_COLORS[0])}${pointColorXml(primary?.pointColors)}${dataLabelsXml(source.showValues, "ctr")}<c:cat><c:strRef><c:f>${xml(source.categoryRef)}</c:f></c:strRef></c:cat><c:val><c:numRef><c:f>${xml(primary?.valuesRef || "")}</c:f></c:numRef></c:val></c:ser>`;
+    plotXml = `<c:barChart><c:barDir val="bar"/><c:grouping val="stacked"/><c:varyColors val="0"/>${offsetSer}${valueSer}<c:overlap val="100"/><c:axId val="${catAxisId}"/><c:axId val="${valAxisId}"/></c:barChart>${axesXml(catAxisId, valAxisId, source, { reverseCategories: true, hideValueAxis: true })}`;
+  } else if (kind === "waterfall") {
+    const primary = source.series[0];
+    const values = primary?.values || [];
+    let running = 0;
+    const bases: number[] = [];
+    const magnitudes: number[] = [];
+    values.forEach((value) => {
+      const before = running;
+      const after = running + value;
+      bases.push(Math.min(before, after));
+      magnitudes.push(Math.abs(value));
+      running = after;
+    });
+    const baseSer = `<c:ser><c:idx val="0"/><c:order val="0"/><c:tx><c:v>Base</c:v></c:tx>${noFillSpPrXml()}${noLabelsXml()}<c:cat><c:strRef><c:f>${xml(source.categoryRef)}</c:f></c:strRef></c:cat><c:val>${numLitXml(bases)}</c:val></c:ser>`;
+    const deltaSer = `<c:ser><c:idx val="1"/><c:order val="1"/><c:tx><c:v>${xml(source.title)}</c:v></c:tx>${shapeColorXml(primary?.color || CHART_COLORS[0])}${pointColorXml(primary?.pointColors)}${dataLabelsXml(source.showValues, "ctr")}<c:cat><c:strRef><c:f>${xml(source.categoryRef)}</c:f></c:strRef></c:cat><c:val>${numLitXml(magnitudes)}</c:val></c:ser>`;
+    plotXml = `<c:barChart><c:barDir val="bar"/><c:grouping val="stacked"/><c:varyColors val="0"/>${baseSer}${deltaSer}<c:overlap val="100"/><c:axId val="${catAxisId}"/><c:axId val="${valAxisId}"/></c:barChart>${axesXml(catAxisId, valAxisId, source, { reverseCategories: true, hideValueAxis: true })}`;
+  } else if (kind === "bulletBar") {
+    const primary = source.series[0];
+    const values = (primary?.values || []).map((value) => Math.max(0, Math.min(100, value)));
+    const remainder = values.map((value) => 100 - value);
+    const valueSer = `<c:ser><c:idx val="0"/><c:order val="0"/><c:tx><c:v>${xml(source.title)}</c:v></c:tx>${shapeColorXml(primary?.color || CHART_COLORS[0])}${pointColorXml(primary?.pointColors)}${dataLabelsXml(source.showValues, "ctr", [], "0\"%\"")}<c:cat><c:strRef><c:f>${xml(source.categoryRef)}</c:f></c:strRef></c:cat><c:val>${numLitXml(values)}</c:val></c:ser>`;
+    const remainderSer = `<c:ser><c:idx val="1"/><c:order val="1"/><c:tx><c:v>Remaining</c:v></c:tx>${shapeColorXml("E7EAE3")}${noLabelsXml()}<c:cat><c:strRef><c:f>${xml(source.categoryRef)}</c:f></c:strRef></c:cat><c:val>${numLitXml(remainder)}</c:val></c:ser>`;
+    plotXml = `<c:barChart><c:barDir val="bar"/><c:grouping val="stacked"/><c:varyColors val="0"/>${valueSer}${remainderSer}<c:overlap val="100"/><c:axId val="${catAxisId}"/><c:axId val="${valAxisId}"/></c:barChart>${axesXml(catAxisId, valAxisId, source, { reverseCategories: true, hideValueAxis: true })}`;
+  } else if (kind === "gauge") {
+    const value = source.series[0]?.values?.[0] || 0;
+    const max = source.maxValue || Math.max(value, 1);
+    const remainder = Math.max(0, max - value);
+    const color = source.series[0]?.color || CHART_COLORS[0];
+    const ser = `<c:ser><c:idx val="0"/><c:order val="0"/><c:tx><c:v>${xml(source.title)}</c:v></c:tx>${shapeColorXml(color)}<c:dPt><c:idx val="1"/>${shapeColorXml("E3E7DF")}</c:dPt><c:dPt><c:idx val="2"/>${noFillSpPrXml()}</c:dPt>${noLabelsXml()}<c:cat>${strLitXml([source.title, "Remaining", "(hidden)"])}</c:cat><c:val>${numLitXml([value, remainder, max])}</c:val></c:ser>`;
+    plotXml = `<c:doughnutChart><c:varyColors val="0"/>${ser}<c:firstSliceAng val="270"/><c:holeSize val="70"/></c:doughnutChart>`;
+  } else if (kind === "radialBar") {
+    const cats = source.categories.slice(0, 5);
+    const primary = source.series[0];
+    const max = source.maxValue || Math.max(...(primary?.values || []), 1);
+    const ringSeries = cats.map((cat, index) => {
+      const value = primary?.values?.[index] || 0;
+      const remainder = Math.max(0, max - value);
+      const color = primary?.pointColors?.[index] || CHART_COLORS[index % CHART_COLORS.length];
+      return `<c:ser><c:idx val="${index}"/><c:order val="${index}"/><c:tx><c:v>${xml(cat)}</c:v></c:tx>${shapeColorXml(color)}<c:dPt><c:idx val="1"/>${shapeColorXml("EEF1EC")}</c:dPt>${noLabelsXml()}<c:cat>${strLitXml([cat, "Remaining"])}</c:cat><c:val>${numLitXml([value, remainder])}</c:val></c:ser>`;
+    }).join("");
+    plotXml = `<c:doughnutChart><c:varyColors val="0"/>${ringSeries}<c:firstSliceAng val="0"/><c:holeSize val="20"/></c:doughnutChart>`;
   } else {
     const horizontal = source.originalChartType === "horizontal-bar"
       || source.originalChartType === "horizontal-stacked-bar"
@@ -799,7 +1007,7 @@ export async function exportDashboardNativeChartWorkbook(
           widgetWidth = Math.max(widgetWidth, Math.min(exportResult.summary.length, 6) * 2);
         }
         if (hasChart) {
-          widgetWidth = Math.max(widgetWidth, DEFAULT_CHART_WIDTH);
+          widgetWidth = Math.max(widgetWidth, isBigNumberChartType(widget.report.view.chartType) ? 6 : DEFAULT_CHART_WIDTH);
         } else if (widget.status === "complete" && widgetShowsRows(widget.widget, widget.report) && exportResult.rows.length) {
           widgetWidth = Math.max(widgetWidth, Math.min(Math.max(widget.report.selectedFieldIds.length, 1), 20));
         }
@@ -821,7 +1029,9 @@ export async function exportDashboardNativeChartWorkbook(
           widgetCursor = writeCrosstabBlock(sheet, exportResult.crosstab, widgetCursor, titleCol, orientation);
         }
 
-        if (hasChart) {
+        if (hasChart && isBigNumberChartType(widget.report.view.chartType)) {
+          widgetCursor = writeBigNumberBlock(sheet, widget.report, exportResult, contentStartRow, titleCol, toCol);
+        } else if (hasChart) {
           const chartEndRow = contentStartRow + 22;
           const written = writeHiddenChartData(dataSheet, dataSheetName, dataRow, widget.report, exportResult, table, chartId);
           dataRow = written.nextRow;
@@ -908,7 +1118,9 @@ export async function exportReportNativeChartWorkbook(
     contentRow = writeSummarySheet(sheet, result, contentRow, 1, 12) + 1;
   }
 
-  if (reportShowsChart(report) && result.chartData.length) {
+  if (reportShowsChart(report) && result.chartData.length && isBigNumberChartType(report.view.chartType)) {
+    contentRow = writeBigNumberBlock(sheet, report, result, contentRow, 1, 12) + 1;
+  } else if (reportShowsChart(report) && result.chartData.length) {
     const written = writeHiddenChartData(dataSheet, dataSheetName, 1, report, result, table, 1);
     sheetCharts.push({
       chart: written.source,
