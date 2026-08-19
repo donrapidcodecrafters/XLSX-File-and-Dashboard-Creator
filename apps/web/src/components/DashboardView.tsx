@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useSetReaderTools } from "../contexts/ReaderToolsContext";
 import { Link } from "react-router-dom";
 import { buildDashboardFilters, compactDashboardTabWidgets, formatReportCellValue, getDashboardWidgetLayoutStyle, getDashboardWidgetPlacements, getReportFieldLabel, repackDashboardTabLayout, resolveActiveDashboardTabId, resolveDashboardWidgetRenderMode, type DashboardDefinition, type DashboardRunResult, type RefreshJobStatus, type ReportDefinition, type ReportRunResult, type TableDefinition } from "@studio/shared";
-import { createExportSaveTarget, fetchFieldValues, fetchReportExportBundle, renderDashboard, runReportPage, type ExportSaveTarget } from "../lib/api";
+import { createExportSaveTarget, fetchExportJobBlob, fetchExportJobStatus, fetchFieldValues, fetchReportExportBundle, renderDashboard, runReportPage, startDashboardExportJob, type ExportSaveTarget } from "../lib/api";
 import { ChartPreview } from "./ChartPreview";
 import { RefreshOverlay } from "./RefreshOverlay";
 import { ResizableDataTable } from "./ResizableDataTable";
@@ -686,17 +686,28 @@ export function DashboardView({
     setPreparedExport(null);
     setExportSaved(false);
     try {
-      const { exportDashboardNativeChartWorkbook } = await import("../lib/nativeExcelDashboardExport");
-      const exportPayload = await buildDashboardExportResult();
-      const blob = await exportDashboardNativeChartWorkbook(dashboard, exportPayload.result, exportPayload.exportResultsByWidgetId, {
-        filename,
-        tablesById: Object.fromEntries((tables || []).map((table) => [table.id, table])),
-        includeOverviewSheet: dashboard.includeExportOverviewSheet === true
+      // Server-side job, not client-side generation: the client used to make one
+      // HTTP round-trip per dashboard tab plus one per widget (buildDashboardExportResult),
+      // and any single one of those failing (or the browser tab losing focus/network
+      // hiccuping mid-sequence) aborted the whole export or silently produced a
+      // workbook missing whatever hadn't loaded yet. A single job request lets the
+      // server do all of that work in one place — the same path scheduled/test
+      // emails already use reliably.
+      const { job } = await startDashboardExportJob({
+        dashboardId: dashboard.id,
+        dashboard: exportDashboard,
+        runtimeFilters
       });
-      if (!(blob instanceof Blob)) {
-        throw new Error("Native chart export did not produce a workbook file.");
+      let current = job;
+      while (current.status === "queued" || current.status === "running") {
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+        current = (await fetchExportJobStatus(job.id)).job;
       }
-      setPreparedExport({ filename, blob });
+      if (current.status === "failed") {
+        throw new Error(current.error || "Export failed.");
+      }
+      const { blob, filename: serverFilename } = await fetchExportJobBlob(job.id, current.filename || filename);
+      setPreparedExport({ filename: serverFilename, blob });
     } catch (error) {
       setExportError(error instanceof Error ? error.message : "Native chart export failed.");
     } finally {

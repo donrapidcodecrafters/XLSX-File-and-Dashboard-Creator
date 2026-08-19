@@ -308,6 +308,19 @@ export function fetchExportJobs() {
   return request<{ jobs: ExportJobStatus[] }>("/api/exports/jobs");
 }
 
+// Fetches a completed export job's file as a Blob (rather than immediately
+// triggering a browser download like downloadExportJob does) so a caller can
+// hold onto it — e.g. to show a "Save workbook" prompt using a save-file-picker.
+export async function fetchExportJobBlob(id: string, fallbackFilename: string): Promise<{ blob: Blob; filename: string }> {
+  const response = await fetch(API_BASE + "/api/exports/jobs/" + encodeURIComponent(id) + "/download");
+  if (!response.ok) {
+    throw new Error("Download failed with status " + response.status);
+  }
+  const blob = await response.blob();
+  const filename = parseDownloadFilename(response.headers.get("content-disposition"), fallbackFilename);
+  return { blob, filename };
+}
+
 export async function createExportSaveTarget(suggestedFilename: string): Promise<ExportSaveTarget | null> {
   const picker = (window as typeof window & {
     showSaveFilePicker?: (options?: {
