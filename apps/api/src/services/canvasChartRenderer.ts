@@ -1,20 +1,17 @@
 /**
- * Server-side canvas chart renderer for scheduled/test email exports.
- * Uses node-canvas (same Canvas API as the browser) so chart output is
- * pixel-identical to the manual download produced by workbookExport.ts.
+ * Server-side canvas chart renderer used for every dashboard export and
+ * scheduled/test email attachment. Uses node-canvas (same Canvas API as the
+ * browser) rendering in Inter — the same font Studio's live dashboard view
+ * uses (apps/web/src/styles/app.css --sans token) — so chart images match
+ * what the user sees on screen, not just each other.
  *
- * FONTS — place TTF files in apps/api/fonts/ before deploying:
- *   Manrope-Bold.ttf      (weight 700)
- *   Manrope-SemiBold.ttf  (weight 600)
- *   Manrope-Medium.ttf    (weight 500)
- *   IBMPlexMono-Regular.ttf (weight 400)
- *
- * Download from Google Fonts (both are open-source):
- *   https://fonts.google.com/specimen/Manrope
- *   https://fonts.google.com/specimen/IBM+Plex+Mono
+ * FONTS — TTF files live in apps/api/fonts/ (committed to the repo):
+ *   Inter-ExtraBold.ttf (weight 800)
+ *   Inter-Bold.ttf      (weight 700)
+ *   Inter-SemiBold.ttf  (weight 600)
  *
  * On the VPS, also run once:
- *   apt-get install build-essential libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev
+ *   dnf install cairo-devel pango-devel libjpeg-turbo-devel giflib-devel librsvg2-devel
  *   (then npm install in apps/api)
  */
 
@@ -59,10 +56,11 @@ function tryRegisterFont(file: string, family: string, weight: string) {
   }
 }
 
-tryRegisterFont("Manrope-Bold.ttf", "Manrope", "700");
-tryRegisterFont("Manrope-SemiBold.ttf", "Manrope", "600");
-tryRegisterFont("Manrope-Medium.ttf", "Manrope", "500");
-tryRegisterFont("IBMPlexMono-Regular.ttf", "IBM Plex Mono", "400");
+// Inter is Studio's actual UI font (apps/web/src/styles/app.css --sans token) — chart
+// exports/emails must render text in the same font the live dashboard uses.
+tryRegisterFont("Inter-ExtraBold.ttf", "Inter", "800");
+tryRegisterFont("Inter-Bold.ttf", "Inter", "700");
+tryRegisterFont("Inter-SemiBold.ttf", "Inter", "600");
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -297,11 +295,11 @@ function drawExportHeader(ctx: Ctx, title: string, subtitle: string, width: numb
   ctx.fillStyle = "#fbfcf8";
   ctx.fillRect(0, 0, width, ctx.canvas.height);
   ctx.fillStyle = "#173126";
-  ctx.font = "700 30px Manrope, Arial, sans-serif";
+  ctx.font = "700 30px Inter, Arial, sans-serif";
   ctx.fillText(title || "Chart", 32, 48);
   if (subtitle) {
     ctx.fillStyle = "#56685e";
-    ctx.font = "600 16px Manrope, Arial, sans-serif";
+    ctx.font = "600 16px Inter, Arial, sans-serif";
     ctx.fillText(subtitle, 32, 76);
   }
 }
@@ -315,7 +313,7 @@ function measureExportLegendHeight(
 ) {
   if (!items.length || maxWidth <= 0) return 0;
   let x = 0, rows = 1;
-  ctx.font = "700 15px Manrope, Arial, sans-serif";
+  ctx.font = "700 15px Inter, Arial, sans-serif";
   items.forEach((item) => {
     const valueText = showValues && typeof item.value === "number" ? ` · ${formatChartValue(item.value, decimalPlaces)}` : "";
     const label = `${truncateLabel(String(item.label || "Unassigned"), 24)}${valueText}`;
@@ -354,7 +352,7 @@ function drawExportLegend(
   }
 ) {
   let x = options.x, y = options.y;
-  ctx.font = "700 15px Manrope, Arial, sans-serif";
+  ctx.font = "700 15px Inter, Arial, sans-serif";
   items.forEach((item, index) => {
     const valueText = options.showValues && typeof item.value === "number" ? ` · ${formatChartValue(item.value, options.decimalPlaces)}` : "";
     const label = `${truncateLabel(String(item.label || "Unassigned"), 24)}${valueText}`;
@@ -424,7 +422,7 @@ function drawExportAxes(
     ctx.lineTo(bounds.left + bounds.width, y);
     ctx.stroke();
     ctx.fillStyle = "#56685e";
-    ctx.font = "600 14px IBM Plex Mono, monospace";
+    ctx.font = "600 14px Inter, Arial, sans-serif";
     ctx.textAlign = "right";
     ctx.fillText(formatChartValue(tick, decimalPlaces), bounds.left - 12, y + 4);
   });
@@ -438,7 +436,7 @@ function drawExportAxes(
   if (yAxisLabel) {
     ctx.save();
     ctx.fillStyle = "#56685e";
-    ctx.font = "700 15px Manrope, Arial, sans-serif";
+    ctx.font = "700 15px Inter, Arial, sans-serif";
     ctx.translate(18, bounds.top + bounds.height / 2);
     ctx.rotate(-Math.PI / 2);
     ctx.textAlign = "center";
@@ -493,7 +491,7 @@ function drawPieExportChart(
       const labelX = cx + Math.cos(mid) * (radius + 28);
       const labelY = cy + Math.sin(mid) * (radius + 28);
       ctx.fillStyle = "#173126";
-      ctx.font = "700 15px Manrope, Arial, sans-serif";
+      ctx.font = "700 15px Inter, Arial, sans-serif";
       ctx.textAlign = Math.cos(mid) >= 0 ? "left" : "right";
       ctx.fillText(formatChartValue(item.value, options.decimalPlaces), labelX, labelY);
       ctx.textAlign = "left";
@@ -559,7 +557,7 @@ function drawProgressExportChart(
     const percent = Math.max(0, Math.min(100, item.value));
     if (options.showLegend) {
       ctx.fillStyle = "#173126";
-      ctx.font = "700 13px Manrope, Arial, sans-serif";
+      ctx.font = "700 13px Inter, Arial, sans-serif";
       ctx.fillText(truncateLabel(item.label, 22), 36, y + 18);
     }
     ctx.fillStyle = "rgba(23,49,38,0.10)";
@@ -570,7 +568,7 @@ function drawProgressExportChart(
     ctx.fill();
     if (options.showValues) {
       ctx.fillStyle = "#173126";
-      ctx.font = "700 13px Manrope, Arial, sans-serif";
+      ctx.font = "700 13px Inter, Arial, sans-serif";
       ctx.fillText(`${formatChartValue(percent, options.decimalPlaces)}%`, trackLeft + trackWidth + 14, y + 16);
     }
   });
@@ -597,11 +595,11 @@ function drawHeatmapExportChart(
     roundedRect(ctx, x, y, size, size, 18);
     ctx.fill();
     ctx.fillStyle = alpha > 0.58 ? "#ffffff" : "#173126";
-    ctx.font = "800 16px Manrope, Arial, sans-serif";
+    ctx.font = "800 16px Inter, Arial, sans-serif";
     ctx.textAlign = "center";
     if (options.showValues) ctx.fillText(formatChartValue(item.value, options.decimalPlaces), x + size / 2, y + size / 2 + 5);
     ctx.fillStyle = "#173126";
-    ctx.font = "700 12px Manrope, Arial, sans-serif";
+    ctx.font = "700 12px Inter, Arial, sans-serif";
     ctx.fillText(truncateLabel(item.label, 16), x + size / 2, y + size + 20);
     ctx.textAlign = "left";
   });
@@ -629,7 +627,7 @@ function drawGaugeExportChart(
   ctx.stroke();
   if (options.showValues) {
     ctx.fillStyle = "#173126";
-    ctx.font = "800 42px Manrope, Arial, sans-serif";
+    ctx.font = "800 42px Inter, Arial, sans-serif";
     ctx.textAlign = "center";
     ctx.fillText(formatChartValue(current, options.decimalPlaces), cx, cy - 18);
     ctx.textAlign = "left";
@@ -709,7 +707,7 @@ function drawCategoryExportChart(
       const y = bounds.top + index * (rowHeight + rowGap);
       const width = (item.value / axisMax) * Math.max(1, bounds.width - maxLabelWidth - 24);
       ctx.fillStyle = "#173126";
-      ctx.font = "700 14px Manrope, Arial, sans-serif";
+      ctx.font = "700 14px Inter, Arial, sans-serif";
       ctx.textAlign = "right";
       ctx.fillText(truncateLabel(item.label, 24), bounds.left + maxLabelWidth - 12, y + rowHeight / 2 + 4);
       ctx.textAlign = "left";
@@ -718,7 +716,7 @@ function drawCategoryExportChart(
       ctx.fill();
       if (options.showValues) {
         ctx.fillStyle = "#173126";
-        ctx.font = "700 14px Manrope, Arial, sans-serif";
+        ctx.font = "700 14px Inter, Arial, sans-serif";
         ctx.fillText(formatChartValue(item.value, options.decimalPlaces), bounds.left + maxLabelWidth + width + 8, y + rowHeight / 2 + 4);
       }
     });
@@ -735,7 +733,7 @@ function drawCategoryExportChart(
     const drawValueLabel = (value: number, x: number, y: number) => {
       if (!options.showValues) return;
       ctx.fillStyle = "#173126";
-      ctx.font = "800 13px Manrope, Arial, sans-serif";
+      ctx.font = "800 13px Inter, Arial, sans-serif";
       ctx.textAlign = "center";
       ctx.fillText(formatChartValue(value, options.decimalPlaces), x, Math.max(bounds.top + 12, y - 7));
       ctx.textAlign = "left";
@@ -779,7 +777,7 @@ function drawCategoryExportChart(
     const label = truncateLabel(formatCategoryTickLabel(category.label || category.rawLabel), 22);
     ctx.save();
     ctx.fillStyle = "#173126";
-    ctx.font = "700 14px Manrope, Arial, sans-serif";
+    ctx.font = "700 14px Inter, Arial, sans-serif";
     ctx.textAlign = categories.length > 5 ? "right" : "center";
     const labelY = baseY + 24;
     if (categories.length > 5) {
@@ -830,7 +828,7 @@ function drawCategoryExportChart(
       ctx.fill();
       if (options.showValues && lineLike) {
         ctx.fillStyle = "#173126";
-        ctx.font = "800 11px Manrope, Arial, sans-serif";
+        ctx.font = "800 11px Inter, Arial, sans-serif";
         ctx.textAlign = "center";
         ctx.fillText(formatChartValue(p.value, options.decimalPlaces), p.x, Math.max(bounds.top + 12, p.y - 10));
         ctx.textAlign = "left";
@@ -844,14 +842,14 @@ function drawCategoryExportChart(
   });
   if (options.xAxisLabel) {
     ctx.fillStyle = "#56685e";
-    ctx.font = "700 15px Manrope, Arial, sans-serif";
+    ctx.font = "700 15px Inter, Arial, sans-serif";
     ctx.textAlign = "center";
     ctx.fillText(options.xAxisLabel, bounds.left + bounds.width / 2, ctx.canvas.height - 12);
     ctx.textAlign = "left";
   }
   if (options.secondaryYAxisLabel) {
     ctx.fillStyle = "#56685e";
-    ctx.font = "700 15px Manrope, Arial, sans-serif";
+    ctx.font = "700 15px Inter, Arial, sans-serif";
     ctx.textAlign = "right";
     ctx.fillText(options.secondaryYAxisLabel, ctx.canvas.width - 16, bounds.top + 18);
     ctx.textAlign = "left";
@@ -905,7 +903,7 @@ function renderChartImageToDataUrl(
 
   if (!sortedData.length) {
     ctx.fillStyle = "#56685e";
-    ctx.font = "700 24px Manrope, Arial, sans-serif";
+    ctx.font = "700 24px Inter, Arial, sans-serif";
     ctx.fillText("No chart data is available for this view.", 36, top + 72);
     return canvas.toDataURL("image/png");
   }
