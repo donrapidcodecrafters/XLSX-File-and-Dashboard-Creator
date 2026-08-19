@@ -249,13 +249,20 @@ export function HelpPage() {
                 <Step n={6}>If creating a new workbook, type a name in the <strong>workbook name</strong> field that appears (e.g. "Sales Data", "Claims Report"). Use a descriptive name — you will select it by name on future imports.</Step>
                 <Step n={7}>Drag your <strong>.xlsx file</strong> onto the drop zone, or click to browse and select it. A preview shows the file's sheet names, row count, and column names.</Step>
                 <Step n={8}>Click the import button. The file uploads and data is stored in the database. All reports using this source update automatically.</Step>
-                <Tip>When you re-import data into an existing workbook, ALL rows are replaced with the new file's contents. Columns added or removed in the new file are reflected immediately — no manual reconfiguration needed.</Tip>
+                <Tip>Set a <strong>key field</strong> (see below) so re-imports update matching rows instead of replacing everything. Without a key field, re-importing still replaces all rows in that table with the new file's contents, and column changes are reflected immediately.</Tip>
+
+                <Sub>Updating existing data with key fields</Sub>
+                <Step n={9}>When updating a workbook you've imported before, pick one or more <strong>key field(s)</strong> — the column(s) that make each row unique, like an ID or claim number. If one column alone has repeats, pick a second or third column too (for example, claim number + name + payer together).</Step>
+                <Step n={10}>Once a key field is set, future imports <strong>update matching rows</strong> and <strong>add new rows</strong> — rows already saved that are missing from the new file are left alone, not deleted. This lets you import a partial file safely.</Step>
+                <Step n={11}>If your chosen key field(s) turn out to have duplicate values in a particular file, check <strong>Allow duplicates</strong>. This skips row-matching and replaces all of that table's data for this import only — your key field choice is still remembered for next time.</Step>
+                <Step n={12}>If the new file's columns don't match what's already stored, a warning appears listing <strong>Added columns</strong> and <strong>Missing columns</strong>. You must check the acknowledgment box before you can continue.</Step>
+                <Step n={13}>Your key field choice is saved per data source, so the next time you re-import that same source (including each tab of a multi-sheet workbook), it's already pre-selected for you.</Step>
 
                 <Sub>Managing data sources</Sub>
-                <Step n={9}>Go to <strong>Data Sources</strong>. A table lists all imported sources with row counts, column counts, and last-updated dates.</Step>
-                <Step n={10}>To <strong>rename</strong> a source, click the pencil icon next to its name, type the new name, and press Enter.</Step>
-                <Step n={11}>To <strong>clear data only</strong> (keep the source entry but remove all rows), click the <strong>Clear data</strong> button.</Step>
-                <Step n={12}>To <strong>permanently delete</strong> a source and all its data, click <strong>Delete</strong> and confirm. Reports using this source will stop working.</Step>
+                <Step n={14}>Go to <strong>Data Sources</strong>. A table lists all imported sources with row counts, column counts, and last-updated dates.</Step>
+                <Step n={15}>To <strong>rename</strong> a source, click the pencil icon next to its name, type the new name, and press Enter.</Step>
+                <Step n={16}>To <strong>clear data only</strong> (keep the source entry but remove all rows), click the <strong>Clear data</strong> button.</Step>
+                <Step n={17}>To <strong>permanently delete</strong> a source and all its data, click <strong>Delete</strong> and confirm. Reports using this source will stop working.</Step>
                 <Note>The Data Sources table only shows row/column counts and the last-updated date — there is currently no button to preview a source's actual rows after it's been imported. To see real data, open <strong>+ Import XLSX</strong> and select that workbook; the upload screen shows a sample of the file before you confirm anything.</Note>
                 <Note>Only .xlsx files are supported (not .xls or .csv). The uploader works best when column headers are in the first row of each sheet, though it can sometimes locate headers a few rows down. Files larger than <strong>25 MB</strong> are rejected outright — this is a hard limit, not just a recommendation.</Note>
               </div>
@@ -279,26 +286,27 @@ export function HelpPage() {
                 <Step n={10}>Click <strong>Next</strong>.</Step>
 
                 <Sub>Step 2 — Data</Sub>
-                <Step n={11}><strong>Data source</strong> — Select which imported data source (Excel workbook or Quickbase table) powers this report.</Step>
-                <Step n={12}><strong>Fields to show</strong> — In the "Available fields" list, click a field to move it into "Selected fields" (there are no checkboxes — clicking is how you add a field). Use the <strong>Up</strong>/<strong>Down</strong> buttons next to each selected field to change column order — there is no drag-and-drop.</Step>
-                <Step n={13}>Click <strong>Next</strong>.</Step>
+                <Step n={11}><strong>Data source</strong> — Select which imported data source (Excel workbook or Quickbase table) powers this report. This becomes the report's main (primary) source.</Step>
+                <Step n={12}><strong>Combining data from more than one source</strong> — Click <strong>+ Also pull data from...</strong> and choose a second data source to link in. Then, for each linked source, choose the column(s) that match up between the two — for example, a "Customer ID" column in both — under <strong>What column do these two sources have in common?</strong>. You can add more than one matching column if a single column isn't unique on its own (an <strong>auto-detect</strong> button suggests matches for you by column name). Choose <strong>Left join</strong> to keep every row from your main source even if nothing matches in the linked source, or <strong>Inner join</strong> to only keep rows that match in both. Repeat to link in additional sources — every column from every linked source then appears in the field picker below.</Step>
+                <Step n={13}><strong>Fields to show</strong> — In the "Available fields" list, click a field to move it into "Selected fields" (there are no checkboxes — clicking is how you add a field). Fields from a linked source are labeled with that source's name so you can tell them apart. Use the <strong>Up</strong>/<strong>Down</strong> buttons next to each selected field to change column order — there is no drag-and-drop.</Step>
+                <Step n={14}>Click <strong>Next</strong>.</Step>
 
                 <Sub>Step 3 — Filters</Sub>
-                <Step n={14}>Click <strong>Add filter</strong>, choose a field, choose a condition (equals, contains, greater than, etc.), and enter a value.</Step>
-                <Step n={15}>If you add more than one filter, use the <strong>Match</strong> setting to choose <em>All conditions (AND)</em> (every filter must be true) or <em>Any condition (OR)</em> (at least one must be true). Click <strong>Add group</strong> to nest a more complex combination of filters.</Step>
-                <Step n={16}><strong>Sorting</strong> — On this same screen, click <strong>Add sort</strong>, choose a field, and choose <em>Ascending</em> or <em>Descending</em>.</Step>
-                <Step n={17}>Click <strong>Next</strong>.</Step>
+                <Step n={15}>Click <strong>Add filter</strong>, choose a field, choose a condition (equals, contains, greater than, etc.), and enter a value.</Step>
+                <Step n={16}>If you add more than one filter, use the <strong>Match</strong> setting to choose <em>All conditions (AND)</em> (every filter must be true) or <em>Any condition (OR)</em> (at least one must be true). Click <strong>Add group</strong> to nest a more complex combination of filters.</Step>
+                <Step n={17}><strong>Sorting</strong> — On this same screen, click <strong>Add sort</strong>, choose a field, and choose <em>Ascending</em> or <em>Descending</em>.</Step>
+                <Step n={18}>Click <strong>Next</strong>.</Step>
 
                 <Sub>Step 4 — View</Sub>
-                <Step n={18}><strong>Group field / Value field</strong> — Only shown when Mode is <em>summary</em>. Choose the field to group by (its distinct values become rows or columns) and the field to total up.</Step>
-                <Step n={19}><strong>Summary metrics</strong> — If you enabled summary metrics, click <strong>Add summary metric</strong>, choose a field, and choose the calculation (Sum, Count, Average, Minimum, Maximum, Count rows).</Step>
-                <Step n={20}><strong>Chart settings</strong> — If your mode includes a chart, configure the X-axis field, Y-axis field, chart type, and color options. There are dozens of chart types to choose from (bar, column, line, area, pie, donut, funnel, heatmap, radar, gauge, waterfall, and more).</Step>
-                <Step n={21}>Click <strong>Next</strong>.</Step>
+                <Step n={19}><strong>Group field / Value field</strong> — Only shown when Mode is <em>summary</em>. Choose the field to group by (its distinct values become rows or columns) and the field to total up. These can be fields from any linked source, not just the main one.</Step>
+                <Step n={20}><strong>Summary metrics</strong> — If you enabled summary metrics, click <strong>Add summary metric</strong>, choose a field, and choose the calculation (Sum, Count, Average, Minimum, Maximum, Count rows).</Step>
+                <Step n={21}><strong>Chart settings</strong> — If your mode includes a chart, configure the X-axis field, Y-axis field, chart type, and color options. There are dozens of chart types to choose from (bar, column, line, area, pie, donut, funnel, heatmap, radar, gauge, waterfall, and more) — every chart type looks the same in Excel exports and emailed reports as it does here.</Step>
+                <Step n={22}>Click <strong>Next</strong>.</Step>
 
                 <Sub>Step 5 — Review</Sub>
-                <Step n={22}>This step is a read-only summary — a checklist to confirm before saving, not a place to make further edits. It shows the report's type, sharing scope, data source, how many fields and filters you set up, and the default view, plus a small preview of your data.</Step>
-                <Step n={23}>If something looks wrong, use the step buttons at the top (or <strong>← Back</strong>) to go fix it — you cannot edit fields directly on this screen.</Step>
-                <Step n={24}>Click <strong>Create report</strong>. The report is saved and opens immediately.</Step>
+                <Step n={23}>This step is a read-only summary — a checklist to confirm before saving, not a place to make further edits. It shows the report's type, sharing scope, data source(s), how many fields and filters you set up, and the default view, plus a small preview of your data.</Step>
+                <Step n={24}>If something looks wrong, use the step buttons at the top (or <strong>← Back</strong>) to go fix it — you cannot edit fields directly on this screen.</Step>
+                <Step n={25}>Click <strong>Create report</strong>. The report is saved and opens immediately.</Step>
 
                 <Tip>You can edit any report at any time by opening it in the Building area and clicking <strong>Edit report</strong> in the toolbar at the bottom.</Tip>
               </div>
@@ -336,13 +344,13 @@ export function HelpPage() {
                 <Step n={7}>A standalone report opens as a normal full page — there is no separate "full-screen" button to click (that only appears if the report is embedded inside another website).</Step>
                 <Step n={8}>Click <strong>Focus details</strong> to expand the data table; <strong>Focus chart</strong> to expand the chart.</Step>
                 <Step n={9}>Click <strong>Save view</strong> to save your current filter/sort settings as a named view. Load any saved view from the list that appears.</Step>
-                <Step n={10}>Click <strong>Download xlsx</strong> for a quick Excel copy of the report (its chart, if any, is included as a picture). Click <strong>Native chart xlsx</strong> instead if you want a workbook with a real, editable Excel chart.</Step>
+                <Step n={10}>Click <strong>Download xlsx</strong> to get an Excel copy of the report with a real, editable Excel chart — not a picture. Every chart type looks the same in the download as it does on screen.</Step>
 
                 <Sub>Interacting with a dashboard</Sub>
                 <Step n={11}>Click any tab at the top of the dashboard to switch between tab sections.</Step>
                 <Step n={12}>If the dashboard has runtime filters, a <strong>Filters</strong> card appears above the tabs — pick values there to change what data shows across the dashboard. (Standalone reports don't have this; only dashboards do.)</Step>
                 <Step n={13}>Click the <strong>Focus</strong> (or <strong>Focus card</strong>) button in a card's header to expand just that card full-screen. Click <strong>Close</strong> to return — clicking elsewhere on the card does not expand it.</Step>
-                <Step n={14}>Click <strong>Export Workbook</strong> to download the entire dashboard (every tab) as one Excel file with real, editable charts. There is currently no option to export a single card on its own, or to export as an image.</Step>
+                <Step n={14}>Click <strong>Export Workbook</strong> to download the entire dashboard (every tab) as one Excel file with real, editable charts — every chart type matches what you see on screen. There is currently no option to export a single card on its own, or to export as an image.</Step>
 
                 <Tip>Star/favorite a report or dashboard by clicking the <strong>Favorite</strong> button in the report toolbar. Favorites appear first when you filter by Favorites only.</Tip>
               </div>
@@ -530,14 +538,15 @@ export function HelpPage() {
                 <Step n={18}>Files over <strong>25 MB</strong> are rejected automatically. Try splitting large files or removing unused sheets.</Step>
                 <Step n={19}>Column headers should ideally be in the <strong>first row</strong> of each sheet. The importer can sometimes find headers a little lower (for example, below a title row), but the first row is the safest bet if the import isn't picking up your columns correctly.</Step>
                 <Step n={20}>Make sure you selected the correct workbook in the picker (either an existing workbook to update, or "+ Add new workbook" to create one).</Step>
+                <Step n={21}>If a red warning box appears and won't let you continue, it means either your key field(s) had duplicate values in this file (check <strong>Allow duplicates</strong> to proceed) or the file's columns don't match what's already stored (check the acknowledgment box after reviewing the Added/Missing columns list).</Step>
 
                 <Sub>Can't see a report or dashboard someone shared</Sub>
-                <Step n={21}>Ask the person who created it to check its <strong>Sharing</strong> settings in the Builder. It may be set to <em>Personal</em> (only visible to the creator).</Step>
-                <Step n={22}>If it is shared with specific users, ask them to add your email or role to the shared list.</Step>
+                <Step n={22}>Ask the person who created it to check its <strong>Sharing</strong> settings in the Builder. It may be set to <em>Personal</em> (only visible to the creator).</Step>
+                <Step n={23}>If it is shared with specific users, ask them to add your email or role to the shared list.</Step>
 
                 <Sub>Settings not saving between visits</Sub>
-                <Step n={23}>Always click <strong>✓ Save settings to server</strong> at the bottom of the Settings page after making changes. Settings are only saved when you explicitly click this button.</Step>
-                <Step n={24}>If settings still revert, verify the database is connected in <strong>Settings → Storage &amp; Sharing</strong>. A disconnected database means settings fall back to defaults on restart.</Step>
+                <Step n={24}>Always click <strong>✓ Save settings to server</strong> at the bottom of the Settings page after making changes. Settings are only saved when you explicitly click this button.</Step>
+                <Step n={25}>If settings still revert, verify the database is connected in <strong>Settings → Storage &amp; Sharing</strong>. A disconnected database means settings fall back to defaults on restart.</Step>
 
                 <Tip>When reporting an issue to your administrator, always include: the URL you were on, what you were trying to do, and any error message shown on screen or in the browser console (F12 → Console tab).</Tip>
               </div>
