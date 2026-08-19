@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useSetReaderTools } from "../contexts/ReaderToolsContext";
 import { Link } from "react-router-dom";
 import { buildDashboardFilters, compactDashboardTabWidgets, formatReportCellValue, getDashboardWidgetLayoutStyle, getDashboardWidgetPlacements, getReportFieldLabel, repackDashboardTabLayout, resolveActiveDashboardTabId, resolveDashboardWidgetRenderMode, type DashboardDefinition, type DashboardRunResult, type RefreshJobStatus, type ReportDefinition, type ReportRunResult, type TableDefinition } from "@studio/shared";
-import { createExportSaveTarget, fetchExportJobBlob, fetchExportJobStatus, fetchFieldValues, fetchReportExportBundle, renderDashboard, runReportPage, startDashboardExportJob, type ExportSaveTarget } from "../lib/api";
+import { createExportSaveTarget, fetchExportJobBlob, fetchExportJobStatus, fetchFieldValues, renderDashboard, runReportPage, startDashboardExportJob, type ExportSaveTarget } from "../lib/api";
 import { ChartPreview } from "./ChartPreview";
 import { RefreshOverlay } from "./RefreshOverlay";
 import { ResizableDataTable } from "./ResizableDataTable";
@@ -10,8 +10,6 @@ import { buildHostedRoute, buildObjectUrl, getHostedContext } from "../lib/embed
 import { buildDashboardExportDefinition } from "../lib/dashboardExport";
 import { buildQuickbaseReportFilterTree } from "../lib/quickbaseLinks";
 import { getChartViewportBounds } from "./studioReportUtils";
-import { exportDashboardWorkbook } from "../lib/workbookExport";
-import { mapWithConcurrency } from "../lib/concurrency";
 
 interface DashboardViewProps {
   dashboard: DashboardDefinition;
@@ -163,16 +161,6 @@ function getDashboardCrossFilterOptions(
   return options;
 }
 
-function buildExportFilename(name: string) {
-  const safe = String(name || "dashboard")
-    .replace(/[\\/:*?"<>|]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  const now = new Date();
-  const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}_${String(now.getHours()).padStart(2, "0")}-${String(now.getMinutes()).padStart(2, "0")}-${String(now.getSeconds()).padStart(2, "0")}`;
-  return `${safe || "dashboard"} ${timestamp}.xlsx`;
-}
-
 async function savePreparedWorkbook(blob: Blob, filename: string, target?: ExportSaveTarget | null) {
   if (target) {
     const writable = await target.createWritable();
@@ -228,7 +216,6 @@ export function DashboardView({
   const [tabLoading, setTabLoading] = useState<Record<string, boolean>>({});
   const [tabErrors, setTabErrors] = useState<Record<string, string>>({});
   const [activeTabId, setActiveTabId] = useState(initialActiveTabId || dashboard.tabs[0]?.id || "");
-  const [localExporting, setLocalExporting] = useState(false);
   const [nativeChartExporting, setNativeChartExporting] = useState(false);
   const [exportError, setExportError] = useState("");
   const [preparedExport, setPreparedExport] = useState<{ filename: string; blob: Blob } | null>(null);
@@ -461,7 +448,7 @@ export function DashboardView({
     if (autoExportStartedRef.current) return;
     autoExportStartedRef.current = true;
     window.history.replaceState({}, document.title, buildObjectUrl("dashboard", dashboard.id, { viewer: true }));
-    void beginExport({ skipPicker: true });
+    void beginNativeChartExport({ skipPicker: true });
   }, [dashboard.id, hosted.autoDownload]);
 
   useEffect(() => {
@@ -554,7 +541,7 @@ export function DashboardView({
         <button
           className="nav-sidebar-item"
           onClick={() => { void beginNativeChartExport(); }}
-          disabled={!activeTabResult || localExporting || nativeChartExporting}
+          disabled={!activeTabResult || nativeChartExporting}
         >
           <span className="nav-sidebar-icon">📤</span>
           <span className="nav-sidebar-label">
@@ -588,7 +575,6 @@ export function DashboardView({
     hosted.embed,
     isFavorite,
     dashboardLoading,
-    localExporting,
     nativeChartExporting,
     activeTabResult,
     hasSaveView,
@@ -601,48 +587,8 @@ export function DashboardView({
     setTools
   ]);
 
-  async function buildDashboardExportResult() {
-    // Sequential (concurrency 1): an unbounded Promise.all here fires one request
-    // per tab/widget simultaneously — a dashboard with many widgets can burst
-    // dozens of requests at once and saturate the server's database connection
-    // pool, causing intermittent 500s. Correctness/reliability matters far more
-    // than export speed here, so this deliberately does not parallelize at all.
-    const renderedTabs = await mapWithConcurrency(dashboard.tabs, 1, async (tab) => {
-      const cached = tabResults[tab.id];
-      if (cached?.widgets.length) return cached;
-      const rendered = await renderDashboard(dashboard.id, runtimeFilters, tab.id, {
-        forceLive,
-        dashboard: exportDashboard,
-        reportOverrides: reportDefinitions
-      });
-      return rendered.tabs.find((item) => item.id === tab.id) || { id: tab.id, name: tab.name, widgets: [] };
-    });
-    const exportResultsByWidgetId = Object.fromEntries(
-      await mapWithConcurrency(
-        renderedTabs.flatMap((tab) => tab.widgets.map((widget) => ({ ...widget, tabId: tab.id }))),
-        1,
-        async (widget) => {
-          const filters = buildDashboardFilters(dashboard, widget.report.id, runtimeFilters, widget.report.sourceTableId, widget.widget, widget.tabId);
-          const response = await fetchReportExportBundle(widget.report.id, filters, {
-            report: widget.report
-          });
-          return [widget.widgetId, response.result] as const;
-        }
-      )
-    );
-    return {
-      result: {
-        dashboard: exportDashboard,
-        tabs: renderedTabs
-      } as DashboardRunResult,
-      exportResultsByWidgetId: Object.fromEntries(
-        Object.entries(exportResultsByWidgetId).filter((entry): entry is [string, ReportRunResult] => Boolean(entry[1]))
-      )
-    };
-  }
-
-  async function beginExport(options: { skipPicker?: boolean } = {}) {
-    if (localExporting) return;
+  async function beginNativeChartExport(options: { skipPicker?: boolean } = {}) {
+    if (nativeChartExporting) return;
     if (preparedExport && !options.skipPicker) {
       const saveTarget = await createExportSaveTarget(preparedExport.filename);
       if (!saveTarget && typeof (window as typeof window & { showSaveFilePicker?: unknown }).showSaveFilePicker === "function") return;
@@ -650,36 +596,6 @@ export function DashboardView({
       setExportSaved(true);
       return;
     }
-    const filename = buildExportFilename(dashboard.name);
-    setLocalExporting(true);
-    setExportError("");
-    setPreparedExport(null);
-    setExportSaved(false);
-    try {
-      const exportPayload = await buildDashboardExportResult();
-      const blob = await exportDashboardWorkbook(dashboard, exportPayload.result, exportPayload.exportResultsByWidgetId, {
-        filename,
-        tablesById: Object.fromEntries((tables || []).map((table) => [table.id, table])),
-        returnBlob: true
-      });
-      if (!(blob instanceof Blob)) {
-        throw new Error("Export did not produce a workbook file.");
-      }
-      if (options.skipPicker) {
-        await savePreparedWorkbook(blob, filename, null);
-        setExportSaved(true);
-      } else {
-        setPreparedExport({ filename, blob });
-      }
-    } catch (error) {
-      setExportError(error instanceof Error ? error.message : "Export failed.");
-    } finally {
-      setLocalExporting(false);
-    }
-  }
-
-  async function beginNativeChartExport() {
-    if (localExporting || nativeChartExporting) return;
     const filename = `${String(dashboard.name || "dashboard").replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim() || "dashboard"} ${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19).replace("T", "_")}.xlsx`;
     setNativeChartExporting(true);
     setExportError("");
@@ -707,7 +623,12 @@ export function DashboardView({
         throw new Error(current.error || "Export failed.");
       }
       const { blob, filename: serverFilename } = await fetchExportJobBlob(job.id, current.filename || filename);
-      setPreparedExport({ filename: serverFilename, blob });
+      if (options.skipPicker) {
+        await savePreparedWorkbook(blob, serverFilename, null);
+        setExportSaved(true);
+      } else {
+        setPreparedExport({ filename: serverFilename, blob });
+      }
     } catch (error) {
       setExportError(error instanceof Error ? error.message : "Native chart export failed.");
     } finally {
@@ -785,16 +706,6 @@ export function DashboardView({
         </div>
       ) : null}
 
-      {localExporting ? (
-        <div className="sync-status">
-          <strong>Generating export</strong>
-          <span>Building the workbook and chart images from the current dashboard.</span>
-          <div className="progress-meter" aria-hidden="true">
-            <div className="progress-meter-fill" style={{ width: "72%" }} />
-          </div>
-        </div>
-      ) : null}
-
       {nativeChartExporting ? (
         <div className="sync-status">
           <strong>Generating workbook</strong>
@@ -866,16 +777,18 @@ export function DashboardView({
                     return { ...current, [filter.id]: next.join("|||") };
                   });
                 }
+                const filterInputId = `dashboard-filter-${filter.id}`;
                 return (
                   <div className="dashboard-live-filter-field" key={filter.id}>
                     <div className="dashboard-live-filter-label">
-                      <span>{filter.label}</span>
+                      <label htmlFor={filterInputId}>{filter.label}</label>
                       {selectedValues.length ? (
                         <button type="button" className="ghost-button micro" onClick={() => setRuntimeFilters((c) => ({ ...c, [filter.id]: "" }))}>Clear</button>
                       ) : null}
                     </div>
                     {isDate ? (
                       <input
+                        id={filterInputId}
                         type="date"
                         className="dashboard-live-filter-input"
                         value={currentVal}
@@ -883,6 +796,7 @@ export function DashboardView({
                       />
                     ) : isNumber ? (
                       <input
+                        id={filterInputId}
                         type="number"
                         className="dashboard-live-filter-input"
                         value={currentVal}
@@ -892,6 +806,7 @@ export function DashboardView({
                     ) : options.length ? (
                       <div className="filter-dropdown-wrap">
                         <button
+                          id={filterInputId}
                           type="button"
                           className="filter-dropdown-trigger"
                           onClick={() => setOpenFilterId((id) => id === filter.id ? null : filter.id)}
@@ -922,6 +837,7 @@ export function DashboardView({
                       </div>
                     ) : (
                       <input
+                        id={filterInputId}
                         className="dashboard-live-filter-input"
                         value={currentVal}
                         placeholder="Type to filter…"

@@ -5,11 +5,10 @@ import { formatReportCellValue, getReportFieldLabel, type ReportDefinition, type
 import { ChartPreview } from "./ChartPreview";
 import { RefreshOverlay } from "./RefreshOverlay";
 import { ResizableDataTable } from "./ResizableDataTable";
-import { createExportSaveTarget, fetchReportExportBundle, type ExportSaveTarget } from "../lib/api";
+import { createExportSaveTarget, fetchExportJobBlob, fetchExportJobStatus, startReportExportJob, type ExportSaveTarget } from "../lib/api";
 import { buildHostedRoute, buildObjectUrl, getHostedContext } from "../lib/embed";
 import { buildQuickbaseChartDatumUrl, buildQuickbaseRecordEditUrl, buildQuickbaseReportFilterTree, type QuickbaseTableLinkContext } from "../lib/quickbaseLinks";
 import { getChartViewportBounds } from "./studioReportUtils";
-import { exportReportWorkbook } from "../lib/workbookExport";
 
 interface ReportViewProps {
   report: ReportDefinition;
@@ -158,20 +157,6 @@ function buildExportFilename(name: string) {
   return `${safe || "report"} ${timestamp}.xlsx`;
 }
 
-function buildExportTableFallback(report: ReportDefinition, table?: TableDefinition) {
-  if (table) return table;
-  return {
-    id: report.sourceTableId,
-    name: report.sourceTableId || "Report data",
-    description: "",
-    fields: report.selectedFieldIds.map((fieldId) => ({
-      id: fieldId,
-      label: getReadableFieldLabel(report, fieldId),
-      type: "text" as const
-    }))
-  };
-}
-
 async function savePreparedWorkbook(blob: Blob, filename: string, target?: ExportSaveTarget | null) {
   if (target) {
     const writable = await target.createWritable();
@@ -212,7 +197,6 @@ export function ReportView({
   const fullScreenUrl = buildObjectUrl("report", report.id, { viewer: true });
   const totalPages = result?.totalPages || 1;
   const [localExporting, setLocalExporting] = useState(false);
-  const [nativeChartExporting, setNativeChartExporting] = useState(false);
   const [exportError, setExportError] = useState("");
   const [preparedExport, setPreparedExport] = useState<{ filename: string; blob: Blob } | null>(null);
   const [exportSaved, setExportSaved] = useState(false);
@@ -293,7 +277,7 @@ export function ReportView({
   }, [hosted.autoDownload, report.id]);
 
   async function beginExport(options: { skipPicker?: boolean } = {}) {
-    if (localExporting || nativeChartExporting) return;
+    if (localExporting) return;
     if (preparedExport && !options.skipPicker) {
       const saveTarget = await createExportSaveTarget(preparedExport.filename);
       if (!saveTarget && typeof (window as typeof window & { showSaveFilePicker?: unknown }).showSaveFilePicker === "function") return;
@@ -307,51 +291,31 @@ export function ReportView({
     setPreparedExport(null);
     setExportSaved(false);
     try {
-      const exportBundle = await fetchReportExportBundle(report.id);
-      const blob = await exportReportWorkbook(report, buildExportTableFallback(report, table), exportBundle.result, {
-        filename,
-        returnBlob: true
-      });
-      if (!(blob instanceof Blob)) {
-        throw new Error("Export did not produce a workbook file.");
+      // Server-side job, not client-side generation: the client used to build the
+      // workbook itself with the chart flattened to a picture (exportReportWorkbook),
+      // which didn't match what a real Excel chart in Studio looks like. A single job
+      // request lets the server build it with genuine native Excel chart objects —
+      // the same reliable path scheduled/test emails and dashboard export already use.
+      const { job } = await startReportExportJob({ reportId: report.id });
+      let current = job;
+      while (current.status === "queued" || current.status === "running") {
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+        current = (await fetchExportJobStatus(job.id)).job;
       }
+      if (current.status === "failed") {
+        throw new Error(current.error || "Export failed.");
+      }
+      const { blob, filename: serverFilename } = await fetchExportJobBlob(job.id, current.filename || filename);
       if (options.skipPicker) {
-        await savePreparedWorkbook(blob, filename, null);
+        await savePreparedWorkbook(blob, serverFilename, null);
         setExportSaved(true);
       } else {
-        setPreparedExport({ filename, blob });
+        setPreparedExport({ filename: serverFilename, blob });
       }
     } catch (error) {
       setExportError(error instanceof Error ? error.message : "Export failed.");
     } finally {
       setLocalExporting(false);
-    }
-  }
-
-  async function beginNativeChartExport() {
-    if (localExporting || nativeChartExporting) return;
-    const filename = `${String(report.name || "report")
-      .replace(/[\\/:*?"<>|]+/g, " ")
-      .replace(/\s+/g, " ")
-      .trim() || "report"} native charts dev ${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19).replace("T", "_")}.xlsx`;
-    setNativeChartExporting(true);
-    setExportError("");
-    setPreparedExport(null);
-    setExportSaved(false);
-    try {
-      const { exportReportNativeChartWorkbook } = await import("../lib/nativeExcelDashboardExport");
-      const exportBundle = await fetchReportExportBundle(report.id);
-      const blob = await exportReportNativeChartWorkbook(report, buildExportTableFallback(report, table), exportBundle.result, {
-        filename
-      });
-      if (!(blob instanceof Blob)) {
-        throw new Error("Native chart export did not produce a workbook file.");
-      }
-      setPreparedExport({ filename, blob });
-    } catch (error) {
-      setExportError(error instanceof Error ? error.message : "Native chart export failed.");
-    } finally {
-      setNativeChartExporting(false);
     }
   }
 
@@ -447,21 +411,11 @@ export function ReportView({
         <button
           className="nav-sidebar-item"
           onClick={() => { void beginExport(); }}
-          disabled={!result || localExporting || nativeChartExporting}
+          disabled={!result || localExporting}
         >
           <span className="nav-sidebar-icon">📥</span>
           <span className="nav-sidebar-label">
             {localExporting ? "Generating…" : preparedExport ? (exportSaved ? "Save again" : "Save xlsx") : "Download xlsx"}
-          </span>
-        </button>
-        <button
-          className="nav-sidebar-item"
-          onClick={() => { void beginNativeChartExport(); }}
-          disabled={!result || localExporting || nativeChartExporting}
-        >
-          <span className="nav-sidebar-icon">🔬</span>
-          <span className="nav-sidebar-label">
-            {nativeChartExporting ? "Generating…" : "Native chart xlsx"}
           </span>
         </button>
         <button
@@ -509,7 +463,6 @@ export function ReportView({
     isFavorite,
     loading,
     localExporting,
-    nativeChartExporting,
     result,
     preparedExport,
     exportSaved,
@@ -739,17 +692,7 @@ export function ReportView({
       {localExporting ? (
         <div className="sync-status">
           <strong>Generating export</strong>
-          <span>Building the workbook and chart image from the current report.</span>
-          <div className="progress-meter" aria-hidden="true">
-            <div className="progress-meter-fill" style={{ width: "72%" }} />
-          </div>
-        </div>
-      ) : null}
-
-      {nativeChartExporting ? (
-        <div className="sync-status">
-          <strong>Generating native chart export</strong>
-          <span>Building native Excel chart objects from hidden workbook ranges.</span>
+          <span>Building the workbook with real, editable Excel charts.</span>
           <div className="progress-meter" aria-hidden="true">
             <div className="progress-meter-fill" style={{ width: "72%" }} />
           </div>
