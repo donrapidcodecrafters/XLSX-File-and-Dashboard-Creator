@@ -7,7 +7,8 @@ import { HomePage } from "./HomePage";
 
 vi.mock("../lib/studioApi", () => ({
   fetchStudioRefreshJob: vi.fn(),
-  startStudioRefresh: vi.fn()
+  startStudioRefresh: vi.fn(),
+  fetchStudioSources: vi.fn().mockResolvedValue({ sources: [] })
 }));
 
 function buildHomeProps() {
@@ -46,7 +47,7 @@ describe("HomePage", () => {
     expect(personalSection).toBeTruthy();
     expect(within(personalSection as HTMLElement).getByText(personalReportName)).toBeInTheDocument();
 
-    const sharedSection = screen.getByText("Recently Opened Shared Content").closest(".home-section-card");
+    const sharedSection = screen.getByText("Recently Opened").closest(".home-section-card");
     expect(sharedSection).toBeTruthy();
     expect(within(sharedSection as HTMLElement).queryByText(personalReportName)).not.toBeInTheDocument();
   });
@@ -54,7 +55,7 @@ describe("HomePage", () => {
   it("shows shared app browse groups and forwards favorite actions", async () => {
     const user = userEvent.setup();
     const props = buildHomeProps();
-    const browseByAppSection = () => screen.getByText("Browse by App").closest(".home-section-card") as HTMLElement;
+    const browseByAppSection = () => screen.getByText("Browse by Connected App").closest(".home-section-card") as HTMLElement;
     const personalReportName = props.studioDocument.bundle.objects["report-my-active-projects"].name;
 
     render(
@@ -63,11 +64,11 @@ describe("HomePage", () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByText("Browse by App")).toBeInTheDocument();
+    expect(screen.getByText("Browse by Connected App")).toBeInTheDocument();
     expect(within(browseByAppSection()).getByText("Executive Pulse")).toBeInTheDocument();
     expect(within(browseByAppSection()).queryByText(personalReportName)).not.toBeInTheDocument();
 
-    await user.click(screen.getAllByRole("button", { name: "Unfavorite" })[0]);
+    await user.click(screen.getAllByRole("button", { name: "Remove from favorites" })[0]);
 
     expect(props.onToggleFavorite).toHaveBeenCalled();
   });

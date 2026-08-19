@@ -1,5 +1,5 @@
 import { useState, type PointerEvent as ReactPointerEvent } from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { DashboardWidgetDropPosition, DashboardWidgetMoveDirection, DashboardWidgetRowEdge } from "@studio/shared";
 import { buildDashboardResult, buildStudioDocument, runReport, type DashboardDefinition, type DashboardRunResult, type ReportDefinition, type TableDefinition } from "@studio/shared";
@@ -46,6 +46,15 @@ function buildPreviewFixture() {
   };
 }
 
+function getWidgetCard(name: string) {
+  const heading = screen.getByText(name, { selector: "strong" });
+  const card = heading.closest("article.widget-card");
+  if (!(card instanceof HTMLElement)) {
+    throw new Error(`expected widget card for "${name}"`);
+  }
+  return card;
+}
+
 function PreviewHarness({
   widgetSearch = "",
   resultOverride,
@@ -89,17 +98,21 @@ function PreviewHarness({
 }
 
 describe("StudioDashboardPreview", () => {
-  it("handles selection, card drag/drop intent, directional movement, full-width, and resize entry points", async () => {
+  it("handles selection, card drag/drop intent, and resize entry points", async () => {
+    // Directional move ("Move right") and full-width toggle controls used to live on the
+    // card itself but were intentionally relocated to the widget settings drawer in
+    // StudioPage.tsx (see commit f1fd026, "Move dashboard widget editor into sidebar
+    // drawer"); StudioDashboardPreview no longer renders them, so this test only covers
+    // the entry points this component still owns: selection, drag/drop intent, resize.
     const user = userEvent.setup();
     const callbacks = createCallbacks();
     const fixture = buildPreviewFixture();
     render(<PreviewHarness callbacks={callbacks} />);
 
-    const moveButtons = screen.getAllByRole("button", { name: "Move right" });
-    const fullWidthButtons = screen.getAllByRole("button", { name: /Full width|Restore width/ });
     const resizeButtons = screen.getAllByRole("button", { name: "Resize card" });
-    const firstCard = screen.getByRole("button", { name: new RegExp(fixture.result.tabs[0].widgets[0].report.name, "i") });
-    const secondCard = screen.getByRole("button", { name: new RegExp(fixture.result.tabs[0].widgets[1].report.name, "i") });
+    const firstCard = getWidgetCard(fixture.result.tabs[0].widgets[0].report.name);
+    const secondCard = getWidgetCard(fixture.result.tabs[0].widgets[1].report.name);
+    const openSettingsButton = within(firstCard).getByRole("button", { name: /open settings/i });
     vi.spyOn(secondCard, "getBoundingClientRect").mockReturnValue({
       x: 0,
       y: 0,
@@ -112,19 +125,16 @@ describe("StudioDashboardPreview", () => {
       toJSON: () => ({})
     });
 
-    await user.click(firstCard);
-    await user.click(moveButtons[0]);
-    fireEvent.click(fullWidthButtons[0]);
+    await user.click(openSettingsButton);
     fireEvent.pointerDown(resizeButtons[0], { clientX: 100, clientY: 100 });
     fireEvent.dragStart(firstCard);
     fireEvent.dragOver(secondCard, { clientX: 220, clientY: 90 });
     fireEvent.drop(secondCard, { clientX: 220, clientY: 90 });
 
     expect(firstCard).toHaveStyle({ gridColumn: "1 / 8" });
-    expect(callbacks.onSelectWidget).toHaveBeenCalled();
-    expect(callbacks.onMoveWidget).toHaveBeenCalled();
-    expect(callbacks.onMoveWidget).toHaveBeenCalledWith(expect.any(String), expect.any(String), "right");
+    expect(callbacks.onSelectWidget).toHaveBeenCalledWith(expect.any(String), fixture.result.tabs[0].widgets[0].widgetId);
     expect(callbacks.onBeginResizeWidget).toHaveBeenCalled();
+    expect(callbacks.onStartWidgetDrag).toHaveBeenCalledWith(expect.any(String), fixture.result.tabs[0].widgets[0].widgetId);
     expect(callbacks.onDropWidget).toHaveBeenCalledWith(expect.any(String), expect.any(String), "after");
   });
 
@@ -237,8 +247,8 @@ describe("StudioDashboardPreview", () => {
       />
     );
 
-    const firstCard = screen.getByRole("button", { name: new RegExp(fixture.result.tabs[0].widgets[0].report.name, "i") });
-    const secondCard = screen.getByRole("button", { name: new RegExp(fixture.result.tabs[0].widgets[1].report.name, "i") });
+    const firstCard = getWidgetCard(fixture.result.tabs[0].widgets[0].report.name);
+    const secondCard = getWidgetCard(fixture.result.tabs[0].widgets[1].report.name);
     const initialGridColumn = firstCard.style.gridColumn;
     vi.spyOn(secondCard, "getBoundingClientRect").mockReturnValue({
       x: 0,
@@ -282,8 +292,7 @@ describe("StudioDashboardPreview", () => {
     if (!(firstRowGrid instanceof HTMLElement)) {
       throw new Error("expected dashboard row grid");
     }
-    const firstCard = screen.getByRole("button", { name: new RegExp(fixture.result.tabs[0].widgets[0].report.name, "i") });
-    const secondCard = screen.getByRole("button", { name: new RegExp(fixture.result.tabs[0].widgets[1].report.name, "i") });
+    const firstCard = getWidgetCard(fixture.result.tabs[0].widgets[0].report.name);
     const initialGridColumn = firstCard.style.gridColumn;
     vi.spyOn(firstRowGrid, "getBoundingClientRect").mockReturnValue({
       x: 0,

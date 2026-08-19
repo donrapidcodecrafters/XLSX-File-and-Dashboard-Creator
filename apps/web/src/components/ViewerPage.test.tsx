@@ -43,18 +43,18 @@ describe("ViewerPage", () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByText("Open Reports and Dashboards")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Your Reports & Dashboards" })).toBeInTheDocument();
     expect(screen.getByText(personalReportName)).toBeInTheDocument();
 
-    await user.selectOptions(screen.getByLabelText("Scope"), "global");
+    await user.selectOptions(screen.getByLabelText("Access"), "global");
 
-    expect(screen.getByText("Shared library view")).toBeInTheDocument();
+    expect(screen.getByText("Showing shared content only")).toBeInTheDocument();
     expect(screen.queryByText(personalReportName)).not.toBeInTheDocument();
 
-    await user.selectOptions(screen.getByLabelText("Scope"), "personal");
+    await user.selectOptions(screen.getByLabelText("Access"), "personal");
 
     expect(screen.getByText(personalReportName)).toBeInTheDocument();
-    expect(screen.queryByText("No reports or dashboards match this search.")).not.toBeInTheDocument();
+    expect(screen.queryByText("No results match your filters")).not.toBeInTheDocument();
   });
 
   it("filters by search and favorites and forwards favorite clicks", async () => {
@@ -68,13 +68,13 @@ describe("ViewerPage", () => {
       </MemoryRouter>
     );
 
-    await user.type(screen.getByPlaceholderText("Search reports, dashboards, folders, tags, or app labels"), "executive");
-    await user.click(screen.getByLabelText(/favorites/i));
+    await user.type(screen.getByPlaceholderText("Search by name, description, folder, or tag…"), "executive");
+    await user.click(screen.getByRole("checkbox", { name: "Favorites only" }));
 
     expect(screen.getByText(favoriteDashboard.name)).toBeInTheDocument();
-    expect(screen.queryByText("No reports or dashboards match this search.")).not.toBeInTheDocument();
+    expect(screen.queryByText("No results match your filters")).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Unfavorite" }));
+    await user.click(screen.getByRole("button", { name: "Remove from favorites" }));
 
     expect(props.onToggleFavorite).toHaveBeenCalledWith(favoriteDashboard.id);
   });

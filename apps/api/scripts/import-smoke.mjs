@@ -646,8 +646,11 @@ async function main() {
   const summaryDashboard = summaryImported.document.bundle.objects[summaryImported.primaryObjectId];
   assert.equal(summaryDashboard?.type, "dashboard", "expected summary block workbook to create a dashboard");
   assert.ok(
-    summaryDashboard.tabs.some((tab) => tab.name === "Cash Collected" && tab.widgets.filter((widget) => widget.displayMode === "summary" && !widget.showDetails).length >= 2),
-    "expected workbook summary sections to display as summary widgets on their source tab"
+    summaryDashboard.tabs.some((tab) => tab.name === "Cash Collected" && tab.widgets.filter((widget) => {
+      const widgetReport = summaryImported.document.bundle.objects[widget.reportId];
+      return widget.displayMode === "table" && !widget.showDetails && widgetReport?.view.mode === "summary";
+    }).length >= 2),
+    "expected workbook summary sections to render their full matrix data (not a metric-only tile) on their source tab"
   );
 
   const nativeImported = await importWorkbookIntoStudioDocument(buildStudioDocument(), "Native Chart Workbook.xlsx", await buildNativeChartWorkbookBuffer());

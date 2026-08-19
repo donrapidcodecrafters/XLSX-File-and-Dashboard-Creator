@@ -5,6 +5,15 @@ import { buildDashboardResult, buildStudioDocument, runReport, type DashboardDef
 import { describe, expect, it, vi } from "vitest";
 import { DashboardView } from "./DashboardView";
 import { renderDashboard } from "../lib/api";
+import { ReaderToolsProvider, useReaderToolsNode } from "../contexts/ReaderToolsContext";
+
+// DashboardView pushes its "tools" actions (save view, reset view, export, etc.)
+// into the shared reader tools sidebar via context instead of rendering them
+// inline. Mirror that consumer here so the tests can reach those controls.
+function ToolsPanel() {
+  const toolsNode = useReaderToolsNode();
+  return <div data-testid="tools-panel">{toolsNode}</div>;
+}
 
 vi.mock("../lib/api", () => ({
   renderDashboard: vi.fn(),
@@ -68,22 +77,25 @@ describe("DashboardView", () => {
 
     render(
       <MemoryRouter>
-        <DashboardView
-          dashboard={fixture.dashboard}
-          tables={fixture.tables}
-          initialRuntimeFilters={{ "runtime-status": "Open" }}
-          savedViews={[{
-            id: "saved-dashboard-view",
-            name: "Saved Overview",
-            runtimeFilters: { "runtime-status": "Blocked" },
-            activeTabId: fixture.dashboard.tabs[0].id,
-            focusedWidgetId: fixture.dashboard.tabs[0].widgets[0].id,
-            updatedAt: new Date().toISOString()
-          }]}
-          onSaveView={onSaveView}
-          onDeleteView={onDeleteView}
-          onStateChange={onStateChange}
-        />
+        <ReaderToolsProvider>
+          <DashboardView
+            dashboard={fixture.dashboard}
+            tables={fixture.tables}
+            initialRuntimeFilters={{ "runtime-status": "Open" }}
+            savedViews={[{
+              id: "saved-dashboard-view",
+              name: "Saved Overview",
+              runtimeFilters: { "runtime-status": "Blocked" },
+              activeTabId: fixture.dashboard.tabs[0].id,
+              focusedWidgetId: fixture.dashboard.tabs[0].widgets[0].id,
+              updatedAt: new Date().toISOString()
+            }]}
+            onSaveView={onSaveView}
+            onDeleteView={onDeleteView}
+            onStateChange={onStateChange}
+          />
+          <ToolsPanel />
+        </ReaderToolsProvider>
       </MemoryRouter>
     );
 
@@ -91,13 +103,12 @@ describe("DashboardView", () => {
       expect(screen.getAllByRole("button", { name: "Focus card" }).length).toBeGreaterThan(0);
     });
 
-    await user.click(screen.getByRole("button", { name: "Show tools" }));
-    expect(screen.getByRole("button", { name: "Dev native chart xlsx" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Export Workbook/ })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Status: Done" }));
     expect((screen.getByLabelText("Status") as HTMLInputElement).value).toBe("Done");
 
-    await user.click(screen.getByRole("button", { name: "Save view" }));
+    await user.click(screen.getByRole("button", { name: /Save view/ }));
     expect(onSaveView).toHaveBeenCalledWith(expect.objectContaining({ name: "Finance Focus" }));
 
     await user.click(screen.getByRole("button", { name: "Saved Overview" }));
@@ -110,7 +121,7 @@ describe("DashboardView", () => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Close" }));
 
-    await user.click(screen.getByRole("button", { name: "Reset view" }));
+    await user.click(screen.getByRole("button", { name: /Reset view/ }));
     expect((screen.getByLabelText("Status") as HTMLInputElement).value).toBe("");
 
     await user.click(screen.getByRole("button", { name: "Remove" }));
