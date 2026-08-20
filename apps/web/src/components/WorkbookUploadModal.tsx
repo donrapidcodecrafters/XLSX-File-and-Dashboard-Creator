@@ -135,6 +135,18 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
   // Cache of an existing source's current columns + saved key field(s), fetched
   // on demand so the modal can diff the new file's headers and pre-fill keys.
   const [existingFieldsCache, setExistingFieldsCache] = useState<Record<string, ExistingSourceFields>>({});
+  // Tracks the last (sourceId, file, headerSkipRows) combination the preview was
+  // auto-reconciled for, so the sync effect below fires once per combination instead
+  // of looping (it calls setPeek, which would otherwise re-trigger itself).
+  const headerRowSyncedRef = useRef<string>("");
+  const sheetHeaderRowSyncedRef = useRef<Set<string>>(new Set());
+
+  // Which sheet the single-target "Header row" field actually applies to. Declared
+  // here (rather than down with the other derived render values) so both the preview
+  // JSX and the auto-reconcile effect below can reference the same logic.
+  const targetSheetName = dataSheets.length === 1
+    ? dataSheets[0]
+    : (peek?.sheets?.find((s) => s.looksLikeData)?.name ?? peek?.sheetNames?.[0]);
 
   // Re-peeks the file with the given sheet's header row pinned, so the shown
   // columns/preview reflect what the user just typed instead of only the
@@ -211,6 +223,26 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
     });
   }, [sheetSourceMap, existingFieldsCache]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Same reconciliation as the single-target effect above, but per multi-sheet tab:
+  // a tab assigned to an existing target gets its header row pre-filled from the
+  // saved value (just above), but that alone doesn't refresh peek.sheets — so its
+  // key-field picker would keep showing whatever the server's raw auto-detection
+  // found instead of the real columns at the saved row.
+  useEffect(() => {
+    if (!file || !peek?.sheets?.length) return;
+    for (const [sheetName, sid] of Object.entries(sheetSourceMap)) {
+      if (!sid) continue;
+      const existing = existingFieldsCache[sid];
+      if (!existing) continue;
+      const expectedHeaderRow = existing.headerSkipRows + 1;
+      const syncKey = `${sid}:${sheetName}:${file.name}:${file.size}:${expectedHeaderRow}`;
+      if (sheetHeaderRowSyncedRef.current.has(syncKey)) continue;
+      sheetHeaderRowSyncedRef.current.add(syncKey);
+      void refreshSheetHeaderRowPreview(sheetName, expectedHeaderRow);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [file, peek?.sheets?.length, sheetSourceMap, existingFieldsCache]);
+
   // New sheets with no target assigned yet (will become a brand-new source): default
   // each sheet's header-row field to what the auto-detect heuristic found for it.
   useEffect(() => {
@@ -242,6 +274,28 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
     setKeyFieldIds(existing?.keyFieldIds || []);
     if (existing) setHeaderRow(existing.headerSkipRows + 1);
   }, [selectedSourceId, existingFieldsCache[selectedSourceId]]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keeps the preview in sync with an existing target's saved header row regardless
+  // of which happens first — picking the target or dropping the file. The "switching
+  // targets" effect above sets the `headerRow` NUMBER FIELD from the saved value, but
+  // that alone doesn't touch `peek` — so without this, the field could show the
+  // correct saved row while the columns/key-field picker below it kept showing
+  // whatever the server's raw auto-detection found (which for files with a merged
+  // title row spanning the header area, picks the title, not the real headers). Only
+  // the field's onBlur normally triggers a re-peek, and a value that arrived via
+  // pre-fill (not typed) never fires blur — so this reconciles it directly instead.
+  useEffect(() => {
+    if (!file || !peek || !targetSheetName) return;
+    if (!selectedSourceId || selectedSourceId === "new") return;
+    const existing = existingFieldsCache[selectedSourceId];
+    if (!existing) return;
+    const expectedHeaderRow = existing.headerSkipRows + 1;
+    const syncKey = `${selectedSourceId}:${file.name}:${file.size}:${expectedHeaderRow}`;
+    if (headerRowSyncedRef.current === syncKey) return;
+    headerRowSyncedRef.current = syncKey;
+    void refreshHeaderRowPreview(targetSheetName, expectedHeaderRow, selectedSourceId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [file, peek === null, targetSheetName, selectedSourceId, existingFieldsCache[selectedSourceId]]);
 
   // New file peeked for a brand-new source (no saved header row to prefer): default
   // the "header row" field to whatever the auto-detect heuristic found, so files with
@@ -312,6 +366,7 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
     setKeyFieldIds([]); setSheetKeyFieldMap({}); setDiffAcknowledged(false); setExistingFieldsCache({});
     setAllowDuplicates(false); setSheetAllowDuplicates({});
     setHeaderRow(1); setSheetHeaderRowMap({});
+    headerRowSyncedRef.current = ""; sheetHeaderRowSyncedRef.current.clear();
   }
 
   function handleClose() {
@@ -458,10 +513,6 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
   const hasDataSheetSelection = !isData || !multiSheet || dataSheets.length > 0;
   // Multi-sheet mode: file is peeked, 2+ data sheets selected, in data-source mode
   const isMultiSheetMode = isData && Boolean(peek) && dataSheets.length >= 2;
-  // Which sheet the single-target "Header row" field actually applies to.
-  const targetSheetName = dataSheets.length === 1
-    ? dataSheets[0]
-    : (peek?.sheets?.find((s) => s.looksLikeData)?.name ?? peek?.sheetNames?.[0]);
   const anyTabCreatingNew = isMultiSheetMode && dataSheets.some((s) => !sheetSourceMap[s]);
   const multiSheetCanSubmit = isMultiSheetMode && (
     !anyTabCreatingNew || multiSheetBaseName.trim().length > 0
