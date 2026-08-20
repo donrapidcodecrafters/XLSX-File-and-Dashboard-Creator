@@ -431,6 +431,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
       if (!filename) { reply.code(400); return { message: "No file provided." }; }
       return { filename, sheetNames, sheets: [], headers, rows, rowCount };
     } catch (error) {
+      request.log.error({ err: error }, "xlsx peek failed");
       reply.code(400);
       return { message: error instanceof Error ? error.message : "Could not preview file." };
     }

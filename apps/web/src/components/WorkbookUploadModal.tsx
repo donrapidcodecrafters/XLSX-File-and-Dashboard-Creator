@@ -438,7 +438,12 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
       if (!profile) {
         setDataSheets(autoSelected.length > 0 ? autoSelected : (r.sheets || []).map((s) => s.name));
       }
-    } catch { /* non-blocking */ }
+    } catch (err) {
+      // Previously silent — a peek failure left the modal showing nothing (no
+      // headers, no key fields, no explanation) with no way to tell what went
+      // wrong. Surface it like any other error in the modal instead.
+      setError(err instanceof Error ? err.message : "Could not read this file. Please try again.");
+    }
     finally { setPeeking(false); }
   }
 
