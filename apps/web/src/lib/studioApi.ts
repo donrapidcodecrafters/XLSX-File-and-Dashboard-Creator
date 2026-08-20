@@ -632,7 +632,7 @@ export interface XlsxHeaderDiff {
   removedLabels: string[];
 }
 
-export async function peekXlsxFile(file: File, options: { sourceId?: string } = {}): Promise<{
+export async function peekXlsxFile(file: File, options: { sourceId?: string; headerRowOverrides?: Record<string, number> } = {}): Promise<{
   filename: string;
   sheetNames: string[];
   sheets: XlsxSheetPeek[];
@@ -647,6 +647,9 @@ export async function peekXlsxFile(file: File, options: { sourceId?: string } = 
   formData.append("file", file, file.name);
   const params = new URLSearchParams();
   if (options.sourceId) params.set("sourceId", options.sourceId);
+  if (options.headerRowOverrides && Object.keys(options.headerRowOverrides).length > 0) {
+    params.set("headerRowOverrides", JSON.stringify(options.headerRowOverrides));
+  }
   const response = await fetch(API_BASE + `/api/studio/sources/xlsx/peek${params.toString() ? `?${params.toString()}` : ""}`, {
     method: "POST",
     credentials: "include",

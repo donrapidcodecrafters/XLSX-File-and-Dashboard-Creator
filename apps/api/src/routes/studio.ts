@@ -314,8 +314,18 @@ export async function registerStudioRoutes(app: FastifyInstance) {
   // Returns per-sheet stats from an uploaded xlsx file for preview and data-tab selection.
   app.post("/api/studio/sources/xlsx/peek", async (request, reply) => {
     try {
-      const query = (request.query as { sourceId?: string } | undefined) || {};
+      const query = (request.query as { sourceId?: string; headerRowOverrides?: string } | undefined) || {};
       const diffSourceId = String(query.sourceId || "").trim();
+      // Lets the client re-peek after the user edits the "Header row" field, so the
+      // shown columns/preview reflect their chosen row instead of only the auto-detected
+      // one. Keyed by sheet name; sheets with no entry still use auto-detection.
+      let headerRowOverrides: Record<string, number> = {};
+      if (query.headerRowOverrides) {
+        try {
+          const parsed = JSON.parse(query.headerRowOverrides);
+          if (parsed && typeof parsed === "object") headerRowOverrides = parsed;
+        } catch { /* ignore malformed overrides, fall back to auto-detect */ }
+      }
       const ExcelJSMod = await import("exceljs");
       const ExcelJSWorkbook = ExcelJSMod.default.Workbook;
       let filename = "";
@@ -347,7 +357,10 @@ export async function registerStudioRoutes(app: FastifyInstance) {
 
         // Build per-sheet stats for all worksheets.
         const sheets = workbook.worksheets.map((ws) => {
-          const headerRowNum = detectHeaderRowNumber(ws);
+          const override = headerRowOverrides[ws.name];
+          const headerRowNum = Number.isFinite(override) && override > 0
+            ? Math.min(Math.floor(override), Math.max(1, ws.rowCount))
+            : detectHeaderRowNumber(ws);
           const headerRow = ws.getRow(headerRowNum);
           const wsHeaders = (headerRow.values as unknown[])
             .slice(1)
@@ -362,8 +375,13 @@ export async function registerStudioRoutes(app: FastifyInstance) {
 
         sheetNames = sheets.map((s) => s.name);
 
-        // Use the first data-like sheet (or first sheet) for the backward-compat preview.
-        const previewSheet = sheets.find((s) => s.looksLikeData) ?? sheets[0];
+        // Use the first data-like sheet (or first sheet) for the backward-compat preview —
+        // but prefer whichever sheet the caller just sent a headerRowOverrides entry for,
+        // so a header-row edit's re-peek reflects that exact sheet, not just whichever one
+        // looksLikeData happens to pick.
+        const previewSheet = sheets.find((s) => headerRowOverrides[s.name] !== undefined)
+          ?? sheets.find((s) => s.looksLikeData)
+          ?? sheets[0];
         if (previewSheet) {
           headers = previewSheet.headers;
           rowCount = previewSheet.rowCount;

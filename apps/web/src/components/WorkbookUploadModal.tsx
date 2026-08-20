@@ -133,6 +133,41 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
   // on demand so the modal can diff the new file's headers and pre-fill keys.
   const [existingFieldsCache, setExistingFieldsCache] = useState<Record<string, ExistingSourceFields>>({});
 
+  // Re-peeks the file with the given sheet's header row pinned, so the shown
+  // columns/preview reflect what the user just typed instead of only the
+  // auto-detected row. Prunes any selected key field(s) that no longer exist
+  // among the new headers, since they'd otherwise silently point at a stale
+  // column name.
+  async function refreshHeaderRowPreview(sheetName: string, newHeaderRow: number, sourceId?: string) {
+    if (!file) return;
+    try {
+      const fresh = await peekXlsxFile(file, { sourceId, headerRowOverrides: { [sheetName]: newHeaderRow } });
+      const freshSheet = fresh.sheets?.find((s) => s.name === sheetName);
+      setPeek((prev) => prev ? { ...prev, headers: fresh.headers, rows: fresh.rows, rowCount: fresh.rowCount, sheets: fresh.sheets } : fresh);
+      if (freshSheet) {
+        const validLabels = new Set(freshSheet.headers);
+        setKeyFieldIds((prev) => prev.filter((id) => validLabels.has(id)));
+        setSheetKeyFieldMap((prev) => prev[sheetName] ? { ...prev, [sheetName]: prev[sheetName].filter((id) => validLabels.has(id)) } : prev);
+      }
+    } catch { /* non-blocking — keep showing the previous preview */ }
+  }
+
+  // Per-tab version: sends every currently-known header row (not just the one that
+  // just changed) so switching tab B's row doesn't revert tab A's back to auto-detect.
+  async function refreshSheetHeaderRowPreview(sheetName: string, newHeaderRow: number) {
+    if (!file) return;
+    const overrides = { ...sheetHeaderRowMap, [sheetName]: newHeaderRow };
+    try {
+      const fresh = await peekXlsxFile(file, { headerRowOverrides: overrides });
+      setPeek((prev) => prev ? { ...prev, sheets: fresh.sheets } : prev);
+      const freshSheet = fresh.sheets?.find((s) => s.name === sheetName);
+      if (freshSheet) {
+        const validLabels = new Set(freshSheet.headers);
+        setSheetKeyFieldMap((prev) => prev[sheetName] ? { ...prev, [sheetName]: prev[sheetName].filter((id) => validLabels.has(id)) } : prev);
+      }
+    } catch { /* non-blocking — keep showing the previous preview */ }
+  }
+
   function ensureExistingFields(sourceId: string) {
     if (!sourceId || existingFieldsCache[sourceId]) return;
     fetchSourceFields(sourceId)
@@ -420,6 +455,10 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
   const hasDataSheetSelection = !isData || !multiSheet || dataSheets.length > 0;
   // Multi-sheet mode: file is peeked, 2+ data sheets selected, in data-source mode
   const isMultiSheetMode = isData && Boolean(peek) && dataSheets.length >= 2;
+  // Which sheet the single-target "Header row" field actually applies to.
+  const targetSheetName = dataSheets.length === 1
+    ? dataSheets[0]
+    : (peek?.sheets?.find((s) => s.looksLikeData)?.name ?? peek?.sheetNames?.[0]);
   const anyTabCreatingNew = isMultiSheetMode && dataSheets.some((s) => !sheetSourceMap[s]);
   const multiSheetCanSubmit = isMultiSheetMode && (
     !anyTabCreatingNew || multiSheetBaseName.trim().length > 0
@@ -924,6 +963,7 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
                                   type="number" min={1} max={sheet.rowCount + 20} disabled={importing}
                                   value={sheetHeaderRowMap[sheet.name] ?? 1}
                                   onChange={(e) => setSheetHeaderRowMap((prev) => ({ ...prev, [sheet.name]: Math.max(1, Number(e.target.value) || 1) }))}
+                                  onBlur={() => { void refreshSheetHeaderRowPreview(sheet.name, sheetHeaderRowMap[sheet.name] ?? 1); }}
                                   style={{
                                     width: 60, padding: "3px 6px", borderRadius: T.radiusSm,
                                     border: `1px solid ${T.borderMd}`, background: T.bg, color: T.text,
@@ -1011,6 +1051,10 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
                       type="number" min={1} max={(peek.rowCount || 0) + 20} disabled={importing}
                       value={headerRow}
                       onChange={(e) => setHeaderRow(Math.max(1, Number(e.target.value) || 1))}
+                      onBlur={() => {
+                        if (!targetSheetName) return;
+                        void refreshHeaderRowPreview(targetSheetName, headerRow, selectedSourceId && selectedSourceId !== "new" ? selectedSourceId : undefined);
+                      }}
                       style={{
                         width: 70, padding: "6px 8px", borderRadius: T.radiusSm,
                         border: `1px solid ${T.borderMd}`, background: T.bg, color: T.text,
