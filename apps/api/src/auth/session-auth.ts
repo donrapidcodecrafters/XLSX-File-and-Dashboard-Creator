@@ -211,6 +211,22 @@ export async function registerSessionAuth(app: FastifyInstance) {
     }
   });
 
+  // @fastify/session's own `rolling: true` option does NOT actually extend a
+  // session's expiry on activity — nothing in the library ever calls
+  // `session.touch()` (confirmed: zero references to it in its own source). Left
+  // as-is, a logged-in user gets signed out exactly SESSION_TTL_HOURS after their
+  // *login*, no matter how active they are in between, which reads as "logged out
+  // while I was using it." Calling touch() here (registered after the session
+  // plugin, so request.session is already populated) resets cookie.expires to
+  // now + originalMaxAge on every authenticated request; the plugin's own onSend
+  // hook then persists that refreshed expiry via the store, giving true
+  // activity-based sliding-window sessions.
+  app.addHook("onRequest", async (request) => {
+    if (request.session?.userId) {
+      request.session.touch();
+    }
+  });
+
   // ── Step 1: POST /api/auth/login ──────────────────────────────────────────
   // Validates email + password. Does NOT create a session yet.
   // Returns { step: "2fa_required" | "2fa_setup_required", pendingToken }
@@ -275,7 +291,7 @@ export async function registerSessionAuth(app: FastifyInstance) {
       } else if (dbUser) {
         // Wrong password — increment failure counter and maybe lock
         const newAttempts = (dbUser.failed_login_attempts || 0) + 1;
-        const LOCK_AFTER = 10;
+        const LOCK_AFTER = 5;
         const LOCK_MINUTES = 5;
         if (newAttempts >= LOCK_AFTER) {
           const lockedUntil = new Date(Date.now() + LOCK_MINUTES * 60 * 1000).toISOString();
