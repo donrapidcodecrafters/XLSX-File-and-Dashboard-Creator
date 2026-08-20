@@ -107,7 +107,13 @@ function trimTrailingBlankValues(values: Array<string | number | boolean | null>
 }
 
 function getRowValues(row: ExcelJS.Row) {
-  const values = Array.isArray(row.values) ? row.values.slice(1) : [];
+  // ExcelJS's row.values is SPARSE — a cell that was never touched leaves a real hole,
+  // which `.map()` silently skips rather than passing through as `undefined`. Left
+  // sparse, a hole in a header row would produce a hole (not a fallback "Column N")
+  // in buildFieldsFromHeader's output, since `.map()`/`.forEach()` there would skip it
+  // too — leaving `undefined` where a field object is expected. Array.from() densifies
+  // holes into explicit `undefined` first so every column gets processed.
+  const values = Array.isArray(row.values) ? Array.from(row.values).slice(1) : [];
   return trimTrailingBlankValues(values.map((value) => normalizeCellValue(value as ExcelJS.CellValue)));
 }
 

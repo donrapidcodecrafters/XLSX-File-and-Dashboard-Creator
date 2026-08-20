@@ -10,7 +10,10 @@ interface ExistingSourceFields {
 
 function diffHeaders(fileHeaders: string[], existing: ExistingSourceFields | undefined) {
   if (!existing || !existing.fields.length) return null;
-  const norm = (v: string) => v.trim().toLowerCase();
+  // Guard against a stray null/undefined header label (e.g. a genuinely empty header
+  // cell surviving as a JSON `null`) crashing the whole app instead of just being
+  // treated as an unlabeled column.
+  const norm = (v: string | null | undefined) => String(v ?? "").trim().toLowerCase();
   const existingLabels = existing.fields.map((f) => f.label);
   const existingSet = new Set(existingLabels.map(norm));
   const fileSet = new Set(fileHeaders.map(norm));

@@ -2935,7 +2935,10 @@ function readWorksheetRegion(
 function readWorksheet(worksheet: ExcelJS.Worksheet): WorksheetReadResult[] {
   const rows: WorksheetRowSnapshot[] = [];
   worksheet.eachRow({ includeEmpty: false }, (row) => {
-    const values = (Array.isArray(row.values) ? row.values.slice(1) : []).map((value) =>
+    // row.values is sparse — a never-touched cell is a real hole, not `undefined`, and
+    // `.map()` silently skips holes instead of passing them through. Array.from() first
+    // densifies so every column index is actually visited.
+    const values = (Array.isArray(row.values) ? Array.from(row.values).slice(1) : []).map((value) =>
       normalizeCellValue(value as ExcelJS.CellValue)
     );
     if (values.some((value) => !isBlankCell(value))) {

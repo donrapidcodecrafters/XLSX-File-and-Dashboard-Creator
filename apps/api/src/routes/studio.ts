@@ -362,7 +362,14 @@ export async function registerStudioRoutes(app: FastifyInstance) {
             ? Math.min(Math.floor(override), Math.max(1, ws.rowCount))
             : detectHeaderRowNumber(ws);
           const headerRow = ws.getRow(headerRowNum);
-          const wsHeaders = (headerRow.values as unknown[])
+          // ExcelJS returns `.values` as a SPARSE array — a header cell that was never
+          // touched (not even set to blank) leaves a genuine hole, not `undefined`. A
+          // hole is skipped by `.map()` (the fallback below never runs for it) and later
+          // becomes `null` when this response is JSON-serialized, crashing anything
+          // downstream that assumes every header is a string (e.g. `.trim()` in the
+          // header-diff check). Array.from() densifies holes into explicit `undefined`
+          // first so the fallback actually applies to every column.
+          const wsHeaders = Array.from(headerRow.values as unknown[])
             .slice(1)
             .map((v, i) => String(v ?? `Column ${i + 1}`).trim() || `Column ${i + 1}`);
           const wsRowCount = Math.max(0, ws.rowCount - headerRowNum);
