@@ -76,6 +76,12 @@ ALTER TABLE app_entities ADD COLUMN IF NOT EXISTS key_field_id text NOT NULL DEF
 -- so the next import of the same source pre-fills the same choice.
 ALTER TABLE app_entities ADD COLUMN IF NOT EXISTS key_field_ids text[] NOT NULL DEFAULT '{}';
 
+-- How many rows to skip before the real header row on xlsx re-imports (some
+-- exported reports have title/filter-summary rows above the actual headers).
+-- Persisted per source (per tab, since each tab is its own source) so the
+-- next import of the same source pre-fills the same choice.
+ALTER TABLE app_entities ADD COLUMN IF NOT EXISTS header_skip_rows integer NOT NULL DEFAULT 0;
+
 CREATE INDEX IF NOT EXISTS app_entities_source_type_idx ON app_entities (source_type);
 CREATE INDEX IF NOT EXISTS app_entities_refreshed_at_idx ON app_entities (refreshed_at);
 

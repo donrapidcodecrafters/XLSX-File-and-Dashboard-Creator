@@ -623,6 +623,8 @@ export interface XlsxSheetPeek {
   columnCount: number;
   headers: string[];
   looksLikeData: boolean;
+  /** 1-based row number the header-detection heuristic picked for this sheet. */
+  detectedHeaderRow: number;
 }
 
 export interface XlsxHeaderDiff {
@@ -639,6 +641,7 @@ export async function peekXlsxFile(file: File, options: { sourceId?: string } = 
   rowCount: number;
   headerDiff: XlsxHeaderDiff | null;
   existingKeyFieldIds: string[];
+  existingHeaderSkipRows: number;
 }> {
   const formData = new FormData();
   formData.append("file", file, file.name);
@@ -654,12 +657,13 @@ export async function peekXlsxFile(file: File, options: { sourceId?: string } = 
   if (!response.ok) throw new Error(String(body?.message || "Preview failed."));
   return body as {
     filename: string; sheetNames: string[]; sheets: XlsxSheetPeek[]; headers: string[];
-    rows: Record<string, unknown>[]; rowCount: number; headerDiff: XlsxHeaderDiff | null; existingKeyFieldIds: string[];
+    rows: Record<string, unknown>[]; rowCount: number; headerDiff: XlsxHeaderDiff | null;
+    existingKeyFieldIds: string[]; existingHeaderSkipRows: number;
   };
 }
 
 export function fetchSourceFields(sourceId: string) {
-  return request<{ sourceId: string; fields: Array<{ id: string; label: string; type: string }>; keyFieldIds: string[] }>(
+  return request<{ sourceId: string; fields: Array<{ id: string; label: string; type: string }>; keyFieldIds: string[]; headerSkipRows: number }>(
     `/api/studio/sources/${encodeURIComponent(sourceId)}/fields`
   );
 }
@@ -731,13 +735,14 @@ export function clearSourceData(sourceId: string) {
   });
 }
 
-export async function importStudioWorkbookSource(file: File, options: { sourceId?: string; sourceName?: string; dataSheets?: string[]; keyFieldIds?: string[]; allowDuplicates?: boolean } = {}) {
+export async function importStudioWorkbookSource(file: File, options: { sourceId?: string; sourceName?: string; dataSheets?: string[]; keyFieldIds?: string[]; allowDuplicates?: boolean; headerSkipRows?: number } = {}) {
   const params = new URLSearchParams();
   if (options.sourceId) params.set("sourceId", options.sourceId);
   if (options.sourceName) params.set("sourceName", options.sourceName);
   if (options.dataSheets && options.dataSheets.length > 0) params.set("dataSheets", options.dataSheets.join(","));
   if (options.keyFieldIds && options.keyFieldIds.length > 0) params.set("keyFieldIds", options.keyFieldIds.join(","));
   if (options.allowDuplicates) params.set("allowDuplicates", "1");
+  if (options.headerSkipRows !== undefined) params.set("headerSkipRows", String(options.headerSkipRows));
   const formData = new FormData();
   formData.append("file", file, file.name);
   const response = await fetch(API_BASE + `/api/studio/sources/xlsx${params.toString() ? `?${params.toString()}` : ""}`, {
@@ -755,7 +760,7 @@ export async function importStudioWorkbookSource(file: File, options: { sourceId
 
 export async function recreateWorkbookFromDataSource(
   file: File,
-  options: { sourceId?: string; sourceName?: string; dataSheets?: string[]; keyFieldIds?: string[]; allowDuplicates?: boolean } = {}
+  options: { sourceId?: string; sourceName?: string; dataSheets?: string[]; keyFieldIds?: string[]; allowDuplicates?: boolean; headerSkipRows?: number } = {}
 ): Promise<StudioWorkbookSourceImportResult & { reports: unknown[]; dashboard: unknown | null }> {
   const params = new URLSearchParams();
   if (options.sourceId) params.set("sourceId", options.sourceId);
@@ -763,6 +768,7 @@ export async function recreateWorkbookFromDataSource(
   if (options.dataSheets && options.dataSheets.length > 0) params.set("dataSheets", options.dataSheets.join(","));
   if (options.keyFieldIds && options.keyFieldIds.length > 0) params.set("keyFieldIds", options.keyFieldIds.join(","));
   if (options.allowDuplicates) params.set("allowDuplicates", "1");
+  if (options.headerSkipRows !== undefined) params.set("headerSkipRows", String(options.headerSkipRows));
   const formData = new FormData();
   formData.append("file", file, file.name);
   const response = await fetch(

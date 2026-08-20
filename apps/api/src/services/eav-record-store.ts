@@ -26,6 +26,8 @@ interface ReplaceSourceRecordsInput {
    * plain full replace instead, while still remembering keyFieldIds for next time.
    */
   allowDuplicates?: boolean;
+  /** How many rows were skipped before the header row on this import — persisted for next time. */
+  headerSkipRows?: number;
 }
 
 interface SourceRecordReplaceBaseInput {
@@ -39,6 +41,7 @@ interface SourceRecordReplaceBaseInput {
   keyFieldId?: string;
   keyFieldIds?: string[];
   allowDuplicates?: boolean;
+  headerSkipRows?: number;
 }
 
 interface ReplaceSourceRecordsResult {
@@ -59,6 +62,7 @@ export interface SourceRecordSummary {
   fieldCount: number;
   keyFieldId: string;
   keyFieldIds: string[];
+  headerSkipRows: number;
   metadata: Record<string, unknown>;
   refreshedAt: string;
   updatedAt: string;
@@ -116,6 +120,7 @@ async function upsertSourceEntity(
   entityId = compactId("entity", input.sourceId)
 ) {
   const keyFieldIds = normalizeKeyFieldIds(input.keyFieldIds);
+  const headerSkipRows = Number.isFinite(input.headerSkipRows) ? Math.max(0, Math.trunc(input.headerSkipRows as number)) : null;
   const entity = await client.query<{ id: string }>(
     `
     INSERT INTO app_entities (
@@ -128,13 +133,14 @@ async function upsertSourceEntity(
       quickbase_report_id,
       key_field_id,
       key_field_ids,
+      header_skip_rows,
       metadata,
       field_count,
       record_count,
       updated_at,
       refreshed_at
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::text[], $10::jsonb, $11, $12, $13, $13)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::text[], COALESCE($10::integer, 0), $11::jsonb, $12, $13, $14, $14)
     ON CONFLICT (source_id) DO UPDATE SET
       source_name = EXCLUDED.source_name,
       source_type = EXCLUDED.source_type,
@@ -143,6 +149,7 @@ async function upsertSourceEntity(
       quickbase_report_id = EXCLUDED.quickbase_report_id,
       key_field_id = CASE WHEN EXCLUDED.key_field_id = '' THEN app_entities.key_field_id ELSE EXCLUDED.key_field_id END,
       key_field_ids = CASE WHEN array_length(EXCLUDED.key_field_ids, 1) IS NULL THEN app_entities.key_field_ids ELSE EXCLUDED.key_field_ids END,
+      header_skip_rows = CASE WHEN $10::integer IS NULL THEN app_entities.header_skip_rows ELSE $10::integer END,
       metadata = EXCLUDED.metadata,
       field_count = EXCLUDED.field_count,
       record_count = EXCLUDED.record_count,
@@ -160,6 +167,7 @@ async function upsertSourceEntity(
       input.quickbaseReportId || "",
       input.keyFieldId || "",
       keyFieldIds,
+      headerSkipRows,
       JSON.stringify(input.metadata || {}),
       fields.length,
       rowCount,
@@ -534,12 +542,13 @@ export async function getSourceRecordSummary(sourceIds: string[]): Promise<Sourc
     field_count: number;
     key_field_id: string;
     key_field_ids: string[] | null;
+    header_skip_rows: number | null;
     metadata: Record<string, unknown>;
     refreshed_at: Date | string | null;
     updated_at: Date | string | null;
   }>(
     `
-    SELECT source_id, source_name, source_type, record_count, field_count, key_field_id, key_field_ids, metadata, refreshed_at, updated_at
+    SELECT source_id, source_name, source_type, record_count, field_count, key_field_id, key_field_ids, header_skip_rows, metadata, refreshed_at, updated_at
     FROM app_entities
     WHERE source_id = ANY($1::text[])
     ORDER BY record_count DESC, refreshed_at DESC NULLS LAST
@@ -557,6 +566,7 @@ export async function getSourceRecordSummary(sourceIds: string[]): Promise<Sourc
     fieldCount: Number(row.field_count || 0),
     keyFieldId: row.key_field_id || "",
     keyFieldIds: normalizeKeyFieldIds(row.key_field_ids),
+    headerSkipRows: Number(row.header_skip_rows || 0),
     metadata: row.metadata || {},
     refreshedAt: row.refreshed_at ? new Date(row.refreshed_at).toISOString() : "",
     updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : ""
@@ -621,12 +631,13 @@ export async function listSourceRecordSummaries(): Promise<SourceRecordSummary[]
     field_count: number;
     key_field_id: string;
     key_field_ids: string[] | null;
+    header_skip_rows: number | null;
     metadata: Record<string, unknown>;
     refreshed_at: Date | string | null;
     updated_at: Date | string | null;
   }>(
     `
-    SELECT source_id, source_name, source_type, record_count, field_count, key_field_id, key_field_ids, metadata, refreshed_at, updated_at
+    SELECT source_id, source_name, source_type, record_count, field_count, key_field_id, key_field_ids, header_skip_rows, metadata, refreshed_at, updated_at
     FROM app_entities
     ORDER BY updated_at DESC
     `
@@ -639,6 +650,7 @@ export async function listSourceRecordSummaries(): Promise<SourceRecordSummary[]
     fieldCount: Number(row.field_count || 0),
     keyFieldId: row.key_field_id || "",
     keyFieldIds: normalizeKeyFieldIds(row.key_field_ids),
+    headerSkipRows: Number(row.header_skip_rows || 0),
     metadata: row.metadata || {},
     refreshedAt: row.refreshed_at ? new Date(row.refreshed_at).toISOString() : "",
     updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : ""

@@ -18,11 +18,28 @@ interface IngestXlsxSourceOptions {
   /** The chosen key field(s) don't actually produce unique values for this file — skip
    *  matching and fully replace, but keyFieldIds is still remembered for next time. */
   allowDuplicates?: boolean;
+  /** Rows to skip entirely before looking for the header row (title/filter-summary rows
+   *  some exported reports have above their real headers). Remembered for next time. */
+  headerSkipRows?: number;
 }
 
 interface IngestXlsxSourceStreamOptions extends Omit<IngestXlsxSourceOptions, "buffer"> {
-  stream: Readable;
+  /** A Buffer lets a transient ExcelJS streaming-reader failure (see retry note
+   *  below) be retried against a fresh read. A live Readable can only be consumed
+   *  once, so it gets one attempt. */
+  stream: Readable | Buffer;
 }
+
+// ExcelJS's streaming WorkbookReader has a real (if rare) internal race: whether
+// `xl/workbook.xml` has been parsed (setting `this.model`) before a worksheet entry
+// is encountered depends on zip-entry decompression timing (native zlib callback
+// ordering), not just the file's byte content — the exact same buffer can succeed
+// on one read and throw "Cannot read properties of undefined (reading 'sheets')" on
+// the next. Confirmed by feeding two byte-identical buffers through fresh readers
+// back to back and seeing one succeed and one fail. Retrying with a fresh stream
+// reliably works around it since the race doesn't reproduce every time.
+const TRANSIENT_WORKBOOK_READER_ERROR = /reading 'sheets'/;
+const MAX_WORKBOOK_READ_ATTEMPTS = 3;
 
 interface IngestedXlsxSource {
   sourceId: string;
@@ -188,6 +205,17 @@ async function resolveBaseSourceName(sourceId: string | undefined, sourceName: s
     if (existing?.sourceName) return existing.sourceName;
   }
   return workbookName;
+}
+
+// When re-importing an existing source and the caller didn't explicitly say how many
+// header rows to skip, fall back to whatever was saved from its last import — mirrors
+// resolveBaseSourceName's fallback-to-Postgres pattern so a caller that forgets to
+// resend it doesn't silently regress to "no rows skipped".
+async function resolveHeaderSkipRows(sourceId: string | undefined, explicit: number | undefined): Promise<number> {
+  if (explicit !== undefined) return Math.max(0, Math.trunc(explicit));
+  if (!sourceId) return 0;
+  const existing = await getSourceRecordSummary([sourceId]);
+  return existing?.headerSkipRows || 0;
 }
 
 function normalizeBaseSourceId(sourceId: string | undefined, filename: string, sourceName?: string) {
@@ -360,6 +388,26 @@ export async function ingestXlsxWorkbookSourceStream(options: IngestXlsxSourceSt
   if (!isPostgresEnabled()) {
     throw new Error("DATABASE_URL or POSTGRES_URL is required before importing Excel files as durable sources.");
   }
+  const canRetry = Buffer.isBuffer(options.stream);
+  let attempt = 0;
+  for (;;) {
+    attempt += 1;
+    try {
+      const inputStream = Buffer.isBuffer(options.stream) ? Readable.from(options.stream) : options.stream;
+      return await ingestXlsxWorkbookSourceStreamOnce(options, inputStream);
+    } catch (error) {
+      const isTransient = error instanceof TypeError && TRANSIENT_WORKBOOK_READER_ERROR.test(error.message);
+      if (!isTransient || !canRetry || attempt >= MAX_WORKBOOK_READ_ATTEMPTS) {
+        throw error;
+      }
+    }
+  }
+}
+
+async function ingestXlsxWorkbookSourceStreamOnce(
+  options: IngestXlsxSourceStreamOptions,
+  inputStream: Readable
+): Promise<IngestXlsxWorkbookSourceResult> {
   const workbookName = workbookNameFromFilename(options.filename);
   const baseSourceId = normalizeBaseSourceId(options.sourceId, options.filename, options.sourceName);
   const baseSourceName = await resolveBaseSourceName(options.sourceId, options.sourceName, workbookName);
@@ -367,7 +415,7 @@ export async function ingestXlsxWorkbookSourceStream(options: IngestXlsxSourceSt
   const sourceTables: TableDefinition[] = [];
   const sources: IngestedXlsxSource[] = [];
   const warnings: string[] = [];
-  const workbookReader = new ExcelJS.stream.xlsx.WorkbookReader(options.stream, {
+  const workbookReader = new ExcelJS.stream.xlsx.WorkbookReader(inputStream, {
     worksheets: "emit",
     sharedStrings: "cache",
     hyperlinks: "ignore",
@@ -378,6 +426,15 @@ export async function ingestXlsxWorkbookSourceStream(options: IngestXlsxSourceSt
   const streamDataSheetSet = options.dataSheets && options.dataSheets.length > 0
     ? new Set(options.dataSheets.map((s) => s.trim().toLowerCase()))
     : null;
+
+  // Resolved once, up front — NOT inside the worksheet loop below. ExcelJS's streaming
+  // WorkbookReader doesn't tolerate other async work (like a DB round-trip) happening
+  // between receiving a worksheet handle and starting to consume its rows; doing so
+  // corrupts the underlying SAX parser's state and the next `for await` throws. Since a
+  // single ingest call is always scoped to one target sheet in practice (the client
+  // splits multi-sheet imports into one API call per target), resolving against the
+  // top-level sourceId here is equivalent to resolving per-sheet inside the loop.
+  const resolvedHeaderSkipRows = await resolveHeaderSkipRows(options.sourceId, options.headerSkipRows);
 
   let worksheetIndex = 0;
   for await (const worksheet of workbookReader) {
@@ -402,6 +459,7 @@ export async function ingestXlsxWorkbookSourceStream(options: IngestXlsxSourceSt
     }
     const sourceId = stableSheetSourceId(baseSourceId, { id: "", name: sheetName, description: "", fields: [] }, worksheetIndex, singleTable, usedSourceIds);
     const sourceName = singleTable ? baseSourceName : `${baseSourceName} - ${sheetName}`;
+    const headerSkipRows = resolvedHeaderSkipRows;
     let fields: FieldDefinition[] = [];
     let trackers: FieldTypeTracker[] = [];
     let rowCount = 0;
@@ -414,6 +472,7 @@ export async function ingestXlsxWorkbookSourceStream(options: IngestXlsxSourceSt
       sourceType: "xlsx",
       keyFieldIds: options.keyFieldIds,
       allowDuplicates: options.allowDuplicates,
+      headerSkipRows,
       metadata: {
         workbookName,
         filename: options.filename,
@@ -422,6 +481,12 @@ export async function ingestXlsxWorkbookSourceStream(options: IngestXlsxSourceSt
       }
     }, async (writer) => {
       for await (const row of worksheet) {
+        // Some exported reports have title/filter-summary rows above the real header
+        // row (e.g. "Accounts Receivable" / "Filters: ..." / "Generated on ..."). The
+        // default "first non-blank row is the header" heuristic below picks one of
+        // those instead — headerSkipRows lets the user tell it how many rows to
+        // ignore entirely first, regardless of their content.
+        if (headerSkipRows > 0 && (row.number ?? 0) <= headerSkipRows) continue;
         const values = getRowValues(row);
         if (!values.length || values.every(isBlankValue)) {
           if (!fields.length) skippedBlankRows += 1;

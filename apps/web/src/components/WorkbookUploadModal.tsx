@@ -5,6 +5,7 @@ import type { StudioSourceSummary, StudioWorkbookImportResult, StudioWorkbookSou
 interface ExistingSourceFields {
   fields: Array<{ id: string; label: string; type: string }>;
   keyFieldIds: string[];
+  headerSkipRows: number;
 }
 
 function diffHeaders(fileHeaders: string[], existing: ExistingSourceFields | undefined) {
@@ -121,6 +122,12 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
   // import and just replace all data, instead of hard-blocking on the duplicate.
   const [allowDuplicates, setAllowDuplicates] = useState(false);
   const [sheetAllowDuplicates, setSheetAllowDuplicates] = useState<Record<string, boolean>>({});
+  // Which row actually has the column headers (1-based) — some exported reports have
+  // title/filter-summary rows above the real header row. Single-target mode uses
+  // `headerRow`; multi-sheet mode tracks one per sheet. Saved per source and pre-filled
+  // (from the saved value when updating, or auto-detected when brand new) on next import.
+  const [headerRow, setHeaderRow] = useState(1);
+  const [sheetHeaderRowMap, setSheetHeaderRowMap] = useState<Record<string, number>>({});
   const [diffAcknowledged, setDiffAcknowledged] = useState(false);
   // Cache of an existing source's current columns + saved key field(s), fetched
   // on demand so the modal can diff the new file's headers and pre-fill keys.
@@ -129,12 +136,13 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
   function ensureExistingFields(sourceId: string) {
     if (!sourceId || existingFieldsCache[sourceId]) return;
     fetchSourceFields(sourceId)
-      .then((res) => setExistingFieldsCache((prev) => ({ ...prev, [sourceId]: { fields: res.fields, keyFieldIds: res.keyFieldIds } })))
+      .then((res) => setExistingFieldsCache((prev) => ({ ...prev, [sourceId]: { fields: res.fields, keyFieldIds: res.keyFieldIds, headerSkipRows: res.headerSkipRows || 0 } })))
       .catch(() => { /* non-blocking */ });
   }
 
   // Fetch existing columns/keys for every distinct multi-sheet target, and pre-fill
-  // that sheet's key-field picker from the target's saved choice once it arrives.
+  // that sheet's key-field picker and header-row field from the target's saved choice
+  // once it arrives.
   useEffect(() => {
     setSheetKeyFieldMap((prev) => {
       let changed = false;
@@ -150,7 +158,39 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
       }
       return changed ? next : prev;
     });
+    setSheetHeaderRowMap((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const [sheetName, sid] of Object.entries(sheetSourceMap)) {
+        if (!sid) continue;
+        const existing = existingFieldsCache[sid];
+        if (existing && !(sheetName in prev)) {
+          next[sheetName] = existing.headerSkipRows + 1;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
   }, [sheetSourceMap, existingFieldsCache]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // New sheets with no target assigned yet (will become a brand-new source): default
+  // each sheet's header-row field to what the auto-detect heuristic found for it.
+  useEffect(() => {
+    if (!peek?.sheets?.length) return;
+    setSheetHeaderRowMap((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const sheet of peek.sheets) {
+        if (sheetSourceMap[sheet.name]) continue; // has a target — handled above
+        if (sheet.name in prev) continue;
+        if (sheet.detectedHeaderRow) {
+          next[sheet.name] = sheet.detectedHeaderRow;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [peek, sheetSourceMap]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Switching targets: fetch its columns/keys, reset the acknowledgment banner, and
   // pre-fill the key-field picker from whatever this target last had saved (falls
@@ -158,10 +198,23 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
   useEffect(() => {
     setDiffAcknowledged(false);
     setAllowDuplicates(false);
-    if (!selectedSourceId || selectedSourceId === "new") { setKeyFieldIds([]); return; }
+    if (!selectedSourceId || selectedSourceId === "new") { setKeyFieldIds([]); setHeaderRow(1); return; }
     ensureExistingFields(selectedSourceId);
-    setKeyFieldIds(existingFieldsCache[selectedSourceId]?.keyFieldIds || []);
+    const existing = existingFieldsCache[selectedSourceId];
+    setKeyFieldIds(existing?.keyFieldIds || []);
+    if (existing) setHeaderRow(existing.headerSkipRows + 1);
   }, [selectedSourceId, existingFieldsCache[selectedSourceId]]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // New file peeked for a brand-new source (no saved header row to prefer): default
+  // the "header row" field to whatever the auto-detect heuristic found, so files with
+  // title/filter-summary rows above their real headers (e.g. "Filters: ALL Agencies...",
+  // "Generated on...") don't get misread — still fully editable before importing.
+  useEffect(() => {
+    if (!peek || selectedSourceId === "" || selectedSourceId === undefined) return;
+    if (selectedSourceId !== "new") return;
+    const suggested = peek.sheets?.find((s) => s.looksLikeData)?.detectedHeaderRow || peek.sheets?.[0]?.detectedHeaderRow;
+    if (suggested) setHeaderRow(suggested);
+  }, [peek]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load existing xlsx sources whenever modal opens in data-source mode
   useEffect(() => {
@@ -220,6 +273,7 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
     setSheetSourceMap({}); setMultiSheetBaseName(""); setSheetTabLabels({});
     setKeyFieldIds([]); setSheetKeyFieldMap({}); setDiffAcknowledged(false); setExistingFieldsCache({});
     setAllowDuplicates(false); setSheetAllowDuplicates({});
+    setHeaderRow(1); setSheetHeaderRowMap({});
   }
 
   function handleClose() {
@@ -259,32 +313,33 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
         if (multiSheetMode) {
           // Build import groups: each unique target source gets its own API call.
           // Multiple sheets can share an existing sourceId (grouped); new sources are always one per tab.
-          const groups: { sheets: string[]; sourceId?: string; sourceName?: string; keyFieldIds?: string[]; allowDuplicates?: boolean }[] = [];
+          const groups: { sheets: string[]; sourceId?: string; sourceName?: string; keyFieldIds?: string[]; allowDuplicates?: boolean; headerSkipRows?: number }[] = [];
           const groupIndex = new Map<string, number>(); // existing sourceId → groups index
           const base = multiSheetBaseName.trim();
           for (const sheetName of dataSheets) {
             const sid = sheetSourceMap[sheetName] || "";
+            const headerSkipRows = Math.max(0, (sheetHeaderRowMap[sheetName] ?? 1) - 1);
             if (sid) {
               // Updating an existing source — group by sourceId (name preserved via Postgres lookup)
               if (groupIndex.has(sid)) {
                 groups[groupIndex.get(sid)!].sheets.push(sheetName);
               } else {
                 groupIndex.set(sid, groups.length);
-                groups.push({ sheets: [sheetName], sourceId: sid, sourceName: undefined, keyFieldIds: sheetKeyFieldMap[sheetName], allowDuplicates: sheetAllowDuplicates[sheetName] });
+                groups.push({ sheets: [sheetName], sourceId: sid, sourceName: undefined, keyFieldIds: sheetKeyFieldMap[sheetName], allowDuplicates: sheetAllowDuplicates[sheetName], headerSkipRows });
               }
             } else {
               // Creating a new source — one group per tab, name = "BaseName - TabLabel"
               const tabLabel = (sheetTabLabels[sheetName] || sheetName).trim();
               const sourceName = base ? `${base} - ${tabLabel}` : tabLabel;
-              groups.push({ sheets: [sheetName], sourceId: undefined, sourceName, keyFieldIds: sheetKeyFieldMap[sheetName], allowDuplicates: sheetAllowDuplicates[sheetName] });
+              groups.push({ sheets: [sheetName], sourceId: undefined, sourceName, keyFieldIds: sheetKeyFieldMap[sheetName], allowDuplicates: sheetAllowDuplicates[sheetName], headerSkipRows });
             }
           }
           // Import data tabs first (datasource creation) — all tabs can run in parallel
           // with each other since they write to separate Postgres tables.
           // Only start workbook analysis for the review AFTER all datasources are saved,
           // so the two heavy operations don't compete for memory at the same time.
-          const sourceResults = await Promise.all(groups.map(({ sourceId, sourceName, sheets, keyFieldIds: groupKeyFieldIds, allowDuplicates: groupAllowDuplicates }) =>
-            importStudioWorkbookSource(file, { sourceId, sourceName, dataSheets: sheets, keyFieldIds: groupKeyFieldIds, allowDuplicates: groupAllowDuplicates })
+          const sourceResults = await Promise.all(groups.map(({ sourceId, sourceName, sheets, keyFieldIds: groupKeyFieldIds, allowDuplicates: groupAllowDuplicates, headerSkipRows: groupHeaderSkipRows }) =>
+            importStudioWorkbookSource(file, { sourceId, sourceName, dataSheets: sheets, keyFieldIds: groupKeyFieldIds, allowDuplicates: groupAllowDuplicates, headerSkipRows: groupHeaderSkipRows })
           ));
           const workbookResult = recreate
             ? await importStudioWorkbook(file, { maxRowsPerSheet: 500 })
@@ -317,7 +372,7 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
           const sourceNameArg = isNew ? (newWorkbookName.trim() || file.name.replace(/\.xlsx$/i, "").trim()) : undefined;
           const multiSheet = (peek?.sheets?.length ?? 0) > 1;
           const dataSheetsArg = multiSheet && dataSheets.length > 0 ? dataSheets : undefined;
-          const opts = { sourceId: sourceIdArg, sourceName: sourceNameArg, dataSheets: dataSheetsArg, keyFieldIds: keyFieldIds.length > 0 ? keyFieldIds : undefined, allowDuplicates };
+          const opts = { sourceId: sourceIdArg, sourceName: sourceNameArg, dataSheets: dataSheetsArg, keyFieldIds: keyFieldIds.length > 0 ? keyFieldIds : undefined, allowDuplicates, headerSkipRows: Math.max(0, headerRow - 1) };
 
           if (recreate) {
             const sourceResult = await importStudioWorkbookSource(file, opts);
@@ -862,6 +917,21 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
                                   Will update <strong>{sheetSource.sourceName}</strong> (name preserved)
                                 </p>
                               )}
+                              {/* Header row for this tab — some files have title/filter rows above the real headers */}
+                              <div style={{ paddingLeft: 52, display: "flex", alignItems: "center", gap: 6 }}>
+                                <span style={{ fontSize: 11, color: T.textSoft, flexShrink: 0 }}>Header row:</span>
+                                <input
+                                  type="number" min={1} max={sheet.rowCount + 20} disabled={importing}
+                                  value={sheetHeaderRowMap[sheet.name] ?? 1}
+                                  onChange={(e) => setSheetHeaderRowMap((prev) => ({ ...prev, [sheet.name]: Math.max(1, Number(e.target.value) || 1) }))}
+                                  style={{
+                                    width: 60, padding: "3px 6px", borderRadius: T.radiusSm,
+                                    border: `1px solid ${T.borderMd}`, background: T.bg, color: T.text,
+                                    fontSize: 12, fontFamily: T.font, outline: "none",
+                                  }}
+                                />
+                                <span style={{ fontSize: 10.5, color: T.textSoft }}>rows above it are skipped</span>
+                              </div>
                               {/* Key field(s) for this tab — optional, matches rows across re-imports */}
                               <div style={{ paddingLeft: 52, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 5 }}>
                                 <span style={{ fontSize: 11, color: T.textSoft, flexShrink: 0 }}>Key field(s):</span>
@@ -930,6 +1000,30 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
                   Columns: {peek.headers.slice(0, 8).join(", ")}{peek.headers.length > 8 ? ` +${peek.headers.length - 8} more` : ""}
                 </div>
               </div>
+
+              {/* Header row — single-target mode. Some exported reports have title/filter-
+                  summary rows above the real headers; auto-detected but editable. */}
+              {isData && !isMultiSheetMode && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: T.textSecondary }}>Header row</label>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <input
+                      type="number" min={1} max={(peek.rowCount || 0) + 20} disabled={importing}
+                      value={headerRow}
+                      onChange={(e) => setHeaderRow(Math.max(1, Number(e.target.value) || 1))}
+                      style={{
+                        width: 70, padding: "6px 8px", borderRadius: T.radiusSm,
+                        border: `1px solid ${T.borderMd}`, background: T.bg, color: T.text,
+                        fontSize: 13, fontFamily: T.font, outline: "none",
+                      }}
+                    />
+                    <span style={{ fontSize: 11, color: T.textSoft, lineHeight: 1.4 }}>
+                      Row that has your column names — rows above it are skipped. Auto-detected, but change it if
+                      the columns below look wrong. Remembered for next time.
+                    </span>
+                  </div>
+                </div>
+              )}
 
               {/* Key field picker — single-target mode. Lets a re-import match rows
                   by identity (update in place) instead of replacing the whole table. */}

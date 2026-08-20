@@ -306,7 +306,8 @@ export async function registerStudioRoutes(app: FastifyInstance) {
     return {
       sourceId,
       fields,
-      keyFieldIds: summary?.keyFieldIds || []
+      keyFieldIds: summary?.keyFieldIds || [],
+      headerSkipRows: summary?.headerSkipRows || 0
     };
   });
 
@@ -381,6 +382,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
 
         let headerDiff: { addedLabels: string[]; removedLabels: string[] } | null = null;
         let existingKeyFieldIds: string[] = [];
+        let existingHeaderSkipRows = 0;
         if (diffSourceId) {
           const [existingFields, summary] = await Promise.all([
             loadSourceAttributes(diffSourceId),
@@ -395,9 +397,10 @@ export async function registerStudioRoutes(app: FastifyInstance) {
             };
           }
           existingKeyFieldIds = summary?.keyFieldIds || [];
+          existingHeaderSkipRows = summary?.headerSkipRows || 0;
         }
 
-        return { filename, sheetNames, sheets, headers, rows, rowCount, headerDiff, existingKeyFieldIds };
+        return { filename, sheetNames, sheets, headers, rows, rowCount, headerDiff, existingKeyFieldIds, existingHeaderSkipRows };
       }
 
       if (!filename) { reply.code(400); return { message: "No file provided." }; }
@@ -410,7 +413,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
 
   app.post("/api/studio/sources/xlsx/recreate", async (request, reply) => {
     try {
-      const query = (request.query as { sourceId?: string; sourceName?: string; dataSheets?: string; keyFieldIds?: string; allowDuplicates?: string } | undefined) || {};
+      const query = (request.query as { sourceId?: string; sourceName?: string; dataSheets?: string; keyFieldIds?: string; allowDuplicates?: string; headerSkipRows?: string } | undefined) || {};
       let filename = "";
       let workbookBuffer: Buffer | null = null;
       let sourceId = String(query.sourceId || "").trim();
@@ -418,6 +421,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
       const dataSheets = String(query.dataSheets || "").split(",").map((s) => s.trim()).filter(Boolean);
       let keyFieldIds = String(query.keyFieldIds || "").split(",").map((s) => s.trim()).filter(Boolean);
       let allowDuplicates = query.allowDuplicates === "1" || query.allowDuplicates === "true";
+      let headerSkipRows = query.headerSkipRows !== undefined ? Number(query.headerSkipRows) : undefined;
       if (request.isMultipart()) {
         const file = await request.file();
         if (file) {
@@ -425,7 +429,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
           workbookBuffer = await file.toBuffer();
         }
       } else {
-        const body = (request.body as { filename?: string; base64?: string; sourceId?: string; sourceName?: string; keyFieldIds?: string[]; allowDuplicates?: boolean } | undefined) || {};
+        const body = (request.body as { filename?: string; base64?: string; sourceId?: string; sourceName?: string; keyFieldIds?: string[]; allowDuplicates?: boolean; headerSkipRows?: number } | undefined) || {};
         if (body.filename && body.base64) {
           filename = body.filename;
           workbookBuffer = Buffer.from(body.base64, "base64");
@@ -434,6 +438,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
         sourceName = sourceName || String(body.sourceName || "").trim();
         keyFieldIds = keyFieldIds.length ? keyFieldIds : (Array.isArray(body.keyFieldIds) ? body.keyFieldIds.filter(Boolean) : []);
         allowDuplicates = allowDuplicates || Boolean(body.allowDuplicates);
+        headerSkipRows = headerSkipRows !== undefined ? headerSkipRows : (typeof body.headerSkipRows === "number" ? body.headerSkipRows : undefined);
       }
       if (!filename || !workbookBuffer) {
         reply.code(400);
@@ -446,7 +451,8 @@ export async function registerStudioRoutes(app: FastifyInstance) {
         sourceName,
         dataSheets: dataSheets.length > 0 ? dataSheets : undefined,
         keyFieldIds: keyFieldIds.length > 0 ? keyFieldIds : undefined,
-        allowDuplicates
+        allowDuplicates,
+        headerSkipRows
       }));
       invalidateSourceCaches(...result.sources.map((s) => s.sourceId));
       invalidateSourceAttributeCache();
@@ -467,7 +473,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
 
   app.post("/api/studio/sources/xlsx", async (request, reply) => {
     try {
-      const query = (request.query as { sourceId?: string; sourceName?: string; dataSheets?: string; keyFieldIds?: string; allowDuplicates?: string } | undefined) || {};
+      const query = (request.query as { sourceId?: string; sourceName?: string; dataSheets?: string; keyFieldIds?: string; allowDuplicates?: string; headerSkipRows?: string } | undefined) || {};
       let filename = "";
       let workbookBuffer: Buffer | null = null;
       let sourceId = String(query.sourceId || "").trim();
@@ -475,6 +481,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
       const dataSheets = String(query.dataSheets || "").split(",").map((s) => s.trim()).filter(Boolean);
       let keyFieldIds = String(query.keyFieldIds || "").split(",").map((s) => s.trim()).filter(Boolean);
       let allowDuplicates = query.allowDuplicates === "1" || query.allowDuplicates === "true";
+      let headerSkipRows = query.headerSkipRows !== undefined ? Number(query.headerSkipRows) : undefined;
       if (request.isMultipart()) {
         const file = await request.file();
         if (file) {
@@ -484,7 +491,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
           workbookBuffer = await file.toBuffer();
         }
       } else {
-        const body = (request.body as { filename?: string; base64?: string; sourceId?: string; sourceName?: string; keyFieldIds?: string[]; allowDuplicates?: boolean } | undefined) || {};
+        const body = (request.body as { filename?: string; base64?: string; sourceId?: string; sourceName?: string; keyFieldIds?: string[]; allowDuplicates?: boolean; headerSkipRows?: number } | undefined) || {};
         if (body.filename && body.base64) {
           filename = body.filename;
           workbookBuffer = Buffer.from(body.base64, "base64");
@@ -493,6 +500,7 @@ export async function registerStudioRoutes(app: FastifyInstance) {
         sourceName = sourceName || String(body.sourceName || "").trim();
         keyFieldIds = keyFieldIds.length ? keyFieldIds : (Array.isArray(body.keyFieldIds) ? body.keyFieldIds.filter(Boolean) : []);
         allowDuplicates = allowDuplicates || Boolean(body.allowDuplicates);
+        headerSkipRows = headerSkipRows !== undefined ? headerSkipRows : (typeof body.headerSkipRows === "number" ? body.headerSkipRows : undefined);
       }
       if (!filename || !workbookBuffer) {
         reply.code(400);
@@ -500,15 +508,15 @@ export async function registerStudioRoutes(app: FastifyInstance) {
       }
       const buf = workbookBuffer;
       const ingested = await withXlsxSemaphore(async () => {
-        const { Readable } = await import("stream");
         return ingestXlsxWorkbookSourceStream({
           filename,
-          stream: Readable.from(buf),
+          stream: buf,
           sourceId,
           sourceName,
           dataSheets: dataSheets.length > 0 ? dataSheets : undefined,
           keyFieldIds: keyFieldIds.length > 0 ? keyFieldIds : undefined,
-          allowDuplicates
+          allowDuplicates,
+          headerSkipRows
         });
       });
       invalidateSourceCaches(...ingested.sources.map((s) => s.sourceId));

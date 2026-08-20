@@ -251,20 +251,25 @@ export function HelpPage() {
                 <Step n={8}>Click the import button. The file uploads and data is stored in the database. All reports using this source update automatically.</Step>
                 <Tip>Set a <strong>key field</strong> (see below) so re-imports update matching rows instead of replacing everything. Without a key field, re-importing still replaces all rows in that table with the new file's contents, and column changes are reflected immediately.</Tip>
 
+                <Sub>Skipping title rows above the header</Sub>
+                <Step n={9}>Some exported reports have a few rows above the real column headers — a title, a "Filters: ..." summary line, a "Generated on ..." timestamp. The <strong>Header row</strong> field on the upload screen tells the import where your real column names actually start; every row above it is skipped entirely.</Step>
+                <Step n={10}>This is auto-detected and pre-filled for you, but check it against the preview below it — if the columns look wrong (garbled labels, only one column), raise the header row number until they look right.</Step>
+                <Step n={11}>The header row is saved per source (and per tab, for multi-sheet workbooks), so future re-imports of that same source remember it automatically. You can still change it on a later import if the file's layout shifts, and the new value is saved.</Step>
+
                 <Sub>Updating existing data with key fields</Sub>
-                <Step n={9}>When updating a workbook you've imported before, pick one or more <strong>key field(s)</strong> — the column(s) that make each row unique, like an ID or claim number. If one column alone has repeats, pick a second or third column too (for example, claim number + name + payer together).</Step>
-                <Step n={10}>Once a key field is set, future imports <strong>update matching rows</strong> and <strong>add new rows</strong> — rows already saved that are missing from the new file are left alone, not deleted. This lets you import a partial file safely.</Step>
-                <Step n={11}>If your chosen key field(s) turn out to have duplicate values in a particular file, check <strong>Allow duplicates</strong>. This skips row-matching and replaces all of that table's data for this import only — your key field choice is still remembered for next time.</Step>
-                <Step n={12}>If the new file's columns don't match what's already stored, a warning appears listing <strong>Added columns</strong> and <strong>Missing columns</strong>. You must check the acknowledgment box before you can continue.</Step>
-                <Step n={13}>Your key field choice is saved per data source, so the next time you re-import that same source (including each tab of a multi-sheet workbook), it's already pre-selected for you.</Step>
+                <Step n={12}>When updating a workbook you've imported before, pick one or more <strong>key field(s)</strong> — the column(s) that make each row unique, like an ID or claim number. If one column alone has repeats, pick a second or third column too (for example, claim number + name + payer together).</Step>
+                <Step n={13}>Once a key field is set, future imports <strong>update matching rows</strong> and <strong>add new rows</strong> — rows already saved that are missing from the new file are left alone, not deleted. This lets you import a partial file safely.</Step>
+                <Step n={14}>If your chosen key field(s) turn out to have duplicate values in a particular file, check <strong>Allow duplicates</strong>. This skips row-matching and replaces all of that table's data for this import only — your key field choice is still remembered for next time.</Step>
+                <Step n={15}>If the new file's columns don't match what's already stored, a warning appears listing <strong>Added columns</strong> and <strong>Missing columns</strong>. You must check the acknowledgment box before you can continue.</Step>
+                <Step n={16}>Your key field choice is saved per data source, so the next time you re-import that same source (including each tab of a multi-sheet workbook), it's already pre-selected for you.</Step>
 
                 <Sub>Managing data sources</Sub>
-                <Step n={14}>Go to <strong>Data Sources</strong>. A table lists all imported sources with row counts, column counts, and last-updated dates.</Step>
-                <Step n={15}>To <strong>rename</strong> a source, click the pencil icon next to its name, type the new name, and press Enter.</Step>
-                <Step n={16}>To <strong>clear data only</strong> (keep the source entry but remove all rows), click the <strong>Clear data</strong> button.</Step>
-                <Step n={17}>To <strong>permanently delete</strong> a source and all its data, click <strong>Delete</strong> and confirm. Reports using this source will stop working.</Step>
+                <Step n={17}>Go to <strong>Data Sources</strong>. A table lists all imported sources with row counts, column counts, and last-updated dates.</Step>
+                <Step n={18}>To <strong>rename</strong> a source, click the pencil icon next to its name, type the new name, and press Enter.</Step>
+                <Step n={19}>To <strong>clear data only</strong> (keep the source entry but remove all rows), click the <strong>Clear data</strong> button.</Step>
+                <Step n={20}>To <strong>permanently delete</strong> a source and all its data, click <strong>Delete</strong> and confirm. Reports using this source will stop working.</Step>
                 <Note>The Data Sources table only shows row/column counts and the last-updated date — there is currently no button to preview a source's actual rows after it's been imported. To see real data, open <strong>+ Import XLSX</strong> and select that workbook; the upload screen shows a sample of the file before you confirm anything.</Note>
-                <Note>Only .xlsx files are supported (not .xls or .csv). The uploader works best when column headers are in the first row of each sheet, though it can sometimes locate headers a few rows down. Files larger than <strong>25 MB</strong> are rejected outright — this is a hard limit, not just a recommendation.</Note>
+                <Note>Only .xlsx files are supported (not .xls or .csv). Files larger than <strong>25 MB</strong> are rejected outright — this is a hard limit, not just a recommendation.</Note>
               </div>
             </article>
 
