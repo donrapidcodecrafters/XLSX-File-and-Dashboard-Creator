@@ -24,7 +24,12 @@ export async function registerWorkbookProfileRoutes(app: FastifyInstance) {
        FROM workbook_profiles WHERE id = $1`, [id]
     ).catch(() => null);
     const row = result?.rows[0];
-    if (!row) { reply.code(404); return { message: "Profile not found." }; }
+    // A source with no saved profile yet (brand new, or never successfully saved
+    // one) is a normal, expected state — not an error condition — so this returns
+    // 200 with a null profile instead of 404. A 404 always shows up as a red
+    // network-error entry in the browser console regardless of how gracefully the
+    // client catches it, which reads as "something is broken" even though nothing is.
+    if (!row) { return { profile: null }; }
     return {
       profile: {
         id: row.id,

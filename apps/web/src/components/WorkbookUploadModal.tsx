@@ -328,6 +328,7 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
     getWorkbookProfile(selectedSourceId)
       .then((res) => {
         setProfile(res.profile);
+        if (!res.profile) { setProfileApplied(false); return; }
         // Auto-apply saved data sheets if no file peeked yet
         if (res.profile.dataSheets?.length > 0) {
           setDataSheets(res.profile.dataSheets);
@@ -1029,11 +1030,11 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
                               {/* Key field(s) for this tab — optional, matches rows across re-imports */}
                               <div style={{ paddingLeft: 52, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 5 }}>
                                 <span style={{ fontSize: 11, color: T.textSoft, flexShrink: 0 }}>Key field(s):</span>
-                                {sheet.headers.map((h) => {
+                                {sheet.headers.map((h, hIndex) => {
                                   const checked = (sheetKeyFieldMap[sheet.name] || []).includes(h);
                                   return (
                                     <button
-                                      key={h} type="button" disabled={importing}
+                                      key={`${hIndex}:${h}`} type="button" disabled={importing}
                                       onClick={() => setSheetKeyFieldMap((prev) => {
                                         const current = prev[sheet.name] || [];
                                         return { ...prev, [sheet.name]: current.includes(h) ? current.filter((v) => v !== h) : [...current, h] };
@@ -1137,11 +1138,11 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
                     never deleted. Remembered for next time.
                   </p>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                    {peek.headers.map((h) => {
+                    {peek.headers.map((h, hIndex) => {
                       const checked = keyFieldIds.includes(h);
                       return (
                         <button
-                          key={h} type="button" disabled={importing}
+                          key={`${hIndex}:${h}`} type="button" disabled={importing}
                           onClick={() => setKeyFieldIds((prev) => prev.includes(h) ? prev.filter((v) => v !== h) : [...prev, h])}
                           style={{
                             padding: "5px 10px", borderRadius: 99, fontSize: 12, fontWeight: 600,

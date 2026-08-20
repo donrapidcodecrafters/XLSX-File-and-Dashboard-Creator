@@ -463,8 +463,8 @@ export interface WorkbookProfile {
   lastImportedAt: string | null;
 }
 
-export function getWorkbookProfile(id: string): Promise<{ profile: WorkbookProfile }> {
-  return request<{ profile: WorkbookProfile }>(`/api/workbook-profiles/${encodeURIComponent(id)}`);
+export function getWorkbookProfile(id: string): Promise<{ profile: WorkbookProfile | null }> {
+  return request<{ profile: WorkbookProfile | null }>(`/api/workbook-profiles/${encodeURIComponent(id)}`);
 }
 
 export function saveWorkbookProfile(id: string, data: Partial<WorkbookProfile>): Promise<{ ok: boolean }> {
