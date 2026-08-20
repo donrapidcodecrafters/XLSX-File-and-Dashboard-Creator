@@ -586,6 +586,18 @@ function ObjectPage({
       return;
     }
     let active = true;
+    // Set once the metadata fetch below resolves — true only when it just loaded
+    // a NEW report (not a dashboard, and not re-resolving the same object already
+    // showing). In that case loading is deliberately left true instead of cleared
+    // in .finally() below, so the runReport effect further down takes over
+    // without a gap — clearing it here first would let a render slip through
+    // with loading=false and result=null, which ReportView reads as "this report
+    // did not return results" even though the actual data fetch hasn't started
+    // yet. Same reasoning as the scopedObjectFromDocument branch above; this
+    // branch (the async fetchObjectWithFallback path) was missing the same
+    // protection, which is why the false "no results" message showed up
+    // reliably here but not there.
+    let justLoadedNewReport = false;
     setLoading(true);
     setRefreshNonce(0);
     setRefreshJob(null);
@@ -595,6 +607,7 @@ function ObjectPage({
       .then((nextObject) => {
         if (!active) return;
         const isSameObject = object?.id === nextObject.id;
+        justLoadedNewReport = nextObject.type === "report" && !isSameObject;
         const reportOverride = nextObject.type === "report" && nextObject.scope !== "personal"
           ? getReportPersonalOverride(nextObject.id, studioDocument)
           : null;
@@ -611,7 +624,7 @@ function ObjectPage({
         setResultError(error instanceof Error ? error.message : "That report or dashboard could not be loaded.");
       })
       .finally(() => {
-        if (active) setLoading(false);
+        if (active && !justLoadedNewReport) setLoading(false);
       });
     return () => {
       active = false;
