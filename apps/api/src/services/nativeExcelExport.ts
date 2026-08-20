@@ -914,7 +914,11 @@ export async function exportDashboardNativeChartWorkbook(
 
   const dataSheetName = safeSheetName("_chart_src", usedNames);
   const dataSheet = workbook.addWorksheet(dataSheetName);
-  dataSheet.state = "hidden";
+  // "hidden" can be un-hidden by anyone via a right-click on the tab bar — this
+  // sheet only exists to hold the raw data native Excel chart objects reference,
+  // so "veryHidden" (toggleable only via VBA/developer tools, never from the
+  // regular Excel UI) is a better match for "meant to stay out of the way."
+  dataSheet.state = "veryHidden";
   dataSheet.columns = Array.from({ length: 24 }, () => ({ width: 22 }));
   let dataRow = 1;
   let chartId = 1;
@@ -1108,7 +1112,11 @@ export async function exportReportNativeChartWorkbook(
 
   const dataSheetName = safeSheetName("_native_chart_data", usedNames);
   const dataSheet = workbook.addWorksheet(dataSheetName);
-  dataSheet.state = "hidden";
+  // "hidden" can be un-hidden by anyone via a right-click on the tab bar — this
+  // sheet only exists to hold the raw data native Excel chart objects reference,
+  // so "veryHidden" (toggleable only via VBA/developer tools, never from the
+  // regular Excel UI) is a better match for "meant to stay out of the way."
+  dataSheet.state = "veryHidden";
   dataSheet.columns = Array.from({ length: 24 }, () => ({ width: 22 }));
   const chartsBySheet = new Map<string, NativeChartPlacement[]>();
   const sheetCharts: NativeChartPlacement[] = [];

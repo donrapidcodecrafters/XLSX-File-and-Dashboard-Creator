@@ -16,6 +16,7 @@ import { ingestXlsxWorkbookSource, ingestXlsxWorkbookSourceAndRecreate, ingestXl
 import { invalidateSourceCaches } from "../services/report-runner.js";
 import { logAuditEvent } from "../services/audit-log.js";
 import { importWorkbookIntoStudioDocument } from "../services/xlsx-import.js";
+import { normalizeXlsxNamespacePrefix } from "../services/xlsx-namespace-fix.js";
 import { pgQuery, withPgTransaction } from "../db/postgres.js";
 import { isPostgresEnabled } from "../config/env.js";
 
@@ -338,8 +339,9 @@ export async function registerStudioRoutes(app: FastifyInstance) {
         const file = await request.file();
         if (!file) { reply.code(400); return { message: "No file provided." }; }
         filename = file.filename || "";
+        const workbookBuffer = await normalizeXlsxNamespacePrefix(await file.toBuffer());
         const workbook = new ExcelJSWorkbook();
-        await workbook.xlsx.read(file.file);
+        await workbook.xlsx.load(workbookBuffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
 
         // Detect the actual header row for a worksheet by scanning the first 10 rows.
         // Returns the 1-based row number of the best header row candidate.

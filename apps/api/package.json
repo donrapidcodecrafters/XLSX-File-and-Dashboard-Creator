@@ -9,7 +9,7 @@
     "start": "node dist/index.js",
     "build": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
-    "smoke": "npm --prefix ../../packages/shared run build && npm run build && node ./scripts/import-smoke.mjs && node ./scripts/chart-type-smoke.mjs && node ./scripts/join-report-smoke.mjs"
+    "smoke": "npm --prefix ../../packages/shared run build && npm run build && node ./scripts/import-smoke.mjs && node ./scripts/chart-type-smoke.mjs && node ./scripts/join-report-smoke.mjs && node ./scripts/xlsx-namespace-fix-smoke.mjs"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",

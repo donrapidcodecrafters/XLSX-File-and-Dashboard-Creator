@@ -2,6 +2,7 @@ import ExcelJS from "exceljs";
 import JSZip from "jszip";
 import { inflateSync } from "node:zlib";
 import { XMLParser } from "fast-xml-parser";
+import { normalizeXlsxNamespacePrefix } from "./xlsx-namespace-fix.js";
 import { balanceDashboardLayout, createFilterGroup, normalizeStudioDocument, type ChartOrientation, type ChartType, type DashboardDefinition, type DataRow, type FieldDefinition, type FieldType, type ReportDefinition, type ReportViewDefinition, type RuntimeFilterDefinition, type StudioDocument, type StudioObjectScope, type TableDefinition, type WidgetDefinition } from "@studio/shared";
 
 interface ImportedWorkbookResult {
@@ -2998,14 +2999,18 @@ export async function importWorkbookIntoStudioDocument(
   options?: { dataSheets?: string[]; workbookName?: string; maxRowsPerSheet?: number }
 ): Promise<ImportedWorkbookResult> {
   debugImportStep(`start ${filename}`);
+  // Normalized once up front so both the ExcelJS load below and
+  // readNativeWorkbookCharts's own independent zip/XML parsing see the same,
+  // consistently-unprefixed buffer — see normalizeXlsxNamespacePrefix for why.
+  const normalizedBuffer = await normalizeXlsxNamespacePrefix(Buffer.from(buffer));
   const workbook = new ExcelJS.Workbook();
-  const workbookPayload = Buffer.from(buffer) as unknown as Parameters<typeof workbook.xlsx.load>[0];
+  const workbookPayload = normalizedBuffer as unknown as Parameters<typeof workbook.xlsx.load>[0];
   await workbook.xlsx.load(workbookPayload);
   debugImportStep(`loaded workbook ${filename} with ${workbook.worksheets.length} sheet(s)`);
   const warnings: string[] = [];
   let nativeWorkbookCharts: { charts: NativeWorkbookChart[]; dataSheetName: string } = { charts: [], dataSheetName: "" };
   try {
-    nativeWorkbookCharts = await readNativeWorkbookCharts(buffer, workbook, options?.dataSheets);
+    nativeWorkbookCharts = await readNativeWorkbookCharts(normalizedBuffer, workbook, options?.dataSheets);
     debugImportStep(`recovered ${nativeWorkbookCharts.charts.length} native chart(s)${nativeWorkbookCharts.dataSheetName ? ` with Data sheet "${nativeWorkbookCharts.dataSheetName}"` : ""}`);
   } catch (error) {
     warnings.push(`Workbook charts: Could not inspect native Excel chart definitions (${error instanceof Error ? error.message : "unknown error"}).`);

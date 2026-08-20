@@ -5,6 +5,7 @@ import { isPostgresEnabled } from "../config/env.js";
 import { getSourceRecordSummary, replaceSourceRecords, replaceSourceRecordsFromBatches, type SourceRecordSummary } from "./eav-record-store.js";
 import { studioStore } from "./studio-store.js";
 import { importWorkbookIntoStudioDocument } from "./xlsx-import.js";
+import { normalizeXlsxNamespacePrefix } from "./xlsx-namespace-fix.js";
 
 interface IngestXlsxSourceOptions {
   filename: string;
@@ -39,7 +40,16 @@ interface IngestXlsxSourceStreamOptions extends Omit<IngestXlsxSourceOptions, "b
 // back to back and seeing one succeed and one fail. Retrying with a fresh stream
 // reliably works around it since the race doesn't reproduce every time.
 const TRANSIENT_WORKBOOK_READER_ERROR = /reading 'sheets'/;
-const MAX_WORKBOOK_READ_ATTEMPTS = 3;
+// The extra normalizeXlsxNamespacePrefix() await before each WorkbookReader is
+// constructed shifts exactly when in the event loop the reader's internal zip
+// decompression gets scheduled — since the underlying ExcelJS race is inherently
+// scheduler-timing-sensitive (confirmed: byte-identical buffers can succeed or
+// fail unpredictably from run to run), that shift measurably increased how often
+// several back-to-back reads within one process exhaust the retry budget.
+// Widened from 3 to 5 for extra margin; a single real import (one attempt per
+// request, not several in rapid succession) was never the scenario this needed
+// headroom for.
+const MAX_WORKBOOK_READ_ATTEMPTS = 5;
 
 interface IngestedXlsxSource {
   sourceId: string;
@@ -395,11 +405,19 @@ export async function ingestXlsxWorkbookSourceStream(options: IngestXlsxSourceSt
     throw new Error("DATABASE_URL or POSTGRES_URL is required before importing Excel files as durable sources.");
   }
   const canRetry = Buffer.isBuffer(options.stream);
+  // Some source systems write every spreadsheetml part with a namespace prefix
+  // (e.g. <x:worksheet>) instead of the default unprefixed namespace — both valid
+  // XML, but ExcelJS's streaming reader never recognizes the prefixed form and
+  // silently fails to parse it. Normalizing once up front (not per-attempt; the
+  // buffer's content doesn't change between retries) fixes real files from those
+  // systems without affecting the overwhelming majority that already use the
+  // default namespace.
+  const normalizedBuffer = canRetry ? await normalizeXlsxNamespacePrefix(options.stream as Buffer) : null;
   let attempt = 0;
   for (;;) {
     attempt += 1;
     try {
-      const inputStream = Buffer.isBuffer(options.stream) ? Readable.from(options.stream) : options.stream;
+      const inputStream = normalizedBuffer ? Readable.from(normalizedBuffer) : options.stream as Readable;
       return await ingestXlsxWorkbookSourceStreamOnce(options, inputStream);
     } catch (error) {
       const isTransient = error instanceof TypeError && TRANSIENT_WORKBOOK_READER_ERROR.test(error.message);
