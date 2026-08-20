@@ -82,4 +82,31 @@ describe("WorkbookUploadModal", () => {
     expect(screen.getByText("Billed Date")).toBeInTheDocument();
     expect(screen.getByText("Anticipated Payment")).toBeInTheDocument();
   });
+
+  it("never renders the wrong auto-detected headers while reconciling a known existing target", async () => {
+    render(<WorkbookUploadModal open={true} onClose={() => {}} onSuccess={() => {}} />);
+
+    await waitFor(() => expect(screen.getByText(/Select workbook/i)).toBeInTheDocument());
+    fireEvent.click(screen.getByText(/Select workbook/i));
+    await waitFor(() => expect(screen.getByText(/Test Billed Claims/i)).toBeInTheDocument());
+    fireEvent.click(screen.getByText(/Test Billed Claims/i));
+
+    const file = new File(["dummy"], "billed-claims.xlsx", {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    });
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+
+    let sawWrongHeadersAtAnyPoint = false;
+    const poll = setInterval(() => {
+      if (screen.queryAllByText("Billed Claims Report Export: 03/16/2026").length > 0) {
+        sawWrongHeadersAtAnyPoint = true;
+      }
+    }, 1);
+
+    fireEvent.change(input, { target: { files: [file] } });
+    await waitFor(() => expect(screen.getByText("Billed Date")).toBeInTheDocument());
+    clearInterval(poll);
+
+    expect(sawWrongHeadersAtAnyPoint).toBe(false);
+  });
 });

@@ -187,7 +187,11 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
     if (!sourceId || existingFieldsCache[sourceId]) return;
     fetchSourceFields(sourceId)
       .then((res) => setExistingFieldsCache((prev) => ({ ...prev, [sourceId]: { fields: res.fields, keyFieldIds: res.keyFieldIds, headerSkipRows: res.headerSkipRows || 0 } })))
-      .catch(() => { /* non-blocking */ });
+      // Still record an (empty) entry on failure — the header-row reconciliation
+      // below waits for this cache to resolve before showing any preview for an
+      // existing target, so a silently-swallowed failure would leave it waiting
+      // forever instead of falling back to "nothing saved, use auto-detect."
+      .catch(() => setExistingFieldsCache((prev) => prev[sourceId] ? prev : { ...prev, [sourceId]: { fields: [], keyFieldIds: [], headerSkipRows: 0 } }));
   }
 
   // Fetch existing columns/keys for every distinct multi-sheet target, and pre-fill
@@ -519,15 +523,31 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
     !anyTabCreatingNew || multiSheetBaseName.trim().length > 0
   );
 
+  // True while we're updating a known existing source but haven't yet confirmed the
+  // preview reflects ITS saved header row. While true, the columns/key-field preview
+  // is hidden entirely rather than briefly flashing whatever the file's raw
+  // auto-detection found (wrong, for files with a merged title row) before the
+  // reconciliation effect corrects it a moment later. A brand-new import (no saved
+  // row to wait for) is never gated — it shows auto-detected, editable results
+  // immediately, same as before.
+  function isHeaderRowReconciling(sheetName: string | undefined, sourceId: string): boolean {
+    if (!sheetName || !sourceId || sourceId === "new" || !file || !peek) return false;
+    const existing = existingFieldsCache[sourceId];
+    if (!existing) return true; // still waiting on the saved-fields fetch
+    const sheet = peek.sheets?.find((s) => s.name === sheetName);
+    return (sheet?.detectedHeaderRow ?? 1) !== existing.headerSkipRows + 1;
+  }
+  const isReconcilingHeaderRow = isData && !isMultiSheetMode && isHeaderRowReconciling(targetSheetName, selectedSourceId);
+
   // Header diff: does this file's columns differ from what the target source already has?
-  const singleTargetDiff = isData && !isMultiSheetMode && isUpdating
+  const singleTargetDiff = isData && !isMultiSheetMode && isUpdating && !isReconcilingHeaderRow
     ? diffHeaders(peek?.headers || [], existingFieldsCache[selectedSourceId])
     : null;
   const multiSheetDiffs = isMultiSheetMode
     ? dataSheets
       .map((sheetName) => {
         const sid = sheetSourceMap[sheetName] || "";
-        if (!sid) return null;
+        if (!sid || isHeaderRowReconciling(sheetName, sid)) return null;
         const sheet = peek?.sheets?.find((s) => s.name === sheetName);
         const diff = diffHeaders(sheet?.headers || [], existingFieldsCache[sid]);
         return diff && (diff.added.length || diff.removed.length) ? { sheetName, diff } : null;
@@ -1027,29 +1047,37 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
                                 />
                                 <span style={{ fontSize: 10.5, color: T.textSoft }}>rows above it are skipped</span>
                               </div>
-                              {/* Key field(s) for this tab — optional, matches rows across re-imports */}
-                              <div style={{ paddingLeft: 52, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 5 }}>
-                                <span style={{ fontSize: 11, color: T.textSoft, flexShrink: 0 }}>Key field(s):</span>
-                                {sheet.headers.map((h, hIndex) => {
-                                  const checked = (sheetKeyFieldMap[sheet.name] || []).includes(h);
-                                  return (
-                                    <button
-                                      key={`${hIndex}:${h}`} type="button" disabled={importing}
-                                      onClick={() => setSheetKeyFieldMap((prev) => {
-                                        const current = prev[sheet.name] || [];
-                                        return { ...prev, [sheet.name]: current.includes(h) ? current.filter((v) => v !== h) : [...current, h] };
-                                      })}
-                                      style={{
-                                        padding: "2px 8px", borderRadius: 99, fontSize: 11, fontWeight: 600,
-                                        border: `1px solid ${checked ? T.brand : T.borderMd}`,
-                                        background: checked ? T.brandLight : T.bg,
-                                        color: checked ? T.brandDeep : T.textSecondary,
-                                        cursor: importing ? "not-allowed" : "pointer", fontFamily: T.font,
-                                      }}
-                                    >{checked ? "✓ " : ""}{h}</button>
-                                  );
-                                })}
-                              </div>
+                              {/* Key field(s) for this tab — optional, matches rows across re-imports.
+                                  Held off (like the single-target picker above) until confirmed to
+                                  reflect this tab's saved header row, when updating a known target. */}
+                              {isHeaderRowReconciling(sheet.name, sheetSid) ? (
+                                <div style={{ paddingLeft: 52, fontSize: 11, color: T.textSoft }}>
+                                  Checking header row against this tab's saved settings…
+                                </div>
+                              ) : (
+                                <div style={{ paddingLeft: 52, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 5 }}>
+                                  <span style={{ fontSize: 11, color: T.textSoft, flexShrink: 0 }}>Key field(s):</span>
+                                  {sheet.headers.map((h, hIndex) => {
+                                    const checked = (sheetKeyFieldMap[sheet.name] || []).includes(h);
+                                    return (
+                                      <button
+                                        key={`${hIndex}:${h}`} type="button" disabled={importing}
+                                        onClick={() => setSheetKeyFieldMap((prev) => {
+                                          const current = prev[sheet.name] || [];
+                                          return { ...prev, [sheet.name]: current.includes(h) ? current.filter((v) => v !== h) : [...current, h] };
+                                        })}
+                                        style={{
+                                          padding: "2px 8px", borderRadius: 99, fontSize: 11, fontWeight: 600,
+                                          border: `1px solid ${checked ? T.brand : T.borderMd}`,
+                                          background: checked ? T.brandLight : T.bg,
+                                          color: checked ? T.brandDeep : T.textSecondary,
+                                          cursor: importing ? "not-allowed" : "pointer", fontFamily: T.font,
+                                        }}
+                                      >{checked ? "✓ " : ""}{h}</button>
+                                    );
+                                  })}
+                                </div>
+                              )}
                               {(sheetKeyFieldMap[sheet.name] || []).length > 0 && (
                                 <label style={{ paddingLeft: 52, display: "flex", alignItems: "flex-start", gap: 6, cursor: "pointer" }}>
                                   <input
@@ -1076,100 +1104,114 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
                 </div>
               )}
 
-              {/* File summary (columns / row count) */}
-              <div style={{ border: `1px solid ${T.border}`, borderRadius: T.radius, padding: "10px 14px", background: T.bgAlt }}>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 4 }}>
-                  {peek.sheetNames.map((n) => (
-                    <span key={n} style={{
-                      background: isData && multiSheet && dataSheets.includes(n) ? T.brandLight : T.bg,
-                      border: `1px solid ${isData && multiSheet && dataSheets.includes(n) ? T.brandBorder : T.border}`,
-                      borderRadius: 5, padding: "1px 8px", fontSize: 11, fontWeight: 600,
-                      color: isData && multiSheet && dataSheets.includes(n) ? T.brandDeep : T.textSoft,
-                    }}>{n}</span>
-                  ))}
-                  <span style={{ background: T.brandLight, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "1px 8px", fontSize: 11, fontWeight: 700, color: T.brandDeep }}>
-                    {peek.rowCount.toLocaleString()} rows
-                  </span>
+              {/* While updating a known existing source, hold off showing ANY columns/
+                  key-field preview until it's confirmed to reflect that source's saved
+                  header row — instead of briefly showing the file's raw auto-detection
+                  (wrong, for files with a title row above the real headers) and then
+                  correcting it a moment later. A brand-new import has no saved row to
+                  wait for, so it shows the auto-detected, editable preview immediately. */}
+              {isReconcilingHeaderRow ? (
+                <div style={{ padding: "10px 14px", borderRadius: T.radius, border: `1px solid ${T.border}`, background: T.bgAlt, fontSize: 12, color: T.textSoft }}>
+                  Checking header row against this workbook's saved settings…
                 </div>
-                <div style={{ fontSize: 11, color: T.textSoft, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  Columns: {peek.headers.slice(0, 8).join(", ")}{peek.headers.length > 8 ? ` +${peek.headers.length - 8} more` : ""}
-                </div>
-              </div>
-
-              {/* Header row — single-target mode. Some exported reports have title/filter-
-                  summary rows above the real headers; auto-detected but editable. */}
-              {isData && !isMultiSheetMode && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  <label style={{ fontSize: 12, fontWeight: 600, color: T.textSecondary }}>Header row</label>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <input
-                      type="number" min={1} max={(peek.rowCount || 0) + 20} disabled={importing}
-                      value={headerRow}
-                      onChange={(e) => setHeaderRow(Math.max(1, Number(e.target.value) || 1))}
-                      onBlur={() => {
-                        if (!targetSheetName) return;
-                        void refreshHeaderRowPreview(targetSheetName, headerRow, selectedSourceId && selectedSourceId !== "new" ? selectedSourceId : undefined);
-                      }}
-                      style={{
-                        width: 70, padding: "6px 8px", borderRadius: T.radiusSm,
-                        border: `1px solid ${T.borderMd}`, background: T.bg, color: T.text,
-                        fontSize: 13, fontFamily: T.font, outline: "none",
-                      }}
-                    />
-                    <span style={{ fontSize: 11, color: T.textSoft, lineHeight: 1.4 }}>
-                      Row that has your column names — rows above it are skipped. Auto-detected, but change it if
-                      the columns below look wrong. Remembered for next time.
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {/* Key field picker — single-target mode. Lets a re-import match rows
-                  by identity (update in place) instead of replacing the whole table. */}
-              {isData && !isMultiSheetMode && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <label style={{ fontSize: 12, fontWeight: 600, color: T.textSecondary }}>
-                    Key field(s) <span style={{ fontWeight: 400, color: T.textSoft }}>— optional, recommended for re-imports</span>
-                  </label>
-                  <p style={{ margin: 0, fontSize: 11, color: T.textSoft, lineHeight: 1.5 }}>
-                    Pick the column(s) that uniquely identify each row (e.g. an ID or SKU). Future imports of this
-                    same workbook will use it to update existing rows in place and add new ones — instead of
-                    replacing everything. Rows already in the table that aren't in a later file are left as-is,
-                    never deleted. Remembered for next time.
-                  </p>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                    {peek.headers.map((h, hIndex) => {
-                      const checked = keyFieldIds.includes(h);
-                      return (
-                        <button
-                          key={`${hIndex}:${h}`} type="button" disabled={importing}
-                          onClick={() => setKeyFieldIds((prev) => prev.includes(h) ? prev.filter((v) => v !== h) : [...prev, h])}
-                          style={{
-                            padding: "5px 10px", borderRadius: 99, fontSize: 12, fontWeight: 600,
-                            border: `1px solid ${checked ? T.brand : T.borderMd}`,
-                            background: checked ? T.brandLight : T.bg,
-                            color: checked ? T.brandDeep : T.textSecondary,
-                            cursor: importing ? "not-allowed" : "pointer", fontFamily: T.font,
-                          }}
-                        >{checked ? "✓ " : ""}{h}</button>
-                      );
-                    })}
-                  </div>
-                  {keyFieldIds.length > 0 && (
-                    <label style={{ display: "flex", alignItems: "flex-start", gap: 8, marginTop: 2, cursor: "pointer" }}>
-                      <input
-                        type="checkbox" checked={allowDuplicates} disabled={importing}
-                        onChange={(e) => setAllowDuplicates(e.target.checked)}
-                        style={{ marginTop: 2 }}
-                      />
-                      <span style={{ fontSize: 12, color: T.textSecondary, lineHeight: 1.5 }}>
-                        <strong>Allow duplicates</strong> — the field(s) above don't actually give a unique value for every
-                        row in this file (e.g. a claim number that repeats). Instead of matching rows by key, this import
-                        will just replace all data in the table. Your key field choice is still remembered for next time.
+              ) : (
+                <>
+                  {/* File summary (columns / row count) */}
+                  <div style={{ border: `1px solid ${T.border}`, borderRadius: T.radius, padding: "10px 14px", background: T.bgAlt }}>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 4 }}>
+                      {peek.sheetNames.map((n) => (
+                        <span key={n} style={{
+                          background: isData && multiSheet && dataSheets.includes(n) ? T.brandLight : T.bg,
+                          border: `1px solid ${isData && multiSheet && dataSheets.includes(n) ? T.brandBorder : T.border}`,
+                          borderRadius: 5, padding: "1px 8px", fontSize: 11, fontWeight: 600,
+                          color: isData && multiSheet && dataSheets.includes(n) ? T.brandDeep : T.textSoft,
+                        }}>{n}</span>
+                      ))}
+                      <span style={{ background: T.brandLight, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "1px 8px", fontSize: 11, fontWeight: 700, color: T.brandDeep }}>
+                        {peek.rowCount.toLocaleString()} rows
                       </span>
-                    </label>
+                    </div>
+                    <div style={{ fontSize: 11, color: T.textSoft, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      Columns: {peek.headers.slice(0, 8).join(", ")}{peek.headers.length > 8 ? ` +${peek.headers.length - 8} more` : ""}
+                    </div>
+                  </div>
+
+                  {/* Header row — single-target mode. Some exported reports have title/filter-
+                      summary rows above the real headers; auto-detected but editable. */}
+                  {isData && !isMultiSheetMode && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                      <label style={{ fontSize: 12, fontWeight: 600, color: T.textSecondary }}>Header row</label>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <input
+                          type="number" min={1} max={(peek.rowCount || 0) + 20} disabled={importing}
+                          value={headerRow}
+                          onChange={(e) => setHeaderRow(Math.max(1, Number(e.target.value) || 1))}
+                          onBlur={() => {
+                            if (!targetSheetName) return;
+                            void refreshHeaderRowPreview(targetSheetName, headerRow, selectedSourceId && selectedSourceId !== "new" ? selectedSourceId : undefined);
+                          }}
+                          style={{
+                            width: 70, padding: "6px 8px", borderRadius: T.radiusSm,
+                            border: `1px solid ${T.borderMd}`, background: T.bg, color: T.text,
+                            fontSize: 13, fontFamily: T.font, outline: "none",
+                          }}
+                        />
+                        <span style={{ fontSize: 11, color: T.textSoft, lineHeight: 1.4 }}>
+                          Row that has your column names — rows above it are skipped. Auto-detected, but change it if
+                          the columns below look wrong. Remembered for next time.
+                        </span>
+                      </div>
+                    </div>
                   )}
-                </div>
+
+                  {/* Key field picker — single-target mode. Lets a re-import match rows
+                      by identity (update in place) instead of replacing the whole table. */}
+                  {isData && !isMultiSheetMode && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      <label style={{ fontSize: 12, fontWeight: 600, color: T.textSecondary }}>
+                        Key field(s) <span style={{ fontWeight: 400, color: T.textSoft }}>— optional, recommended for re-imports</span>
+                      </label>
+                      <p style={{ margin: 0, fontSize: 11, color: T.textSoft, lineHeight: 1.5 }}>
+                        Pick the column(s) that uniquely identify each row (e.g. an ID or SKU). Future imports of this
+                        same workbook will use it to update existing rows in place and add new ones — instead of
+                        replacing everything. Rows already in the table that aren't in a later file are left as-is,
+                        never deleted. Remembered for next time.
+                      </p>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        {peek.headers.map((h, hIndex) => {
+                          const checked = keyFieldIds.includes(h);
+                          return (
+                            <button
+                              key={`${hIndex}:${h}`} type="button" disabled={importing}
+                              onClick={() => setKeyFieldIds((prev) => prev.includes(h) ? prev.filter((v) => v !== h) : [...prev, h])}
+                              style={{
+                                padding: "5px 10px", borderRadius: 99, fontSize: 12, fontWeight: 600,
+                                border: `1px solid ${checked ? T.brand : T.borderMd}`,
+                                background: checked ? T.brandLight : T.bg,
+                                color: checked ? T.brandDeep : T.textSecondary,
+                                cursor: importing ? "not-allowed" : "pointer", fontFamily: T.font,
+                              }}
+                            >{checked ? "✓ " : ""}{h}</button>
+                          );
+                        })}
+                      </div>
+                      {keyFieldIds.length > 0 && (
+                        <label style={{ display: "flex", alignItems: "flex-start", gap: 8, marginTop: 2, cursor: "pointer" }}>
+                          <input
+                            type="checkbox" checked={allowDuplicates} disabled={importing}
+                            onChange={(e) => setAllowDuplicates(e.target.checked)}
+                            style={{ marginTop: 2 }}
+                          />
+                          <span style={{ fontSize: 12, color: T.textSecondary, lineHeight: 1.5 }}>
+                            <strong>Allow duplicates</strong> — the field(s) above don't actually give a unique value for every
+                            row in this file (e.g. a claim number that repeats). Instead of matching rows by key, this import
+                            will just replace all data in the table. Your key field choice is still remembered for next time.
+                          </span>
+                        </label>
+                      )}
+                    </div>
+                  )}
+                </>
               )}
 
               {/* Header diff warning — this file's columns differ from what's already
