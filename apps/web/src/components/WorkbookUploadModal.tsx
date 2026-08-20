@@ -145,6 +145,12 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
   // these — otherwise a failed/hung request would silently block the user from ever
   // seeing (or importing) the file at all, with no error shown, forever.
   const [reconcileGaveUpKeys, setReconcileGaveUpKeys] = useState<Set<string>>(new Set());
+  // Visible "Updating…" feedback for a manual header-row edit. Separate from the
+  // "Checking header row..." block above — that one only ever shows while updating
+  // a KNOWN existing source; a brand-new import (or re-editing a value that already
+  // matches) has no other indicator that a manual edit's re-check is in flight.
+  const [headerRowUpdating, setHeaderRowUpdating] = useState(false);
+  const [sheetHeaderRowUpdating, setSheetHeaderRowUpdating] = useState<Set<string>>(new Set());
 
   function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
     return Promise.race([
@@ -206,13 +212,13 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
   // the automatic reconciliation effects and the manual onBlur edits below, so
   // isHeaderRowReconciling can always eventually stop waiting no matter which path
   // triggered the mismatch it's blocking on.
-  function reconcileHeaderRow(sheetName: string, expectedHeaderRow: number, sourceId: string | undefined, syncKey: string) {
-    void withTimeout(refreshHeaderRowPreview(sheetName, expectedHeaderRow, sourceId), 20000)
+  function reconcileHeaderRow(sheetName: string, expectedHeaderRow: number, sourceId: string | undefined, syncKey: string): Promise<void> {
+    return withTimeout(refreshHeaderRowPreview(sheetName, expectedHeaderRow, sourceId), 20000)
       .then((ok) => { if (!ok) setReconcileGaveUpKeys((prev) => new Set(prev).add(syncKey)); })
       .catch(() => setReconcileGaveUpKeys((prev) => new Set(prev).add(syncKey)));
   }
-  function reconcileSheetHeaderRow(sheetName: string, expectedHeaderRow: number, syncKey: string) {
-    void withTimeout(refreshSheetHeaderRowPreview(sheetName, expectedHeaderRow), 20000)
+  function reconcileSheetHeaderRow(sheetName: string, expectedHeaderRow: number, syncKey: string): Promise<void> {
+    return withTimeout(refreshSheetHeaderRowPreview(sheetName, expectedHeaderRow), 20000)
       .then((ok) => { if (!ok) setReconcileGaveUpKeys((prev) => new Set(prev).add(syncKey)); })
       .catch(() => setReconcileGaveUpKeys((prev) => new Set(prev).add(syncKey)));
   }
@@ -276,7 +282,7 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
       const syncKey = `${sid}:${sheetName}:${file.name}:${file.size}:${expectedHeaderRow}`;
       if (sheetHeaderRowSyncedRef.current.has(syncKey)) continue;
       sheetHeaderRowSyncedRef.current.add(syncKey);
-      reconcileSheetHeaderRow(sheetName, expectedHeaderRow, syncKey);
+      void reconcileSheetHeaderRow(sheetName, expectedHeaderRow, syncKey);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [file, peek?.sheets?.length, sheetSourceMap, existingFieldsCache]);
@@ -331,7 +337,7 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
     const syncKey = `${selectedSourceId}:${targetSheetName}:${file.name}:${file.size}:${expectedHeaderRow}`;
     if (headerRowSyncedRef.current === syncKey) return;
     headerRowSyncedRef.current = syncKey;
-    reconcileHeaderRow(targetSheetName, expectedHeaderRow, selectedSourceId, syncKey);
+    void reconcileHeaderRow(targetSheetName, expectedHeaderRow, selectedSourceId, syncKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [file, peek === null, targetSheetName, selectedSourceId, existingFieldsCache[selectedSourceId]]);
 
@@ -1082,11 +1088,12 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
                                   onChange={(e) => setSheetHeaderRowMap((prev) => ({ ...prev, [sheet.name]: Math.max(1, Number(e.target.value) || 1) }))}
                                   onBlur={() => {
                                     const newRow = sheetHeaderRowMap[sheet.name] ?? 1;
-                                    if (sheetSid && file) {
-                                      reconcileSheetHeaderRow(sheet.name, newRow, `${sheetSid}:${sheet.name}:${file.name}:${file.size}:${newRow}`);
-                                    } else {
-                                      void refreshSheetHeaderRowPreview(sheet.name, newRow);
-                                    }
+                                    setSheetHeaderRowUpdating((prev) => new Set(prev).add(sheet.name));
+                                    const done = () => setSheetHeaderRowUpdating((prev) => { const next = new Set(prev); next.delete(sheet.name); return next; });
+                                    const task = sheetSid && file
+                                      ? reconcileSheetHeaderRow(sheet.name, newRow, `${sheetSid}:${sheet.name}:${file.name}:${file.size}:${newRow}`)
+                                      : refreshSheetHeaderRowPreview(sheet.name, newRow);
+                                    void task.then(done, done);
                                   }}
                                   style={{
                                     width: 60, padding: "3px 6px", borderRadius: T.radiusSm,
@@ -1094,7 +1101,11 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
                                     fontSize: 12, fontFamily: T.font, outline: "none",
                                   }}
                                 />
-                                <span style={{ fontSize: 10.5, color: T.textSoft }}>rows above it are skipped</span>
+                                {sheetHeaderRowUpdating.has(sheet.name) ? (
+                                  <span style={{ fontSize: 10.5, color: T.brandDeep, fontWeight: 600 }}>Updating preview…</span>
+                                ) : (
+                                  <span style={{ fontSize: 10.5, color: T.textSoft }}>rows above it are skipped</span>
+                                )}
                               </div>
                               {/* Key field(s) for this tab — optional, matches rows across re-imports.
                                   Held off (like the single-target picker above) until confirmed to
@@ -1198,11 +1209,12 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
                           onBlur={() => {
                             if (!targetSheetName) return;
                             const isExistingTarget = Boolean(selectedSourceId) && selectedSourceId !== "new";
-                            if (isExistingTarget && file) {
-                              reconcileHeaderRow(targetSheetName, headerRow, selectedSourceId, `${selectedSourceId}:${targetSheetName}:${file.name}:${file.size}:${headerRow}`);
-                            } else {
-                              void refreshHeaderRowPreview(targetSheetName, headerRow, undefined);
-                            }
+                            setHeaderRowUpdating(true);
+                            const done = () => setHeaderRowUpdating(false);
+                            const task = isExistingTarget && file
+                              ? reconcileHeaderRow(targetSheetName, headerRow, selectedSourceId, `${selectedSourceId}:${targetSheetName}:${file.name}:${file.size}:${headerRow}`)
+                              : refreshHeaderRowPreview(targetSheetName, headerRow, undefined);
+                            void task.then(done, done);
                           }}
                           style={{
                             width: 70, padding: "6px 8px", borderRadius: T.radiusSm,
@@ -1210,10 +1222,14 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
                             fontSize: 13, fontFamily: T.font, outline: "none",
                           }}
                         />
-                        <span style={{ fontSize: 11, color: T.textSoft, lineHeight: 1.4 }}>
-                          Row that has your column names — rows above it are skipped. Auto-detected, but change it if
-                          the columns below look wrong. Remembered for next time.
-                        </span>
+                        {headerRowUpdating ? (
+                          <span style={{ fontSize: 11, color: T.brandDeep, fontWeight: 600, lineHeight: 1.4 }}>Updating preview…</span>
+                        ) : (
+                          <span style={{ fontSize: 11, color: T.textSoft, lineHeight: 1.4 }}>
+                            Row that has your column names — rows above it are skipped. Auto-detected, but change it if
+                            the columns below look wrong. Remembered for next time.
+                          </span>
+                        )}
                       </div>
                     </div>
                   )}

@@ -253,7 +253,7 @@ export function HelpPage() {
 
                 <Sub>Skipping title rows above the header</Sub>
                 <Step n={9}>Some exported reports have a few rows above the real column headers — a title, a "Filters: ..." summary line, a "Generated on ..." timestamp. The <strong>Header row</strong> field on the upload screen tells the import where your real column names actually start; every row above it is skipped entirely.</Step>
-                <Step n={10}>This is auto-detected and pre-filled for you, but check it against the preview below it — if the columns look wrong (garbled labels, only one column), raise the header row number until they look right.</Step>
+                <Step n={10}>This is auto-detected and pre-filled for you, but check it against the preview below it — if the columns look wrong (garbled labels, only one column), raise the header row number until they look right. Change the number and click away from the field; it briefly shows <strong>"Updating preview…"</strong> while it re-checks the file, then the columns and key-field list below refresh to match.</Step>
                 <Step n={11}>The header row is saved per source (and per tab, for multi-sheet workbooks), so future re-imports of that same source remember it automatically. You can still change it on a later import if the file's layout shifts, and the new value is saved.</Step>
 
                 <Sub>Updating existing data with key fields</Sub>
@@ -354,8 +354,9 @@ export function HelpPage() {
                 <Sub>Interacting with a dashboard</Sub>
                 <Step n={11}>Click any tab at the top of the dashboard to switch between tab sections.</Step>
                 <Step n={12}>If the dashboard has runtime filters, a <strong>Filters</strong> card appears above the tabs — pick values there to change what data shows across the dashboard. (Standalone reports don't have this; only dashboards do.)</Step>
-                <Step n={13}>Click the <strong>Focus</strong> (or <strong>Focus card</strong>) button in a card's header to expand just that card full-screen. Click <strong>Close</strong> to return — clicking elsewhere on the card does not expand it.</Step>
-                <Step n={14}>Click <strong>Export Workbook</strong> to download the entire dashboard (every tab) as one Excel file with real, editable charts — every chart type matches what you see on screen. There is currently no option to export a single card on its own, or to export as an image.</Step>
+                <Step n={13}>Runtime filter selections are not remembered — they reset to the dashboard's own defaults the next time you open it. Click <strong>Save view</strong> to save the current filter selections, active tab, and focused card as a named bookmark you can return to any time; it appears as a chip you can click to reapply it, and is never lost.</Step>
+                <Step n={14}>Click the <strong>Focus</strong> (or <strong>Focus card</strong>) button in a card's header to expand just that card full-screen. Click <strong>Close</strong> to return — clicking elsewhere on the card does not expand it.</Step>
+                <Step n={15}>Click <strong>Export Workbook</strong> to download the entire dashboard (every tab) as one Excel file with real, editable charts — every chart type matches what you see on screen. There is currently no option to export a single card on its own, or to export as an image.</Step>
 
                 <Tip>Star/favorite a report or dashboard by clicking the <strong>Favorite</strong> button in the report toolbar. Favorites appear first when you filter by Favorites only.</Tip>
               </div>

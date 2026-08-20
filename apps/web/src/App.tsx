@@ -871,7 +871,11 @@ function ObjectPage({
         tables={tables}
         refreshNonce={refreshNonce}
         onRefresh={() => { void startObjectRefresh(); }}
-        initialRuntimeFilters={dashboardPersonalOverride?.runtimeFilters}
+        // Deliberately NOT restoring dashboardPersonalOverride?.runtimeFilters here —
+        // ad-hoc runtime filter selections should reset to the dashboard's own
+        // defaults every time it's opened, not silently persist forever. A viewer who
+        // wants a particular filter combination to stick uses "Save view" (below),
+        // which stores it as its own named, always-available bookmark instead.
         initialActiveTabId={dashboardPersonalOverride?.activeTabId}
         initialFocusedWidgetId={dashboardPersonalOverride?.focusedWidgetId}
         savedViews={dashboardPersonalOverride?.savedViews || []}
@@ -913,12 +917,14 @@ function ObjectPage({
         onToggleFavorite={() => { void onToggleFavorite(object.id); }}
         onStateChange={(state) => {
           if (object.scope === "personal" || !studioDocument) return;
-          const currentRuntimeFilters = state.runtimeFilters || {};
+          // Only activeTabId/focusedWidgetId ("resume where I left off") get
+          // auto-persisted here — runtimeFilters are intentionally excluded so ad-hoc
+          // filter selections reset on next visit instead of sticking forever. See
+          // the initialRuntimeFilters comment above for the "Save view" alternative.
           const currentActiveTabId = state.activeTabId || "";
           const currentFocusedWidgetId = state.focusedWidgetId || "";
           if (
-            JSON.stringify(dashboardPersonalOverride?.runtimeFilters || {}) === JSON.stringify(currentRuntimeFilters)
-            && (dashboardPersonalOverride?.activeTabId || "") === currentActiveTabId
+            (dashboardPersonalOverride?.activeTabId || "") === currentActiveTabId
             && (dashboardPersonalOverride?.focusedWidgetId || "") === currentFocusedWidgetId
           ) {
             return;
@@ -928,7 +934,7 @@ function ObjectPage({
             dashboards: {
               ...studioDocument.personalOverrides.dashboards,
               [object.id]: {
-                runtimeFilters: currentRuntimeFilters,
+                runtimeFilters: dashboardPersonalOverride?.runtimeFilters || {},
                 activeTabId: currentActiveTabId,
                 focusedWidgetId: currentFocusedWidgetId,
                 savedViews: dashboardPersonalOverride?.savedViews || [],
