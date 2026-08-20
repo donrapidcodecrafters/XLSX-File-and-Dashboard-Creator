@@ -1,6 +1,7 @@
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { WorkbookUploadModal } from "./WorkbookUploadModal";
+import { peekXlsxFile } from "../lib/studioApi";
 
 // Regression test for a bug where selecting an existing workbook (whose saved
 // header row differs from what the file's raw auto-detection finds) left BOTH
@@ -59,7 +60,14 @@ vi.mock("../lib/studioApi", () => {
   };
 });
 
+const WRONG_HEADERS = Array.from({ length: 26 }, () => "Billed Claims Report Export: 03/16/2026");
+const defaultPeekImpl = vi.mocked(peekXlsxFile).getMockImplementation();
+
 describe("WorkbookUploadModal", () => {
+  afterEach(() => {
+    if (defaultPeekImpl) vi.mocked(peekXlsxFile).mockImplementation(defaultPeekImpl);
+  });
+
   it("reconciles to the existing target's saved header row without leaving stale wrong-row buttons", async () => {
     render(<WorkbookUploadModal open={true} onClose={() => {}} onSuccess={() => {}} />);
 
@@ -108,5 +116,48 @@ describe("WorkbookUploadModal", () => {
     clearInterval(poll);
 
     expect(sawWrongHeadersAtAnyPoint).toBe(false);
+  });
+
+  // Regression test for a second bug introduced by the "hide until reconciled" fix
+  // above: if the reconciliation re-peek (the one applying the saved header row)
+  // fails or hangs, the "Checking header row..." placeholder had no way out — the
+  // preview, and the whole import, stayed blocked forever with no error shown.
+  it("gives up and shows the best-available preview if the reconciliation re-peek fails, instead of hanging forever", async () => {
+    vi.mocked(peekXlsxFile).mockImplementation((_file, options) => {
+      const usingOverride = options?.headerRowOverrides?.["Billed Claims"] === 3;
+      if (usingOverride) {
+        // A brief delay makes the intermediate "Checking..." state observable —
+        // otherwise an instantly-rejecting mock resolves the give-up path before
+        // any assertion can run, which would pass for the wrong reason.
+        return new Promise((_resolve, reject) => setTimeout(() => reject(new Error("network error")), 50));
+      }
+      return Promise.resolve({
+        filename: "billed-claims.xlsx",
+        sheetNames: ["Billed Claims"],
+        sheets: [{ name: "Billed Claims", rowCount: 15401, columnCount: WRONG_HEADERS.length, headers: WRONG_HEADERS, looksLikeData: true, detectedHeaderRow: 1 }],
+        headers: WRONG_HEADERS,
+        rows: [],
+        rowCount: 15401,
+        headerDiff: null, existingKeyFieldIds: [], existingHeaderSkipRows: 0
+      });
+    });
+
+    render(<WorkbookUploadModal open={true} onClose={() => {}} onSuccess={() => {}} />);
+
+    await waitFor(() => expect(screen.getByText(/Select workbook/i)).toBeInTheDocument());
+    fireEvent.click(screen.getByText(/Select workbook/i));
+    await waitFor(() => expect(screen.getByText(/Test Billed Claims/i)).toBeInTheDocument());
+    fireEvent.click(screen.getByText(/Test Billed Claims/i));
+
+    const file = new File(["dummy"], "billed-claims.xlsx", {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    });
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => expect(screen.getByText(/Checking header row/i)).toBeInTheDocument());
+    // Must eventually give up and show something — never stay stuck here.
+    await waitFor(() => expect(screen.queryByText(/Checking header row/i)).not.toBeInTheDocument(), { timeout: 5000 });
+    expect(screen.getByText("Key field(s)", { exact: false })).toBeInTheDocument();
   });
 });

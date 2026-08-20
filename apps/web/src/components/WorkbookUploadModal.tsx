@@ -140,6 +140,18 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
   // of looping (it calls setPeek, which would otherwise re-trigger itself).
   const headerRowSyncedRef = useRef<string>("");
   const sheetHeaderRowSyncedRef = useRef<Set<string>>(new Set());
+  // Sync keys (see below) whose reconciliation re-peek failed or timed out. The
+  // "Checking header row..." placeholder is gated on the mismatch NOT being one of
+  // these — otherwise a failed/hung request would silently block the user from ever
+  // seeing (or importing) the file at all, with no error shown, forever.
+  const [reconcileGaveUpKeys, setReconcileGaveUpKeys] = useState<Set<string>>(new Set());
+
+  function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+    return Promise.race([
+      promise,
+      new Promise<T>((_, reject) => setTimeout(() => reject(new Error("timed out")), ms))
+    ]);
+  }
 
   // Which sheet the single-target "Header row" field actually applies to. Declared
   // here (rather than down with the other derived render values) so both the preview
@@ -153,8 +165,8 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
   // auto-detected row. Prunes any selected key field(s) that no longer exist
   // among the new headers, since they'd otherwise silently point at a stale
   // column name.
-  async function refreshHeaderRowPreview(sheetName: string, newHeaderRow: number, sourceId?: string) {
-    if (!file) return;
+  async function refreshHeaderRowPreview(sheetName: string, newHeaderRow: number, sourceId?: string): Promise<boolean> {
+    if (!file) return false;
     try {
       const fresh = await peekXlsxFile(file, { sourceId, headerRowOverrides: { [sheetName]: newHeaderRow } });
       const freshSheet = fresh.sheets?.find((s) => s.name === sheetName);
@@ -164,13 +176,16 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
         setKeyFieldIds((prev) => prev.filter((id) => validLabels.has(id)));
         setSheetKeyFieldMap((prev) => prev[sheetName] ? { ...prev, [sheetName]: prev[sheetName].filter((id) => validLabels.has(id)) } : prev);
       }
-    } catch { /* non-blocking — keep showing the previous preview */ }
+      return true;
+    } catch {
+      return false; // non-blocking — caller decides whether to keep waiting or give up
+    }
   }
 
   // Per-tab version: sends every currently-known header row (not just the one that
   // just changed) so switching tab B's row doesn't revert tab A's back to auto-detect.
-  async function refreshSheetHeaderRowPreview(sheetName: string, newHeaderRow: number) {
-    if (!file) return;
+  async function refreshSheetHeaderRowPreview(sheetName: string, newHeaderRow: number): Promise<boolean> {
+    if (!file) return false;
     const overrides = { ...sheetHeaderRowMap, [sheetName]: newHeaderRow };
     try {
       const fresh = await peekXlsxFile(file, { headerRowOverrides: overrides });
@@ -180,7 +195,26 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
         const validLabels = new Set(freshSheet.headers);
         setSheetKeyFieldMap((prev) => prev[sheetName] ? { ...prev, [sheetName]: prev[sheetName].filter((id) => validLabels.has(id)) } : prev);
       }
-    } catch { /* non-blocking — keep showing the previous preview */ }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Wraps a header-row refresh with a hard timeout and records the attempt in
+  // reconcileGaveUpKeys on any failure (slow, hung, or fast-failing) — used by both
+  // the automatic reconciliation effects and the manual onBlur edits below, so
+  // isHeaderRowReconciling can always eventually stop waiting no matter which path
+  // triggered the mismatch it's blocking on.
+  function reconcileHeaderRow(sheetName: string, expectedHeaderRow: number, sourceId: string | undefined, syncKey: string) {
+    void withTimeout(refreshHeaderRowPreview(sheetName, expectedHeaderRow, sourceId), 20000)
+      .then((ok) => { if (!ok) setReconcileGaveUpKeys((prev) => new Set(prev).add(syncKey)); })
+      .catch(() => setReconcileGaveUpKeys((prev) => new Set(prev).add(syncKey)));
+  }
+  function reconcileSheetHeaderRow(sheetName: string, expectedHeaderRow: number, syncKey: string) {
+    void withTimeout(refreshSheetHeaderRowPreview(sheetName, expectedHeaderRow), 20000)
+      .then((ok) => { if (!ok) setReconcileGaveUpKeys((prev) => new Set(prev).add(syncKey)); })
+      .catch(() => setReconcileGaveUpKeys((prev) => new Set(prev).add(syncKey)));
   }
 
   function ensureExistingFields(sourceId: string) {
@@ -242,7 +276,7 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
       const syncKey = `${sid}:${sheetName}:${file.name}:${file.size}:${expectedHeaderRow}`;
       if (sheetHeaderRowSyncedRef.current.has(syncKey)) continue;
       sheetHeaderRowSyncedRef.current.add(syncKey);
-      void refreshSheetHeaderRowPreview(sheetName, expectedHeaderRow);
+      reconcileSheetHeaderRow(sheetName, expectedHeaderRow, syncKey);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [file, peek?.sheets?.length, sheetSourceMap, existingFieldsCache]);
@@ -294,10 +328,10 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
     const existing = existingFieldsCache[selectedSourceId];
     if (!existing) return;
     const expectedHeaderRow = existing.headerSkipRows + 1;
-    const syncKey = `${selectedSourceId}:${file.name}:${file.size}:${expectedHeaderRow}`;
+    const syncKey = `${selectedSourceId}:${targetSheetName}:${file.name}:${file.size}:${expectedHeaderRow}`;
     if (headerRowSyncedRef.current === syncKey) return;
     headerRowSyncedRef.current = syncKey;
-    void refreshHeaderRowPreview(targetSheetName, expectedHeaderRow, selectedSourceId);
+    reconcileHeaderRow(targetSheetName, expectedHeaderRow, selectedSourceId, syncKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [file, peek === null, targetSheetName, selectedSourceId, existingFieldsCache[selectedSourceId]]);
 
@@ -371,7 +405,7 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
     setKeyFieldIds([]); setSheetKeyFieldMap({}); setDiffAcknowledged(false); setExistingFieldsCache({});
     setAllowDuplicates(false); setSheetAllowDuplicates({});
     setHeaderRow(1); setSheetHeaderRowMap({});
-    headerRowSyncedRef.current = ""; sheetHeaderRowSyncedRef.current.clear();
+    headerRowSyncedRef.current = ""; sheetHeaderRowSyncedRef.current.clear(); setReconcileGaveUpKeys(new Set());
   }
 
   function handleClose() {
@@ -523,21 +557,29 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
     !anyTabCreatingNew || multiSheetBaseName.trim().length > 0
   );
 
-  // True while we're updating a known existing source but haven't yet confirmed the
-  // preview reflects ITS saved header row. While true, the columns/key-field preview
-  // is hidden entirely rather than briefly flashing whatever the file's raw
-  // auto-detection found (wrong, for files with a merged title row) before the
-  // reconciliation effect corrects it a moment later. A brand-new import (no saved
-  // row to wait for) is never gated — it shows auto-detected, editable results
-  // immediately, same as before.
-  function isHeaderRowReconciling(sheetName: string | undefined, sourceId: string): boolean {
+  // True while we're updating a known existing source but the preview hasn't yet
+  // confirmed it matches the CURRENTLY DISPLAYED header row (the saved value once
+  // pre-filled, or whatever the user just typed, whichever is current) — comparing
+  // against the live displayed value rather than the raw saved one means a manual
+  // edit that intentionally diverges from the saved value is never mistaken for an
+  // unresolved reconciliation. While true, the columns/key-field preview is hidden
+  // entirely rather than briefly flashing whatever the file's raw auto-detection
+  // found (wrong, for files with a merged title row) before it's corrected a moment
+  // later. Bails out (stops blocking) once a reconciliation attempt for this exact
+  // combination has already given up — see reconcileGaveUpKeys above — so a failed
+  // or hung request can never block the user forever with no error shown. A
+  // brand-new import (no saved row to wait for) is never gated — it shows
+  // auto-detected, editable results immediately, same as before.
+  function isHeaderRowReconciling(sheetName: string | undefined, sourceId: string, expectedHeaderRow: number): boolean {
     if (!sheetName || !sourceId || sourceId === "new" || !file || !peek) return false;
+    const syncKey = `${sourceId}:${sheetName}:${file.name}:${file.size}:${expectedHeaderRow}`;
+    if (reconcileGaveUpKeys.has(syncKey)) return false;
     const existing = existingFieldsCache[sourceId];
     if (!existing) return true; // still waiting on the saved-fields fetch
     const sheet = peek.sheets?.find((s) => s.name === sheetName);
-    return (sheet?.detectedHeaderRow ?? 1) !== existing.headerSkipRows + 1;
+    return (sheet?.detectedHeaderRow ?? 1) !== expectedHeaderRow;
   }
-  const isReconcilingHeaderRow = isData && !isMultiSheetMode && isHeaderRowReconciling(targetSheetName, selectedSourceId);
+  const isReconcilingHeaderRow = isData && !isMultiSheetMode && isHeaderRowReconciling(targetSheetName, selectedSourceId, headerRow);
 
   // Header diff: does this file's columns differ from what the target source already has?
   const singleTargetDiff = isData && !isMultiSheetMode && isUpdating && !isReconcilingHeaderRow
@@ -547,7 +589,7 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
     ? dataSheets
       .map((sheetName) => {
         const sid = sheetSourceMap[sheetName] || "";
-        if (!sid || isHeaderRowReconciling(sheetName, sid)) return null;
+        if (!sid || isHeaderRowReconciling(sheetName, sid, sheetHeaderRowMap[sheetName] ?? 1)) return null;
         const sheet = peek?.sheets?.find((s) => s.name === sheetName);
         const diff = diffHeaders(sheet?.headers || [], existingFieldsCache[sid]);
         return diff && (diff.added.length || diff.removed.length) ? { sheetName, diff } : null;
@@ -1038,7 +1080,14 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
                                   type="number" min={1} max={sheet.rowCount + 20} disabled={importing}
                                   value={sheetHeaderRowMap[sheet.name] ?? 1}
                                   onChange={(e) => setSheetHeaderRowMap((prev) => ({ ...prev, [sheet.name]: Math.max(1, Number(e.target.value) || 1) }))}
-                                  onBlur={() => { void refreshSheetHeaderRowPreview(sheet.name, sheetHeaderRowMap[sheet.name] ?? 1); }}
+                                  onBlur={() => {
+                                    const newRow = sheetHeaderRowMap[sheet.name] ?? 1;
+                                    if (sheetSid && file) {
+                                      reconcileSheetHeaderRow(sheet.name, newRow, `${sheetSid}:${sheet.name}:${file.name}:${file.size}:${newRow}`);
+                                    } else {
+                                      void refreshSheetHeaderRowPreview(sheet.name, newRow);
+                                    }
+                                  }}
                                   style={{
                                     width: 60, padding: "3px 6px", borderRadius: T.radiusSm,
                                     border: `1px solid ${T.borderMd}`, background: T.bg, color: T.text,
@@ -1050,7 +1099,7 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
                               {/* Key field(s) for this tab — optional, matches rows across re-imports.
                                   Held off (like the single-target picker above) until confirmed to
                                   reflect this tab's saved header row, when updating a known target. */}
-                              {isHeaderRowReconciling(sheet.name, sheetSid) ? (
+                              {isHeaderRowReconciling(sheet.name, sheetSid, sheetHeaderRowMap[sheet.name] ?? 1) ? (
                                 <div style={{ paddingLeft: 52, fontSize: 11, color: T.textSoft }}>
                                   Checking header row against this tab's saved settings…
                                 </div>
@@ -1148,7 +1197,12 @@ export function WorkbookUploadModal({ open, onClose, onSuccess }: WorkbookUpload
                           onChange={(e) => setHeaderRow(Math.max(1, Number(e.target.value) || 1))}
                           onBlur={() => {
                             if (!targetSheetName) return;
-                            void refreshHeaderRowPreview(targetSheetName, headerRow, selectedSourceId && selectedSourceId !== "new" ? selectedSourceId : undefined);
+                            const isExistingTarget = Boolean(selectedSourceId) && selectedSourceId !== "new";
+                            if (isExistingTarget && file) {
+                              reconcileHeaderRow(targetSheetName, headerRow, selectedSourceId, `${selectedSourceId}:${targetSheetName}:${file.name}:${file.size}:${headerRow}`);
+                            } else {
+                              void refreshHeaderRowPreview(targetSheetName, headerRow, undefined);
+                            }
                           }}
                           style={{
                             width: 70, padding: "6px 8px", borderRadius: T.radiusSm,
