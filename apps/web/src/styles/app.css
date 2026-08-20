@@ -9263,6 +9263,21 @@ html.dark input[type="checkbox"].check-native:checked {
   z-index: 9000 !important;
 }
 
+/* Dashboard runtime-filter dropdown (Payer Type, etc.) was rendering behind
+   the tab bar / widget cards below it — .widget-card is `position: relative`
+   with no explicit z-index, so it and its whole subtree paint as a positioned
+   sibling of the filter dropdown; a z-index set only on the dropdown itself
+   doesn't reliably beat that everywhere this card layout is reused. Elevate
+   the whole filter panel's stacking level so its dropdown always wins,
+   matching the existing modal-backdrop pattern above. */
+.card.dashboard-filter-panel {
+  position: relative !important;
+  z-index: 400 !important;
+}
+.filter-dropdown-menu {
+  z-index: 9000 !important;
+}
+
 .studio-modal {
   max-height: calc(100vh - 48px);
   overflow-y: auto;
